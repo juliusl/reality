@@ -47,7 +47,9 @@ impl AsMut<World> for Parser {
 }
 
 impl Parser {
-    /// Creates a new parser and empty specs world
+    /// Creates a new parser and empty specs world 
+    /// 
+    /// The parser will create a new entity per block parsed. 
     ///
     pub fn new() -> Self {
         let world = World::new();
@@ -66,6 +68,18 @@ impl Parser {
         }
     }
 
+    /// Returns an immutable ref to the World 
+    /// 
+    pub fn world(&self) -> &World {
+        self.as_ref()
+    }
+
+    /// Returns a mut reference to the World 
+    /// 
+    pub fn world_mut(&mut self) -> &mut World {
+        self.as_mut()
+    }
+
     /// Parses .runmd content, updating internal state, and returns self
     /// 
     pub fn parse(self, content: impl AsRef<str>) -> Self {
@@ -75,6 +89,26 @@ impl Parser {
         }
 
         lexer.extras
+    }
+
+    /// Gets a block from the parser 
+    /// 
+    pub fn get_block(&mut self, name: impl AsRef<str>, symbol: impl AsRef<str>) -> &Block {
+        let block = self.lookup_block(name, symbol);
+
+        self.blocks.get(&block).expect("lookup block should have created a new block")
+    }
+
+    /// Returns a immuatble reference to the root block
+    /// 
+    pub fn root(&self) -> &Block {
+        &self.root
+    }
+
+    /// Returns a mutable reference to the root block
+    /// 
+    pub fn root_mut(&mut self) -> &mut Block {
+        &mut self.root
     }
 
     /// Gets a block by name/symbol, if it doesn't already exist, creates and indexes a new block
@@ -193,7 +227,6 @@ fn on_block_delimitter(lexer: &mut Lexer<Keywords>) {
 
 fn on_add(lexer: &mut Lexer<Keywords>) {
     if let Some(next_line) = lexer.remainder().lines().next() {
-        println!("{}", next_line);
         let mut attr_parser = AttributeParser::default();
         attr_parser.set_id(lexer.extras.parsing.and_then(|p| Some(p.id())).unwrap_or(0));
         lexer.extras.last_add = attr_parser.parse(next_line.trim()).add();
@@ -224,9 +257,6 @@ fn on_define(lexer: &mut Lexer<Keywords>) {
                 .name;
             attr_parser.set_name(name);
         }
-        
-        eprintln!("{}", next_line);
-
         lexer.extras.last_define = attr_parser.parse(next_line.trim()).define();
         lexer.extras.parse_define();
         lexer.bump(next_line.len());
@@ -235,11 +265,13 @@ fn on_define(lexer: &mut Lexer<Keywords>) {
 
 #[test]
 fn test_parser() {
+    use atlier::system::Value;
+
     let content = r#"
-    ``` call host
-    add address .text localhost
-    :: ipv6 .enable
-    :: path .text api/test
+    ``` call host 
+    add address .text localhost 
+    :: ipv6 .enable 
+    :: path .text api/test 
     ``` guest 
     + address .text localhost
     :: ipv4 .enable
@@ -248,8 +280,12 @@ fn test_parser() {
 
     ``` test host 
     add address .text localhost
+    ``` 
+
     ```
-    "#;
+    + debug .enable 
+    ```
+    "#; 
 
     let parser = Parser::new();
     let mut lexer = Keywords::lexer_with_extras(content, parser);
@@ -264,7 +300,34 @@ fn test_parser() {
     assert_eq!(lexer.next(), Some(Keywords::Define));
     assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
     eprintln!("{:#?}", lexer.extras.blocks);
+    
+    let mut parser = Parser::new().parse(content);
 
-    let parser = Parser::new().parse(content);
-    eprintln!("{:#?}", parser.blocks);
+    let address = parser
+        .get_block("call", "guest")
+        .map_transient("address");
+    
+    assert_eq!(
+        address.get("ipv4"), 
+        Some(&Value::Bool(true))
+    );
+
+    assert_eq!(
+        address.get("path"), 
+        Some(&Value::TextBuffer("api/test2".to_string()))
+    );
+
+    let guest = parser
+        .get_block("call", "guest")
+        .map_stable();
+    
+    assert_eq!(
+        guest.get("address"), 
+        Some(&Value::TextBuffer("localhost".to_string()))
+    );
+
+    assert_eq!(
+        parser.root().map_stable().get("debug"), 
+        Some(&Value::Bool(true))
+    );
 }
