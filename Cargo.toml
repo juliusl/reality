@@ -1,0 +1,13 @@
+[package]
+name = "reality"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+atlier = { version = "0.2.0", path = "../atlier" }
+base64 = "0.13.0"
+logos = "0.12.1"
+specs = "0.18.0"
+tracing = "0.1.36"
