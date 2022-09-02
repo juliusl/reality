@@ -1,20 +1,30 @@
-use std::collections::BTreeMap;
-
 use atlier::system::{Attribute, Value};
-use specs::Entity;
+use std::collections::BTreeMap;
+use specs::{Entity, Component};
+use specs::storage::DefaultVecStorage;
 
-/// A block from .runmd delimitted w/ ```
+use crate::wire::{BlobSource, ContentBroker};
+
+/// Data structure parsed from .runmd, 
+/// 
+/// Stores stable and transient attributes. Can be encoded into 
+/// a frame, which is a wire protocol type. 
 ///
-#[derive(Default, Debug)]
+#[derive(Component, Clone, Default, Debug)]
+#[storage(DefaultVecStorage)]
 pub struct Block {
+    /// World identifier - assigned by the runtime
     entity: u32,
-    name: String,
-    symbol: String,
+    /// Primary identifier - user/runtime assigned
+    name: String, 
+    /// Secondary identifier - user/runtime assigned 
+    symbol: String, 
+    /// Block state - current state of the block 
     attributes: Vec<Attribute>,
 }
 
 impl Block {
-    /// Creates a new block
+    /// Creates a new empty block
     ///
     pub fn new(entity: Entity, name: impl AsRef<str>, symbol: impl AsRef<str>) -> Self {
         Self {
@@ -25,12 +35,12 @@ impl Block {
         }
     }
 
-    /// Adds a new attribute to the block
-    ///
-    pub fn add_attribute(&mut self, attr: &Attribute) {
-        let mut attr = attr.clone();
-        attr.id = self.entity;
-        self.attributes.push(attr);
+    /// Returns true if the entity is 0, 
+    /// 
+    /// **Note** The root block must always be entity 0. 
+    /// 
+    pub fn is_root_block(&self) -> bool {
+        self.entity == 0
     }
 
     /// Returns the block name
@@ -43,6 +53,23 @@ impl Block {
     ///
     pub fn symbol(&self) -> &String {
         &self.symbol
+    }
+
+    /// Returns the entity id for the block
+    /// 
+    pub fn entity(&self) -> u32 {
+        self.entity
+    }
+
+    /// Adds an attribute to the block, 
+    /// 
+    /// **Caveat** If an attribute already exists w/ the same 
+    /// name, the last attribute added will be used as the primary attribute. 
+    ///
+    pub fn add_attribute(&mut self, attr: &Attribute) {
+        let mut attr = attr.clone();
+        attr.id = self.entity;
+        self.attributes.push(attr);
     }
 
     /// Map transient values w/ prefix,
@@ -88,6 +115,48 @@ impl Block {
         map
     }
 
+    /// Map all control values,
+    /// 
+    /// Returns a map of transient values, 
+    /// where the `prefix` used is the current block `symbol`.
+    /// 
+    /// # Examples
+    /// 
+    /// If the special `::` symbol is used before any attributes are added
+    /// 
+    /// ```markdown
+    /// ```runmd call host 
+    /// :: address .symbol localhost
+    /// 
+    /// ```runmd
+    /// ```
+    /// 
+    /// If an attribute with the symbol name exists. 
+    /// ```markdown
+    /// ```runmd call host 
+    /// add host .empty 
+    /// :: address .symbol localhost
+    /// 
+    /// ```runmd
+    /// ```
+    /// 
+    /// In a control block defintion, 
+    /// 
+    /// ```markdown
+    /// ```runmd host
+    /// :: address .symbol localhost
+    /// 
+    /// ```runmd
+    /// ```
+    /// 
+    pub fn map_control(&self) -> Option<BTreeMap<String, Value>> {
+        if self.name.is_empty() && !self.symbol.is_empty() {
+            Some(self.map_transient(&self.symbol))
+        } else {
+            None 
+        }
+    }
+
     /// Returns an iterator over all attributes
     ///
     pub fn iter_attributes(&self) -> impl Iterator<Item = &Attribute> {
@@ -99,4 +168,39 @@ impl Block {
     pub fn iter_transient_values(&self) -> impl Iterator<Item = &(String, Value)> {
         self.attributes.iter().filter_map(|a| a.transient())
     }
+
+    /// Formats all stable binary attributes through a broker, 
+    /// 
+    /// Returns a new block w/ each attribute replaced by an attribute, in a 
+    /// "blob attribute format". 
+    /// 
+    /// # Blob attribute format 
+    /// 
+    /// Attribute { 
+    ///     id: <entity-id>, 
+    ///     name: "<blob-name>", 
+    ///     value: Value::Symbol("<address>"), 
+    ///     transient: Some(( 
+    ///         "<blob-name>.blob", 
+    ///         Value::BinaryVector(vec![<blob-content>]) 
+    ///     )) 
+    /// } 
+    /// 
+    pub fn reformat<T>(&self, broker: impl ContentBroker<T>) -> (Block, T) 
+    where
+        T: BlobSource
+    { 
+        /* 
+        # Formatting Process 
+
+        1) Scan for binary attributes and construct intermediate source
+        2) Pass the source through the content broker, to create a new source
+        3) Format each attribute into content attribute format
+
+        
+
+        */ 
+        
+        todo!() 
+    } 
 }

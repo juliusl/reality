@@ -8,6 +8,9 @@ edition = "2021"
 [dependencies]
 atlier = { version = "0.2.0", path = "../atlier" }
 base64 = "0.13.0"
+bytemuck = "1.12.1"
 logos = "0.12.1"
-specs = "0.18.0"
+sha2 = "0.10.2"
+specs = { version = "0.18.0", features = ["default", "derive", "shred-derive"] }
 tracing = "0.1.36"
+tracing-test = "0.2.3"
