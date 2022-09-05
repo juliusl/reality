@@ -1,11 +1,7 @@
 use super::{frame::Frame, BlobDevice, Interner};
 use crate::Block;
 use atlier::system::Value;
-use std::{
-    collections::{BTreeMap, HashMap},
-    io::Cursor,
-    ops::Range,
-};
+use std::{collections::BTreeMap, io::Cursor, ops::Range};
 
 /// Encoder for encoding blocks to wire protocol for transport,
 ///
@@ -14,7 +10,7 @@ use std::{
 pub struct Encoder {
     /// String interner for storing identifiers
     ///
-    interner: HashMap<u64, String>,
+    interner: Interner,
     /// Cursor to a blob device for writing/reading extent data types
     ///
     blob_device: Cursor<Vec<u8>>,
@@ -44,7 +40,7 @@ impl Encoder {
     ///
     pub fn new_with(blob_device: impl Into<Cursor<Vec<u8>>>) -> Self {
         Self {
-            interner: HashMap::new(),
+            interner: Interner::default(),
             blob_device: blob_device.into(),
             frames: vec![],
             block_index: BTreeMap::new(),
@@ -60,25 +56,23 @@ impl Encoder {
     /// Returns an interner using the current interned identifiers
     ///
     pub fn interner(&self) -> Interner {
-        Interner {
-            strings: self.interner.clone(),
-        }
+        self.interner.clone()
     }
 
-    /// Returns an iterator over frames 
+    /// Returns an iterator over frames
     ///
     pub fn iter_frames(&self) -> impl Iterator<Item = &Frame> {
         self.frames.iter()
     }
 
-    /// Returns a slice of frames 
-    /// 
+    /// Returns a slice of frames
+    ///
     pub fn frames_slice(&self) -> &[Frame] {
         &self.frames
     }
 
     /// Returns the block index
-    /// 
+    ///
     pub fn block_index(&self) -> &BTreeMap<String, Range<usize>> {
         &self.block_index
     }
@@ -98,16 +92,21 @@ impl Encoder {
                     .name()
                     .split_once("::")
                     .expect("expect transient name format");
-                
+
                 idents.push(name.to_string());
                 idents.push(symbol.to_string());
-            
+
                 &attr.transient().expect("transient should exist").1
             };
 
             match val {
                 Value::Symbol(ident) => {
                     idents.push(ident.to_string());
+                }
+                Value::Complex(_) => {
+                    if let (Value::Reference(key), Value::Complex(idents)) = (val.to_ref(), val) {
+                        self.interner.add_complex(key, idents);
+                    }
                 }
                 _ => {}
             }
@@ -153,7 +152,7 @@ impl Encoder {
             .map(|i| Value::Symbol(i.to_string()))
             .for_each(|s| {
                 if let (Value::Reference(key), Value::Symbol(symbol)) = (s.to_ref(), s) {
-                    self.interner.insert(key, symbol.to_string());
+                    self.interner.add_string(key, symbol.to_string());
                 } else {
                     unreachable!()
                 }

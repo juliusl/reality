@@ -1,11 +1,16 @@
-use std::{collections::HashMap, io::{Cursor, Write, Read}, ops::Range, fmt::Display};
+use super::{Data, Interner};
 use crate::parser::{Attributes, Elements, Keywords};
-use specs::{Entity};
-use tracing::{event, Level};
 use atlier::system::Value;
 use bytemuck::cast;
 use logos::Logos;
-use super::{Data, Interner};
+use specs::Entity;
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    io::{Cursor, Read, Write},
+    ops::Range,
+};
+use tracing::{event, Level};
 
 mod frame_device;
 pub use frame_device::FrameDevice;
@@ -49,33 +54,33 @@ pub use frame_bus::FrameBus;
 ///
 /// Layout: Byte, Chunk, Chunk, Byte, Chunk
 /// Frame size: 50 bytes
-/// 
+///
 /// **Note** Above illustrates the difference between .symbol and .text
 ///
 /// ## Example control frame - `0x00 helloworld`
 ///
-/// Up to this point, the examples above have been block operations. The other 
-/// type of operation are control instructions. For example, 
-/// 
-/// The segment from the title means to intern the string "helloworld", 
-/// 
-/// The frames for this would be, 
-/// 
+/// Up to this point, the examples above have been block operations. The other
+/// type of operation are control instructions. For example,
+///
+/// The segment from the title means to intern the string "helloworld",
+///
+/// The frames for this would be,
+///
 /// 1: 0x00 helloworld
 /// 2: 0x01 0x0B 0x00
-/// 
-/// Each 0x00 instruction is a 63-byte chunk of control data, 
-/// 
+///
+/// Each 0x00 instruction is a 63-byte chunk of control data,
+///
 /// Instructions 0x01-0x04 specify how to read from the control blob,
-/// Each class must be processed completely, before the next class can be processed. 
-/// 
-/// The above example is a single string, and a single class 1 instruction. Class 1, 
+/// Each class must be processed completely, before the next class can be processed.
+///
+/// The above example is a single string, and a single class 1 instruction. Class 1,
 /// means at most a 0xFF read can be made against control data. If 0x00 is encountered, this
-/// ends that class, and the next class is processed. 
-/// 
-/// As the above example implies, control frames cannot be compiled until there is 
-/// control data. 
-/// 
+/// ends that class, and the next class is processed.
+///
+/// As the above example implies, control frames cannot be compiled until there is
+/// control data.
+///
 #[derive(Debug, Clone)]
 pub struct Frame {
     data: [u8; 64],
@@ -87,20 +92,20 @@ impl Display for Frame {
             Keywords::Add => {
                 // add chunk attribute(type chunk)
                 let _attr = self.attribute().expect("should have attribute");
-            },
+            }
             Keywords::BlockDelimitter => {
                 // start chunk chunk
-            },
+            }
             Keywords::Comment => {
-                // # comment 
-            },
+                // # comment
+            }
             Keywords::Define => {
                 // define chunk chunk attribute(type chunk)
                 let _attr = self.attribute().expect("should have attribute");
-            },
+            }
             Keywords::Error => {
-                // error todo 
-            },
+                // error todo
+            }
         }
 
         write!(f, "{}", self.data[0])
@@ -108,13 +113,13 @@ impl Display for Frame {
 }
 
 impl Frame {
-    /// Returns a new instruction frame 
-    /// 
+    /// Returns a new instruction frame
+    ///
     pub fn instruction(op: u8, argument: &[u8; 63]) -> Self {
         let mut data = [0; 64];
         data[0] = op;
         data[1..].copy_from_slice(argument);
-        Self { data  }
+        Self { data }
     }
 
     /// Returns a new frame for the block delimitter keyword in normal block mode
@@ -269,7 +274,7 @@ impl Frame {
     }
 
     /// Returns the length in bytes of the frame
-    /// 
+    ///
     pub fn len(&self) -> usize {
         self.data.len()
     }
@@ -312,16 +317,12 @@ impl Frame {
         interner_data.get(&data[0]).map(|s| s.to_string())
     }
 
-    /// Reads the current value from the frame, 
-    /// 
-    /// If the value is not inlined, then data must be read from 
+    /// Reads the current value from the frame,
+    ///
+    /// If the value is not inlined, then data must be read from
     /// either the interner data, or a cursor representing a blob device.
-    /// 
-    pub fn read_value(
-        &self, 
-        interner_data: &HashMap<u64, String>,
-        blob_device: &Cursor<Vec<u8>>) -> Option<Value> 
-    {
+    ///
+    pub fn read_value(&self, interner: &Interner, blob_device: &Cursor<Vec<u8>>) -> Option<Value> {
         let mut blob_device = blob_device.clone();
         let value_offset = match self.keyword() {
             Keywords::Add => 18,
@@ -334,7 +335,7 @@ impl Frame {
         match self.attribute() {
             Some(value_type) => {
                 let data = &self.data[value_offset..];
-                        
+
                 match value_type {
                     Attributes::Empty => Some(Value::Empty),
                     Attributes::Bool => {
@@ -346,112 +347,110 @@ impl Frame {
                     }
                     Attributes::Int => {
                         let mut buffer = [0; 16];
-                        buffer.copy_from_slice(&self.data[value_offset..value_offset+16]);
+                        buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
                         let [val, ..] = cast::<[u8; 16], [i32; 4]>(buffer);
 
                         Some(Value::Int(val))
                     }
-                    Attributes::IntPair  => {
+                    Attributes::IntPair => {
                         let mut buffer = [0; 16];
-                        buffer.copy_from_slice(&self.data[value_offset..value_offset+16]);
+                        buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
                         let [a, b, ..] = cast::<[u8; 16], [i32; 4]>(buffer);
-                        
+
                         Some(Value::IntPair(a, b))
                     }
                     Attributes::IntRange => {
                         let mut buffer = [0; 16];
-                        buffer.copy_from_slice(&self.data[value_offset..value_offset+16]);
+                        buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
                         let [a, b, c, ..] = cast::<[u8; 16], [i32; 4]>(buffer);
-                        
+
                         Some(Value::IntRange(a, b, c))
                     }
                     Attributes::Float => {
                         let mut buffer = [0; 16];
-                        buffer.copy_from_slice(&self.data[value_offset..value_offset+16]);
+                        buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
                         let [a, ..] = cast::<[u8; 16], [f32; 4]>(buffer);
-                        
+
                         Some(Value::Float(a))
                     }
                     Attributes::FloatPair => {
                         let mut buffer = [0; 16];
-                        buffer.copy_from_slice(&self.data[value_offset..value_offset+16]);
+                        buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
                         let [a, b, ..] = cast::<[u8; 16], [f32; 4]>(buffer);
-                        
+
                         Some(Value::FloatPair(a, b))
                     }
                     Attributes::FloatRange => {
                         let mut buffer = [0; 16];
-                        buffer.copy_from_slice(&self.data[value_offset..value_offset+16]);
+                        buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
                         let [a, b, c, ..] = cast::<[u8; 16], [f32; 4]>(buffer);
-                        
+
                         Some(Value::FloatRange(a, b, c))
-                    },
+                    }
                     Attributes::Symbol => {
                         let mut buffer = [0; 16];
-                        buffer.copy_from_slice(&self.data[value_offset..value_offset+16]);
+                        buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
                         let [key, ..] = cast::<[u8; 16], [u64; 2]>(buffer);
-                        
-                        interner_data.get(&key).map(|d| Value::Symbol(d.to_string()))
-                    },
+
+                        interner
+                            .as_ref()
+                            .get(&key)
+                            .map(|d| Value::Symbol(d.to_string()))
+                    }
                     Attributes::Text => {
                         let mut buffer = [0; 16];
-                        buffer.copy_from_slice(&self.data[value_offset..value_offset+16]);
-                        let [ len, cursor ] = cast::<[u8; 16], [u64; 2]>(buffer);
+                        buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
+                        let [len, cursor] = cast::<[u8; 16], [u64; 2]>(buffer);
 
                         blob_device.set_position(cursor);
 
                         let mut buf = vec![0; len as usize];
 
                         match blob_device.read_exact(&mut buf) {
-                            Ok(_) => {
-                                match String::from_utf8(buf) {
-                                    Ok(value) => {
-                                        Some(Value::TextBuffer(value))
-                                    },
-                                    Err(err) => {
-                                        event!(Level::ERROR, "could not parse utf8, {err}");        
-                                        None
-                                    },
+                            Ok(_) => match String::from_utf8(buf) {
+                                Ok(value) => Some(Value::TextBuffer(value)),
+                                Err(err) => {
+                                    event!(Level::ERROR, "could not parse utf8, {err}");
+                                    None
                                 }
                             },
                             Err(err) => {
                                 event!(Level::ERROR, "could not read from blob device, {err}");
                                 None
-                            },
+                            }
                         }
-                    },
+                    }
                     Attributes::File | Attributes::Blob | Attributes::BinaryVector => {
                         let mut buffer = [0; 16];
-                        buffer.copy_from_slice(&self.data[value_offset..value_offset+16]);
-                        let [ len, cursor ] = cast::<[u8; 16], [u64; 2]>(buffer);
+                        buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
+                        let [len, cursor] = cast::<[u8; 16], [u64; 2]>(buffer);
                         blob_device.set_position(cursor);
 
                         let mut buf = vec![0; len as usize];
                         match blob_device.read_exact(&mut buf) {
-                            Ok(_) => {
-                                Some(Value::BinaryVector(buf.to_vec()))
-                            },
+                            Ok(_) => Some(Value::BinaryVector(buf.to_vec())),
                             Err(err) => {
                                 event!(Level::ERROR, "could not read from blob device, {err}");
                                 None
-                            },
+                            }
                         }
-                    },
-                    Attributes::Identifier |  Attributes::Error => {
+                    }
+                    Attributes::Identifier | Attributes::Error => {
                         panic!("frame does not have a valid value type")
-                    },
+                    }
+                    Attributes::Complex => {
+                        todo!()
+                    }
                 }
-            },
-            None => {
-                None
-            },
+            }
+            None => None,
         }
     }
 
-    /// Returns the frame, using an entity for parity bits, 
-    /// 
-    /// Only relevant for add/define frames, 
-    /// 
+    /// Returns the frame, using an entity for parity bits,
+    ///
+    /// Only relevant for add/define frames,
+    ///
     pub fn with_parity(&self, entity: Entity) -> Self {
         let mut clone = self.clone();
 
@@ -463,16 +462,16 @@ impl Frame {
         clone
     }
 
-    /// Returns the data portion of the frame 
-    /// 
+    /// Returns the data portion of the frame
+    ///
     pub fn data(&self) -> [u8; 63] {
         let mut buf = [0; 63];
         buf.copy_from_slice(&self.data[1..]);
         buf
     }
 
-    /// Returns the op byte 
-    /// 
+    /// Returns the op byte
+    ///
     pub fn op(&self) -> u8 {
         self.data[0]
     }
@@ -522,19 +521,19 @@ impl Default for FrameBuilder {
 
 impl FrameBuilder {
     /// Write value sets the current value the frame builder is adding,
-    /// 
+    ///
     fn write_value(
-        &mut self, 
+        &mut self,
         value: &Value,
-        blob: &mut Cursor<Vec<u8>>) -> Result<usize, std::io::Error> 
-    {
+        blob: &mut Cursor<Vec<u8>>,
+    ) -> Result<usize, std::io::Error> {
         self.value = Some(value.clone());
         self.write(value, Some(blob))
     }
 
     /// Writes data to the frame,
     ///
-    /// If okay returns the bytes written, otherwise returns an error.
+    /// If successful returns the bytes written, otherwise returns an error.
     ///
     fn write(
         &mut self,
@@ -569,11 +568,8 @@ impl FrameBuilder {
                     .write(&cast::<[u64; 2], [u8; 16]>([length, cursor])),
                 None => match (blob, self.value.as_ref()) {
                     (Some(blob), Some(value)) => {
-                        let data = Data::parse_blob(
-                            value.clone(), 
-                            blob
-                        ).expect("blob is parsed");
-                        
+                        let data = Data::parse_blob(value.clone(), blob).expect("blob is parsed");
+
                         self.write(data, None)
                     }
                     _ => self
@@ -581,6 +577,16 @@ impl FrameBuilder {
                         .write(&cast::<[u64; 2], [u8; 16]>([length, u64::MAX])),
                 },
             },
+            // Frame extents are contstructed from regular extents
+            // 
+            Data::FrameExtent {
+                start,
+                end,
+                cursor,
+                length,
+            } => self
+                .cursor
+                .write(&cast::<[u64; 4], [u8; 32]>([start, end, cursor, length])),
         }
     }
 }
@@ -608,7 +614,7 @@ fn test_frame() {
 #[test]
 fn test_frame_building() {
     let mut interner = HashMap::<u64, String>::new();
-    
+
     [
         "call", "count", "counter", "label", "triangle", "pair", "single",
     ]
@@ -622,7 +628,10 @@ fn test_frame_building() {
         }
     });
 
-    let interner = Interner { strings: interner };
+    let interner = Interner {
+        strings: interner,
+        complexes: HashMap::default(),
+    };
     let mut blob = Cursor::new(vec![]);
 
     let frame = Frame::start_block("call", "counter");
@@ -671,10 +680,8 @@ fn test_frame_building() {
     let world = <specs::World as specs::WorldExt>::new();
     specs::WorldExt::entities(&world).create();
     let parity_test = specs::WorldExt::entities(&world).create();
-
     let frame_with_parity = frame.with_parity(parity_test);
 
     eprintln!("{:#?}", frame_with_parity);
-
     Frame::end_block();
 }

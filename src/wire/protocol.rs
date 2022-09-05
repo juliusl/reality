@@ -93,7 +93,7 @@ impl Protocol {
                             .name(&interner)
                             .expect("frame must have a name to add attribute"),
                         frame
-                            .read_value(&interner.as_ref(), blob.cursor())
+                            .read_value(&interner, blob.cursor())
                             .expect("frame must have a value to add attribute"),
                     );
 
@@ -107,7 +107,7 @@ impl Protocol {
                         .symbol(&interner)
                         .expect("frame must have a symbol to define attribute");
                     let value = frame
-                        .read_value(interner.as_ref(), blob.cursor())
+                        .read_value(&interner, blob.cursor())
                         .expect("frame must have value to define attribute");
                 
                     let name = format!("{name}::{symbol}");
