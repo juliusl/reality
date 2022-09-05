@@ -1,7 +1,5 @@
 use logos::{Logos, Lexer};
 
-use super::Attributes;
-
 /// In .runmd, blocks are identified w/ a name/symbol pair,
 /// 
 /// # Background
@@ -27,7 +25,7 @@ use super::Attributes;
 pub enum Elements {
     /// Identifier string, this is either a name or symbol 
     ///
-    #[regex("[A-Za-z]+[A-Za-z-._:0-9]*", on_identifier)]
+    #[regex("[A-Za-z]+[A-Za-z-._:=/#0-9]*", on_identifier)]
     Identifier(String),
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.

@@ -1,4 +1,4 @@
-use std::{fmt::Display, path::PathBuf, str::FromStr};
+use std::{fmt::Display, path::PathBuf, str::FromStr, collections::BTreeSet};
 
 use atlier::system::{Attribute, Value};
 use logos::{Lexer, Logos};
@@ -88,7 +88,8 @@ impl AttributeParser {
                 self.stack.push(attr);
             }
             (Some(name), None, value, None) => {
-                self.stack.push(Attribute::new(self.id, name, value));
+                let attr = Attribute::new(self.id, name, value);
+                self.stack.push(attr);
             }
             _ => {}
         }
@@ -258,14 +259,20 @@ impl From<&'_ World> for AttributeParser {
 #[derive(Logos, Debug, PartialEq, Eq)]
 #[logos(extras = AttributeParser)]
 pub enum Attributes {
-    /// # Inline
+    /// # Inlined
     ///
     /// The max attribute value that is inlined is 3 x 32 bit values. To allow for future updates,
     /// this is extended to an assumed max space of 4 x 32 bit values, or 2 x 64 bit values.
     ///
     /// This aligns to [u8; 16]
     ///
-    /// empty element parses
+    /// Empty value attribute
+    /// 
+    /// # Special empty values 
+    /// 
+    /// .map - This indicates that this attribute carries no values,
+    ///        and only has map properties
+    /// 
     #[token(".empty", on_empty_attr)]
     #[token(".map", on_empty_attr)]
     Empty = 0x00,
@@ -329,15 +336,29 @@ pub enum Attributes {
     #[token(".bin", on_binary_vec_attr)]
     #[token(".base64", on_binary_vec_attr)]
     BinaryVector = 0x0B,
-    /// Blob device
+    /// Blob device address,
     ///
+    /// This is a complex attribute, where the value is a blob address. 
+    /// The parser will format a binary attribute w/ the blob address
+    /// as a map property.
+    /// 
     #[token(".blob", on_blob_attr)]
     Blob = 0x0C,
 
-    /// File content
+    /// File path,
+    /// 
+    /// This is a complex attribute where the value is a file path.
+    /// The parser will format a binary attribute w/ several filesystem
+    /// based properties.
     ///
     #[token(".file", on_file_attr)]
     File = 0x0D,
+
+    /// Complex type, 
+    /// 
+    /// This is used to filter mapped properties.
+    #[token(".complex", on_complex_attr)]
+    Complex = 0x0E,
 
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.
@@ -366,6 +387,7 @@ impl Display for Attributes {
             Attributes::Blob => write!(f, ".blob"),
             Attributes::Error => write!(f, ".error"),
             Attributes::File => write!(f, ".file"),
+            Attributes::Complex => write!(f, ".complex"),
         }
     }
 }
@@ -407,6 +429,7 @@ impl From<&Value> for Attributes {
                 unimplemented!("transforming value reference to Attributes is not supported")
             }
             Value::Symbol(_) => Attributes::Symbol,
+            Value::Complex(_) => Attributes::Complex,
         }
     }
 }
@@ -551,6 +574,13 @@ fn on_symbol_attr(lexer: &mut Lexer<Attributes>) {
 
 fn on_empty_attr(lexer: &mut Lexer<Attributes>) {
     lexer.extras.parse_value(Value::Empty);
+    lexer.bump(lexer.remainder().len());
+}
+
+fn on_complex_attr(lexer: &mut Lexer<Attributes>) {
+    let idents = from_comma_sep::<String>(lexer);
+    
+    lexer.extras.parse_value(Value::Complex(BTreeSet::from_iter(idents)));
     lexer.bump(lexer.remainder().len());
 }
 

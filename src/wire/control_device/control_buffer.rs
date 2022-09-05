@@ -1,3 +1,6 @@
+use std::{collections::{BTreeSet, HashMap, HashSet}, io::{Cursor, Write}};
+
+use atlier::system::Value;
 use bytemuck::cast;
 
 use crate::wire::Frame;
@@ -31,10 +34,16 @@ pub struct ControlBuffer {
     class_2: Vec<String>,
     class_3: Vec<String>,
     class_4: Vec<String>,
+    /// This is a mapping of idents that belong to a complex,
+    /// Since a ident can belong to multiple complexes,
+    /// the value of the map is a hashset with all groups the ident
+    /// belongs to
+    ///
+    complex_map: HashMap<String, HashSet<u64>>,
 }
 
 impl ControlBuffer {
-    /// Adds a string to the control device
+    /// Adds a string to the control buffer
     ///
     pub fn add_string(&'_ mut self, string: impl AsRef<str>) {
         match string.as_ref().len() {
@@ -53,36 +62,87 @@ impl ControlBuffer {
             _ => {}
         }
     }
+
+    /// Adds a complex to the control buffer
+    ///
+    pub fn add_complex(&'_ mut self, complex: &BTreeSet<String>) {
+        let complex = Value::Complex(complex.to_owned());
+
+        if let (Value::Reference(complex_key), Value::Complex(idents)) = (complex.to_ref(), complex)
+        {
+            // Need to associate the complex_key w/ the ident
+            for ident in idents.iter() {
+                if let Some(set) = self.complex_map.get_mut(ident) {
+                    set.insert(complex_key);
+                } else {
+                    let mut set = HashSet::new();
+                    set.insert(complex_key);
+
+                    self.complex_map.insert(ident.to_string(), set);
+                }
+
+                self.add_string(ident);
+            }
+        }
+    }
 }
 
 impl Into<Vec<Frame>> for ControlBuffer {
-    fn into(self) -> Vec<Frame> {
+    fn into(mut self) -> Vec<Frame> {
         let mut data_frames = vec![];
         let mut control_frames = vec![];
 
         let mut data = vec![];
 
         let mut class1_reads = vec![];
+        self.class_1.sort();
+        self.class_1.dedup();
+
         for s in self.class_1.iter() {
+            if let Some(complexes) = self.complex_map.get(s) {
+                let mut frames = complex(data.len(), complexes);    
+                control_frames.append(&mut frames);            
+            }
             let s = s.as_bytes();
             class1_reads.push(s.len() as u8);
             data.push(s);
         }
 
         let mut class2_reads = vec![];
+        self.class_2.sort();
+        self.class_2.dedup();
+
         for s in self.class_2.iter() {
+            if let Some(complexes) = self.complex_map.get(s) {
+                let mut frames = complex(data.len(), complexes);    
+                control_frames.append(&mut frames);            
+            }
             class2_reads.push(s.len() as u16);
             data.push(s.as_bytes());
         }
 
         let mut class3_reads = vec![];
+        self.class_3.sort();
+        self.class_3.dedup();
+
         for s in self.class_3.iter() {
+            if let Some(complexes) = self.complex_map.get(s) {
+                let mut frames = complex(data.len(), complexes);    
+                control_frames.append(&mut frames);            
+            }
             class3_reads.push(s.len() as u32);
             data.push(s.as_bytes());
         }
 
         let mut class4_reads = vec![];
+        self.class_4.sort();
+        self.class_4.dedup();
+
         for s in self.class_4.iter() {
+            if let Some(complexes) = self.complex_map.get(s) {
+                let mut frames = complex(data.len(), complexes);    
+                control_frames.append(&mut frames);            
+            }
             class4_reads.push(s.len() as u64);
             data.push(s.as_bytes());
         }
@@ -171,6 +231,73 @@ fn class_4(reads: [u64; 7]) -> Frame {
     Frame::instruction(0x04, &reads)
 }
 
+fn complex(index: usize, complexes: &HashSet<u64>) -> Vec<Frame> {
+    let mut frames = vec![];
+    
+    match complexes {
+        _ if complexes.len() == 6 => {
+            let mut data = Cursor::new([0; 63]);
+            data.write_all(&cast::<usize, [u8; 8]>(index)).expect("can write");
+            for c in complexes {
+                data.write_all(&cast::<u64, [u8; 8]>(*c)).expect("can write");
+            }
+            let frame = Frame::instruction(0xC6, data.get_ref());
+            frames.push(frame);
+        }
+        _ if complexes.len() == 5 => {
+            let mut data = Cursor::new([0; 63]);
+            data.write_all(&cast::<usize, [u8; 8]>(index)).expect("can write");
+            for c in complexes {
+                data.write_all(&cast::<u64, [u8; 8]>(*c)).expect("can write");
+            }
+            let frame = Frame::instruction(0xC5, data.get_ref());
+            frames.push(frame);
+        }
+        _ if complexes.len() == 4 => {
+            let mut data = Cursor::new([0; 63]);
+            data.write_all(&cast::<usize, [u8; 8]>(index)).expect("can write");
+            for c in complexes {
+                data.write_all(&cast::<u64, [u8; 8]>(*c)).expect("can write");
+            }
+            let frame = Frame::instruction(0xC4, data.get_ref());
+            frames.push(frame);
+        }
+        _ if complexes.len() == 3 => {
+            let mut data = Cursor::new([0; 63]);
+            data.write_all(&cast::<usize, [u8; 8]>(index)).expect("can write");
+            for c in complexes {
+                data.write_all(&cast::<u64, [u8; 8]>(*c)).expect("can write");
+            }
+            let frame = Frame::instruction(0xC3, data.get_ref());
+            frames.push(frame);
+        }
+        _ if complexes.len() == 2 => {
+            let mut data = Cursor::new([0; 63]);
+            data.write_all(&cast::<usize, [u8; 8]>(index)).expect("can write");
+            for c in complexes {
+                data.write_all(&cast::<u64, [u8; 8]>(*c)).expect("can write");
+            }
+            let frame = Frame::instruction(0xC2, data.get_ref());
+            frames.push(frame);
+        }
+        _ if complexes.len() == 1 => {
+            let mut data = Cursor::new([0; 63]);
+            data.write_all(&cast::<usize, [u8; 8]>(index)).expect("can write");
+            for c in complexes {
+                data.write_all(&cast::<u64, [u8; 8]>(*c)).expect("can write");
+            }
+            let frame = Frame::instruction(0xC1, data.get_ref());
+            frames.push(frame);
+        }
+        _ => {
+            // TODO - Need to write multiple frames
+            todo!("Not implemented yet");
+        }
+    }
+
+    frames
+}
+
 #[test]
 #[tracing_test::traced_test]
 fn test_control_buffer() {
@@ -183,19 +310,19 @@ fn test_control_buffer() {
     control_device.add_string("remote");
     control_device.add_string("test");
 
+    control_device.add_complex(&BTreeSet::from_iter(vec![
+        "address".to_string(), 
+        "name".to_string(),
+        "description".to_string(),
+    ]));
+
     let frames: Vec<Frame> = control_device.into();
 
     let data_frame = frames.get(0).expect("data frame");
-    event!(
-        Level::TRACE, 
-        "{:x?}", 
-        data_frame
-    );
+    event!(Level::TRACE, "{:x?}", data_frame);
 
     let control_frame = frames.get(1).expect("control frame");
-    event!(
-        Level::TRACE, 
-        "{:x?}", 
-        control_frame
-    );
+    event!(Level::TRACE, "{:x?}", control_frame);
+
+    event!(Level::TRACE, "{:#x?}", frames);
 }

@@ -115,12 +115,14 @@ impl Parser {
                     );
                 }
                 Err(err) => {
-                    event!(Level::ERROR, 
-                        "Could not commit block {} {} @ {:?}\n\t{err}", 
+                    event!(
+                        Level::ERROR,
+                        "Could not commit block {} {} @ {:?}\n\t{err}",
                         block.name(),
                         block.symbol(),
-                        entity)
-                },
+                        entity
+                    )
+                }
             }
         }
 
@@ -240,7 +242,7 @@ fn test_parser() {
     ``` 
 
     ```
-    + debug .enable  
+    + debug         .enable  
     + test          .map    Everything after this is ignored when parsed 
     :: name         .text   Test map 
     :: description  .text   This tests the .map type, which is an alias for .empty 
@@ -336,7 +338,9 @@ fn test_parser() {
     // Tests .map alias
     assert_eq!(
         parser.root().map_transient("test").get("name"),
-        Some(&Value::TextBuffer("Test map".to_string()))
+        Some(&Value::TextBuffer("Test map".to_string())),
+        "{:#?}",
+        parser.root()
     );
 
     let root_guest = parser.get_block("", "guest").map_stable();

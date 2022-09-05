@@ -45,12 +45,16 @@ pub enum Data {
     /// Data where a cursor to find the value, is transported w/ the frame.
     ///
     Extent { length: u64, cursor: Option<u64> },
+    /// Data where the value is contained within a range of frames. Once combined,
+    /// the value is retrieved like a normal extent. 
+    /// 
+    FrameExtent { start: u64, end: u64, cursor: u64, length: u64 }
 }
 
 impl Data {
     /// Parses a text buffer or binary vector value type, and writes to the blob
-    /// cursor, returns an extent to look up the value. 
-    /// 
+    /// cursor, returns an extent to look up the value.
+    ///
     pub fn parse_blob(value: Value, blob: &mut Cursor<Vec<u8>>) -> Option<Self> {
         match value {
             Value::TextBuffer(text) => {
@@ -58,30 +62,34 @@ impl Data {
                 match blob.write(text.as_bytes()) {
                     Ok(written) => {
                         assert_eq!(written, text.len());
-                        Some(Self::Extent { length: written as u64, cursor })
-                    },
+                        Some(Self::Extent {
+                            length: written as u64,
+                            cursor,
+                        })
+                    }
                     Err(err) => {
                         event!(Level::ERROR, "error writing to blob {err}");
                         None
-                    },
+                    }
                 }
-            },
+            }
             Value::BinaryVector(data) => {
                 let cursor = Some(blob.position());
                 match blob.write(&data) {
                     Ok(written) => {
                         assert_eq!(written, data.len());
-                        Some(Self::Extent { length: written as u64, cursor })
-                    },
+                        Some(Self::Extent {
+                            length: written as u64,
+                            cursor,
+                        })
+                    }
                     Err(err) => {
                         event!(Level::ERROR, "error writing to blob {err}");
                         None
-                    },
+                    }
                 }
-            },
-            _ => {
-                None 
-            }    
+            }
+            _ => None,
         }
     }
 }
@@ -111,7 +119,7 @@ impl From<Elements> for Data {
             Elements::Error => {
                 panic!("error is not encoded to frame")
             }
-            }
+        }
     }
 }
 
@@ -149,6 +157,13 @@ impl From<&Value> for Data {
             },
             Value::Reference(key) => Data::Interned { key: *key },
             Value::Symbol(_) => {
+                if let Value::Reference(key) = val.to_ref() {
+                    Data::Interned { key }
+                } else {
+                    unreachable!("to_ref() should never return anything but a Value::Reference")
+                }
+            }
+            Value::Complex(_) => {
                 if let Value::Reference(key) = val.to_ref() {
                     Data::Interned { key }
                 } else {
