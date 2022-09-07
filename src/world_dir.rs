@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use specs::{World, WorldExt};
 
 /// Struct for managing the directory .world/ 
 /// 
@@ -32,5 +33,13 @@ impl WorldDir {
     /// 
     pub fn exists(&self) -> bool {
         self.dir().as_ref().try_exists().unwrap_or(false)
+    }
+
+    /// Returns a World reading from data in the .world dir
+    /// 
+    pub fn world(&self) -> World {
+        let world = World::new();
+
+        world
     }
 }

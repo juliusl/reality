@@ -127,11 +127,11 @@ impl Frame {
     pub fn start_block(name: impl AsRef<str>, symbol: impl AsRef<str>) -> Self {
         let name = Elements::lexer(name.as_ref())
             .next()
-            .expect("should be valid identifier");
+            .unwrap_or(Elements::Identifier("".to_string()));
 
         let symbol = Elements::lexer(symbol.as_ref())
             .next()
-            .expect("should be a valid identifier");
+            .unwrap_or(Elements::Identifier("".to_string()));
 
         match (name, symbol) {
             (Elements::Identifier(name), Elements::Identifier(symbol)) => {

@@ -10,6 +10,7 @@ atlier = { version = "1.0.0", path = "../atlier" }
 base64 = "0.13.0"
 bytemuck = "1.12.1"
 logos = "0.12.1"
+serde = "1.0.144"
 sha2 = "0.10.2"
 specs = { version = "0.18.0", features = ["default", "derive", "shred-derive"] }
 tracing = "0.1.36"
