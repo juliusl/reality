@@ -42,6 +42,44 @@ pub struct ControlBuffer {
     complex_map: HashMap<String, HashSet<u64>>,
 }
 
+/// Control buffer operation codes
+/// 
+enum OpCodes {
+    /// Designates that the frame contains data only
+    /// 
+    Data = 0x00,
+    /// Designates that the frame contains class 1 reads
+    /// 
+    Class1 = 0x01,
+    /// Designates that the frame contains class 2 reads
+    /// 
+    Class2 = 0x02,
+    /// Designates that the frame contains class 3 reads
+    /// 
+    Class3 = 0x03,
+    /// Designates that the frame contains class 4 reads
+    /// 
+    Class4 = 0x04,
+    /// Designates that the frame links an interned string to 1 complex group
+    /// 
+    Complex1 = 0xC1,
+    /// Designates that the frame links an interned string to 2 complex groups
+    /// 
+    Complex2 = 0xC2,
+    /// Designates that the frame links an interned string to 3 complex groups
+    /// 
+    Complex3 = 0xC3,
+    /// Designates that the frame links an interned string to 4 complex groups
+    /// 
+    Complex4 = 0xC4,
+    /// Designates that the frame links an interned string to 5 complex groups
+    /// 
+    Complex5 = 0xC5,
+    /// Designates that the frame links an interned string to 6 complex groups
+    /// 
+    Complex6 = 0xC6,
+}
+
 impl ControlBuffer {
     /// Adds a string to the control buffer
     ///
@@ -103,9 +141,8 @@ impl Into<Vec<Frame>> for ControlBuffer {
                 let mut frames = complex(data.len(), complexes);    
                 control_frames.append(&mut frames);            
             }
-            let s = s.as_bytes();
             class1_reads.push(s.len() as u8);
-            data.push(s);
+            data.push(s.as_bytes());
         }
 
         let mut class2_reads = vec![];
@@ -290,7 +327,8 @@ fn complex(index: usize, complexes: &HashSet<u64>) -> Vec<Frame> {
             frames.push(frame);
         }
         _ => {
-            // TODO - Need to write multiple frames
+            // TODO - If an ident is a part of more than 6 complexes
+            // Then multiple frames must be created
             todo!("Not implemented yet");
         }
     }

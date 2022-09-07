@@ -18,21 +18,3 @@ pub trait Interpreter {
     /// 
     fn interpret_mut(&mut self, block: &Block);
 }
-
-mod test {
-    use crate::Interpreter;
-
-    struct Test();
-
-    impl Interpreter for Test {
-        type Output = ();
-
-        fn interpret_mut(&mut self, _block: &crate::Block) {
-            
-        }
-
-        fn interpret(&self, _block: &crate::Block) -> Option<Self::Output> {
-            Some(())
-        }
-    }
-}
