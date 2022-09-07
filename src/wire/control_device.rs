@@ -61,7 +61,13 @@ impl ControlDevice {
     /// Returns the size in bytes of the control device,
     ///
     pub fn size(&self) -> usize {
-        (self.data.len() + self.read.len()) * 64
+        self.len() * 64
+    }
+
+    /// Returns the length in frames,
+    /// 
+    pub fn len(&self) -> usize {
+        self.data.len() + self.read.len() + self.index.len()
     }
 
     /// Returns an iterator over data frames,

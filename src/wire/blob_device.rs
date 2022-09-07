@@ -78,6 +78,12 @@ impl BlobDevice {
     pub fn consume(self) -> Cursor<Vec<u8>> {
         self.into()
     }
+
+    /// Returns the length of the underlying vector
+    /// 
+    pub fn size(&self) -> usize {
+        self.cursor.get_ref().len()
+    }
 }
 
 impl AsMut<Cursor<Vec<u8>>> for BlobDevice {

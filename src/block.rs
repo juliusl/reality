@@ -2,13 +2,14 @@ use atlier::system::{Attribute, Value};
 use std::collections::BTreeMap;
 use specs::{Entity, Component};
 use specs::storage::DefaultVecStorage;
+use serde::{Serialize, Deserialize};
 
 /// Data structure parsed from .runmd, 
 /// 
 /// Stores stable and transient attributes. Can be encoded into 
 /// a frame, which is a wire protocol type. 
 ///
-#[derive(Component, Clone, Default, Debug)]
+#[derive(Component, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Clone, Default, Debug)]
 #[storage(DefaultVecStorage)]
 pub struct Block {
     /// World identifier - assigned by the runtime
@@ -115,37 +116,8 @@ impl Block {
 
     /// Map all control values,
     /// 
-    /// Returns a map of transient values, 
-    /// where the `prefix` used is the current block `symbol`.
-    /// 
-    /// # Examples
-    /// 
-    /// If the special `::` symbol is used before any attributes are added
-    /// 
-    /// ```markdown
-    /// ```runmd call host 
-    /// :: address .symbol localhost
-    /// 
-    /// ```runmd
-    /// ```
-    /// 
-    /// If an attribute with the symbol name exists. 
-    /// ```markdown
-    /// ```runmd call host 
-    /// add host .empty 
-    /// :: address .symbol localhost
-    /// 
-    /// ```runmd
-    /// ```
-    /// 
-    /// In a control block defintion, 
-    /// 
-    /// ```markdown
-    /// ```runmd host
-    /// :: address .symbol localhost
-    /// 
-    /// ```runmd
-    /// ```
+    /// If this is a control block (a block with only a symbol and no name), then
+    /// return the transient map using the block symbol as the prefix
     /// 
     pub fn map_control(&self) -> Option<BTreeMap<String, Value>> {
         if self.name.is_empty() && !self.symbol.is_empty() {
@@ -155,13 +127,13 @@ impl Block {
         }
     }
 
-    /// Returns an iterator over all attributes
+    /// Returns an iterator over all attributes,
     ///
     pub fn iter_attributes(&self) -> impl Iterator<Item = &Attribute> {
         self.attributes.iter()
     }
 
-    /// Returns an iterator over all transient values
+    /// Returns an iterator over all transient values,
     ///
     pub fn iter_transient_values(&self) -> impl Iterator<Item = &(String, Value)> {
         self.attributes.iter().filter_map(|a| a.transient())

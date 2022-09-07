@@ -1,11 +1,12 @@
 use super::{frame::Frame, BlobDevice, Interner};
-use crate::Block;
+use crate::{Block, wire::ControlDevice};
 use atlier::system::Value;
 use std::{collections::BTreeMap, io::Cursor, ops::Range};
 
 /// Encoder for encoding blocks to wire protocol for transport,
 ///
-/// When encoding is completed, the blob_device must be written as a single blob
+/// When encoding is completed, all blob data is collected into a single 
+/// cursor
 ///
 pub struct Encoder {
     /// String interner for storing identifiers
@@ -166,6 +167,7 @@ impl Encoder {
 #[test]
 #[tracing_test::traced_test]
 fn test_encoder() {
+    use tracing::{event, Level};
     let content = r#"
     ``` call host 
     add address .text localhost 
@@ -191,8 +193,11 @@ fn test_encoder() {
     let mut parser = crate::Parser::new().parse(content);
     let mut encoder = Encoder::new();
 
-    let guest = parser.get_block("call", "guest");
-    encoder.encode_block(guest);
+    encoder.encode_block(parser.get_block("call", "guest"));
+    encoder.encode_block(parser.get_block("call", "host"));
+    encoder.encode_block(parser.get_block("test", "host"));
+    encoder.encode_block(parser.get_block("", "guest"));
+    encoder.encode_block(parser.root());
 
     let value = encoder.frames[1]
         .read_value(&encoder.interner, &mut encoder.blob_device)
@@ -208,4 +213,13 @@ fn test_encoder() {
         .read_value(&encoder.interner, &mut encoder.blob_device)
         .expect("can read");
     assert_eq!(value, Value::TextBuffer("api/test2".to_string()));
+
+    let control_device = ControlDevice::new(encoder.interner.clone());
+    // This is the size in memory 
+    event!(Level::TRACE, "total memory size      : {} bytes", content.len());
+    // When a string is serialized, this should be the size of that message w/ utf8 encoding
+    event!(Level::TRACE, "total utf8 size        : {} bytes", content.chars().count() * 4);
+    event!(Level::TRACE, "control_dev size       : {} frames {} total bytes", control_device.len(), control_device.size());
+    event!(Level::TRACE, "encoded block size     : {} frames {} total bytes", &encoder.frames_slice().len(), &encoder.frames_slice().len() * 64);
+    event!(Level::TRACE, "total blob device size : {} bytes", &encoder.blob_device("").size());
 }
