@@ -104,8 +104,11 @@ impl Encoder {
                     idents.push(ident.to_string());
                 }
                 Value::Complex(_) => {
-                    if let (Value::Reference(key), Value::Complex(idents)) = (val.to_ref(), val) {
-                        self.interner.add_complex(key, idents);
+                    if let (
+                        Value::Reference(key), 
+                        Value::Complex(idents)
+                    ) = (val.to_ref(), val) {
+                        self.interner.insert_complex(key, idents);
                     }
                 }
                 _ => {}
@@ -152,7 +155,7 @@ impl Encoder {
             .map(|i| Value::Symbol(i.to_string()))
             .for_each(|s| {
                 if let (Value::Reference(key), Value::Symbol(symbol)) = (s.to_ref(), s) {
-                    self.interner.add_string(key, symbol.to_string());
+                    self.interner.insert_string(key, symbol.to_string());
                 } else {
                     unreachable!()
                 }

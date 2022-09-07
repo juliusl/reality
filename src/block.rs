@@ -3,8 +3,6 @@ use std::collections::BTreeMap;
 use specs::{Entity, Component};
 use specs::storage::DefaultVecStorage;
 
-use crate::wire::{BlobSource, ContentBroker};
-
 /// Data structure parsed from .runmd, 
 /// 
 /// Stores stable and transient attributes. Can be encoded into 
@@ -168,39 +166,4 @@ impl Block {
     pub fn iter_transient_values(&self) -> impl Iterator<Item = &(String, Value)> {
         self.attributes.iter().filter_map(|a| a.transient())
     }
-
-    /// Formats all stable binary attributes through a broker, 
-    /// 
-    /// Returns a new block w/ each attribute replaced by an attribute, in a 
-    /// "blob attribute format". 
-    /// 
-    /// # Blob attribute format 
-    /// 
-    /// Attribute { 
-    ///     id: <entity-id>, 
-    ///     name: "<blob-name>", 
-    ///     value: Value::Symbol("<address>"), 
-    ///     transient: Some(( 
-    ///         "<blob-name>.blob", 
-    ///         Value::BinaryVector(vec![<blob-content>]) 
-    ///     )) 
-    /// } 
-    /// 
-    pub fn reformat<T>(&self, broker: impl ContentBroker<T>) -> (Block, T) 
-    where
-        T: BlobSource
-    { 
-        /* 
-        # Formatting Process 
-
-        1) Scan for binary attributes and construct intermediate source
-        2) Pass the source through the content broker, to create a new source
-        3) Format each attribute into content attribute format
-
-        
-
-        */ 
-        
-        todo!() 
-    } 
 }

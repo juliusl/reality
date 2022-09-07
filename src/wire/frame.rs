@@ -115,9 +115,9 @@ impl Display for Frame {
 impl Frame {
     /// Returns a new instruction frame
     ///
-    pub fn instruction(op: u8, argument: &[u8; 63]) -> Self {
+    pub fn instruction(op: impl Into<u8>, argument: &[u8; 63]) -> Self {
         let mut data = [0; 64];
-        data[0] = op;
+        data[0] = op.into();
         data[1..].copy_from_slice(argument);
         Self { data }
     }
@@ -256,7 +256,7 @@ impl Frame {
     /// **Caveat** The value must exist in the interner.
     ///
     pub fn name(&self, interner_data: &Interner) -> Option<String> {
-        self.read_interned(1..17, &interner_data.strings)
+        self.read_interned(1..17, interner_data.strings())
     }
 
     /// Gets the symbol value from the frame,
@@ -264,7 +264,7 @@ impl Frame {
     /// **Caveat** The value must exist to the interner.
     ///
     pub fn symbol(&self, interner_data: &Interner) -> Option<String> {
-        self.read_interned(17..33, &interner_data.strings)
+        self.read_interned(17..33, interner_data.strings())
     }
 
     /// Reads the current value from the frame,
@@ -322,7 +322,11 @@ impl Frame {
     /// If the value is not inlined, then data must be read from
     /// either the interner data, or a cursor representing a blob device.
     ///
-    pub fn read_value(&self, interner: &Interner, blob_device: &Cursor<Vec<u8>>) -> Option<Value> {
+    pub fn read_value(
+        &self, 
+        interner: &Interner, 
+        blob_device: &Cursor<Vec<u8>>
+    ) -> Option<Value> {
         let mut blob_device = blob_device.clone();
         let value_offset = match self.keyword() {
             Keywords::Add => 18,
@@ -393,7 +397,7 @@ impl Frame {
                         let [key, ..] = cast::<[u8; 16], [u64; 2]>(buffer);
 
                         interner
-                            .as_ref()
+                            .strings()
                             .get(&key)
                             .map(|d| Value::Symbol(d.to_string()))
                     }
@@ -435,11 +439,18 @@ impl Frame {
                             }
                         }
                     }
+                    Attributes::Complex => {
+                        let mut buffer = [0; 16];
+                        buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
+                        let [key, ..] = cast::<[u8; 16], [u64; 2]>(buffer);
+
+                        interner
+                            .complexes()
+                            .get(&key)
+                            .map(|d| Value::Complex(d.clone()))
+                    }
                     Attributes::Identifier | Attributes::Error => {
                         panic!("frame does not have a valid value type")
-                    }
-                    Attributes::Complex => {
-                        todo!()
                     }
                 }
             }
@@ -474,6 +485,12 @@ impl Frame {
     ///
     pub fn op(&self) -> u8 {
         self.data[0]
+    }
+
+    /// Returns the underlying bytes
+    /// 
+    pub fn bytes(&self) -> &[u8; 64] {
+        &self.data
     }
 
     /// Creates a cursor w/ inner data
@@ -628,10 +645,8 @@ fn test_frame_building() {
         }
     });
 
-    let interner = Interner {
-        strings: interner,
-        complexes: HashMap::default(),
-    };
+    let interner = Interner::from(interner);
+
     let mut blob = Cursor::new(vec![]);
 
     let frame = Frame::start_block("call", "counter");
