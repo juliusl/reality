@@ -1,11 +1,20 @@
+use specs::{Component, World};
+
 use crate::Block;
 
 /// Trait to interpret blocks 
 /// 
-pub trait Interpreter { 
+pub trait Interpreter
+{ 
     /// Interpreter output 
     /// 
-    type Output;
+    type Output: Component;
+
+    /// Initializes the specs world,
+    /// 
+    /// Initialization could be registering component types, inserting resources, etc.
+    /// 
+    fn initialize(&self, world: &mut World);
 
     /// Returns a future after interpreting block, 
     /// 

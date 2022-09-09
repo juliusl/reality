@@ -1,4 +1,4 @@
-use super::{Frame, Interner};
+use super::{Frame, Interner, Encoder};
 use bytemuck::cast;
 use std::{
     collections::{BTreeSet, HashMap},
@@ -105,6 +105,12 @@ impl ControlDevice {
     }
 }
 
+impl From<&Encoder> for ControlDevice {
+    fn from(enc: &Encoder) -> Self {
+        Self::new(enc.interner())
+    }
+}
+
 /// Consumes the control device and creates an Interner
 ///
 /// TODO: Make this DRY
@@ -113,7 +119,6 @@ impl Into<Interner> for ControlDevice {
     fn into(self) -> Interner {
         let mut interner = Interner::default();
         let mut data = self.data();
-        let mut idents = vec![];
 
         for read in self.read_frames() {
             match read.op() {
@@ -128,7 +133,6 @@ impl Into<Interner> for ControlDevice {
                             data.read(&mut buf).expect("can read");
                             let ident = String::from_utf8(buf).expect("is a utf8 string");
                             interner.add_ident(&ident);
-                            idents.push(ident);
                         }
                     }
                 }
@@ -143,7 +147,6 @@ impl Into<Interner> for ControlDevice {
                             data.read_exact(&mut buf).expect("can read");
                             let ident = String::from_utf8(buf).expect("is a utf8 string");
                             interner.add_ident(&ident);
-                            idents.push(ident);
                         }
                     }
                 }
@@ -158,7 +161,6 @@ impl Into<Interner> for ControlDevice {
                             data.read_exact(&mut buf).expect("can read");
                             let ident = String::from_utf8(buf).expect("is a utf8 string");
                             interner.add_ident(&ident);
-                            idents.push(ident);
                         }
                     }
                 }
@@ -173,7 +175,6 @@ impl Into<Interner> for ControlDevice {
                             data.read_exact(&mut buf).expect("can read");
                             let ident = String::from_utf8(buf).expect("is a utf8 string");
                             interner.add_ident(&ident);
-                            idents.push(ident);
                         }
                     }
                 }
@@ -190,7 +191,7 @@ impl Into<Interner> for ControlDevice {
             ident.copy_from_slice(&data[..8]);
 
             let ident_key = cast::<[u8; 8], u64>(ident);
-            if let Some(ident) = idents.get(ident_key as usize) {
+            if let Some(ident) = interner.strings().get(&ident_key) {
                 match index.op() {
                     0xC1 => {
                         // ident belongs to 1 complex
@@ -479,11 +480,27 @@ fn test_device_conversion() {
     interner.add_ident("description");
     interner.add_ident("age");
     interner.add_ident("phone");
-    interner.add_map(vec!["name", "description", "age"]);
+    interner.add_ident("sha256:b94d27b9934d3e8a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9");
+    interner.add_map(vec!["name", "description", "age"]);    
+    interner.add_map(vec!["name", "description"]);
+    interner.add_map(vec!["name", "age"]);
+
 
     let control_device = ControlDevice::new(interner.clone());
-    event!(Level::TRACE, "{:x?}", control_device);
+
+    for frame in control_device.data_frames() {
+        event!(Level::TRACE, "{:#}", frame);
+    }
+
+    for frame in control_device.read_frames() {
+        event!(Level::TRACE, "{:#}", frame);
+    }
+
+    for frame in control_device.index_frames() {
+        event!(Level::TRACE, "{:#}", frame);
+    }
 
     let converted_interner: Interner = control_device.into();
     assert_eq!(interner, converted_interner);
+    event!(Level::TRACE, "{:#x?}", converted_interner);
 }

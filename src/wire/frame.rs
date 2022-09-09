@@ -88,27 +88,25 @@ pub struct Frame {
 
 impl Display for Frame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.keyword() {
-            Keywords::Add => {
-                // add chunk attribute(type chunk)
-                let _attr = self.attribute().expect("should have attribute");
+        if f.alternate() {
+            write!(f, "{:02x}", self.op())?;
+            
+            if let Some(attr) = self.attribute() {
+                write!(f, " {} {:016x} {:016x} ", attr, self.name_key(), self.symbol_key())?;
+                for b in self.value_bytes() {
+                    write!(f, "{:x}", b)?;
+                }
+                Ok(())
+            } else {
+                write!(f, " ")?;
+                for b in self.data().iter() {
+                    write!(f, "{:02x}", b)?;
+                }
+                Ok(())
             }
-            Keywords::BlockDelimitter => {
-                // start chunk chunk
-            }
-            Keywords::Comment => {
-                // # comment
-            }
-            Keywords::Define => {
-                // define chunk chunk attribute(type chunk)
-                let _attr = self.attribute().expect("should have attribute");
-            }
-            Keywords::Error => {
-                // error todo
-            }
+        } else {
+            write!(f, "{}", base64::encode(self.data))
         }
-
-        write!(f, "{}", self.data[0])
     }
 }
 
@@ -267,6 +265,26 @@ impl Frame {
         self.read_interned(17..33, interner_data.strings())
     }
 
+    /// Returns the name key,
+    /// 
+    pub fn name_key(&self) -> u64 {
+        let mut buffer = [0; 16];
+        buffer.copy_from_slice(&self.data[1..17]);
+
+        let data = cast::<[u8; 16], [u64; 2]>(buffer);
+        data[0]
+    }
+
+    /// Returns the symbol key,
+    /// 
+    pub fn symbol_key(&self) -> u64 {
+        let mut buffer = [0; 16];
+        buffer.copy_from_slice(&self.data[17..33]);
+
+        let data = cast::<[u8; 16], [u64; 2]>(buffer);
+        data[0]
+    }
+
     /// Reads the current value from the frame,
     ///
     pub fn keyword(&self) -> Keywords {
@@ -297,8 +315,23 @@ impl Frame {
                 Some(self.data[33].into())
             }
             _ => {
-                event!(Level::TRACE, "frame does not have an attribute value");
                 None
+            }
+        }
+    }
+
+    /// Get the value bytes,
+    /// 
+    pub fn value_bytes(&self) -> &[u8] {
+        match self.keyword() {
+            Keywords::Add => {
+                &self.data[18..]
+            }
+            Keywords::Define => {
+                &self.data[34..]
+            }
+            _ => {
+                &self.data[1..]
             }
         }
     }
@@ -661,6 +694,7 @@ fn test_frame_building() {
     assert_eq!(frame.name(&interner), Some("count".to_string()));
     assert_eq!(frame.symbol(&interner), None);
     assert_eq!(frame.attribute(), Some(Attributes::Text));
+    assert_eq!(frame.read_value(&interner, &blob), Some(Value::TextBuffer("hello world".to_string())));
 
     let frame = Frame::define(
         "count",
@@ -671,6 +705,7 @@ fn test_frame_building() {
     assert_eq!(frame.name(&interner), Some("count".to_string()));
     assert_eq!(frame.symbol(&interner), Some("label".to_string()));
     assert_eq!(frame.attribute(), Some(Attributes::Text));
+    assert_eq!(frame.read_value(&interner, &blob), Some(Value::TextBuffer("hello world".to_string())));
 
     let frame = Frame::define("count", "label", &Value::Empty, &mut blob);
     assert_eq!(frame.name(&interner), Some("count".to_string()));
@@ -697,6 +732,6 @@ fn test_frame_building() {
     let parity_test = specs::WorldExt::entities(&world).create();
     let frame_with_parity = frame.with_parity(parity_test);
 
-    eprintln!("{:#?}", frame_with_parity);
+    eprintln!("{}", frame_with_parity);
     Frame::end_block();
 }

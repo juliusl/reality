@@ -214,6 +214,10 @@ fn test_encoder() {
         .expect("can read");
     assert_eq!(value, Value::TextBuffer("api/test2".to_string()));
 
+    for f in encoder.frames_slice() {
+        event!(Level::TRACE, "{:#}", f);
+    }
+
     let control_device = ControlDevice::new(encoder.interner.clone());
     // This is the size in memory 
     event!(Level::TRACE, "total memory size      : {} bytes", content.len());
