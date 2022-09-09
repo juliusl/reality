@@ -3,8 +3,8 @@ mod frame;
 pub use frame::Frame;
 pub use frame::FrameDevice;
 
-mod encode;
-pub use encode::Encoder;
+mod encoder;
+pub use encoder::Encoder;
 
 mod data;
 pub use data::Data;
@@ -13,7 +13,6 @@ mod blob_device;
 pub use blob_device::BlobSource;
 pub use blob_device::BlobDevice;
 pub use blob_device::MemoryBlobSource;
-pub use blob_device::FileBlobSource;
 
 mod protocol;
 pub use protocol::Protocol;

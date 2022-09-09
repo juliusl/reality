@@ -4,6 +4,9 @@ use specs::{Entity, Component};
 use specs::storage::DefaultVecStorage;
 use serde::{Serialize, Deserialize};
 
+mod block_index;
+pub use block_index::BlockIndex;
+
 /// Data structure parsed from .runmd, 
 /// 
 /// Stores stable and transient attributes. Can be encoded into 
@@ -71,11 +74,21 @@ impl Block {
         self.attributes.push(attr);
     }
 
+    /// Returns a block index from a map of transient attributes,
+    /// 
+    pub fn block_index(&self, prefix: impl AsRef<str>) -> BlockIndex {
+        let property_map = self.map_transient(prefix);
+
+        BlockIndex::from(property_map)
+    }
+
     /// Map transient values w/ prefix,
     ///
     /// Returns a map where the key is the name of the attribute w/o the prefix
     /// and the transient value.
     ///
+    /// TODO: Need to handle multiple stable attribute copies,
+    /// 
     pub fn map_transient(&self, prefix: impl AsRef<str>) -> BTreeMap<String, Value> {
         let mut map = BTreeMap::new();
 
@@ -116,8 +129,10 @@ impl Block {
 
     /// Map all control values,
     /// 
-    /// If this is a control block (a block with only a symbol and no name), then
-    /// return the transient map using the block symbol as the prefix
+    /// Control values are transient attributes declared with the `::` operator, 
+    /// within a block context before any stable attribute is declared.
+    /// 
+    /// Mechanically this means the transient map w/ the block symbol as the prefix.
     /// 
     pub fn map_control(&self) -> Option<BTreeMap<String, Value>> {
         if self.name.is_empty() && !self.symbol.is_empty() {

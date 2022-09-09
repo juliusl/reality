@@ -80,6 +80,12 @@ enum OpCodes {
     Complex6 = 0xC6,
 }
 
+impl Into<u8> for OpCodes {
+    fn into(self) -> u8 {
+        self as u8
+    }
+}
+
 impl ControlBuffer {
     /// Adds a string to the control buffer
     ///
@@ -125,6 +131,14 @@ impl ControlBuffer {
     }
 }
 
+fn get_ref(string: impl AsRef<str>) -> u64 {
+    if let Value::Reference(r) = Value::Symbol(string.as_ref().to_string()).to_ref() {
+        r
+    } else {
+        unreachable!("")
+    }
+}
+
 impl Into<Vec<Frame>> for ControlBuffer {
     fn into(mut self) -> Vec<Frame> {
         let mut data_frames = vec![];
@@ -138,7 +152,7 @@ impl Into<Vec<Frame>> for ControlBuffer {
 
         for s in self.class_1.iter() {
             if let Some(complexes) = self.complex_map.get(s) {
-                let mut frames = complex(data.len(), complexes);    
+                let mut frames = complex(get_ref(s), complexes);    
                 control_frames.append(&mut frames);            
             }
             class1_reads.push(s.len() as u8);
@@ -151,7 +165,7 @@ impl Into<Vec<Frame>> for ControlBuffer {
 
         for s in self.class_2.iter() {
             if let Some(complexes) = self.complex_map.get(s) {
-                let mut frames = complex(data.len(), complexes);    
+                let mut frames = complex(get_ref(s), complexes);    
                 control_frames.append(&mut frames);            
             }
             class2_reads.push(s.len() as u16);
@@ -164,7 +178,7 @@ impl Into<Vec<Frame>> for ControlBuffer {
 
         for s in self.class_3.iter() {
             if let Some(complexes) = self.complex_map.get(s) {
-                let mut frames = complex(data.len(), complexes);    
+                let mut frames = complex(get_ref(s), complexes);    
                 control_frames.append(&mut frames);            
             }
             class3_reads.push(s.len() as u32);
@@ -177,7 +191,7 @@ impl Into<Vec<Frame>> for ControlBuffer {
 
         for s in self.class_4.iter() {
             if let Some(complexes) = self.complex_map.get(s) {
-                let mut frames = complex(data.len(), complexes);    
+                let mut frames = complex(get_ref(s), complexes);    
                 control_frames.append(&mut frames);            
             }
             class4_reads.push(s.len() as u64);
@@ -190,7 +204,7 @@ impl Into<Vec<Frame>> for ControlBuffer {
         for c in data.chunks(63) {
             let mut slice = [0; 63];
             slice[..c.len()].copy_from_slice(c);
-            let data_frame = Frame::instruction(0x00, &slice);
+            let data_frame = Frame::instruction(OpCodes::Data, &slice);
             data_frames.push(data_frame);
         }
 
@@ -232,7 +246,7 @@ impl Into<Vec<Frame>> for ControlBuffer {
 }
 
 fn class_1(reads: [u8; 63]) -> Frame {
-    Frame::instruction(0x01, &reads)
+    Frame::instruction(OpCodes::Class1, &reads)
 }
 
 fn class_2(reads: [u16; 31]) -> Frame {
@@ -243,7 +257,7 @@ fn class_2(reads: [u16; 31]) -> Frame {
     let mut reads = [0; 63];
     reads.copy_from_slice(&data[1..]);
 
-    Frame::instruction(0x02, &reads)
+    Frame::instruction(OpCodes::Class2, &reads)
 }
 
 fn class_3(reads: [u32; 15]) -> Frame {
@@ -254,7 +268,7 @@ fn class_3(reads: [u32; 15]) -> Frame {
     let mut reads = [0; 63];
     reads.copy_from_slice(&data[1..]);
 
-    Frame::instruction(0x03, &reads)
+    Frame::instruction(OpCodes::Class3, &reads)
 }
 
 fn class_4(reads: [u64; 7]) -> Frame {
@@ -265,65 +279,65 @@ fn class_4(reads: [u64; 7]) -> Frame {
     let mut reads = [0; 63];
     reads.copy_from_slice(&data[1..]);
 
-    Frame::instruction(0x04, &reads)
+    Frame::instruction(OpCodes::Class4, &reads)
 }
 
-fn complex(index: usize, complexes: &HashSet<u64>) -> Vec<Frame> {
+fn complex(index: u64, complexes: &HashSet<u64>) -> Vec<Frame> {
     let mut frames = vec![];
     
     match complexes {
         _ if complexes.len() == 6 => {
             let mut data = Cursor::new([0; 63]);
-            data.write_all(&cast::<usize, [u8; 8]>(index)).expect("can write");
+            data.write_all(&cast::<u64, [u8; 8]>(index)).expect("can write");
             for c in complexes {
                 data.write_all(&cast::<u64, [u8; 8]>(*c)).expect("can write");
             }
-            let frame = Frame::instruction(0xC6, data.get_ref());
+            let frame = Frame::instruction(OpCodes::Complex6, data.get_ref());
             frames.push(frame);
         }
         _ if complexes.len() == 5 => {
             let mut data = Cursor::new([0; 63]);
-            data.write_all(&cast::<usize, [u8; 8]>(index)).expect("can write");
+            data.write_all(&cast::<u64, [u8; 8]>(index)).expect("can write");
             for c in complexes {
                 data.write_all(&cast::<u64, [u8; 8]>(*c)).expect("can write");
             }
-            let frame = Frame::instruction(0xC5, data.get_ref());
+            let frame = Frame::instruction(OpCodes::Complex5, data.get_ref());
             frames.push(frame);
         }
         _ if complexes.len() == 4 => {
             let mut data = Cursor::new([0; 63]);
-            data.write_all(&cast::<usize, [u8; 8]>(index)).expect("can write");
+            data.write_all(&cast::<u64, [u8; 8]>(index)).expect("can write");
             for c in complexes {
                 data.write_all(&cast::<u64, [u8; 8]>(*c)).expect("can write");
             }
-            let frame = Frame::instruction(0xC4, data.get_ref());
+            let frame = Frame::instruction(OpCodes::Complex4, data.get_ref());
             frames.push(frame);
         }
         _ if complexes.len() == 3 => {
             let mut data = Cursor::new([0; 63]);
-            data.write_all(&cast::<usize, [u8; 8]>(index)).expect("can write");
+            data.write_all(&cast::<u64, [u8; 8]>(index)).expect("can write");
             for c in complexes {
                 data.write_all(&cast::<u64, [u8; 8]>(*c)).expect("can write");
             }
-            let frame = Frame::instruction(0xC3, data.get_ref());
+            let frame = Frame::instruction(OpCodes::Complex3, data.get_ref());
             frames.push(frame);
         }
         _ if complexes.len() == 2 => {
             let mut data = Cursor::new([0; 63]);
-            data.write_all(&cast::<usize, [u8; 8]>(index)).expect("can write");
+            data.write_all(&cast::<u64, [u8; 8]>(index)).expect("can write");
             for c in complexes {
                 data.write_all(&cast::<u64, [u8; 8]>(*c)).expect("can write");
             }
-            let frame = Frame::instruction(0xC2, data.get_ref());
+            let frame = Frame::instruction(OpCodes::Complex2, data.get_ref());
             frames.push(frame);
         }
         _ if complexes.len() == 1 => {
             let mut data = Cursor::new([0; 63]);
-            data.write_all(&cast::<usize, [u8; 8]>(index)).expect("can write");
+            data.write_all(&cast::<u64, [u8; 8]>(index)).expect("can write");
             for c in complexes {
                 data.write_all(&cast::<u64, [u8; 8]>(*c)).expect("can write");
             }
-            let frame = Frame::instruction(0xC1, data.get_ref());
+            let frame = Frame::instruction(OpCodes::Complex1, data.get_ref());
             frames.push(frame);
         }
         _ => {

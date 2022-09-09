@@ -69,15 +69,20 @@ impl ContentBroker for Sha256Digester {
 #[test]
 #[tracing_test::traced_test]
 fn test_sha256_digester() {
+    // Create a temp blob source
     let mut test = MemoryBlobSource::default();
 
+    // Add a blob to the temp source and write some data
     let test_value = test.new("test_value");
     test_value
         .as_mut()
         .write_all(b"hello world")
         .expect("can write");
 
+    // Reformat blobs in the temp source
     let digested_source = Sha256Digester().format(test);
+    
+    // Verify the resulting address that is created 
     for (a, _) in digested_source.hash_map() {
         assert_eq!("sha256:b94d27b9934d3e8a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9", a);
     }

@@ -3,9 +3,6 @@ use std::{io::Cursor, collections::HashMap};
 mod memory;
 pub use memory::MemoryBlobSource;
 
-mod file;
-pub use file::FileBlobSource;
-
 /// A blob source can create and find blob devices
 ///
 pub trait BlobSource {
