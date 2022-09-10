@@ -1,6 +1,6 @@
 mod custom;
-use custom::CustomAttribute;
-use custom::SpecialAttribute;
+pub use custom::CustomAttribute;
+pub use custom::SpecialAttribute;
 
 mod file;
 pub use file::FileDescriptor;
@@ -109,6 +109,13 @@ impl AttributeParser {
         let custom_attr = CustomAttribute::new::<C>();
         self.custom_attributes.insert(custom_attr.ident(), custom_attr);
         self
+    }
+
+    /// Adds a custom attribute parser,
+    ///
+    pub fn add_custom(&mut self, custom_attr: CustomAttribute)
+    {
+        self.custom_attributes.insert(custom_attr.ident(), custom_attr);
     }
 
     /// Returns the next attribute from the stack
