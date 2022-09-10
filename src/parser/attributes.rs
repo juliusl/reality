@@ -9,6 +9,7 @@ mod blob;
 pub use blob::BlobDescriptor;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::{collections::BTreeSet, fmt::Display, str::FromStr};
 
 use atlier::system::{Attribute, Value};
@@ -36,6 +37,8 @@ pub struct AttributeParser {
     stack: Vec<Attribute>,
     /// Custom attribute parsers
     custom_attributes: HashMap<String, CustomAttribute>,
+    /// Reference to world being edited
+    world: Option<Arc<World>>,
 }
 
 impl AttributeParser {
@@ -155,6 +158,18 @@ impl AttributeParser {
         self.edit = Some(value);
     }
 
+    /// Sets the current world being edited,
+    /// 
+    pub fn set_world(&mut self, world: Arc<World>) {
+        self.world = Some(world);
+    }
+
+    /// Returns an immutable reference to world,
+    /// 
+    pub fn world(&self) -> Option<&Arc<World>> {
+        self.world.as_ref()
+    }
+
     /// Defines a property for the current name,
     /// 
     /// Panics if a name is not set.
@@ -247,6 +262,7 @@ impl From<Attribute> for AttributeParser {
             edit,
             stack: vec![],
             custom_attributes: HashMap::default(),
+            world: None,
         }
     }
 }
