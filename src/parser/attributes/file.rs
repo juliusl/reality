@@ -45,46 +45,30 @@ impl SpecialAttribute for FileDescriptor {
         let path = PathBuf::from(content);
 
         // Map if the file exists
-        attr_parser.set_name(&name);
-        attr_parser.set_symbol("exists");
-        attr_parser.set_edit(Value::Bool(path.exists()));
-        attr_parser.set_value(Value::Empty);
-        attr_parser.parse_attribute();
-
+        attr_parser.define("exists", Value::Bool(path.exists()));
+        
         // Map file path parts
         match path.canonicalize() {
             Ok(path) => {
                 // Map the parent dir
                 if let Some(parent) = path.parent() {
-                    attr_parser.set_name(&name);
-                    attr_parser.set_symbol("parent");
-                    attr_parser.set_edit(Value::Symbol(
+                    attr_parser.define("parent", Value::Symbol(
                         parent.to_str().expect("is string").to_ascii_lowercase(),
                     ));
-                    attr_parser.set_value(Value::Empty);
-                    attr_parser.parse_attribute();
                 }
 
                 // Map the file extension
                 if let Some(extension) = path.extension() {
-                    attr_parser.set_name(&name);
-                    attr_parser.set_symbol("extension");
-                    attr_parser.set_edit(Value::Symbol(
+                    attr_parser.define("extension", Value::Symbol(
                         extension.to_str().expect("is string").to_ascii_lowercase(),
                     ));
-                    attr_parser.set_value(Value::Empty);
-                    attr_parser.parse_attribute();
                 }
 
                 // Map the file name
                 if let Some(filename) = path.file_name() {
-                    attr_parser.set_name(&name);
-                    attr_parser.set_symbol("filename");
-                    attr_parser.set_edit(Value::Symbol(
+                    attr_parser.define("filename", Value::Symbol(
                         filename.to_str().expect("is string").to_ascii_lowercase(),
                     ));
-                    attr_parser.set_value(Value::Empty);
-                    attr_parser.parse_attribute();
                 }
             }
             Err(err) => {
@@ -94,16 +78,12 @@ impl SpecialAttribute for FileDescriptor {
             }
         }
 
-        attr_parser.set_name(&name);
-        attr_parser.set_symbol("file");
-        attr_parser.set_edit(Value::Complex(BTreeSet::from_iter(vec![
+        attr_parser.define("file", Value::Complex(BTreeSet::from_iter(vec![
             "parent".to_string(),
             "extension".to_string(),
             "filename".to_string(),
             "exists".to_string(),
         ])));
-        attr_parser.set_value(Value::Empty);
-        attr_parser.parse_attribute();
 
         // Add the stable attribute w/ an empty vector
         attr_parser.set_name(name);
