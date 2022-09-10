@@ -1,5 +1,6 @@
 use specs::{Entity, World, WorldExt};
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 use tracing::{event, Level};
 
 use atlier::system::Attribute;
@@ -27,7 +28,7 @@ pub use elements::Elements;
 ///
 pub struct Parser {
     /// World storage
-    world: World,
+    world: Arc<World>,
     /// Root block
     root: Block,
     /// Reverse lookup entity from block name/symbol
@@ -51,15 +52,14 @@ impl AsRef<World> for Parser {
     }
 }
 
-impl AsMut<World> for Parser {
-    fn as_mut(&mut self) -> &mut World {
-        &mut self.world
-    }
-}
-
 impl Into<World> for Parser {
     fn into(self) -> World {
-        self.world
+        match Arc::try_unwrap(self.world) {
+            Ok(world) => world,
+            // If something is holding onto a reference, that would be a leak
+            // Safer to panic here and correct the code that is holding onto the reference
+            Err(_) => panic!("There should be no dangling references to world"),
+        }
     }
 }
 
@@ -71,11 +71,13 @@ impl Parser {
     /// The parser will create a new entity per block parsed.
     ///
     pub fn new() -> Self {
-        let world = World::new();
+        let mut world = World::new();
+        world.register::<Block>();
 
         // entity 0 is reserved for the root block
         world.entities().create();
-
+        
+        let world = Arc::new(world);
         Self {
             world,
             index: HashMap::new(),
@@ -107,19 +109,13 @@ impl Parser {
         self.as_ref()
     }
 
-    /// Returns a mut reference to the World
-    ///
-    pub fn world_mut(&mut self) -> &mut World {
-        self.as_mut()
-    }
-
     /// Consumes self and returns the current world,
     ///
     /// Writes all blocks from this parser to world before returning the world.
+    /// 
+    /// Panics if there are existing references to World
     ///
-    pub fn commit(mut self) -> World {
-        self.world.register::<Block>();
-
+    pub fn commit(self) -> World {
         for (entity, block) in self.blocks.iter() {
             match self
                 .world
@@ -198,6 +194,8 @@ impl Parser {
         let mut attr_parser = AttributeParser::default()
             .with_custom::<FileDescriptor>()
             .with_custom::<BlobDescriptor>();
+        
+        attr_parser.set_world(self.world.clone());
         
         for custom_attr in self.custom_attributes.iter().cloned() {
             event!(Level::TRACE, "Adding custom attr parser, {}", custom_attr.ident());
