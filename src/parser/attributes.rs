@@ -155,6 +155,21 @@ impl AttributeParser {
         self.edit = Some(value);
     }
 
+    /// Defines a property for the current name,
+    /// 
+    /// Panics if a name is not set.
+    /// 
+    pub fn define(&mut self, symbol: impl AsRef<str>, value: impl Into<Value>) {
+        let name = self.name.clone().expect("A name must be set, to use .define()");
+        self.set_symbol(symbol);
+        self.set_edit(value.into());
+        self.set_value(Value::Empty);
+        self.parse_attribute();
+
+        // parse_attribute will consume the name, so reset the name here
+        self.set_name(&name);
+    }
+
     /// Parses the current state into an attribute, pushes onto stack
     ///
     fn parse_attribute(&mut self) {
