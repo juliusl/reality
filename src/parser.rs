@@ -10,6 +10,8 @@ use crate::Block;
 mod attributes;
 pub use attributes::AttributeParser;
 pub use attributes::Attributes;
+pub use attributes::BlobDescriptor;
+pub use attributes::FileDescriptor;
 
 mod keywords;
 pub use keywords::Keywords;
@@ -174,7 +176,9 @@ impl Parser {
     /// to resolve `.blob` attributes
     ///
     pub fn attribute_parser(&self) -> AttributeParser {
-        let mut attr_parser = AttributeParser::default();
+        let mut attr_parser = AttributeParser::default()
+            .with_custom::<FileDescriptor>()
+            .with_custom::<BlobDescriptor>();
         attr_parser.set_id(self.parsing.and_then(|p| Some(p.id())).unwrap_or(0));
         attr_parser
     }

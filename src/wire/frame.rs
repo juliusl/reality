@@ -325,10 +325,10 @@ impl Frame {
     pub fn value_bytes(&self) -> &[u8] {
         match self.keyword() {
             Keywords::Add => {
-                &self.data[18..]
+                &self.data[18..34]
             }
             Keywords::Define => {
-                &self.data[34..]
+                &self.data[34..50]
             }
             _ => {
                 &self.data[1..]
@@ -457,7 +457,7 @@ impl Frame {
                             }
                         }
                     }
-                    Attributes::File | Attributes::Blob | Attributes::BinaryVector => {
+                    Attributes::BinaryVector => {
                         let mut buffer = [0; 16];
                         buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
                         let [len, cursor] = cast::<[u8; 16], [u64; 2]>(buffer);

@@ -34,6 +34,8 @@ pub enum Keywords {
     #[token("//")]
     #[token("``` md")]
     #[token("``` runmd")]
+    #[token("```md")]
+    #[token("```runmd")]
     Comment = 0x0C,
 
     /// Writes a transient attribute

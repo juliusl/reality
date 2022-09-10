@@ -116,6 +116,12 @@ impl From<Elements> for Data {
                     unreachable!("to_ref should always return a reference value")
                 }
             }
+            Elements::AttributeType(_) => {
+                // This element is mainly for parsing
+                // This is because the set of attributes encoded to
+                // the frame are limited to framing values from atlier
+                panic!("attribute type element is not encoded to frame")
+            },
             Elements::Error => {
                 panic!("error is not encoded to frame")
             }
