@@ -1,13 +1,26 @@
-use std::{fmt::Display, path::PathBuf, str::FromStr, collections::BTreeSet};
+mod custom;
+use custom::CustomAttribute;
+use custom::SpecialAttribute;
+
+mod file;
+pub use file::FileDescriptor;
+
+mod blob;
+pub use blob::BlobDescriptor;
+
+use std::collections::HashMap;
+use std::{collections::BTreeSet, fmt::Display, str::FromStr};
 
 use atlier::system::{Attribute, Value};
 use logos::{Lexer, Logos};
 use specs::{World, WorldExt};
 use tracing::{event, Level};
 
+use crate::parser::Elements;
+
 /// Parser for parsing attributes
 ///
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct AttributeParser {
     /// Entity id
     id: u32,
@@ -21,19 +34,81 @@ pub struct AttributeParser {
     edit: Option<Value>,
     /// Stack of attributes
     stack: Vec<Attribute>,
+    /// Custom attribute parsers
+    custom_attributes: HashMap<String, CustomAttribute>,
 }
 
 impl AttributeParser {
     /// Parses content, updating internal state
     ///
     pub fn parse(self, content: impl AsRef<str>) -> Self {
+        let custom_attributes = self.custom_attributes.clone();
+
         let mut lexer = Attributes::lexer_with_extras(content.as_ref(), self);
 
         while let Some(token) = lexer.next() {
-            event!(Level::TRACE, "parsed {:?}", token);
+            match token {
+                Attributes::Error => {
+                    let line = format!("{}{}", lexer.slice(), lexer.remainder());
+                    event!(
+                        Level::WARN,
+                        "Could not parse type, checking custom attribute parsers",
+                    );
+
+                    let mut elements_lexer = Elements::lexer(&line);
+                    match elements_lexer.next() {
+                        Some(element) => match element {
+                            Elements::AttributeType(custom_attr_type) => {
+                                match custom_attributes.get(&custom_attr_type) {
+                                    Some(custom_attr) => {
+                                        custom_attr.parse(
+                                            &mut lexer.extras, 
+                                            elements_lexer.remainder()
+                                        );
+                                        lexer.bump(lexer.remainder().len());
+                                    }
+                                    None => {
+                                        event!(
+                                            Level::ERROR, 
+                                            "Did not parse {custom_attr_type}, could not find custom attribute parser", 
+                                        );
+                                    }
+                                }
+                            }
+                            _ => {
+                                event!(
+                                    Level::ERROR,
+                                    "Did not parse {:?}, unexpected element",
+                                    element
+                                );
+                            }
+                        },
+                        None => {
+                            event!(
+                                Level::ERROR,
+                                "Did not parse attribute, no elements parsed",
+                            );
+                        }
+                    }
+                }
+                _ => {
+                    event!(Level::TRACE, "Parsed {:?}", token);
+                }
+            }
         }
 
         lexer.extras
+    }
+
+    /// Adds a custom attribute parser and returns self,
+    ///
+    pub fn with_custom<C>(mut self) -> Self 
+    where
+        C: SpecialAttribute
+    {
+        let custom_attr = CustomAttribute::new::<C>();
+        self.custom_attributes.insert(custom_attr.ident(), custom_attr);
+        self
     }
 
     /// Returns the next attribute from the stack
@@ -119,86 +194,6 @@ impl AttributeParser {
             self.set_symbol(symbol)
         }
     }
-
-    /// Parses a blob attribute  
-    ///
-    fn parse_blob(&mut self, address: impl AsRef<str>) {
-        let name = self.name.clone().expect("An identifier must exist");
-
-        // Map the blob address to an attribute
-        self.set_value(Value::Empty);
-        self.set_edit(Value::Symbol(address.as_ref().to_ascii_lowercase()));
-        self.set_symbol("blob");
-        self.parse_attribute();
-
-        // Add the stable attribute w/ an empty vector
-        self.set_name(name);
-        self.set_value(Value::BinaryVector(vec![]));
-        self.parse_attribute();
-    }
-
-    /// Parses a file path, and maps a snapshot of transient state,
-    ///
-    /// Does not read the contents of the file on disk, so that it can
-    /// be handled by a system.
-    ///
-    fn parse_file(&mut self, file_path: impl AsRef<str>) {
-        let name = self.name.clone().expect("An identifier must exist");
-
-        let path = PathBuf::from(file_path.as_ref());
-
-        // Map if the file exists
-        self.set_symbol("exists");
-        self.set_edit(Value::Bool(path.exists()));
-        self.set_value(Value::Empty);
-        self.parse_attribute();
-
-        // Map file path parts
-        match path.canonicalize() {
-            Ok(path) => {
-                // Map the parent dir
-                if let Some(parent) = path.parent() {
-                    self.set_name(&name);
-                    self.set_symbol("parent");
-                    self.set_edit(Value::Symbol(
-                        parent.to_str().expect("is string").to_ascii_lowercase(),
-                    ));
-                    self.set_value(Value::Empty);
-                    self.parse_attribute();
-                }
-
-                // Map the file extension
-                if let Some(extension) = path.extension() {
-                    self.set_name(&name);
-                    self.set_symbol("extension");
-                    self.set_edit(Value::Symbol(
-                        extension.to_str().expect("is string").to_ascii_lowercase(),
-                    ));
-                    self.set_value(Value::Empty);
-                    self.parse_attribute();
-                }
-
-                // Map the file name
-                if let Some(filename) = path.file_name() {
-                    self.set_name(&name);
-                    self.set_symbol("filename");
-                    self.set_edit(Value::Symbol(
-                        filename.to_str().expect("is string").to_ascii_lowercase(),
-                    ));
-                    self.set_value(Value::Empty);
-                    self.parse_attribute();
-                }
-            }
-            Err(err) => {
-                event!(Level::ERROR, "error {err}")
-            }
-        }
-
-        // Add the stable attribute w/ an empty vector
-        self.set_name(name);
-        self.set_value(Value::BinaryVector(vec![]));
-        self.parse_attribute();
-    }
 }
 
 /// Decompose an attribute into an attribute parser
@@ -229,11 +224,12 @@ impl From<Attribute> for AttributeParser {
             value,
             edit,
             stack: vec![],
+            custom_attributes: HashMap::default(),
         }
     }
 }
 
-/// Creates a new parser and entity from world, 
+/// Creates a new parser and entity from world,
 ///
 impl From<&'_ World> for AttributeParser {
     fn from(world: &'_ World) -> Self {
@@ -256,6 +252,15 @@ impl From<&'_ World> for AttributeParser {
 ///              as BLOB data. An extent is a data structure that can be used to locate
 ///              the actual data.
 ///
+/// # Formatting
+/// An attribute consists of,
+/// 1) 1-2 idents, (name, symbol),
+/// 2) attribute type (.<ident>)
+/// 3) attribute value
+///
+/// ex. name        .symbol attr_name
+/// ex. custom name .symbol attr_name
+///
 #[derive(Logos, Debug, PartialEq, Eq)]
 #[logos(extras = AttributeParser)]
 pub enum Attributes {
@@ -267,12 +272,12 @@ pub enum Attributes {
     /// This aligns to [u8; 16]
     ///
     /// Empty value attribute
-    /// 
-    /// # Special empty values 
-    /// 
+    ///
+    /// # Special empty values
+    ///
     /// .map - This indicates that this attribute carries no values,
     ///        and only has map properties
-    /// 
+    ///
     #[token(".empty", on_empty_attr)]
     #[token(".map", on_empty_attr)]
     Empty = 0x00,
@@ -307,8 +312,6 @@ pub enum Attributes {
     ///  
     /// Identifier string, that follows a strict format
     ///
-    /// // TODO -- add validation to `.ident`
-    ///
     #[regex("[A-Za-z]+[A-Za-z-;._:/@#+=$0-9]*", on_identifier)]
     #[regex(".ident", on_symbol_attr)]
     Identifier = 0x08,
@@ -336,29 +339,11 @@ pub enum Attributes {
     #[token(".bin", on_binary_vec_attr)]
     #[token(".base64", on_binary_vec_attr)]
     BinaryVector = 0x0B,
-    /// Blob device address,
+    /// Complex type,
     ///
-    /// This is a complex attribute, where the value is a blob address. 
-    /// The parser will format a binary attribute w/ the blob address
-    /// as a map property.
-    /// 
-    #[token(".blob", on_blob_attr)]
-    Blob = 0x0C,
-
-    /// File path,
-    /// 
-    /// This is a complex attribute where the value is a file path.
-    /// The parser will format a binary attribute w/ several filesystem
-    /// based properties.
-    ///
-    #[token(".file", on_file_attr)]
-    File = 0x0D,
-
-    /// Complex type, 
-    /// 
     /// This is used to filter mapped properties.
     #[token(".complex", on_complex_attr)]
-    Complex = 0x0E,
+    Complex = 0x0C,
 
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.
@@ -372,6 +357,7 @@ pub enum Attributes {
 impl Display for Attributes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            // These are
             Attributes::Empty => write!(f, ".empty"),
             Attributes::Bool => write!(f, ".bool"),
             Attributes::Int => write!(f, ".int"),
@@ -380,14 +366,13 @@ impl Display for Attributes {
             Attributes::Float => write!(f, ".float"),
             Attributes::FloatPair => write!(f, ".float_pair"),
             Attributes::FloatRange => write!(f, ".float_range"),
-            Attributes::Identifier => write!(f, ".ident"),
             Attributes::Symbol => write!(f, ".symbol"),
             Attributes::Text => write!(f, ".text"),
             Attributes::BinaryVector => write!(f, ".bin"),
-            Attributes::Blob => write!(f, ".blob"),
-            Attributes::Error => write!(f, ".error"),
-            Attributes::File => write!(f, ".file"),
             Attributes::Complex => write!(f, ".complex"),
+            // These are special attribute types
+            Attributes::Error => write!(f, ".error"),
+            Attributes::Identifier => write!(f, ".ident"),
         }
     }
 }
@@ -435,11 +420,7 @@ impl From<&Value> for Attributes {
 }
 
 fn on_identifier(lexer: &mut Lexer<Attributes>) {
-    let mut slice = lexer.slice();
-    if slice.starts_with('#') {
-        slice = &slice[1..];
-    }
-
+    let slice = lexer.slice();
     lexer.extras.parse_symbol(slice.to_string());
 }
 
@@ -551,18 +532,6 @@ fn on_binary_vec_attr(lexer: &mut Lexer<Attributes>) {
     lexer.bump(lexer.remainder().len());
 }
 
-fn on_blob_attr(lexer: &mut Lexer<Attributes>) {
-    let address = lexer.remainder().trim();
-    lexer.extras.parse_blob(address);
-    lexer.bump(lexer.remainder().len());
-}
-
-fn on_file_attr(lexer: &mut Lexer<Attributes>) {
-    let path = lexer.remainder().trim();
-    lexer.extras.parse_file(path);
-    lexer.bump(lexer.remainder().len());
-}
-
 fn on_symbol_attr(lexer: &mut Lexer<Attributes>) {
     let remaining = lexer.remainder().trim().to_string();
 
@@ -579,8 +548,10 @@ fn on_empty_attr(lexer: &mut Lexer<Attributes>) {
 
 fn on_complex_attr(lexer: &mut Lexer<Attributes>) {
     let idents = from_comma_sep::<String>(lexer);
-    
-    lexer.extras.parse_value(Value::Complex(BTreeSet::from_iter(idents)));
+
+    lexer
+        .extras
+        .parse_value(Value::Complex(BTreeSet::from_iter(idents)));
     lexer.bump(lexer.remainder().len());
 }
 
@@ -597,6 +568,7 @@ where
 }
 
 #[test]
+#[tracing_test::traced_test]
 fn test_attribute_parser() {
     // Test parsing add
     let parser = AttributeParser::default();
@@ -629,6 +601,7 @@ fn test_attribute_parser() {
 
     // Test parsing .file attribute
     let mut parser = AttributeParser::from(&world)
+        .with_custom::<FileDescriptor>()
         .parse("readme.md .file ./readme.md");
 
     let mut parsed = vec![];
@@ -637,13 +610,38 @@ fn test_attribute_parser() {
     }
     eprintln!("{:#?}", parsed);
 
-    // Test parsing .blob attribute 
+    // Test parsing .blob attribute
     let mut parser = AttributeParser::from(&world)
+        .with_custom::<BlobDescriptor>()
         .parse("readme.md .blob sha256:testdigest");
 
     let mut parsed = vec![];
     while let Some(attr) = parser.next() {
-        parsed.push(attr); 
-    } 
-    eprintln!("{:#?}", parsed); 
+        parsed.push(attr);
+    }
+    eprintln!("{:#?}", parsed);
+
+    let parser = AttributeParser::default();
+    parser.parse("custom .custom-attr test custom attr input");
+    assert!(logs_contain(
+        "Could not parse type, checking custom attribute parsers"
+    ));
+
+    let mut parser = AttributeParser::default()
+        .with_custom::<TestCustomAttr>()
+        .parse("custom .custom-attr test custom attr input");
+
+    assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Empty)));
+}
+
+struct TestCustomAttr();
+
+impl SpecialAttribute for TestCustomAttr {
+    fn ident() -> &'static str {
+        "custom-attr"
+    }
+
+    fn parse(parser: &mut AttributeParser, _: String) {
+        parser.set_value(Value::Empty);
+    }
 }
