@@ -12,6 +12,8 @@ pub use attributes::AttributeParser;
 pub use attributes::Attributes;
 pub use attributes::BlobDescriptor;
 pub use attributes::FileDescriptor;
+pub use attributes::CustomAttribute;
+pub use attributes::SpecialAttribute;
 
 mod keywords;
 pub use keywords::Keywords;
@@ -38,6 +40,9 @@ pub struct Parser {
     last_add: Option<Attribute>,
     /// The last `define` keyword parsed
     last_define: Option<Attribute>,
+    /// Vector of custom attribute parsers to add to the default,
+    /// attribute parser
+    custom_attributes: Vec<CustomAttribute>,
 }
 
 impl AsRef<World> for Parser {
@@ -79,7 +84,21 @@ impl Parser {
             parsing: None,
             last_add: None,
             last_define: None,
+            custom_attributes: vec![],
         }
+    }
+
+    /// Includes a special attribute with this parser,
+    /// 
+    /// Caveat - If multiple special attribute types share the same identifier,
+    /// the last one added will be used. 
+    /// 
+    pub fn with_special_attr<S>(mut self) -> Self 
+    where
+        S: SpecialAttribute
+    {
+        self.custom_attributes.push(CustomAttribute::new::<S>());
+        self
     }
 
     /// Returns an immutable ref to the World
@@ -179,6 +198,12 @@ impl Parser {
         let mut attr_parser = AttributeParser::default()
             .with_custom::<FileDescriptor>()
             .with_custom::<BlobDescriptor>();
+        
+        for custom_attr in self.custom_attributes.iter().cloned() {
+            event!(Level::TRACE, "Adding custom attr parser, {}", custom_attr.ident());
+            attr_parser.add_custom(custom_attr);
+        }
+        
         attr_parser.set_id(self.parsing.and_then(|p| Some(p.id())).unwrap_or(0));
         attr_parser
     }
