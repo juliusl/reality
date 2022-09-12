@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::WorldDir;
 
 use super::FrameDevice;
@@ -22,5 +24,17 @@ impl FrameBus {
             devices: vec![],
             world_dir
         }
+    }
+
+    /// Commits all devices and returns the path to the stored frames
+    /// 
+    pub fn commit(&self) -> impl AsRef<Path>{
+        /*
+        Enumerate frame devices and write to disk
+        */
+        for (idx, dev) in self.devices.iter().enumerate() {
+
+        }
+        self.world_dir.dir()
     }
 }

@@ -1,23 +1,15 @@
-use crate::{wire::{Encoder, ControlDevice}, WorldDir};
+use crate::{wire::FrameBus, WorldDir};
 
 /// Extension api's for saving data to the world dir
 ///
 pub trait Save {
-    /// Saves an encoder to the world directory,
+    /// Starts a new frame bus for saving frames,
     /// 
-    fn save_encoder(&self, encoder: Encoder);
+    fn save_frames(&self) -> FrameBus;
 }
 
 impl Save for WorldDir {
-    fn save_encoder(&self, encoder: Encoder) {
-        // Create control device 
-        let control = ControlDevice::from(&encoder);
-
-        for frame in encoder.iter_frames() {
-        }
-        
-
-
-        todo!()
+    fn save_frames(&self) -> FrameBus {
+        FrameBus::new(self.clone())
     }
 }
