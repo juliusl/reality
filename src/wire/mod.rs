@@ -2,6 +2,7 @@
 mod frame;
 pub use frame::Frame;
 pub use frame::FrameDevice;
+pub use frame::FrameBus;
 
 mod encoder;
 pub use encoder::Encoder;
