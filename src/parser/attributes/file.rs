@@ -41,6 +41,8 @@ impl SpecialAttribute for FileDescriptor {
     /// be handled by a system.
     ///
     fn parse(attr_parser: &mut AttributeParser, content: String) {
+        assert!(attr_parser.symbol.is_none(), "Can only be used when adding a stable attribute");
+
         let name = attr_parser.name.clone().expect("has name").to_string();
         let path = PathBuf::from(content);
 
@@ -99,11 +101,11 @@ impl Interpreter for FileDescriptor {
         world.register::<Self>();
     }
 
-    fn interpret(&self, block: &crate::Block) -> Option<Self::Output> {
+    fn interpret(&self, _block: &crate::Block) -> Option<Self::Output> {
         todo!()
     }
 
-    fn interpret_mut(&mut self, block: &crate::Block) {
+    fn interpret_mut(&mut self, _block: &crate::Block) {
         todo!()
     }
 }

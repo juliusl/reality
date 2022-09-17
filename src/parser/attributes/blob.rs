@@ -63,11 +63,11 @@ impl Interpreter for BlobDescriptor {
         world.register::<Self>();
     }
 
-    fn interpret(&self, block: &crate::Block) -> Option<Self::Output> {
+    fn interpret(&self, _block: &crate::Block) -> Option<Self::Output> {
         todo!()
     }
 
-    fn interpret_mut(&mut self, block: &crate::Block) {
+    fn interpret_mut(&mut self, _block: &crate::Block) {
         todo!()
     }
 }

@@ -42,12 +42,17 @@ pub struct AttributeParser {
 }
 
 impl AttributeParser {
+    pub fn init(mut self, content: impl AsRef<str>) -> Self {
+        self.parse(content);
+        self
+    }
+
     /// Parses content, updating internal state
     ///
-    pub fn parse(self, content: impl AsRef<str>) -> Self {
+    pub fn parse(&mut self, content: impl AsRef<str>) -> &mut Self {
         let custom_attributes = self.custom_attributes.clone();
 
-        let mut lexer = Attributes::lexer_with_extras(content.as_ref(), self);
+        let mut lexer = Attributes::lexer_with_extras(content.as_ref(), self.clone());
 
         while let Some(token) = lexer.next() {
             match token {
@@ -100,7 +105,9 @@ impl AttributeParser {
             }
         }
 
-        lexer.extras
+
+        *self = lexer.extras;
+        self
     }
 
     /// Adds a custom attribute parser and returns self,
@@ -124,7 +131,6 @@ impl AttributeParser {
     /// Returns the next attribute from the stack
     ///
     pub fn next(&mut self) -> Option<Attribute> {
-        self.parse_attribute();
         self.stack.pop()
     }
 
@@ -164,6 +170,12 @@ impl AttributeParser {
         self.world = Some(world);
     }
 
+    /// Returns the name,
+    /// 
+    pub fn name(&self) -> Option<&String> {
+        self.name.as_ref()
+    }
+
     /// Returns an immutable reference to world,
     /// 
     pub fn world(&self) -> Option<&Arc<World>> {
@@ -175,21 +187,17 @@ impl AttributeParser {
     /// Panics if a name is not set.
     /// 
     pub fn define(&mut self, symbol: impl AsRef<str>, value: impl Into<Value>) {
-        let name = self.name.clone().expect("A name must be set, to use .define()");
         self.set_symbol(symbol);
         self.set_edit(value.into());
         self.set_value(Value::Empty);
         self.parse_attribute();
-
-        // parse_attribute will consume the name, so reset the name here
-        self.set_name(&name);
     }
 
     /// Parses the current state into an attribute, pushes onto stack
     ///
-    fn parse_attribute(&mut self) {
+    pub fn parse_attribute(&mut self) {
         let value = self.value.clone();
-        let name = self.name.take();
+        let name = self.name.clone();
         let symbol = self.symbol.take();
         let edit = self.edit.take();
 
@@ -322,6 +330,8 @@ pub enum Attributes {
     /// bool element parses remaining as bool
     #[token(".enable", on_bool_enable)]
     #[token(".disable", on_bool_disable)]
+    #[token(".true", on_bool_enable)]
+    #[token(".false", on_bool_disable)]
     #[token(".bool", on_bool_attr)]
     Bool = 0x01,
     /// int element parses remaining as i32
@@ -614,6 +624,8 @@ fn test_attribute_parser() {
     assert_eq!(lexer.next(), Some(Attributes::Identifier));
     assert_eq!(lexer.next(), Some(Attributes::Text));
 
+    lexer.extras.parse_attribute();
+
     let attr = lexer.extras.next().expect("parses");
     assert_eq!(attr.name, "name");
     assert_eq!(attr.value, Value::TextBuffer("cool_name".to_string()));
@@ -624,6 +636,8 @@ fn test_attribute_parser() {
     assert_eq!(lexer.next(), Some(Attributes::Identifier));
     assert_eq!(lexer.next(), Some(Attributes::Identifier));
     assert_eq!(lexer.next(), Some(Attributes::Text));
+
+    lexer.extras.parse_attribute();
 
     let attr = lexer.extras.next().expect("parses");
     assert_eq!(attr.name, "connection::name");
@@ -640,7 +654,7 @@ fn test_attribute_parser() {
     // Test parsing .file attribute
     let mut parser = AttributeParser::from(&world)
         .with_custom::<FileDescriptor>()
-        .parse("readme.md .file ./readme.md");
+        .init("readme.md .file ./readme.md");
 
     let mut parsed = vec![];
     while let Some(attr) = parser.next() {
@@ -651,7 +665,7 @@ fn test_attribute_parser() {
     // Test parsing .blob attribute
     let mut parser = AttributeParser::from(&world)
         .with_custom::<BlobDescriptor>()
-        .parse("readme.md .blob sha256:testdigest");
+        .init("readme.md .blob sha256:testdigest");
 
     let mut parsed = vec![];
     while let Some(attr) = parser.next() {
@@ -659,16 +673,18 @@ fn test_attribute_parser() {
     }
     eprintln!("{:#?}", parsed);
 
-    let parser = AttributeParser::default();
-    parser.parse("custom .custom-attr test custom attr input");
+    AttributeParser::default()
+        .init("custom .custom-attr test custom attr input");
     assert!(logs_contain(
         "Could not parse type, checking custom attribute parsers"
     ));
 
     let mut parser = AttributeParser::default()
         .with_custom::<TestCustomAttr>()
-        .parse("custom .custom-attr test custom attr input");
+        .init("custom .custom-attr test custom attr input");
 
+    parser.parse_attribute();
+    
     assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Empty)));
 }
 

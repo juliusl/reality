@@ -3,7 +3,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use tracing::{event, Level};
 
-use atlier::system::Attribute;
 use logos::Logos;
 
 use crate::Block;
@@ -37,13 +36,11 @@ pub struct Parser {
     blocks: BTreeMap<Entity, Block>,
     /// The current block being parsed
     parsing: Option<Entity>,
-    /// The last `add` keyword parsed
-    last_add: Option<Attribute>,
-    /// The last `define` keyword parsed
-    last_define: Option<Attribute>,
     /// Vector of custom attribute parsers to add to the default,
     /// attribute parser
     custom_attributes: Vec<CustomAttribute>,
+    /// Stack of attribute parsers,
+    parser_stack: Vec<AttributeParser>,
 }
 
 impl AsRef<World> for Parser {
@@ -84,9 +81,8 @@ impl Parser {
             root: Block::default(),
             blocks: BTreeMap::new(),
             parsing: None,
-            last_add: None,
-            last_define: None,
             custom_attributes: vec![],
+            parser_stack: vec![]
         }
     }
 
@@ -115,7 +111,9 @@ impl Parser {
     /// 
     /// Panics if there are existing references to World
     ///
-    pub fn commit(self) -> World {
+    pub fn commit(mut self) -> World {
+        self.evaluate_stack();
+
         for (entity, block) in self.blocks.iter() {
             match self
                 .world
@@ -185,12 +183,12 @@ impl Parser {
         self.blocks.iter().map(|(_, b)| b)
     }
 
-    /// Returns an attribute parser,
-    ///
-    /// If the world has an memory blob source, it will be used
-    /// to resolve `.blob` attributes
-    ///
-    pub fn attribute_parser(&self) -> AttributeParser {
+    /// Creates and returns a new attribute parser, 
+    /// 
+    /// Will set the id to the current block entity. 
+    /// This parser will be at the top of the stack. 
+    /// 
+    pub fn new_attribute(&mut self) -> &mut AttributeParser {
         let mut attr_parser = AttributeParser::default()
             .with_custom::<FileDescriptor>()
             .with_custom::<BlobDescriptor>();
@@ -203,7 +201,40 @@ impl Parser {
         }
         
         attr_parser.set_id(self.parsing.and_then(|p| Some(p.id())).unwrap_or(0));
-        attr_parser
+        self.parser_stack.push(attr_parser);
+        self.parser_stack.last_mut().expect("just added")
+    }
+
+    /// Returns the last attribute parser so additional 
+    /// transient properties can be added. 
+    /// 
+    /// If the last attribute parser parsed a special attribute,
+    /// new special attributes could've been enabled for subsequent property 
+    /// definitions. 
+    /// 
+    fn parse_property(&mut self) -> &mut AttributeParser {
+        if !self.parser_stack.is_empty() {
+            self.parser_top().unwrap()
+        } else {
+            self.new_attribute()
+        }
+    }
+
+    fn parser_top(&mut self) -> Option<&mut AttributeParser> {
+        self.parser_stack.last_mut()
+    }
+
+    /// Consumes the current stack of attribute parsers, adding them to the 
+    /// current block being parsed.
+    /// 
+    pub fn evaluate_stack(&mut self) {
+        while let Some(mut attr_parser) = self.parser_stack.pop() {
+            let attr_parser = &mut attr_parser;
+
+            while let Some(attr) = attr_parser.next() {
+                self.current_block().add_attribute(&attr);
+            }
+        }
     }
 }
 
@@ -240,12 +271,15 @@ impl Parser {
         }
     }
 
-    /// Parses the last attribute, adding it to the current block being build
-    ///
-    fn parse_define(&mut self) {
-        let last = self.last_define.clone().expect("should be set");
+    /// Returns the current block symbol
+    /// 
+    fn current_block_symbol(&self) -> String {
+        if let Some(parsing) = self.parsing.as_ref() {
+            self.blocks.get(parsing).expect("should be a block").symbol().to_string()
+        } else {
+            String::default()
+        }
 
-        self.current_block().add_attribute(&last);
     }
 }
 
@@ -346,7 +380,7 @@ fn test_parser() {
     );
 
     let address = parser.get_block("call", "guest").map_transient("address");
-    assert_eq!(address.get("ipv4"), Some(&Value::Bool(true)));
+    assert_eq!(address.get("ipv4"), Some(&Value::Bool(true)), "{:?}", address);
     assert_eq!(
         address.get("path"),
         Some(&Value::TextBuffer("api/test2".to_string()))

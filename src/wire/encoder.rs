@@ -191,6 +191,8 @@ fn test_encoder() {
     "#;
 
     let mut parser = crate::Parser::new().parse(content);
+    parser.evaluate_stack();
+
     let mut encoder = Encoder::new();
 
     encoder.encode_block(parser.get_block("call", "guest"));
@@ -199,7 +201,7 @@ fn test_encoder() {
     encoder.encode_block(parser.get_block("", "guest"));
     encoder.encode_block(parser.root());
 
-    let value = encoder.frames[1]
+    let value = encoder.frames[3]
         .read_value(&encoder.interner, &mut encoder.blob_device)
         .expect("can read");
     assert_eq!(value, Value::TextBuffer("localhost".to_string()));
@@ -209,7 +211,7 @@ fn test_encoder() {
         .expect("can read");
     assert_eq!(value, Value::Bool(true));
 
-    let value = encoder.frames[3]
+    let value = encoder.frames[1]
         .read_value(&encoder.interner, &mut encoder.blob_device)
         .expect("can read");
     assert_eq!(value, Value::TextBuffer("api/test2".to_string()));

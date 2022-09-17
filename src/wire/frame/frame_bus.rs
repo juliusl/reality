@@ -32,7 +32,7 @@ impl FrameBus {
         /*
         Enumerate frame devices and write to disk
         */
-        for (idx, dev) in self.devices.iter().enumerate() {
+        for (_idx, _dev) in self.devices.iter().enumerate() {
 
         }
         self.world_dir.dir()

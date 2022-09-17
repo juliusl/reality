@@ -68,9 +68,6 @@ impl From<u8> for Keywords {
 }
 
 fn on_block_delimitter(lexer: &mut Lexer<Keywords>) {
-    lexer.extras.last_add = None;
-    lexer.extras.last_define = None;
-
     if let Some(next_line) = lexer.remainder().lines().next() {
         let mut block_ident = Elements::lexer(next_line);
 
@@ -80,11 +77,13 @@ fn on_block_delimitter(lexer: &mut Lexer<Keywords>) {
                 lexer.extras.parsing = Some(current);
             }
             (Some(Elements::Identifier(symbol)), _) => {
+                lexer.extras.evaluate_stack();
                 let name = lexer.extras.current_block().name().to_string();
                 let current = lexer.extras.lookup_block(name, symbol);
                 lexer.extras.parsing = Some(current);
             }
             _ => {
+                lexer.extras.evaluate_stack();
                 // If an ident is not set, then
                 lexer.extras.parsing = None;
             }
@@ -95,17 +94,11 @@ fn on_block_delimitter(lexer: &mut Lexer<Keywords>) {
 
 fn on_add(lexer: &mut Lexer<Keywords>) {
     if let Some(next_line) = lexer.remainder().lines().next() {
-        let mut attr_parser = lexer
+        lexer
             .extras
-            .attribute_parser()
-            .parse(next_line.trim());
-
-        while let Some(attr) = attr_parser.next() {
-            if attr.is_stable() {
-                lexer.extras.last_add = Some(attr.clone());
-            }
-            lexer.extras.current_block().add_attribute(&attr);
-        }
+            .new_attribute()
+            .parse(next_line.trim())
+            .parse_attribute();
 
         lexer.bump(next_line.len());
     }
@@ -113,8 +106,6 @@ fn on_add(lexer: &mut Lexer<Keywords>) {
 
 fn on_define(lexer: &mut Lexer<Keywords>) {
     if let Some(next_line) = lexer.remainder().lines().next() {
-        let mut attr_parser = lexer.extras.attribute_parser();
-
         // Syntax sugar for,
         // From -
         // add connection .empty
@@ -124,22 +115,29 @@ fn on_define(lexer: &mut Lexer<Keywords>) {
         // :: host .text example.com
         //
         if lexer.slice() == "::" {
-            match &lexer.extras.last_add.as_ref() {
-                Some(name) => {
-                    attr_parser.set_name(&name.name);
-                }
-                None => {
-                    if !lexer.extras.current_block().symbol().is_empty() {
-                        attr_parser.set_name(lexer.extras.current_block().symbol());
-                    } else {
-                        // todo
-                        panic!("Invalid syntax")
-                    }
+            let current_block_symbol = lexer.extras.current_block_symbol().to_string();
+            let attr_parser = lexer.extras.parse_property();
+            
+            if attr_parser.name().is_none() {
+                if !current_block_symbol.is_empty() {
+                    attr_parser.set_name(current_block_symbol);
+                } else {
+                    // todo
+                    panic!("Invalid syntax,\n{}", lexer.remainder())
                 }
             }
+            
+            attr_parser
+                .parse(next_line.trim())
+                .parse_attribute();
+        } else {
+            // In keyword form, the expectation is that name/symbol will be present
+            let attr_parser = lexer.extras.new_attribute();
+            attr_parser
+                .parse(next_line.trim())
+                .parse_attribute();
         }
-        lexer.extras.last_define = attr_parser.parse(next_line.trim()).next();
-        lexer.extras.parse_define();
+
         lexer.bump(next_line.len());
     }
 }
