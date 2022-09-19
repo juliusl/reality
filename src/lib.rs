@@ -1,6 +1,7 @@
 
 mod block;
 pub use block::Block;
+pub use block::BlockIndex;
 
 mod parser;
 pub use parser::Parser;

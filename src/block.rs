@@ -145,7 +145,7 @@ impl Block {
     /// Returns an iterator over all attributes,
     ///
     pub fn iter_attributes(&self) -> impl Iterator<Item = &Attribute> {
-        self.attributes.iter()
+        self.attributes.iter().rev()
     }
 
     /// Returns an iterator over all transient values,
