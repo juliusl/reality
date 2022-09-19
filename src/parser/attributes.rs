@@ -440,6 +440,7 @@ impl From<u8> for Attributes {
             0x09 => Attributes::Symbol,
             0x0A => Attributes::Text,
             0x0B => Attributes::BinaryVector,
+            0x0C => Attributes::Complex,
             _ => Attributes::Error,
         }
     }

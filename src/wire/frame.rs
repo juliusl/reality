@@ -89,16 +89,21 @@ pub struct Frame {
 impl Display for Frame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            write!(f, "{:02x}", self.op())?;
+            write!(f, "\n\t{:02x}", self.op())?;
             
             if let Some(attr) = self.attribute() {
-                write!(f, " {} {:016x} {:016x} ", attr, self.name_key(), self.symbol_key())?;
+                write!(f, " {}\n\t  {:016x} {:016x}\n\t  ", attr, self.name_key(), self.symbol_key())?;
                 for b in self.value_bytes() {
+                    write!(f, "{:x}", b)?;
+                }
+                write!(f, "\n\t  ")?;
+
+                for b in self.parity_bytes() {
                     write!(f, "{:x}", b)?;
                 }
                 Ok(())
             } else {
-                write!(f, " ")?;
+                write!(f, "\n\t")?;
                 for b in self.data().iter() {
                     write!(f, "{:02x}", b)?;
                 }
@@ -334,6 +339,12 @@ impl Frame {
                 &self.data[1..]
             }
         }
+    }
+
+    /// Returns a slice from the parity range
+    /// 
+    pub fn parity_bytes(&self) -> &[u8] {
+        &self.data[56..]
     }
 
     /// Read interned data from the frame,
@@ -627,8 +638,7 @@ impl FrameBuilder {
                         .write(&cast::<[u64; 2], [u8; 16]>([length, u64::MAX])),
                 },
             },
-            // Frame extents are contstructed from regular extents
-            // 
+            // Frame extents will be constructed from regular extents,
             Data::FrameExtent {
                 start,
                 end,
@@ -732,6 +742,6 @@ fn test_frame_building() {
     let parity_test = specs::WorldExt::entities(&world).create();
     let frame_with_parity = frame.with_parity(parity_test);
 
-    eprintln!("{}", frame_with_parity);
+    eprintln!("{:#}", frame_with_parity);
     Frame::end_block();
 }

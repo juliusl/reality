@@ -194,13 +194,13 @@ fn test_encoder() {
     parser.evaluate_stack();
 
     let mut encoder = Encoder::new();
-
     encoder.encode_block(parser.get_block("call", "guest"));
     encoder.encode_block(parser.get_block("call", "host"));
     encoder.encode_block(parser.get_block("test", "host"));
     encoder.encode_block(parser.get_block("", "guest"));
     encoder.encode_block(parser.root());
 
+    // Test `call guest`
     let value = encoder.frames[3]
         .read_value(&encoder.interner, &mut encoder.blob_device)
         .expect("can read");
@@ -215,6 +215,22 @@ fn test_encoder() {
         .read_value(&encoder.interner, &mut encoder.blob_device)
         .expect("can read");
     assert_eq!(value, Value::TextBuffer("api/test2".to_string()));
+
+    // Test `call host`
+    let value = encoder.frames[8]
+        .read_value(&encoder.interner, &mut encoder.blob_device)
+        .expect("can read");
+    assert_eq!(value, Value::TextBuffer("localhost".to_string()));
+
+    let value = encoder.frames[7]
+        .read_value(&encoder.interner, &mut encoder.blob_device)
+        .expect("can read");
+    assert_eq!(value, Value::Bool(true));
+
+    let value = encoder.frames[6]
+        .read_value(&encoder.interner, &mut encoder.blob_device)
+        .expect("can read");
+    assert_eq!(value, Value::TextBuffer("api/test".to_string()));
 
     for f in encoder.frames_slice() {
         event!(Level::TRACE, "{:#}", f);
