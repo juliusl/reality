@@ -104,8 +104,11 @@ impl Display for Frame {
                 Ok(())
             } else {
                 write!(f, "\n\t")?;
-                for b in self.data().iter() {
-                    write!(f, "{:02x}", b)?;
+                for chunk in self.data().chunks(24) {
+                    for b in chunk.iter() {
+                        write!(f, "{:02x}", b)?;
+                    }
+                    write!(f, "\n\t")?;
                 }
                 Ok(())
             }

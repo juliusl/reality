@@ -371,10 +371,12 @@ fn test_control_buffer() {
     let frames: Vec<Frame> = control_device.into();
 
     let data_frame = frames.get(0).expect("data frame");
-    event!(Level::TRACE, "{:x?}", data_frame);
+    event!(Level::TRACE, "{:#}", data_frame);
 
     let control_frame = frames.get(1).expect("control frame");
-    event!(Level::TRACE, "{:x?}", control_frame);
+    event!(Level::TRACE, "{:#}", control_frame);
 
-    event!(Level::TRACE, "{:#x?}", frames);
+    for f in frames.iter() {
+        event!(Level::TRACE, "{:#}", f);
+    }
 }
