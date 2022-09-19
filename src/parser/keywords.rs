@@ -1,3 +1,4 @@
+use atlier::system::Value;
 use logos::{Lexer, Logos};
 
 use crate::parser::Elements;
@@ -97,8 +98,7 @@ fn on_add(lexer: &mut Lexer<Keywords>) {
         lexer
             .extras
             .new_attribute()
-            .parse(next_line.trim())
-            .parse_attribute();
+            .parse(next_line.trim());
 
         lexer.bump(next_line.len());
     }
@@ -127,15 +127,13 @@ fn on_define(lexer: &mut Lexer<Keywords>) {
                 }
             }
             
-            attr_parser
-                .parse(next_line.trim())
-                .parse_attribute();
+            // Because this is a property, set the value to empty
+            attr_parser.set_value(Value::Empty);
+            attr_parser.parse(next_line.trim());
         } else {
             // In keyword form, the expectation is that name/symbol will be present
             let attr_parser = lexer.extras.new_attribute();
-            attr_parser
-                .parse(next_line.trim())
-                .parse_attribute();
+            attr_parser.parse(next_line.trim());
         }
 
         lexer.bump(next_line.len());

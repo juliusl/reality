@@ -33,8 +33,10 @@ pub struct AttributeParser {
     symbol: Option<String>,
     /// Transient value
     edit: Option<Value>,
-    /// Stack of attributes
-    stack: Vec<Attribute>,
+    /// Stack of attribute properties
+    properties: Vec<Attribute>,
+    /// The parsed attribute
+    parsed: Option<Attribute>,
     /// Custom attribute parsers
     custom_attributes: HashMap<String, CustomAttribute>,
     /// Reference to world being edited
@@ -105,8 +107,9 @@ impl AttributeParser {
             }
         }
 
-
         *self = lexer.extras;
+
+        self.parse_attribute();
         self
     }
 
@@ -131,7 +134,11 @@ impl AttributeParser {
     /// Returns the next attribute from the stack
     ///
     pub fn next(&mut self) -> Option<Attribute> {
-        self.stack.pop()
+        if !self.properties.is_empty() {
+            self.properties.pop()
+        } else {
+            self.parsed.take()
+        }
     }
 
     /// Sets the id for the current parser
@@ -193,9 +200,19 @@ impl AttributeParser {
         self.parse_attribute();
     }
 
+    /// Defines the current attribute,
+    /// 
+    /// Implements the `add` keyword
+    /// 
+    pub fn add(&mut self, name: impl AsRef<str>, value: impl Into<Value>) {
+        self.set_name(name);
+        self.set_value(value.into());
+        self.parse_attribute();
+    }
+
     /// Parses the current state into an attribute, pushes onto stack
     ///
-    pub fn parse_attribute(&mut self) {
+    fn parse_attribute(&mut self) {
         let value = self.value.clone();
         let name = self.name.clone();
         let symbol = self.symbol.take();
@@ -205,11 +222,14 @@ impl AttributeParser {
             (Some(name), Some(symbol), value, Some(edit)) => {
                 let mut attr = Attribute::new(self.id, format!("{name}::{symbol}"), value);
                 attr.edit_as(edit);
-                self.stack.push(attr);
+                self.properties.push(attr);
             }
             (Some(name), None, value, None) => {
                 let attr = Attribute::new(self.id, name, value);
-                self.stack.push(attr);
+                if self.parsed.is_some() {
+                    event!(Level::DEBUG, "Replacing parsed attribute")
+                }
+                self.parsed = Some(attr);
             }
             _ => {}
         }
@@ -268,7 +288,8 @@ impl From<Attribute> for AttributeParser {
             symbol,
             value,
             edit,
-            stack: vec![],
+            properties: vec![],
+            parsed: None,
             custom_attributes: HashMap::default(),
             world: None,
         }
@@ -624,7 +645,6 @@ fn test_attribute_parser() {
     let mut lexer = Attributes::lexer_with_extras("name .text cool_name", parser);
     assert_eq!(lexer.next(), Some(Attributes::Identifier));
     assert_eq!(lexer.next(), Some(Attributes::Text));
-
     lexer.extras.parse_attribute();
 
     let attr = lexer.extras.next().expect("parses");
@@ -637,7 +657,6 @@ fn test_attribute_parser() {
     assert_eq!(lexer.next(), Some(Attributes::Identifier));
     assert_eq!(lexer.next(), Some(Attributes::Identifier));
     assert_eq!(lexer.next(), Some(Attributes::Text));
-
     lexer.extras.parse_attribute();
 
     let attr = lexer.extras.next().expect("parses");
@@ -668,6 +687,9 @@ fn test_attribute_parser() {
         .with_custom::<BlobDescriptor>()
         .init("readme.md .blob sha256:testdigest");
 
+    parser.define("readme", Value::Symbol("readme".to_string()));
+    parser.define("extension", Value::Symbol("md".to_string()));
+
     let mut parsed = vec![];
     while let Some(attr) = parser.next() {
         parsed.push(attr);
@@ -683,8 +705,6 @@ fn test_attribute_parser() {
     let mut parser = AttributeParser::default()
         .with_custom::<TestCustomAttr>()
         .init("custom .custom-attr test custom attr input");
-
-    parser.parse_attribute();
     
     assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Empty)));
 }

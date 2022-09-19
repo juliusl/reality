@@ -50,9 +50,7 @@ impl SpecialAttribute for BlobDescriptor {
         ])));
 
         // Add the stable attribute w/ an empty vector
-        attr_parser.set_name(name);
-        attr_parser.set_value(Value::BinaryVector(vec![]));
-        attr_parser.parse_attribute();
+        attr_parser.add(name, Value::BinaryVector(vec![]));
     }
 }
 
