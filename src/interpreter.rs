@@ -2,7 +2,7 @@ use specs::{Component, World};
 
 use crate::Block;
 
-/// Trait to interpret blocks 
+/// Trait to interpret blocks into components,
 /// 
 pub trait Interpreter
 { 
@@ -21,9 +21,5 @@ pub trait Interpreter
     /// If returns None, means that the block does not require 
     /// any further interpretation
     /// 
-    fn interpret(&self, block: &Block) -> Option<Self::Output>;
-
-    /// Interprets a block and updates self,
-    /// 
-    fn interpret_mut(&mut self, block: &Block);
+    fn interpret(&self, block: &Block, previous: Option<&Self::Output>) -> Option<Self::Output>;
 }

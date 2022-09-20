@@ -56,19 +56,6 @@ impl MemoryBlobSource {
     pub fn copy_source(&mut self, source: impl BlobSource) {
         self.copy_select(source, |_, _| true)
     }
-
-    /// Clones self to a destination, 
-    /// 
-    /// Overwrites any existing blob devices if they exist in destination,
-    /// 
-    pub fn clone_to(&self, _destination: &mut impl BlobSource) {
-        /*
-        - Iterate through each device,
-        - Create a new device in destination,
-        - Copy existing device to new destination,
-        */
-        todo!()
-    }
 }
 
 impl BlobSource for MemoryBlobSource {

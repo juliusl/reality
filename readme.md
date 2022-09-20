@@ -1,6 +1,6 @@
-# Reality Parser 
+# Reality
 
-This is a parser for the `.runmd` format, which is markdown for describing runtime
+This is a interpreter/parser for the `.runmd` format, which is markdown for describing runtime
 attributes. Each line of `.runmd` dispatches a message that the parser uses to update its state. Attributes are name/value pairs that also can exist in either a 
 stable or transient state. 
 

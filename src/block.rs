@@ -37,6 +37,12 @@ impl Block {
         }
     }
 
+    /// Returns a vector of block indexes,
+    /// 
+    pub fn index(&self) -> Vec<BlockIndex> {
+        BlockIndex::index(self)
+    }
+
     /// Returns true if the entity is 0, 
     /// 
     /// **Note** The root block must always be entity 0. 

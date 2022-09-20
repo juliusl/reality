@@ -1,9 +1,6 @@
 use std::collections::BTreeSet;
 
 use atlier::system::Value;
-use specs::{Component, DefaultVecStorage, WorldExt};
-
-use crate::Interpreter;
 
 use super::{custom::SpecialAttribute, AttributeParser};
 
@@ -22,9 +19,8 @@ use super::{custom::SpecialAttribute, AttributeParser};
 /// Looks for stable attributes with a `blob` complex, interprets, and
 /// returns a BlobDescriptor component
 ///
-#[derive(Debug, Default, Component)]
-#[storage(DefaultVecStorage)]
-pub struct BlobDescriptor {}
+    #[derive(Debug, Default)]
+pub struct BlobDescriptor();
 
 impl SpecialAttribute for BlobDescriptor {
     fn ident() -> &'static str {
@@ -51,21 +47,5 @@ impl SpecialAttribute for BlobDescriptor {
 
         // Add the stable attribute w/ an empty vector
         attr_parser.add(name, Value::BinaryVector(vec![]));
-    }
-}
-
-impl Interpreter for BlobDescriptor {
-    type Output = Self;
-
-    fn initialize(&self, world: &mut specs::World) {
-        world.register::<Self>();
-    }
-
-    fn interpret(&self, _block: &crate::Block) -> Option<Self::Output> {
-        todo!()
-    }
-
-    fn interpret_mut(&mut self, _block: &crate::Block) {
-        todo!()
     }
 }

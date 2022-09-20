@@ -11,7 +11,7 @@ mod attributes;
 pub use attributes::AttributeParser;
 pub use attributes::Attributes;
 pub use attributes::BlobDescriptor;
-pub use attributes::FileDescriptor;
+pub use attributes::File;
 pub use attributes::CustomAttribute;
 pub use attributes::SpecialAttribute;
 
@@ -190,7 +190,7 @@ impl Parser {
     /// 
     pub fn new_attribute(&mut self) -> &mut AttributeParser {
         let mut attr_parser = AttributeParser::default()
-            .with_custom::<FileDescriptor>()
+            .with_custom::<File>()
             .with_custom::<BlobDescriptor>();
         
         attr_parser.set_world(self.world.clone());

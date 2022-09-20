@@ -2,8 +2,11 @@ mod custom;
 pub use custom::CustomAttribute;
 pub use custom::SpecialAttribute;
 
+mod cache;
+pub use cache::Cache;
+
 mod file;
-pub use file::FileDescriptor;
+pub use file::File;
 
 mod blob;
 pub use blob::BlobDescriptor;
@@ -126,8 +129,9 @@ impl AttributeParser {
 
     /// Adds a custom attribute parser,
     ///
-    pub fn add_custom(&mut self, custom_attr: CustomAttribute)
+    pub fn add_custom(&mut self, custom_attr: impl Into<CustomAttribute>)
     {
+        let custom_attr = custom_attr.into();
         self.custom_attributes.insert(custom_attr.ident(), custom_attr);
     }
 
@@ -673,7 +677,7 @@ fn test_attribute_parser() {
 
     // Test parsing .file attribute
     let mut parser = AttributeParser::from(&world)
-        .with_custom::<FileDescriptor>()
+        .with_custom::<File>()
         .init("readme.md .file ./readme.md");
 
     let mut parsed = vec![];

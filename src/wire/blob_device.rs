@@ -31,7 +31,7 @@ pub trait BlobSource {
 
 /// This struct is to contain an addressable blob device
 /// 
-#[derive(Clone)]
+#[derive(Clone, Default, Debug)]
 pub struct BlobDevice {
     address: String,
     cursor: Cursor<Vec<u8>>,

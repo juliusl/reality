@@ -34,7 +34,7 @@ impl WorldDir {
 
         for (entity, block) in self.load_blocks(&world) {
             for plugin in plugins.clone().into_iter() {
-                if let Some(component) = plugin.interpret(&block) {
+                if let Some(component) = plugin.interpret(&block, None) {
                     plugin.initialize(&mut world);
                     world
                         .write_component()
@@ -85,11 +85,7 @@ impl Interpreter for NoPlugins {
         unimplemented!()
     }
 
-    fn interpret(&self, _: &Block) -> Option<Self::Output> {
-        unimplemented!()
-    }
-
-    fn interpret_mut(&mut self, _: &Block) {
+    fn interpret(&self, _: &Block, _: Option<&Self::Output>) -> Option<Self::Output> {
         unimplemented!()
     }
 }
