@@ -1,5 +1,5 @@
 use super::{frame::Frame, BlobDevice, Interner};
-use crate::{Block, wire::ControlDevice};
+use crate::Block;
 use atlier::system::Value;
 use std::{collections::BTreeMap, io::Cursor, ops::Range};
 
@@ -236,7 +236,7 @@ fn test_encoder() {
         event!(Level::TRACE, "{:#}", f);
     }
 
-    let control_device = ControlDevice::new(encoder.interner.clone());
+    let control_device = crate::wire::ControlDevice::new(encoder.interner.clone());
     // This is the size in memory 
     event!(Level::TRACE, "total memory size      : {} bytes", content.len());
     // When a string is serialized, this should be the size of that message w/ utf8 encoding

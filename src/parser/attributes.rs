@@ -1,3 +1,12 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::{collections::BTreeSet, fmt::Display, str::FromStr};
+use atlier::system::{Attribute, Value};
+use logos::{Lexer, Logos};
+use specs::{World, WorldExt};
+use tracing::{event, Level};
+use crate::parser::Elements;
+
 mod custom;
 pub use custom::CustomAttribute;
 pub use custom::SpecialAttribute;
@@ -10,17 +19,6 @@ pub use file::File;
 
 mod blob;
 pub use blob::BlobDescriptor;
-
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::{collections::BTreeSet, fmt::Display, str::FromStr};
-
-use atlier::system::{Attribute, Value};
-use logos::{Lexer, Logos};
-use specs::{World, WorldExt};
-use tracing::{event, Level};
-
-use crate::parser::Elements;
 
 /// Parser for parsing attributes
 ///
@@ -44,6 +42,23 @@ pub struct AttributeParser {
     custom_attributes: HashMap<String, CustomAttribute>,
     /// Reference to world being edited
     world: Option<Arc<World>>,
+}
+
+impl Into<Vec<Attribute>> for AttributeParser {
+    fn into(mut self) -> Vec<Attribute> {
+        self.parse_attribute();
+
+        let mut attrs = vec![];
+
+        if let Some(primary) = self.parsed {
+            attrs.push(primary);
+        } else {
+            event!(Level::WARN, "Consuming parser without a primary attribute")
+        }
+
+        attrs.append(&mut self.properties);
+        attrs
+    }
 }
 
 impl AttributeParser {
@@ -70,36 +85,39 @@ impl AttributeParser {
 
                     let mut elements_lexer = Elements::lexer(&line);
                     match elements_lexer.next() {
-                        Some(element) => match element {
-                            Elements::AttributeType(custom_attr_type) => {
-                                match custom_attributes.get(&custom_attr_type) {
-                                    Some(custom_attr) => {
-                                        custom_attr.parse(
-                                            &mut lexer.extras, 
-                                            elements_lexer.remainder()
-                                        );
-                                        lexer.bump(lexer.remainder().len());
-                                    }
-                                    None => {
-                                        event!(
-                                            Level::ERROR, 
-                                            "Did not parse {custom_attr_type}, could not find custom attribute parser", 
-                                        );
-                                    }
+                        Some(Elements::AttributeType(custom_attr_type)) => {
+                            let mut input = elements_lexer.remainder().trim();
+
+                            if let Some(Elements::Comment) = elements_lexer.next() {
+                                input = elements_lexer.remainder().trim();
+                            }
+                            
+                            if lexer.extras.name().is_none() {
+                                lexer.extras.set_name(custom_attr_type.to_string());
+                                lexer.extras.set_value(Value::Symbol(input.to_string()));
+                            }
+
+                            match custom_attributes.get(&custom_attr_type) {
+                                Some(custom_attr) => {
+                                    custom_attr.parse(
+                                        &mut lexer.extras, 
+                                        input.to_string()
+                                    );
+                                }
+                                None => {
+                                    // TODO: Add missing_custom_attribute_type
+                                    event!(
+                                        Level::ERROR, 
+                                        "Did not parse {custom_attr_type}, could not find custom attribute parser", 
+                                    );
                                 }
                             }
-                            _ => {
-                                event!(
-                                    Level::ERROR,
-                                    "Did not parse {:?}, unexpected element",
-                                    element
-                                );
-                            }
+                            lexer.bump(lexer.remainder().len());
                         },
-                        None => {
+                        _ => {
                             event!(
                                 Level::ERROR,
-                                "Did not parse attribute, no elements parsed",
+                                "Did not parse, unexpected element"
                             );
                         }
                     }
@@ -165,8 +183,8 @@ impl AttributeParser {
 
     /// Sets the current value for the parser
     ///
-    pub fn set_value(&mut self, value: Value) {
-        self.value = value;
+    pub fn set_value(&mut self, value: impl Into<Value>) {
+        self.value = value.into();
     }
 
     /// Sets the current transient value for the parser
@@ -377,7 +395,6 @@ pub enum Attributes {
     /// float range element parses remaining as 3 comma delimitted f32's
     #[token(".float_range", on_float_range_attr)]
     FloatRange = 0x07,
-
     /// # Interned
     ///
     /// The size of an interned hash value is u64, To allow for future proofing, this
@@ -417,7 +434,10 @@ pub enum Attributes {
     /// This is used to filter mapped properties.
     #[token(".complex", on_complex_attr)]
     Complex = 0x0C,
-
+    /// Bumps the parser until `>` is found
+    /// 
+    #[token("<", on_comment_start)]
+    CommentStart = 0xF0,
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.
     #[error]
@@ -446,6 +466,9 @@ impl Display for Attributes {
             // These are special attribute types
             Attributes::Error => write!(f, ".error"),
             Attributes::Identifier => write!(f, ".ident"),
+            _ => {
+                Ok(())
+            }
         }
     }
 }
@@ -498,7 +521,20 @@ fn on_identifier(lexer: &mut Lexer<Attributes>) {
     lexer.extras.parse_symbol(slice.to_string());
 }
 
+fn on_comment_start(lexer: &mut Lexer<Attributes>) {
+    let end_pos = lexer.remainder()
+        .lines()
+        .take(1)
+        .next()
+        .and_then(|s| s.find(">"))
+        .expect("Didn't find a closing `>`");
+    
+    lexer.bump(end_pos + 1);
+}
+
 fn on_text_attr(lexer: &mut Lexer<Attributes>) {
+    handle_comment(lexer);
+
     let remaining = lexer.remainder().trim().to_string();
 
     let text_buf = Value::TextBuffer(remaining);
@@ -509,6 +545,7 @@ fn on_text_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 fn on_bool_attr(lexer: &mut Lexer<Attributes>) {
+    handle_comment(lexer);
     let bool_attr = if let Some(value) = lexer.remainder().trim().parse().ok() {
         Value::Bool(value)
     } else {
@@ -528,6 +565,8 @@ fn on_bool_disable(lexer: &mut Lexer<Attributes>) {
 }
 
 fn on_int_attr(lexer: &mut Lexer<Attributes>) {
+    handle_comment(lexer);
+    
     let int_attr = if let Some(value) = lexer.remainder().trim().parse::<i32>().ok() {
         Value::Int(value)
     } else {
@@ -539,6 +578,8 @@ fn on_int_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 fn on_int_pair_attr(lexer: &mut Lexer<Attributes>) {
+    handle_comment(lexer);
+
     let pair = from_comma_sep::<i32>(lexer);
 
     let int_pair = match (pair.get(0), pair.get(1)) {
@@ -551,6 +592,8 @@ fn on_int_pair_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 fn on_int_range_attr(lexer: &mut Lexer<Attributes>) {
+    handle_comment(lexer);
+
     let range = from_comma_sep::<i32>(lexer);
 
     let int_range = match (range.get(0), range.get(1), range.get(2)) {
@@ -563,6 +606,8 @@ fn on_int_range_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 fn on_float_attr(lexer: &mut Lexer<Attributes>) {
+    handle_comment(lexer);
+
     let float = if let Some(value) = lexer.remainder().trim().parse::<f32>().ok() {
         Value::Float(value)
     } else {
@@ -574,6 +619,8 @@ fn on_float_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 fn on_float_pair_attr(lexer: &mut Lexer<Attributes>) {
+    handle_comment(lexer);
+
     let pair = from_comma_sep::<f32>(lexer);
     let float_pair = match (pair.get(0), pair.get(1)) {
         (Some(f0), Some(f1)) => Value::FloatPair(*f0, *f1),
@@ -585,6 +632,8 @@ fn on_float_pair_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 fn on_float_range_attr(lexer: &mut Lexer<Attributes>) {
+    handle_comment(lexer);
+
     let range = from_comma_sep::<f32>(lexer);
 
     let float_range = match (range.get(0), range.get(1), range.get(2)) {
@@ -597,6 +646,8 @@ fn on_float_range_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 fn on_binary_vec_attr(lexer: &mut Lexer<Attributes>) {
+    handle_comment(lexer);
+
     let binary = match base64::decode(lexer.remainder().trim()) {
         Ok(content) => Value::BinaryVector(content),
         Err(_) => Value::BinaryVector(vec![]),
@@ -607,6 +658,8 @@ fn on_binary_vec_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 fn on_symbol_attr(lexer: &mut Lexer<Attributes>) {
+    handle_comment(lexer);
+
     let remaining = lexer.remainder().trim().to_string();
 
     let symbol_val = Value::Symbol(remaining);
@@ -615,14 +668,16 @@ fn on_symbol_attr(lexer: &mut Lexer<Attributes>) {
     lexer.bump(lexer.remainder().len());
 }
 
-fn on_empty_attr(lexer: &mut Lexer<Attributes>) {
+fn on_empty_attr(lexer: &mut Lexer<Attributes>) {    
+    handle_comment(lexer);
+
     lexer.extras.parse_value(Value::Empty);
     lexer.bump(lexer.remainder().len());
 }
 
 fn on_complex_attr(lexer: &mut Lexer<Attributes>) {
+    handle_comment(lexer);
     let idents = from_comma_sep::<String>(lexer);
-
     lexer
         .extras
         .parse_value(Value::Complex(BTreeSet::from_iter(idents)));
@@ -641,12 +696,18 @@ where
         .collect()
 }
 
+fn handle_comment(lexer: &mut Lexer<Attributes>) {
+    if lexer.remainder().trim_start().starts_with("<") {
+        lexer.next();
+    }
+}
+
 #[test]
 #[tracing_test::traced_test]
 fn test_attribute_parser() {
     // Test parsing add
     let parser = AttributeParser::default();
-    let mut lexer = Attributes::lexer_with_extras("name .text cool_name", parser);
+    let mut lexer = Attributes::lexer_with_extras("name .text <coments can only be immediately after the attribute type> cool_name", parser);
     assert_eq!(lexer.next(), Some(Attributes::Identifier));
     assert_eq!(lexer.next(), Some(Attributes::Text));
     lexer.extras.parse_attribute();
@@ -674,6 +735,16 @@ fn test_attribute_parser() {
     // Complex Attributes
 
     let world = World::new();
+
+    // Test shortcut for defining an attribute without a name or value
+    let mut parser = AttributeParser::from(&world)
+        .init(".shortcut cool shortcut");
+
+    let shortcut = parser.next();
+    assert_eq!(
+        shortcut, 
+        Some(Attribute::new(0, "shortcut", Value::Symbol("cool shortcut".to_string())))
+    );
 
     // Test parsing .file attribute
     let mut parser = AttributeParser::from(&world)
@@ -709,7 +780,11 @@ fn test_attribute_parser() {
     let mut parser = AttributeParser::default()
         .with_custom::<TestCustomAttr>()
         .init("custom .custom-attr test custom attr input");
+    assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Empty)));
     
+    let mut parser = AttributeParser::default()
+        .with_custom::<TestCustomAttr>()
+        .init("custom <comment block> .custom-attr <comment block> test custom attr input");
     assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Empty)));
 }
 

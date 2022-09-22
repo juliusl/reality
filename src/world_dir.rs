@@ -1,26 +1,44 @@
-use std::{fs::create_dir_all, path::Path};
+use std::{fs::create_dir_all, path::Path, sync::Arc};
 
 use specs::{Component, DefaultVecStorage, Entity, World, WorldExt};
 
-use crate::{Block, Interpreter};
-
-mod save;
-pub use save::Save;
+use crate::{Block, Interpreter, evaluate};
 
 /// Struct for managing the directory .world/
 ///
 /// This directory will contain all of the world assets.
 ///  
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct WorldDir {
     /// The root directory, defaults to ''
     ///
     root: &'static str,
+    /// The world this world dir maintains
+    /// 
+    world: World,
 }
 
 impl From<&'static str> for WorldDir {
     fn from(root: &'static str) -> Self {
-        Self { root }
+        Self { root, world: World::new() }
+    }
+}
+
+impl AsMut<World> for WorldDir {
+    fn as_mut(&mut self) -> &mut World {
+        &mut self.world
+    }
+}
+
+impl AsRef<World> for WorldDir {
+    fn as_ref(&self) -> &World {
+        &self.world
+    }
+}
+
+impl Into<World> for WorldDir {
+    fn into(self) -> World {
+        self.world
     }
 }
 
@@ -29,26 +47,13 @@ impl WorldDir {
     /// and then interpreting each block with a collection of plugins. If the plugin
     /// returns a component it will be added to the block's entity.
     ///
-    pub fn world(&self, plugins: impl Clone + IntoIterator<Item = impl Interpreter>) -> World {
-        let mut world = World::new();
-
-        for (entity, block) in self.load_blocks(&world) {
-            for plugin in plugins.clone().into_iter() {
-                if let Some(component) = plugin.interpret(&block, None) {
-                    plugin.initialize(&mut world);
-                    world
-                        .write_component()
-                        .insert(entity, component)
-                        .expect("can insert component");
-                }
-            }
-        }
-        
-        world
+    pub fn evaluate(self, plugins: impl Clone + IntoIterator<Item = impl Interpreter>) {
+        let blocks = self.load_blocks(self.as_ref());
+        evaluate(self, blocks, plugins);
     }
 
     /// Returns the canonical path to the root of the directory,
-    /// 
+    ///
     /// If the directory doesn't already exist, this method will create it
     /// under the root dir.
     ///
@@ -64,7 +69,7 @@ impl WorldDir {
 
     /// Returns a vector of blocks loaded from the dir,
     ///
-    pub fn load_blocks(&self, _world: &World) -> Vec<(Entity, Block)> {
+   fn load_blocks(&self, _world: &World) -> Vec<(Entity, Block)> {
         todo!()
     }
 }

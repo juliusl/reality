@@ -6,7 +6,7 @@ use super::FrameDevice;
 
 /// Struct to enumerate frame devices in priority order 
 /// 
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct FrameBus {
     /// Devices in priority order 
     /// 

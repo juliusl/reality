@@ -29,6 +29,8 @@ pub enum Elements {
     Identifier(String),
     #[token(".", on_attribute_type)]
     AttributeType(String),
+    #[token("<", on_comment_start)]
+    Comment,
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.
     #[error]
@@ -57,9 +59,20 @@ fn on_attribute_type(lexer: &mut Lexer<Elements>) -> Option<String> {
     }
 }
 
+fn on_comment_start(lexer: &mut Lexer<Elements>) {
+    let end_pos = lexer.remainder()
+        .lines()
+        .take(1)
+        .next()
+        .and_then(|s| s.find(">"))
+        .expect("Didn't find a closing `>`");
+    
+    lexer.bump(end_pos);
+}
+
 #[test]
 fn test_elements() {
-    let test_str = ".Custom";
+    let test_str = ".Custom test value";
 
     assert_eq!(
         Elements::lexer(test_str).next().expect("parses"),

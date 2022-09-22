@@ -25,6 +25,12 @@ pub struct Block {
     attributes: Vec<Attribute>,
 }
 
+impl Into<Vec<Attribute>> for &'_ Block {
+    fn into(self) -> Vec<Attribute> {
+        self.iter_attributes().cloned().collect()
+    }
+}
+
 impl Block {
     /// Creates a new empty block
     ///

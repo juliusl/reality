@@ -2,8 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use atlier::system::{Value, Attribute};
 
-use crate::Block;
-
 /// This struct takes a property map, and from each `.complex` value,
 /// indexes a subset of the map.
 /// 
@@ -56,8 +54,8 @@ impl BlockIndex {
 
     /// Indexes a block and returns the indexes that were discovered
     /// 
-    pub fn index(block: &Block) -> Vec<Self> {
-        let attributes = block.iter_attributes().collect::<Vec<&Attribute>>();
+    pub fn index(attributes: impl Into<Vec<Attribute>>) -> Vec<Self> {
+        let attributes = attributes.into(); 
         let mut i = vec![];
         let mut s = vec![];
 
@@ -70,6 +68,7 @@ impl BlockIndex {
                 let slice = &attributes.as_slice()[*begin..*end]; 
                 let stable_attr = slice.get(0).expect("There should be an owner for these properties");
                 
+                // TODO: Make this a stack
                 let mut block_index = BlockIndex {
                     attr: (stable_attr.name.to_string(), stable_attr.value.clone()),
                     properties: BTreeMap::default(),

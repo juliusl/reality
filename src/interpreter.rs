@@ -16,10 +16,10 @@ pub trait Interpreter
     /// 
     fn initialize(&self, world: &mut World);
 
-    /// Returns a future after interpreting block, 
+    /// Interprets the block and returns an output component,
     /// 
-    /// If returns None, means that the block does not require 
-    /// any further interpretation
+    /// When the component is inserted, if an existing component was replaced, this function is called again
+    /// with the previous component.
     /// 
     fn interpret(&self, block: &Block, previous: Option<&Self::Output>) -> Option<Self::Output>;
 }
