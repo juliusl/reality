@@ -9,6 +9,7 @@ pub use block_index::BlockIndex;
 
 mod block_properties;
 pub use block_properties::BlockProperties;
+pub use block_properties::BlockProperty;
 
 /// Data structure parsed from .runmd, 
 /// 

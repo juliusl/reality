@@ -52,7 +52,16 @@ impl AsRef<World> for Parser {
 impl Into<World> for Parser {
     fn into(self) -> World {
         match Arc::try_unwrap(self.world) {
-            Ok(world) => world,
+            Ok(mut world) => {
+                world.insert(self.index);
+                world.insert(self.custom_attributes);
+                
+                world.write_component().insert(
+                    world.entities().entity(0), 
+                    self.root
+                ).expect("can write the root block");
+                world
+            },
             // If something is holding onto a reference, that would be a leak
             // Safer to panic here and correct the code that is holding onto the reference
             Err(_) => panic!("There should be no dangling references to world"),
@@ -140,8 +149,8 @@ impl Parser {
                 }
             }
         }
-
-        self.into()
+        
+       self.into()
     }
 
     /// Returns a immuatble reference to the root block

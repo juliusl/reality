@@ -67,7 +67,7 @@ fn on_comment_start(lexer: &mut Lexer<Elements>) {
         .and_then(|s| s.find(">"))
         .expect("Didn't find a closing `>`");
     
-    lexer.bump(end_pos);
+    lexer.bump(end_pos + 1);
 }
 
 #[test]

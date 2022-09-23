@@ -1,7 +1,7 @@
-
 mod block;
 pub use block::Block;
 pub use block::BlockIndex;
+pub use block::BlockProperty;
 pub use block::BlockProperties;
 
 mod parser;
