@@ -1,4 +1,4 @@
-use std::{fs::create_dir_all, path::Path, sync::Arc};
+use std::{fs::create_dir_all, path::Path};
 
 use specs::{Component, DefaultVecStorage, Entity, World, WorldExt};
 

@@ -1,10 +1,10 @@
-use std::{collections::{BTreeSet, BTreeMap}, path::PathBuf};
+use std::{collections::BTreeSet, path::PathBuf};
 
 use atlier::system::Value;
 use specs::{Component, DefaultVecStorage, WorldExt};
 use tracing::{event, Level};
 
-use crate::{parser::attributes::Cache, Interpreter, wire::BlobDevice};
+use crate::{parser::attributes::Cache, Interpreter, wire::BlobDevice, BlockProperties};
 
 use super::{custom::SpecialAttribute, AttributeParser};
 
@@ -36,13 +36,13 @@ pub struct File {
 #[derive(Debug, Default)]
 pub struct FileDescriptor { 
     /// Properties of this file
-    properties: BTreeMap<String, Value>,
+    properties: BlockProperties,
     /// Cached file data
     cache: Option<BlobDevice>,
 }
 
 impl FileDescriptor {
-    pub fn new(properties: BTreeMap<String, Value>) -> Self {
+    pub fn new(properties: BlockProperties) -> Self {
         FileDescriptor { properties, cache: None }
     }
 }

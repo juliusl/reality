@@ -7,6 +7,9 @@ use serde::{Serialize, Deserialize};
 mod block_index;
 pub use block_index::BlockIndex;
 
+mod block_properties;
+pub use block_properties::BlockProperties;
+
 /// Data structure parsed from .runmd, 
 /// 
 /// Stores stable and transient attributes. Can be encoded into 

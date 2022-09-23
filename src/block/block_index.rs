@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use atlier::system::{Value, Attribute};
 
+use crate::BlockProperties;
+
 /// This struct takes a property map, and from each `.complex` value,
 /// indexes a subset of the map.
 /// 
@@ -15,17 +17,25 @@ use atlier::system::{Value, Attribute};
 /// 1) Specify the name of the complex 
 /// 2) Get a map of name/values 
 /// 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockIndex {
     /// Stable attribute
     attr: (String, Value),
     /// Property map
-    properties: BTreeMap<String, Value>,
+    properties: BlockProperties,
     /// Map of complexes wiithin the properties
-    complexes: BTreeMap<String, BTreeSet<String>>
+    complexes: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl BlockIndex {
+    pub fn new(attr: &Attribute) -> Self {
+        BlockIndex {
+            attr: (attr.name.to_string(), attr.value.clone()),
+            properties: BlockProperties::default(),
+            complexes: BTreeMap::default(),
+        }
+    }
+
     /// Returns the stable attribute that is the owner of these properties
     /// 
     pub fn attribute(&self) -> (String, Value) {
@@ -36,19 +46,19 @@ impl BlockIndex {
     /// 
     /// If a property was not present, then a value of Value::Empty will be set.
     /// 
-    pub fn complex(&self, complex_name: impl AsRef<str>) -> Option<BTreeMap<String, Value>> {
+    pub fn complex(&self, complex_name: impl AsRef<str>) -> Option<BlockProperties> {
        self.complexes.get(complex_name.as_ref()).and_then(|complex| {
-            let mut map = BTreeMap::default();
+            let mut properties = BlockProperties::default();
 
             for k in complex.iter() {
-                if let Some(value) = self.properties.get(k) {
-                    map.insert(k.clone(), value.clone());
+                if let Some(values) = self.properties.property(k) {
+                    values.iter().for_each(|value|  properties.add(k.clone(), value.clone()))
                 } else {
-                    map.insert(k.clone(), Value::Empty);
+                    properties.add(k.clone(), Value::Empty);
                 }
             }
 
-            Some(map)
+            Some(properties)
         })
     }
 
@@ -69,11 +79,7 @@ impl BlockIndex {
                 let stable_attr = slice.get(0).expect("There should be an owner for these properties");
                 
                 // TODO: Make this a stack
-                let mut block_index = BlockIndex {
-                    attr: (stable_attr.name.to_string(), stable_attr.value.clone()),
-                    properties: BTreeMap::default(),
-                    complexes: BTreeMap::default(),
-                };
+                let mut block_index = BlockIndex::new(stable_attr);
 
                 for prop in slice[1..].iter() {
                     debug_assert!(prop.name().starts_with(stable_attr.name()));
@@ -86,7 +92,7 @@ impl BlockIndex {
                     if let Value::Complex(complex) = value {
                         block_index.complexes.insert(symbol.to_string(), complex);
                     } else {
-                        block_index.properties.insert(symbol.to_string(), value.clone());
+                        block_index.properties.add(symbol.to_string(), value.clone());
                     }
                 }
 
@@ -147,11 +153,11 @@ fn test_block_index() {
     // 
     let index = index.get(0).expect("should be a block index at pos 0");
     let general_complex = index.complex("general").expect("should exist");
-    assert_eq!(general_complex.get("name"), Some(&Value::Symbol("test_block".to_string())));
-    assert_eq!(general_complex.get("type"), Some(&Value::Symbol("block_example_1".to_string())));
+    assert_eq!(general_complex.property("name").and_then(|p| p.first()), Some(&Value::Symbol("test_block".to_string())));
+    assert_eq!(general_complex.property("type").and_then(|p| p.first()), Some(&Value::Symbol("block_example_1".to_string())));
 
     let computation_complex = index.complex("computation").expect("should exist");
-    assert_eq!(computation_complex.get("type"), Some(&Value::Symbol("block_example_1".to_string())));    
-    assert_eq!(computation_complex.get("factor"), Some(&Value::Int(10)));   
-    assert_eq!(computation_complex.get("enabled"), Some(&Value::Empty));
+    assert_eq!(computation_complex.property("type").and_then(|p| p.first()), Some(&Value::Symbol("block_example_1".to_string())));    
+    assert_eq!(computation_complex.property("factor").and_then(|p| p.first()), Some(&Value::Int(10)));   
+    assert_eq!(computation_complex.property("enabled").and_then(|p| p.first()), Some(&Value::Empty));
 }
