@@ -19,52 +19,69 @@ use crate::BlockProperties;
 ///
 #[derive(Debug, Clone)]
 pub struct BlockIndex {
-    /// Stable attribute
-    attr: (String, Value),
-    /// Property map
+    /// Stable attribute that is the root of this index
+    root: Attribute,
+    /// Map of block properties
     properties: BlockProperties,
     /// Map of complexes wiithin the properties
     complexes: BTreeMap<String, BTreeSet<String>>,
+    /// Child properties 
+    /// 
+    /// If a propety has a different entity id, that means it belongs to 
+    /// a child entity that is related to this block 
+    /// 
+    children: BTreeMap<u32, BlockProperties>
 }
 
 impl BlockIndex {
-    pub fn new(attr: &Attribute) -> Self {
+    /// Creates a new empty index w/ a stable root attribute
+    /// 
+    pub fn new(root: &Attribute) -> Self {
+        assert!(root.is_stable(), "Only a stable attribute can be used as a root");
+
         BlockIndex {
-            attr: (attr.name.to_string(), attr.value.clone()),
+            root: root.clone(),
             properties: BlockProperties::default(),
             complexes: BTreeMap::default(),
+            children: BTreeMap::default(),
         }
     }
 
-    /// Returns the stable attribute that is the owner of these properties
+    /// Returns the stable attribute that is the root of these properties
     ///
-    pub fn attribute(&self) -> (String, Value) {
-        self.attr.clone()
+    pub fn root(&self) -> &Attribute {
+        &self.root
     }
 
-    /// Finds a complex from the index and returns a btree map,
+    /// Returns a set of child block properties that were indexed
+    /// 
+    /// Since this index is built of a vector of attributes, if a root has
+    /// a property that has a different id, that property is added to a set
+    /// of child properties mapped to that id.
+    /// 
+    /// *Note* Only special attribute types can add children in this manner.
+    /// 
+    pub fn iter_children(&self) -> impl Iterator<Item = (&u32, &BlockProperties)> {
+        self.children.iter()
+    }
+
+    /// Returns a complex if it exists
+    /// 
+    pub fn complex(&self, complex_name: impl AsRef<str>) -> Option<&BTreeSet<String>> {
+        self.complexes
+            .get(complex_name.as_ref())
+    }
+
+    /// Finds a complex from the index and returns it's block properties,
     ///
     /// If a property was not present, then a value of Value::Empty will be set.
     ///
-    pub fn complex(&self, complex_name: impl AsRef<str>) -> Option<BlockProperties> {
-        self.complexes
-            .get(complex_name.as_ref())
-            .and_then(|complex| {
-                let mut properties = BlockProperties::default();
-
-                for k in complex.iter() {
-                    if let Some(property) = self.properties.property(k) {
-                        properties.set(&k, property.clone());
-                    } else {
-                        properties.add(&k, Value::Empty);
-                    }
-                }
-
-                Some(properties)
-            })
+    pub fn as_complex(&self, complex_name: impl AsRef<str>) -> Option<BlockProperties> {
+        self.complex(complex_name)
+            .and_then(|complex| self.properties.complex(complex))
     }
 
-    /// Indexes a block and returns the indexes that were discovered
+    /// Creates a vector of index results derived from a vector of attributes
     ///
     pub fn index(attributes: impl Into<Vec<Attribute>>) -> Vec<Self> {
         let attributes = attributes.into();
@@ -82,7 +99,6 @@ impl BlockIndex {
                     .get(0)
                     .expect("There should be an owner for these properties");
 
-                // TODO: Make this a stack
                 let mut block_index = BlockIndex::new(stable_attr);
 
                 for prop in slice[1..].iter() {
@@ -98,9 +114,22 @@ impl BlockIndex {
                     if let Value::Complex(complex) = value {
                         block_index.complexes.insert(symbol.to_string(), complex);
                     } else {
-                        block_index
-                            .properties
-                            .add(symbol.to_string(), value.clone());
+                        if prop.id() != stable_attr.id() {
+                            match block_index.children.get_mut(&prop.id()) {
+                                Some(props) => {
+                                    props.add(symbol.to_string(), value.clone());
+                                },
+                                None => {
+                                    let mut props = BlockProperties::default();
+                                    props.add(symbol.to_string(), value.clone());
+                                    block_index.children.insert(prop.id(), props);
+                                },
+                            }
+                        } else {
+                            block_index
+                                .properties
+                                .add(symbol.to_string(), value.clone());
+                        }
                     }
                 }
 
@@ -115,7 +144,6 @@ impl BlockIndex {
         for (pos, attr) in attributes.iter().enumerate() {
             if attr.is_stable() {
                 s.push(pos);
-
                 parse(&mut i, &mut s);
             }
         }
@@ -139,7 +167,7 @@ fn test_block_index() {
     use tracing::Level;
 
     let mut parser = crate::Parser::new().parse(
-        r#"
+    r#"
     ``` test block
     + test_attr .empty
     :: general      .complex name, type
@@ -162,7 +190,7 @@ fn test_block_index() {
     // Test that complex lookup works
     //
     let index = index.get(0).expect("should be a block index at pos 0");
-    let general_complex = index.complex("general").expect("should exist");
+    let general_complex = index.as_complex("general").expect("should exist");
     assert_eq!(
         general_complex.property("name"),
         Some(&crate::block::BlockProperty::Single(Value::Symbol(
@@ -176,7 +204,7 @@ fn test_block_index() {
         )))
     );
 
-    let computation_complex = index.complex("computation").expect("should exist");
+    let computation_complex = index.as_complex("computation").expect("should exist");
     assert_eq!(
         computation_complex.property("type"),
         Some(&crate::block::BlockProperty::Single(Value::Symbol(

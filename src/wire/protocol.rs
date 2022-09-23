@@ -1,5 +1,5 @@
 use std::future::Future;
-
+use tracing::{event, Level};
 use atlier::system::{Attribute, Value};
 use specs::{World, WorldExt};
 
@@ -24,22 +24,27 @@ impl Protocol {
     pub fn new(parser: Parser) -> Self {
         let mut encoder = Encoder::new();
         for block in parser.iter_blocks() {
-            encoder.encode_block(block);
+            encoder.encode_block(block, &parser.world());
         }
 
         Self {
             encoder,
-            world: parser.commit(),
+            world: {
+                let mut world = World::new();
+                world.register::<Block>();
+                world.entities().create();
+                world
+            },
         }
     }
 
-    /// Replaces the current world w/ a new world 
-    /// 
+    /// Replaces the current world w/ a new world
+    ///
     pub fn reset_world(&mut self) {
-        self.world = World::new();
-        self.world.register::<Block>();
-
-        self.world.entities().create();
+        let mut world = World::new();
+        world.register::<Block>();
+        world.entities().create();
+        self.world = world;
     }
 
     /// Decodes blocks from encoder data, calls handle on each block
@@ -48,11 +53,7 @@ impl Protocol {
     /// Handle should return a future whose output is some result. That
     /// result will be passed to complete.
     ///
-    pub async fn decode<F, T>(
-        &self, 
-        handle: impl Fn(Block) -> F, 
-        complete: impl Fn(T) -> ()
-    )
+    pub async fn decode<F, T>(&self, handle: impl Fn(Block) -> F, complete: impl Fn(T) -> ())
     where
         F: Future<Output = T>,
     {
@@ -79,16 +80,22 @@ impl Protocol {
             let symbol = start
                 .symbol(&interner)
                 .expect("starting frame must have a symbol");
-            let entity = self.world.entities().create();
+            let entity = start.get_entity(&self.world, false);
 
             block = Block::new(entity, name, symbol)
         }
 
         for frame in block_frames.iter().skip(1) {
+            let attr_entity = frame.get_entity(&self.world, false);
+
+            if attr_entity.id() != block.entity() {
+                event!(Level::DEBUG, "Found child entity in frame {} -> {}", block.entity(), attr_entity.id());
+            }
+
             match frame.keyword() {
                 crate::parser::Keywords::Add => {
                     let attr = Attribute::new(
-                        block.entity(),
+                        attr_entity.id(),
                         frame
                             .name(&interner)
                             .expect("frame must have a name to add attribute"),
@@ -109,9 +116,9 @@ impl Protocol {
                     let value = frame
                         .read_value(&interner, blob.cursor())
                         .expect("frame must have value to define attribute");
-                
+
                     let name = format!("{name}::{symbol}");
-                    let mut attr = Attribute::new(block.entity(), name, Value::Empty);
+                    let mut attr = Attribute::new(attr_entity.id(), name, Value::Empty);
                     attr.edit_as(value);
                     block.add_attribute(&attr);
                 }
@@ -127,36 +134,44 @@ impl Protocol {
     }
 }
 
-/// Tests decoding a block 
-/// 
+/// Tests decoding a block
+///
 #[test]
 #[tracing_test::traced_test]
 fn test_decode_block() {
-    let mut protocol = Protocol::new(Parser::new().parse(r#"
+    let mut protocol = Protocol::new(Parser::new().parse(
+        r#"
     ``` call guest
     add address .text   localhost
     :: protocol .symbol http
     :: port     .int    8080
     ```
-    "#));
+    "#,
+    ));
 
     let block = protocol.decode_block(protocol.encoder.frames_slice());
     assert_eq!(block.name(), "call");
     assert_eq!(block.symbol(), "guest");
-    assert_eq!(block.entity(), 2); // because 0 is root, 1 is the one parsed, 2 is the one decoded
-
-    let address = block.map_transient("address"); 
-    assert_eq!(address.get("protocol"), Some(&Value::Symbol("http".to_string())));
+    assert_eq!(block.entity(), 1); 
+    let address = block.map_transient("address");
+    assert_eq!(
+        address.get("protocol"),
+        Some(&Value::Symbol("http".to_string()))
+    );
     assert_eq!(address.get("port"), Some(&Value::Int(8080)));
 
     // Test using a new world
+    // Since block frames include entity parity, the expected entity should always be the same
     protocol.reset_world();
     let block = protocol.decode_block(protocol.encoder.frames_slice());
     assert_eq!(block.name(), "call");
     assert_eq!(block.symbol(), "guest");
     assert_eq!(block.entity(), 1);
 
-    let address = block.map_transient("address"); 
-    assert_eq!(address.get("protocol"), Some(&Value::Symbol("http".to_string())));
+    let address = block.map_transient("address");
+    assert_eq!(
+        address.get("protocol"),
+        Some(&Value::Symbol("http".to_string()))
+    );
     assert_eq!(address.get("port"), Some(&Value::Int(8080)));
 }

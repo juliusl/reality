@@ -139,7 +139,7 @@ impl Interpreter for File {
         let files = block
             .index()
             .iter()
-            .filter_map(|i| i.complex("file"))
+            .filter_map(|i| i.as_complex("file"))
             .map(FileDescriptor::new)
             .collect();
 

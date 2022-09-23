@@ -1,3 +1,4 @@
+use specs::storage::GenericWriteStorage;
 use specs::{Entity, World, WorldExt};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -110,8 +111,8 @@ impl Parser {
 
     /// Returns an immutable ref to the World
     ///
-    pub fn world(&self) -> &World {
-        self.as_ref()
+    pub fn world(&self) -> Arc<World> {
+        self.world.clone()
     }
 
     /// Consumes self and returns the current world,
@@ -137,6 +138,22 @@ impl Parser {
                         block.symbol(),
                         entity
                     );
+
+                    for index in block.index() {
+                        for (child, properties) in index.iter_children() {
+                            let child = self.world.entities().entity(*child);
+                            
+                            self.world.write_component()
+                                .insert(child, properties.clone())
+                                .expect("could not add component for child entity");
+                            
+                            event!(
+                                Level::DEBUG, 
+                                "Committing block properties for child entity {:?}", 
+                                child
+                            );
+                        }
+                    }
                 }
                 Err(err) => {
                     event!(
@@ -214,25 +231,6 @@ impl Parser {
         self.parser_stack.last_mut().expect("just added")
     }
 
-    /// Returns the last attribute parser so additional 
-    /// transient properties can be added. 
-    /// 
-    /// If the last attribute parser parsed a special attribute,
-    /// new special attributes could've been enabled for subsequent property 
-    /// definitions. 
-    /// 
-    fn parse_property(&mut self) -> &mut AttributeParser {
-        if !self.parser_stack.is_empty() {
-            self.parser_top().unwrap()
-        } else {
-            self.new_attribute()
-        }
-    }
-
-    fn parser_top(&mut self) -> Option<&mut AttributeParser> {
-        self.parser_stack.last_mut()
-    }
-
     /// Consumes the current stack of attribute parsers, adding them to the 
     /// current block being parsed.
     /// 
@@ -288,7 +286,25 @@ impl Parser {
         } else {
             String::default()
         }
+    }
 
+    /// Returns the last attribute parser so additional 
+    /// transient properties can be added. 
+    /// 
+    /// If the last attribute parser parsed a special attribute,
+    /// new special attributes could've been enabled for subsequent property 
+    /// definitions. 
+    /// 
+    fn parse_property(&mut self) -> &mut AttributeParser {
+        if !self.parser_stack.is_empty() {
+            self.parser_top().unwrap()
+        } else {
+            self.new_attribute()
+        }
+    }
+
+    fn parser_top(&mut self) -> Option<&mut AttributeParser> {
+        self.parser_stack.last_mut()
     }
 }
 

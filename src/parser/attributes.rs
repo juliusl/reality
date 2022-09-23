@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::{collections::BTreeSet, fmt::Display, str::FromStr};
 use atlier::system::{Attribute, Value};
 use logos::{Lexer, Logos};
-use specs::{World, WorldExt};
+use specs::World;
 use tracing::{event, Level};
 use crate::parser::Elements;
 
@@ -34,10 +34,10 @@ pub struct AttributeParser {
     symbol: Option<String>,
     /// Transient value
     edit: Option<Value>,
-    /// Stack of attribute properties
-    properties: Vec<Attribute>,
-    /// The parsed attribute
+    /// The parsed stable attribute
     parsed: Option<Attribute>,
+    /// Stack of transient attribute properties
+    properties: Vec<Attribute>,
     /// Custom attribute parsers
     custom_attributes: HashMap<String, CustomAttribute>,
     /// Reference to world being edited
@@ -315,17 +315,6 @@ impl From<Attribute> for AttributeParser {
             custom_attributes: HashMap::default(),
             world: None,
         }
-    }
-}
-
-/// Creates a new parser and entity from world,
-///
-impl From<&'_ World> for AttributeParser {
-    fn from(world: &'_ World) -> Self {
-        let entity = world.entities().create();
-        let mut parser = AttributeParser::default();
-        parser.set_id(entity.id());
-        parser
     }
 }
 
@@ -734,10 +723,8 @@ fn test_attribute_parser() {
 
     // Complex Attributes
 
-    let world = World::new();
-
     // Test shortcut for defining an attribute without a name or value
-    let mut parser = AttributeParser::from(&world)
+    let mut parser = AttributeParser::default()
         .init(".shortcut cool shortcut");
 
     let shortcut = parser.next();
@@ -747,7 +734,7 @@ fn test_attribute_parser() {
     );
 
     // Test parsing .file attribute
-    let mut parser = AttributeParser::from(&world)
+    let mut parser = AttributeParser::default()
         .with_custom::<File>()
         .init("readme.md .file ./readme.md");
 
@@ -758,7 +745,7 @@ fn test_attribute_parser() {
     eprintln!("{:#?}", parsed);
 
     // Test parsing .blob attribute
-    let mut parser = AttributeParser::from(&world)
+    let mut parser = AttributeParser::default()
         .with_custom::<BlobDescriptor>()
         .init("readme.md .blob sha256:testdigest");
 

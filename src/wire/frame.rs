@@ -3,7 +3,7 @@ use crate::parser::{Attributes, Elements, Keywords};
 use atlier::system::Value;
 use bytemuck::cast;
 use logos::Logos;
-use specs::Entity;
+use specs::{Entity, World, WorldExt};
 use std::{
     collections::HashMap,
     fmt::Display,
@@ -346,8 +346,24 @@ impl Frame {
 
     /// Returns a slice from the parity range
     /// 
-    pub fn parity_bytes(&self) -> &[u8] {
-        &self.data[56..]
+    pub fn parity_bytes(&self) -> [u8; 8] {
+        let mut parity_bytes = [0; 8];
+        parity_bytes.copy_from_slice(&self.data[56..]);
+        parity_bytes
+    }
+
+    /// Returns the entity from this frame
+    /// 
+    pub fn get_entity(&self, world: &World, assert_generation: bool) -> Entity {
+        let [id, gen] = cast::<[u8; 8], [u32; 2]>(self.parity_bytes());
+
+        let entity = world.entities().entity(id);
+        if assert_generation {
+            let assert_generation = entity.gen().id() as u32;
+            assert_eq!(assert_generation, gen);
+        }
+        
+        entity
     }
 
     /// Read interned data from the frame,

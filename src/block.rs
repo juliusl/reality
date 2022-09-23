@@ -85,9 +85,7 @@ impl Block {
     /// name, the last attribute added will be used as the primary attribute. 
     ///
     pub fn add_attribute(&mut self, attr: &Attribute) {
-        let mut attr = attr.clone();
-        attr.id = self.entity;
-        self.attributes.push(attr);
+        self.attributes.push(attr.clone());
     }
 
     /// Returns a block index from a map of transient attributes,
