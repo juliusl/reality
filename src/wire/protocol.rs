@@ -10,8 +10,8 @@ use super::{Encoder, Frame};
 /// Struct for protocol state
 ///
 pub struct Protocol {
-    /// World that was used to create blocks
-    ///
+    /// World to decode blocks to
+    /// 
     world: World,
     /// Used to encode blocks into frames for transport
     ///

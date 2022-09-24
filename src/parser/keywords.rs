@@ -44,7 +44,7 @@ pub enum Keywords {
     /// If `::` is used, the current attribute parser will be reused.
     ///
     #[token("define", on_define)]
-    #[token("::", on_define)]
+    #[token(":", on_define)]
     Define = 0x0D,
 
     // Logos requires one token variant to handle errors,
@@ -114,7 +114,7 @@ fn on_define(lexer: &mut Lexer<Keywords>) {
         // add connection .empty
         // :: host .text example.com
         //
-        if lexer.slice() == "::" {
+        if lexer.slice().starts_with(":") {
             let current_block_symbol = lexer.extras.current_block_symbol().to_string();
             let attr_parser = lexer.extras.parse_property();
             
