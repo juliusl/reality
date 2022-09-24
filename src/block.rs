@@ -11,6 +11,9 @@ mod block_properties;
 pub use block_properties::BlockProperties;
 pub use block_properties::BlockProperty;
 
+mod block_object;
+pub use block_object::BlockObject;
+
 /// Data structure parsed from .runmd, 
 /// 
 /// Stores stable and transient attributes. Can be encoded into 
