@@ -1,5 +1,4 @@
 use std::{collections::BTreeSet, path::PathBuf};
-
 use atlier::system::Value;
 use specs::{Component, DefaultVecStorage, WorldExt};
 use tracing::{event, Level};
@@ -59,11 +58,11 @@ impl SpecialAttribute for File {
     ///
     fn parse(attr_parser: &mut AttributeParser, content: String) {
         assert!(
-            attr_parser.symbol.is_none(),
+            attr_parser.symbol().is_none(),
             "Can only be used when adding a stable attribute"
         );
 
-        let name = attr_parser.name.clone().expect("has name").to_string();
+        let name = attr_parser.name().clone().expect("has name").to_string();
         let path = PathBuf::from(content);
 
         // Map if the file exists

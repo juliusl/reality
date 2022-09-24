@@ -33,7 +33,7 @@ impl SpecialAttribute for BlobDescriptor {
     /// be handled by a system.
     ///
     fn parse(attr_parser: &mut AttributeParser, content: String) {
-        let name = attr_parser.name.clone().expect("An identifier must exist");
+        let name = attr_parser.name().clone().expect("An identifier must exist").to_string();
 
         // Map the blob address to an attribute
         attr_parser.define("address", 

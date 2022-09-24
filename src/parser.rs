@@ -1,4 +1,3 @@
-use specs::storage::GenericWriteStorage;
 use specs::{Entity, World, WorldExt};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
