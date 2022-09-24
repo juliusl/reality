@@ -101,8 +101,6 @@ impl Block {
     /// Returns a map where the key is the name of the attribute w/o the prefix
     /// and the transient value.
     ///
-    /// TODO: Need to handle multiple stable attribute copies,
-    /// 
     pub fn map_transient(&self, prefix: impl AsRef<str>) -> BTreeMap<String, Value> {
         let mut map = BTreeMap::new();
 

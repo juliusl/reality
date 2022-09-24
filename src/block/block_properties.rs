@@ -5,7 +5,7 @@ use specs::{Component, VecStorage};
 
 /// Wrapper type for a collection of block property attributes
 ///
-#[derive(Component, Debug, Default, Clone)]
+#[derive(Component, Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[storage(VecStorage)]
 pub struct BlockProperties {
     map: BTreeMap<String, BlockProperty>,
@@ -19,6 +19,11 @@ pub enum BlockProperty {
     Single(Value),
     /// Property is a list of values
     List(Vec<Value>),
+    /// Reverse property that indicates this property name is required
+    Required,
+    /// Reverse property that indiciates this property name is required
+    Optional,
+    /// Indicates that this block property is currently empty
     Empty,
 }
 
@@ -40,7 +45,7 @@ impl BlockProperties {
                 BlockProperty::List(values) => {
                     values.push(value.into());
                 }
-                BlockProperty::Empty => {
+                BlockProperty::Empty | BlockProperty::Required | BlockProperty::Optional => {
                     *existing = BlockProperty::Single(value.into());
                 }
             },
@@ -59,10 +64,100 @@ impl BlockProperties {
         self.map.insert(name.as_ref().to_string(), property);
     }
 
+    /// Returns a clone of self w/ property
+    /// 
+    pub fn with(&self, name: impl AsRef<str>, property: BlockProperty) -> Self {
+        let mut clone = self.clone();
+        clone.set(name, property);
+        clone
+    }
+
+    /// Sets a required flag on the property name
+    /// 
+    pub fn require(&self, property: impl AsRef<str>) -> Self {
+        self.with(property, BlockProperty::Required)
+    }
+
+    /// Sets a optional flag on the property name
+    /// 
+    pub fn optional(&self, property: impl AsRef<str>) -> Self {
+        self.with(property, BlockProperty::Optional)
+    }
+
+    /// Queries a source for required/optional properties this collection has,
+    /// 
+    /// Returns a result if all required properties are covered.
+    /// 
+    pub fn query(&self, source: &BlockProperties) -> Option<BlockProperties> {
+        let mut result = self.clone(); 
+
+        for (name, property) in self.query_parameters() {
+            match property {
+                BlockProperty::Required => {
+                    if let Some(required) = source.property(name) {
+                        match required {
+                            BlockProperty::Single(_) | BlockProperty::List(_) => {
+                                result.set(name, required.clone());
+                            },
+                            _ => {
+                                return None;
+                            },
+                        }
+                    } else {
+                        return None;
+                    }
+                },
+                BlockProperty::Optional => {
+                    if let Some(optional) = source.property(name) {
+                        match optional {
+                            BlockProperty::Single(_) | BlockProperty::List(_) => {
+                                result.set(name, optional.clone());
+                            },
+                            _ => {
+                                continue;
+                            },
+                        }
+                    }
+                },
+                _ => {
+                    continue;
+                }
+            }
+        }
+        
+        Some(result)
+    }
+
+    /// Gets query parameters found in this collection
+    /// 
+    fn query_parameters(&self) -> impl Iterator<Item = (&String, &BlockProperty)> {
+        self.map.iter().filter(|(_, prop)| match prop {
+            BlockProperty::Required | BlockProperty::Optional => true,
+            _ => false,
+        })
+    }
+
     /// Returns values by property name
     ///
     pub fn property(&self, name: impl AsRef<str>) -> Option<&BlockProperty> {
         self.map.get(name.as_ref())
+    }
+
+    /// Takes a property from this collection, replaces with `Empty`
+    /// 
+    pub fn take(&mut self, name: impl AsRef<str>) -> Option<BlockProperty> {
+        self.map.get_mut(name.as_ref()).and_then(|b| {
+            match b {
+                BlockProperty::Single(_) | BlockProperty::List(_) => {
+                    let taken = Some(b.clone());
+                    *b = BlockProperty::Empty;
+                    taken
+                },
+                BlockProperty::Required | 
+                BlockProperty::Optional |
+                BlockProperty::Empty => None,
+            }
+        })
     }
 
     /// Returns a filtered set of properties using a `complex`
@@ -84,4 +179,36 @@ impl BlockProperties {
             None
         }
     }
+}
+
+#[test]
+fn test_block_properties() {
+    let query = BlockProperties::default()
+        .require("name")
+        .require("type")
+        .optional("enabled");
+    
+    let mut source_w_partial =  BlockProperties::default();
+    source_w_partial.add("name", "test");
+    
+    let mut source_w_all = source_w_partial.clone();
+    source_w_all.add("type", "test-type");
+
+    // Test query returns none if the source has partial requirements
+    assert_eq!(query.query(&source_w_partial), None);
+
+    // Test query returns some if source has all requirements
+    assert!(query.query(&source_w_all).is_some());
+
+    // Test query result has the correct property value
+    assert_eq!(
+        query.query(&source_w_all).unwrap().property("name"), 
+        Some(&BlockProperty::Single(Value::Symbol("test".to_string())))
+    );
+
+    // Test taking a property,
+    assert_eq!(
+        source_w_all.take("type"), 
+        Some(BlockProperty::Single(Value::Symbol("test-type".to_string())))
+    );
 }
