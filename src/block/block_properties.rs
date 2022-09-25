@@ -5,7 +5,7 @@ use specs::{Component, VecStorage};
 
 /// Wrapper type for a collection of block property attributes
 ///
-#[derive(Component, Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Component, Hash, Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[storage(VecStorage)]
 pub struct BlockProperties {
     map: BTreeMap<String, BlockProperty>,
@@ -13,7 +13,7 @@ pub struct BlockProperties {
 
 /// Enumeration of property types
 ///
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Hash, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BlockProperty {
     /// Property is a single value
     Single(Value),
