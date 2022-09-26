@@ -43,10 +43,8 @@ impl Into<World> for WorldDir {
 }
 
 impl WorldDir {
-    /// Returns a new World reading blocks from data stored in this directory,
-    /// and then interpreting each block with a collection of plugins. If the plugin
-    /// returns a component it will be added to the block's entity.
-    ///
+    /// Loads blocks from the world dir, interpreting each with plugins
+    /// 
     pub fn evaluate(self, plugins: impl Clone + IntoIterator<Item = impl Interpreter>) {
         let blocks = self.load_blocks(self.as_ref());
         evaluate(self, blocks, plugins);
@@ -70,7 +68,7 @@ impl WorldDir {
     /// Returns a vector of blocks loaded from the dir,
     ///
    fn load_blocks(&self, _world: &World) -> Vec<(Entity, Block)> {
-        todo!()
+        vec![]
     }
 }
 
@@ -115,4 +113,7 @@ fn test_world_dir() {
 
     // Cleanup the directory
     std::fs::remove_dir_all(test.dir()).expect("deleted");
+
+    // Tests no plugins struct
+    test.evaluate(NoPlugins());
 }

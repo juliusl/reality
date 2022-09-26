@@ -15,11 +15,10 @@ pub fn evaluate(
                 plugin.initialize(world.as_mut());
                 match world.as_ref().write_component().insert(entity, component) {
                     Ok(previous) => {
-                        // Reinterpret
+                        // Reinterpret if replacing a component
                         if let Some(previous) = previous {
                             if let Some(updated) = plugin.interpret(&block, Some(&previous)) {
-                                world
-                                    .as_ref()
+                                world.as_ref()
                                     .write_component()
                                     .insert(entity, updated)
                                     .expect("inserted");

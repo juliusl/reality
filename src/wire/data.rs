@@ -115,7 +115,7 @@ impl From<Elements> for Data {
                 } else {
                     unreachable!("to_ref should always return a reference value")
                 }
-            }
+            },
             Elements::AttributeType(_) => {
                 // This element is mainly for parsing
                 // This is because the set of attributes encoded to

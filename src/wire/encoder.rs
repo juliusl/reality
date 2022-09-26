@@ -10,7 +10,9 @@ use std::{collections::BTreeMap, io::Cursor, ops::Range};
 /// cursor
 ///
 pub struct Encoder {
-    /// String interner for storing identifiers
+    /// String interner for storing identifiers and complexes
+    /// 
+    /// Can be converted into frames
     ///
     interner: Interner,
     /// Cursor to a blob device for writing/reading extent data types

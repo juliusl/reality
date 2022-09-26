@@ -10,12 +10,17 @@ use super::{Encoder, Frame};
 /// Struct for protocol state
 ///
 pub struct Protocol {
-    /// World to decode blocks to
-    /// 
-    world: World,
     /// Used to encode blocks into frames for transport
     ///
     encoder: Encoder,
+    /// World to decode blocks to
+    /// 
+    world: World,
+    /// Enable to assert the entity generation that is created on decode,
+    /// 
+    /// This can help ensure the integrity of transported frames.
+    /// 
+    assert_generation: bool,
 }
 
 impl Protocol {
@@ -35,16 +40,15 @@ impl Protocol {
                 world.entities().create();
                 world
             },
+            assert_generation: false,
         }
     }
 
-    /// Replaces the current world w/ a new world
-    ///
-    pub fn reset_world(&mut self) {
-        let mut world = World::new();
-        world.register::<Block>();
-        world.entities().create();
-        self.world = world;
+    /// Returns self with assert_generation set to true
+    /// 
+    pub fn enable_entity_generation_assert(mut self) -> Self {
+        self.assert_generation = true; 
+        self
     }
 
     /// Decodes blocks from encoder data, calls handle on each block
@@ -53,7 +57,7 @@ impl Protocol {
     /// Handle should return a future whose output is some result. That
     /// result will be passed to complete.
     ///
-    pub async fn decode<F, T>(&self, handle: impl Fn(Block) -> F, complete: impl Fn(T) -> ())
+    pub async fn decode<F, T>(&self, handle: impl Fn(&[Frame], Block) -> F, complete: impl Fn(T) -> ())
     where
         F: Future<Output = T>,
     {
@@ -62,7 +66,7 @@ impl Protocol {
 
             let block = self.decode_block(frames);
 
-            complete(handle(block).await)
+            complete(handle(frames, block).await)
         }
     }
 
@@ -80,13 +84,13 @@ impl Protocol {
             let symbol = start
                 .symbol(&interner)
                 .expect("starting frame must have a symbol");
-            let entity = start.get_entity(&self.world, false);
+            let entity = start.get_entity(&self.world, self.assert_generation);
 
             block = Block::new(entity, name, symbol)
         }
 
         for frame in block_frames.iter().skip(1) {
-            let attr_entity = frame.get_entity(&self.world, false);
+            let attr_entity = frame.get_entity(&self.world, self.assert_generation);
 
             if attr_entity.id() != block.entity() {
                 event!(Level::DEBUG, "Found child entity in frame {} -> {}", block.entity(), attr_entity.id());
@@ -132,6 +136,15 @@ impl Protocol {
 
         block
     }
+
+    /// Replaces the current world w/ a new world
+    ///
+    pub fn reset_world(&mut self) {
+        let mut world = World::new();
+        world.register::<Block>();
+        world.entities().create();
+        self.world = world;
+    }
 }
 
 /// Tests decoding a block
@@ -142,9 +155,9 @@ fn test_decode_block() {
     let mut protocol = Protocol::new(Parser::new().parse(
         r#"
     ``` call guest
-    add address .text   localhost
-    :: protocol .symbol http
-    :: port     .int    8080
+    + address .text   localhost
+    : protocol .symbol http
+    : port     .int    8080
     ```
     "#,
     ));

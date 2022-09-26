@@ -1,6 +1,6 @@
-use std::path::Path;
+use std::{path::Path, collections::HashMap};
 
-use crate::WorldDir;
+use crate::{WorldDir, wire::{BlobSource, BlobDevice}};
 
 use super::FrameDevice;
 
@@ -8,12 +8,34 @@ use super::FrameDevice;
 /// 
 #[derive(Default)]
 pub struct FrameBus {
-    /// Devices in priority order 
+    /// Devices in priority order
     /// 
     devices: Vec<FrameDevice>,
     /// Path to world directory 
     /// 
     world_dir: WorldDir, 
+}
+
+impl BlobSource for FrameBus {
+    fn read(&self, address: impl AsRef<str>) -> Option<&BlobDevice> {
+        todo!()
+    }
+
+    fn write(&mut self, address: impl AsRef<str>) -> Option<&mut BlobDevice> {
+        todo!()
+    }
+
+    fn new(&mut self, address: impl AsRef<str>) -> &mut BlobDevice {
+        todo!()
+    }
+
+    fn hash_map(&self) -> HashMap<String, BlobDevice> {
+        let mut map = HashMap::default();
+        for dev in self.devices.iter() {
+            map.insert(dev.name().to_string(), dev.blob_device());
+        }
+        map
+    }
 }
 
 impl FrameBus {

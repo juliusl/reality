@@ -1,4 +1,4 @@
-use super::{Data, Interner};
+use super::{Data, Interner, BlobDevice};
 use crate::parser::{Attributes, Elements, Keywords};
 use atlier::system::Value;
 use bytemuck::cast;
@@ -84,6 +84,15 @@ pub use frame_bus::FrameBus;
 #[derive(Debug, Clone)]
 pub struct Frame {
     data: [u8; 64],
+}
+
+impl From<&[u8]> for Frame {
+    fn from(slice: &[u8]) -> Self {
+        let mut data = [0; 64];
+        data.copy_from_slice(slice);
+
+        Frame { data }
+    }
 }
 
 impl Display for Frame {
@@ -518,6 +527,33 @@ impl Frame {
                 }
             }
             None => None,
+        }
+    }
+
+    /// Reads current value as a blob device, if current value is a text-buffer or binary vec,
+    /// 
+    pub fn read_as_blob(&self, interner: &Interner, blob_device: &Cursor<Vec<u8>>) -> Option<BlobDevice> {
+        match self.read_value(interner, blob_device) {
+            Some(value) => {
+                let name = self.name(interner).unwrap_or_default();
+                let symbol = self.symbol(interner).unwrap_or_default();
+                let address = format!("{name}::{symbol}");
+
+                match value {
+                    Value::TextBuffer(text_buffer) => Some(
+                        BlobDevice::new(
+                            address, 
+                            Cursor::new(text_buffer.as_bytes().to_vec()))
+                        ),
+                    Value::BinaryVector(binary) =>  Some(
+                        BlobDevice::new(
+                            address, 
+                            Cursor::new(binary))
+                        ),
+                    _ => None
+                }
+            }
+            _ => None,
         }
     }
 
