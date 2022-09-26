@@ -22,7 +22,7 @@ pub use block_object::BlockObject;
 #[derive(Component, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Clone, Default, Debug)]
 #[storage(DefaultVecStorage)]
 pub struct Block {
-    /// World identifier - assigned by the runtime
+    /// World entity identifier - assigned by the runtime
     entity: u32,
     /// Primary identifier - user/runtime assigned
     name: String, 
@@ -50,7 +50,9 @@ impl Block {
         }
     }
 
-    /// Returns a vector of block indexes,
+    /// Indexes the current block, and returns all of the results
+    /// 
+    /// Each stable attribute of a block can have its own index.
     /// 
     pub fn index(&self) -> Vec<BlockIndex> {
         BlockIndex::index(self)

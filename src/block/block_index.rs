@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use atlier::system::{Attribute, Value};
 use specs::{Component, VecStorage};
 
-use crate::BlockProperties;
+use crate::{BlockProperties, BlockProperty};
 
 /// This struct takes a property map, and from each `.complex` value,
 /// indexes a subset of the map.
@@ -18,7 +18,7 @@ use crate::BlockProperties;
 /// 1) Specify the name of the complex
 /// 2) Get a map of name/values
 ///
-#[derive(Debug, Clone, Component, Hash, Eq, PartialEq, PartialOrd)]
+#[derive(Debug, Default, Clone, Component, Hash, Eq, PartialEq, PartialOrd)]
 #[storage(VecStorage)]
 pub struct BlockIndex {
     /// Control values
@@ -56,6 +56,56 @@ impl BlockIndex {
     ///
     pub fn root(&self) -> &Attribute {
         &self.root
+    }
+
+    /// Searches for a property from the block, and returns the first result,
+    /// 
+    /// This method will search in the following order,
+    /// 
+    /// 1) Control map
+    /// 2) Root block properties
+    /// 
+    /// Panics if the property returned is BlockProperty::Required.
+    /// 
+    pub fn find_property(&self, name: impl AsRef<str>) -> Option<BlockProperty> {
+        if let Some(controlled) = self.control.get(name.as_ref()) {
+            Some(BlockProperty::Single(controlled.clone()))
+        } else {
+            match self.properties.property(name.as_ref()) {
+                Some(property) => match property {
+                    BlockProperty::Single(_) => Some(property.clone()),
+                    BlockProperty::List(_) => Some(property.clone()),
+                    BlockProperty::Required => panic!("Missing required property {}", name.as_ref()),
+                    BlockProperty::Optional => None,
+                    BlockProperty::Empty => None,
+                },
+                None => None,
+            }
+        }
+    }
+
+    /// Returns a reference to current block properties,
+    /// 
+    pub fn properties(&self) -> &BlockProperties {
+        &self.properties
+    }
+
+    /// Returns a mutable reference to current block properties,
+    /// 
+    pub fn properties_mut(&mut self) -> &mut BlockProperties {
+        &mut self.properties
+    }
+
+    /// Returns an immutable reference to child properties,
+    /// 
+    pub fn child_properties(&self, child: u32) -> Option<&BlockProperties> {
+        self.children.get(&child)
+    }
+
+    /// Returns a mutable reference to child properties found in this index
+    /// 
+    pub fn child_properties_mut(&mut self, child: u32) -> Option<&mut BlockProperties> {
+        self.children.get_mut(&child)
     }
 
     /// Add's a control value to the index, 
