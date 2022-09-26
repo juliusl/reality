@@ -1,0 +1,44 @@
+# Azure VM 
+
+## Control settings
+- This is a sequence to create a new azure vm
+``` runmd
+``` azure_vm
+: work_dir .symbol .run/azure_vm
+
++ .sequence install, create
+: install .event
+: create  .event
+```
+
+## Build install script
+- Installs a script to create the vm
+
+``` runmd
+``` install azure_vm
+: node_title                    .text    Install make-vm script
+: description                   .text    Installs the make-vm script
+
++ runtime
+: .install make-vm.sh
+```
+
+## Start VM Creation
+- Starts the script w/ env variables
+
+``` runmd
+``` create azure_vm
+: node_title    .text   Deploy Azure VM
+: description   .text   Create an Azure VM using the current user's .ssh config, and connect via ssh
+: caveats       .text   If an ssh key is not present, one will be generated via --generate_ssh_keys
+
++ .runtime
+: .process sh make-vm.sh
+: RESOURCE_GROUP    .env rg_name
+: VM_NAME           .env vm_name
+: IMAGE             .env UbuntuLTS
+: LOCATION          .env eastus2
+: ADMIN_USERNAME    .env chief
+: DEV_ID            .env tgif5
+
+```
