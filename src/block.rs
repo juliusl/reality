@@ -91,14 +91,6 @@ impl Block {
         self.attributes.push(attr.clone());
     }
 
-    /// Returns a block index from a map of transient attributes,
-    /// 
-    pub fn block_index(&self, prefix: impl AsRef<str>) -> BlockIndex {
-        let property_map = self.map_transient(prefix);
-
-        BlockIndex::from(property_map)
-    }
-
     /// Map transient values w/ prefix,
     ///
     /// Returns a map where the key is the name of the attribute w/o the prefix
@@ -149,12 +141,8 @@ impl Block {
     /// 
     /// Mechanically this means the transient map w/ the block symbol as the prefix.
     /// 
-    pub fn map_control(&self) -> Option<BTreeMap<String, Value>> {
-        if self.name.is_empty() && !self.symbol.is_empty() {
-            Some(self.map_transient(&self.symbol))
-        } else {
-            None 
-        }
+    pub fn map_control(&self) -> BTreeMap<String, Value> {
+        self.map_transient(&self.symbol)
     }
 
     /// Returns an iterator over all attributes,

@@ -56,14 +56,14 @@ impl SpecialAttribute for File {
     /// Does not read the contents of the file on disk, so that it can
     /// be handled by a system.
     ///
-    fn parse(attr_parser: &mut AttributeParser, content: String) {
+    fn parse(attr_parser: &mut AttributeParser, content: impl AsRef<str>) {
         assert!(
             attr_parser.symbol().is_none(),
             "Can only be used when adding a stable attribute"
         );
 
         let name = attr_parser.name().clone().expect("has name").to_string();
-        let path = PathBuf::from(content);
+        let path = PathBuf::from(content.as_ref());
 
         // Map if the file exists
         attr_parser.define("exists", Value::Bool(path.exists()));

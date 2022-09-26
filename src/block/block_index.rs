@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use atlier::system::{Attribute, Value};
+use specs::{Component, VecStorage};
 
 use crate::BlockProperties;
 
@@ -17,8 +18,11 @@ use crate::BlockProperties;
 /// 1) Specify the name of the complex
 /// 2) Get a map of name/values
 ///
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Component, Hash, Eq, PartialEq, PartialOrd)]
+#[storage(VecStorage)]
 pub struct BlockIndex {
+    /// Control values
+    control: BTreeMap<String, Value>,
     /// Stable attribute that is the root of this index
     root: Attribute,
     /// Map of block properties
@@ -40,6 +44,7 @@ impl BlockIndex {
         assert!(root.is_stable(), "Only a stable attribute can be used as a root");
 
         BlockIndex {
+            control: BTreeMap::default(),
             root: root.clone(),
             properties: BlockProperties::default(),
             complexes: BTreeMap::default(),
@@ -51,6 +56,12 @@ impl BlockIndex {
     ///
     pub fn root(&self) -> &Attribute {
         &self.root
+    }
+
+    /// Add's a control value to the index, 
+    /// 
+    pub fn add_control(&mut self, name: impl AsRef<str>, value: impl Into<Value>) {
+        self.control.insert(name.as_ref().to_string(), value.into());
     }
 
     /// Returns a set of child block properties that were indexed
@@ -151,12 +162,6 @@ impl BlockIndex {
         s.push(attributes.len());
         parse(&mut i, &mut s);
         i
-    }
-}
-
-impl From<BTreeMap<String, Value>> for BlockIndex {
-    fn from(_: BTreeMap<String, Value>) -> Self {
-        todo!()
     }
 }
 

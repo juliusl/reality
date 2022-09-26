@@ -5,14 +5,14 @@ use tracing::{event, Level};
 
 use logos::Logos;
 
-use crate::Block;
+use crate::{Block, BlockIndex, BlockProperties};
 
 mod attributes;
 pub use attributes::AttributeParser;
 pub use attributes::Attributes;
 pub use attributes::BlobDescriptor;
-pub use attributes::File;
 pub use attributes::CustomAttribute;
+pub use attributes::File;
 pub use attributes::SpecialAttribute;
 
 mod keywords;
@@ -55,13 +55,13 @@ impl Into<World> for Parser {
             Ok(mut world) => {
                 world.insert(self.index);
                 world.insert(self.custom_attributes);
-                
-                world.write_component().insert(
-                    world.entities().entity(0), 
-                    self.root
-                ).expect("can write the root block");
+
                 world
-            },
+                    .write_component()
+                    .insert(world.entities().entity(0), self.root)
+                    .expect("can write the root block");
+                world
+            }
             // If something is holding onto a reference, that would be a leak
             // Safer to panic here and correct the code that is holding onto the reference
             Err(_) => panic!("There should be no dangling references to world"),
@@ -77,12 +77,19 @@ impl Parser {
     /// The parser will create a new entity per block parsed.
     ///
     pub fn new() -> Self {
-        let mut world = World::new();
+        Self::new_with(World::new())
+    }
+
+    /// Creates a new parser w/ world
+    ///
+    pub fn new_with(mut world: World) -> Self {
         world.register::<Block>();
+        world.register::<BlockIndex>();
+        world.register::<BlockProperties>();
 
         // entity 0 is reserved for the root block
         world.entities().create();
-        
+
         let world = Arc::new(world);
         Self {
             world,
@@ -91,18 +98,18 @@ impl Parser {
             blocks: BTreeMap::new(),
             parsing: None,
             custom_attributes: vec![],
-            parser_stack: vec![]
+            parser_stack: vec![],
         }
     }
 
     /// Includes a special attribute with this parser,
-    /// 
+    ///
     /// Caveat - If multiple special attribute types share the same identifier,
-    /// the last one added will be used. 
-    /// 
-    pub fn with_special_attr<S>(mut self) -> Self 
+    /// the last one added will be used.
+    ///
+    pub fn with_special_attr<S>(mut self) -> Self
     where
-        S: SpecialAttribute
+        S: SpecialAttribute,
     {
         self.custom_attributes.push(CustomAttribute::new::<S>());
         self
@@ -117,7 +124,7 @@ impl Parser {
     /// Consumes self and returns the current world,
     ///
     /// Writes all blocks from this parser to world before returning the world.
-    /// 
+    ///
     /// Panics if there are existing references to World
     ///
     pub fn commit(mut self) -> World {
@@ -141,14 +148,26 @@ impl Parser {
                     for index in block.index() {
                         for (child, properties) in index.iter_children() {
                             let child = self.world.entities().entity(*child);
-                            
-                            self.world.write_component()
+
+                            self.world
+                                .write_component()
                                 .insert(child, properties.clone())
                                 .expect("could not add component for child entity");
-                            
+
+                            let mut block_index = index.clone();
+                        
+                            for (name, value) in block.map_control() {
+                                block_index.add_control(name, value);
+                            }
+
+                            self.world
+                                .write_component()
+                                .insert(child, block_index)
+                                .expect("could not add component for child entity");
+
                             event!(
-                                Level::DEBUG, 
-                                "Committing block properties for child entity {:?}", 
+                                Level::DEBUG,
+                                "Committing block properties for child entity {:?}",
                                 child
                             );
                         }
@@ -165,8 +184,8 @@ impl Parser {
                 }
             }
         }
-        
-       self.into()
+
+        self.into()
     }
 
     /// Returns a immuatble reference to the root block
@@ -208,31 +227,35 @@ impl Parser {
         self.blocks.iter().map(|(_, b)| b)
     }
 
-    /// Creates and returns a new attribute parser, 
-    /// 
-    /// Will set the id to the current block entity. 
-    /// This parser will be at the top of the stack. 
-    /// 
+    /// Creates and returns a new attribute parser,
+    ///
+    /// Will set the id to the current block entity.
+    /// This parser will be at the top of the stack.
+    ///
     pub fn new_attribute(&mut self) -> &mut AttributeParser {
         let mut attr_parser = AttributeParser::default()
             .with_custom::<File>()
             .with_custom::<BlobDescriptor>();
-        
+
         attr_parser.set_world(self.world.clone());
-        
+
         for custom_attr in self.custom_attributes.iter().cloned() {
-            event!(Level::TRACE, "Adding custom attr parser, {}", custom_attr.ident());
+            event!(
+                Level::TRACE,
+                "Adding custom attr parser, {}",
+                custom_attr.ident()
+            );
             attr_parser.add_custom(custom_attr);
         }
-        
+
         attr_parser.set_id(self.parsing.and_then(|p| Some(p.id())).unwrap_or(0));
         self.parser_stack.push(attr_parser);
         self.parser_stack.last_mut().expect("just added")
     }
 
-    /// Consumes the current stack of attribute parsers, adding them to the 
+    /// Consumes the current stack of attribute parsers, adding them to the
     /// current block being parsed.
-    /// 
+    ///
     pub fn evaluate_stack(&mut self) {
         while let Some(mut attr_parser) = self.parser_stack.pop() {
             let attr_parser = &mut attr_parser;
@@ -278,22 +301,26 @@ impl Parser {
     }
 
     /// Returns the current block symbol
-    /// 
+    ///
     fn current_block_symbol(&self) -> String {
         if let Some(parsing) = self.parsing.as_ref() {
-            self.blocks.get(parsing).expect("should be a block").symbol().to_string()
+            self.blocks
+                .get(parsing)
+                .expect("should be a block")
+                .symbol()
+                .to_string()
         } else {
             String::default()
         }
     }
 
-    /// Returns the last attribute parser so additional 
-    /// transient properties can be added. 
-    /// 
+    /// Returns the last attribute parser so additional
+    /// transient properties can be added.
+    ///
     /// If the last attribute parser parsed a special attribute,
-    /// new special attributes could've been enabled for subsequent property 
-    /// definitions. 
-    /// 
+    /// new special attributes could've been enabled for subsequent property
+    /// definitions.
+    ///
     fn parse_property(&mut self) -> &mut AttributeParser {
         if !self.parser_stack.is_empty() {
             self.parser_top().unwrap()
@@ -404,7 +431,12 @@ fn test_parser() {
     );
 
     let address = parser.get_block("call", "guest").map_transient("address");
-    assert_eq!(address.get("ipv4"), Some(&Value::Bool(true)), "{:?}", address);
+    assert_eq!(
+        address.get("ipv4"),
+        Some(&Value::Bool(true)),
+        "{:?}",
+        address
+    );
     assert_eq!(
         address.get("path"),
         Some(&Value::TextBuffer("api/test2".to_string()))
@@ -436,10 +468,7 @@ fn test_parser() {
 
     let root_guest_control = parser.get_block("", "guest").map_control();
     assert_eq!(
-        root_guest_control
-            .as_ref()
-            .expect("should have control block")
-            .get("name"),
+        root_guest_control.get("name"),
         Some(&Value::TextBuffer("cool guest host".to_string())),
         "{:#?}\n{:#?}",
         root_guest_control,

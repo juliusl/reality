@@ -14,7 +14,7 @@ pub trait SpecialAttribute {
     /// 
     /// Content will include everything after the attribute type identifier
     /// 
-    fn parse(parser: &mut AttributeParser, content: String);
+    fn parse(parser: &mut AttributeParser, content: impl AsRef<str>);
 }
 
 /// Struct for passing types that implement SpecialAttribute
@@ -22,9 +22,9 @@ pub trait SpecialAttribute {
 #[derive(Clone)]
 pub struct CustomAttribute(
     /// Identifier
-    &'static str, 
+    String, 
     /// Parse function
-    fn(&'_ mut AttributeParser, String)
+    fn(&mut AttributeParser, String)
 );
 
 impl CustomAttribute {
@@ -33,7 +33,11 @@ impl CustomAttribute {
     pub fn new<S>() -> Self 
     where 
         S: SpecialAttribute {
-            Self(S::ident(), S::parse)
+            Self(S::ident().to_string(), S::parse)
+    }
+
+    pub fn new_with(ident: impl AsRef<str>, parse: fn(&mut AttributeParser, String)) -> Self {
+        Self(ident.as_ref().to_string(), parse)
     }
 
     /// Returns the ident,
@@ -54,6 +58,6 @@ where
     T: SpecialAttribute
 {
     fn from(_: T) -> Self {
-        CustomAttribute(T::ident(), T::parse)
+        CustomAttribute(T::ident().to_string(), T::parse)
     }
 }

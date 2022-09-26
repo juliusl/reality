@@ -5,7 +5,7 @@ use std::{collections::HashMap, sync::Arc};
 use atlier::system::{Value, Attribute};
 use logos::Lexer;
 use logos::Logos;
-use specs::World;
+use specs::{World, WorldExt, Entity};
 use tracing::event;
 use tracing::Level;
 
@@ -195,6 +195,12 @@ impl AttributeParser {
         self.world.as_ref()
     }
 
+    /// Returns the entity that owns this parser,
+    /// 
+    pub fn entity(&self) -> Option<Entity> {
+        self.world().and_then(|w| Some(w.entities().entity(self.id)))
+    }
+
     /// Defines a property for the current name,
     /// 
     /// Panics if a name is not set.
@@ -214,6 +220,20 @@ impl AttributeParser {
         self.set_name(name);
         self.set_value(value.into());
         self.parse_attribute();
+    }
+
+    /// Pushes an attribute on to the property stack,
+    /// 
+    /// This method can be used directly when configuring a child entity.
+    /// 
+    pub fn define_child(&mut self, entity: Entity, symbol: impl AsRef<str>, value: impl Into<Value>) {
+        let id = self.id;
+        self.set_id(entity.id());
+        self.set_symbol(symbol);
+        self.set_edit(value.into());
+        self.set_value(Value::Empty);
+        self.parse_attribute();
+        self.set_id(id);
     }
 
     /// Parses the current state into an attribute, pushes onto stack
@@ -544,7 +564,7 @@ impl SpecialAttribute for TestCustomAttr {
         "custom-attr"
     }
 
-    fn parse(parser: &mut AttributeParser, _: String) {
+    fn parse(parser: &mut AttributeParser, _: impl AsRef<str>) {
         parser.set_value(Value::Empty);
     }
 }

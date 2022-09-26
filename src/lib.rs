@@ -9,6 +9,7 @@ mod parser;
 pub use parser::Parser;
 pub use parser::AttributeParser;
 pub use parser::SpecialAttribute;
+pub use parser::CustomAttribute;
 
 pub mod wire;
 
