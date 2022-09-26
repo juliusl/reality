@@ -27,6 +27,74 @@ pub enum BlockProperty {
     Empty,
 }
 
+impl BlockProperty {
+    /// Returns a string if the property is a single text buffer
+    /// 
+    pub fn text(&self) -> Option<&String> {
+        match self {
+            BlockProperty::Single(Value::TextBuffer(text)) => Some(text),
+            _ => None,
+        }
+    }
+
+    /// Returns a string if the property is a single symbol
+    /// 
+    pub fn symbol(&self) -> Option<&String> {
+        match self {
+            BlockProperty::Single(Value::Symbol(symbol)) => Some(symbol),
+            _ => None
+        }
+    }
+
+    /// Returns a vector of strings if the property is a single text buffer,
+    /// or if the property is a list of values, filters all text buffers
+    /// 
+    pub fn text_vec(&self) -> Option<Vec<&String>> {
+        match self {
+            BlockProperty::Single(Value::TextBuffer(text)) => Some(vec![text]),
+            BlockProperty::List(values) => Some(values.iter().filter_map(|m| {
+                match m {
+                    Value::TextBuffer(t) => Some(t),
+                    _ => None
+                }
+            }).collect::<Vec<_>>()),
+            _ => None,
+        }
+    }
+
+    /// Returns a vector of strings if the property is a single symbol,
+    /// or if the property is a list of values, filters all symbols
+    /// 
+    pub fn symbol_vec(&self) -> Option<Vec<&String>> {
+        match self {
+            BlockProperty::Single(Value::Symbol(text)) => Some(vec![text]),
+            BlockProperty::List(values) => Some(values.iter().filter_map(|m| {
+                match m {
+                    Value::Symbol(t) => Some(t),
+                    _ => None
+                }
+            }).collect::<Vec<_>>()),
+            _ => None,
+        }
+    }
+
+    /// Returns a vector of integers if the property is a single int,
+    /// or if the property is a list of values, filters all ints
+    /// 
+    pub fn int_vec(&self) -> Option<Vec<&i32>> {
+        match self {
+            BlockProperty::Single(Value::Int(int)) => Some(vec![int]),
+            BlockProperty::List(values) => Some(values.iter().filter_map(|m| {
+                match m {
+                    Value::Int(i) => Some(i),
+                    _ => None
+                }
+            }).collect::<Vec<_>>()),
+            _ => None,
+        }
+    }
+}
+
 impl Default for BlockProperty {
     fn default() -> Self {
         BlockProperty::Empty
