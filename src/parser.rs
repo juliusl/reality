@@ -148,12 +148,13 @@ impl Parser {
                     for index in block.index() {
                         for (child, properties) in index.iter_children() {
                             let child = self.world.entities().entity(*child);
-                            let block_index = index.clone();
+                            let mut block_index = index.clone();
                             let mut properties = properties.clone();
 
                             for (name, value) in block.map_control() {
                                 // TODO -- control values are lower precedent then properties on the root
                                 properties.add(name.to_string(), value.clone());
+                                block_index.add_control(name.clone(), value.clone());
                             }
 
                             self.world
