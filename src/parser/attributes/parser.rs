@@ -9,7 +9,7 @@ use specs::{World, WorldExt, Entity};
 use tracing::event;
 use tracing::Level;
 
-use crate::SpecialAttribute;
+use crate::{SpecialAttribute, parser};
 use crate::parser::Elements;
 
 use super::Attributes;
@@ -40,7 +40,7 @@ pub struct AttributeParser {
 }
 
 impl AttributeParser {
-    pub fn init(mut self, content: impl AsRef<str>) -> Self {
+    pub fn init(&mut self, content: impl AsRef<str>) -> &mut Self {
         self.parse(content);
         self
     }
@@ -114,12 +114,11 @@ impl AttributeParser {
 
     /// Adds a custom attribute parser and returns self,
     ///
-    pub fn with_custom<C>(mut self) -> Self 
+    pub fn with_custom<C>(&mut self) -> &mut Self 
     where
         C: SpecialAttribute
     {
-        let custom_attr = CustomAttribute::new::<C>();
-        self.custom_attributes.insert(custom_attr.ident(), custom_attr);
+        self.add_custom(CustomAttribute::new::<C>());
         self
     }
 
@@ -187,6 +186,18 @@ impl AttributeParser {
     /// 
     pub fn symbol(&self) -> Option<&String> {
         self.symbol.as_ref()
+    }
+
+    /// Returns the current value,
+    /// 
+    pub fn value(&self) -> &Value {
+        &self.value
+    }
+
+    /// Returns the last attribute on the stack, 
+    /// 
+    pub fn peek(&self) -> Option<&Attribute> {
+        self.properties.last()
     }
 
     /// Returns an immutable reference to world,
@@ -506,8 +517,8 @@ fn test_attribute_parser() {
     // Complex Attributes
 
     // Test shortcut for defining an attribute without a name or value
-    let mut parser = AttributeParser::default()
-        .init(".shortcut cool shortcut");
+    let mut parser = AttributeParser::default();
+    let parser = parser.init(".shortcut cool shortcut");
 
     let shortcut = parser.next();
     assert_eq!(
@@ -516,8 +527,9 @@ fn test_attribute_parser() {
     );
 
     // Test parsing .file attribute
-    let mut parser = AttributeParser::default()
-        .with_custom::<crate::parser::File>()
+    let mut parser = AttributeParser::default();
+
+    let parser = parser.with_custom::<crate::parser::File>()
         .init("readme.md .file ./readme.md");
 
     let mut parsed = vec![];
@@ -527,7 +539,8 @@ fn test_attribute_parser() {
     eprintln!("{:#?}", parsed);
 
     // Test parsing .blob attribute
-    let mut parser = AttributeParser::default()
+    let mut parser = AttributeParser::default();
+    let parser = parser
         .with_custom::<crate::parser::BlobDescriptor>()
         .init("readme.md .blob sha256:testdigest");
 
@@ -546,12 +559,14 @@ fn test_attribute_parser() {
         "Could not parse type, checking custom attribute parsers"
     ));
 
-    let mut parser = AttributeParser::default()
+    let mut parser = AttributeParser::default();
+    let parser = parser
         .with_custom::<TestCustomAttr>()
         .init("custom .custom-attr test custom attr input");
     assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::Empty)));
     
-    let mut parser = AttributeParser::default()
+    let mut parser = AttributeParser::default();
+    let parser = parser
         .with_custom::<TestCustomAttr>()
         .init("custom <comment block> .custom-attr <comment block> test custom attr input");
     assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::Empty)));

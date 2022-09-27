@@ -125,23 +125,3 @@ impl SpecialAttribute for File {
         attr_parser.add_custom(Cache());
     }
 }
-
-impl Interpreter for File {
-    type Output = Self;
-
-    fn initialize(&self, world: &mut specs::World) {
-        world.register::<Self>();
-    }
-
-    fn interpret(&self, block: &crate::Block, _: Option<&Self::Output>) -> Option<Self::Output> {
-        // These are all the attributes with a `file` complex
-        let files = block
-            .index()
-            .iter()
-            .filter_map(|i| i.as_complex("file"))
-            .map(FileDescriptor::new)
-            .collect();
-
-        Some(File { files })
-    }
-}

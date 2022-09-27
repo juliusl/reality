@@ -66,6 +66,14 @@ impl Block {
         self.entity == 0
     }
 
+    /// Returns true if the entity is a control block,
+    /// 
+    /// A control block only has a symbol and no name.
+    /// 
+    pub fn is_control_block(&self) -> bool {
+        self.name.is_empty() && !self.symbol.is_empty()
+    }
+
     /// Returns the block name
     ///
     pub fn name(&self) -> &String {

@@ -148,18 +148,19 @@ impl Parser {
                     for index in block.index() {
                         for (child, properties) in index.iter_children() {
                             let child = self.world.entities().entity(*child);
+                            let block_index = index.clone();
+                            let mut properties = properties.clone();
+
+                            for (name, value) in block.map_control() {
+                                // TODO -- control values are lower precedent then properties on the root
+                                properties.add(name.to_string(), value.clone());
+                            }
 
                             self.world
                                 .write_component()
-                                .insert(child, properties.clone())
+                                .insert(child, properties)
                                 .expect("could not add component for child entity");
-
-                            let mut block_index = index.clone();
                         
-                            for (name, value) in block.map_control() {
-                                block_index.add_control(name, value);
-                            }
-
                             self.world
                                 .write_component()
                                 .insert(child, block_index)
@@ -233,7 +234,8 @@ impl Parser {
     /// This parser will be at the top of the stack.
     ///
     pub fn new_attribute(&mut self) -> &mut AttributeParser {
-        let mut attr_parser = AttributeParser::default()
+        let mut attr_parser = AttributeParser::default();
+        let attr_parser = attr_parser
             .with_custom::<File>()
             .with_custom::<BlobDescriptor>();
 
@@ -249,7 +251,7 @@ impl Parser {
         }
 
         attr_parser.set_id(self.parsing.and_then(|p| Some(p.id())).unwrap_or(0));
-        self.parser_stack.push(attr_parser);
+        self.parser_stack.push(attr_parser.clone());
         self.parser_stack.last_mut().expect("just added")
     }
 
