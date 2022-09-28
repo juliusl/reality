@@ -31,6 +31,15 @@ pub enum BlockProperty {
 }
 
 impl BlockProperty {
+    /// Returns true if the property is a bool value and true
+    /// 
+    pub fn is_enabled(&self) -> bool {
+        match self {
+            BlockProperty::Single(Value::Bool(enabled)) => *enabled,
+            _ => false,
+        }
+    }
+
     /// Returns a string if the property is a single text buffer
     ///
     pub fn text(&self) -> Option<&String> {
