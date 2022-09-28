@@ -114,6 +114,12 @@ impl BlockIndex {
         self.control.insert(name.as_ref().to_string(), value.into());
     }
 
+    /// Returns control values, 
+    /// 
+    pub fn control_values(&self) -> &BTreeMap<String, Value> {
+        &self.control
+    }
+
     /// Returns a set of child block properties that were indexed
     /// 
     /// Since this index is built of a vector of attributes, if a root has
