@@ -292,6 +292,12 @@ impl BlockProperties {
             None
         }
     }
+
+    /// Returns an iterator over the current map state,
+    /// 
+    pub fn iter_properties(&self) -> impl Iterator<Item = (&String, &BlockProperty)> {
+        self.map.iter()
+    }
 }
 
 #[test]
