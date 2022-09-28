@@ -1,9 +1,9 @@
 use std::{collections::BTreeSet, path::PathBuf};
 use atlier::system::Value;
-use specs::{Component, DefaultVecStorage, WorldExt};
+use specs::{Component, DefaultVecStorage};
 use tracing::{event, Level};
 
-use crate::{parser::attributes::Cache, Interpreter, wire::BlobDevice, BlockProperties};
+use crate::{parser::attributes::Cache, wire::BlobDevice, BlockProperties};
 
 use super::{custom::SpecialAttribute, AttributeParser};
 

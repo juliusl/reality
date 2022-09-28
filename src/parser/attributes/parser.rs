@@ -212,6 +212,17 @@ impl AttributeParser {
         self.world().and_then(|w| Some(w.entities().entity(self.id)))
     }
 
+    /// Returns the last child entity created by this parser,
+    /// 
+    pub fn last_child_entity(&self) -> Option<Entity> {
+        match self.peek().and_then(|p| Some(p.id())) {
+            Some(ref child) if (*child != self.id)  => {
+                self.world().and_then(|w| Some(w.entities().entity(*child)))
+            },
+            _ => None
+        }
+    }
+
     /// Defines a property for the current name,
     /// 
     /// Panics if a name is not set.

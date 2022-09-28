@@ -1,4 +1,4 @@
-use specs::{Component, World};
+use specs::World;
 
 use crate::Block;
 
