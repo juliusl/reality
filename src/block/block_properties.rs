@@ -58,6 +58,15 @@ impl BlockProperty {
         }
     }
 
+    /// Returns an integer if the property is an int, 
+    ///
+    pub fn int(&self) -> Option<i32> {
+        match self {
+            BlockProperty::Single(Value::Int(i)) => Some(*i),
+            _ => None,
+        }
+    }
+
     /// Returns a vector of strings if the property is a single text buffer,
     /// or if the property is a list of values, filters all text buffers
     ///
