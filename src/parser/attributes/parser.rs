@@ -9,7 +9,7 @@ use specs::{World, WorldExt, Entity};
 use tracing::event;
 use tracing::Level;
 
-use crate::{SpecialAttribute, parser};
+use crate::SpecialAttribute;
 use crate::parser::Elements;
 
 use super::Attributes;
