@@ -53,7 +53,11 @@ impl Into<World> for Parser {
     fn into(self) -> World {
         match Arc::try_unwrap(self.world) {
             Ok(mut world) => {
-                world.insert(self.index);
+                let mut fixed_hash_map = HashMap::<String, Entity>::default();
+                for (key, value) in self.index.iter() {
+                    fixed_hash_map.insert(key.trim().to_string(), value.clone());
+                }
+                world.insert(fixed_hash_map);
                 world.insert(self.custom_attributes);
 
                 world
