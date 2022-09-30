@@ -24,6 +24,8 @@ pub enum Keywords {
     /// the root block will be used as the context.
     ///
     #[token("```", on_block_delimitter)]
+    #[token("<```", on_block_delimitter)]
+    #[token("<```>", on_block_delimitter)]
     BlockDelimitter = 0x0B,
 
     /// Comments are skipped, usually .md list element or header so that the .runmd can be

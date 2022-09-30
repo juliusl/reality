@@ -362,10 +362,10 @@ fn test_parser() {
     :: name         .text   Test map 
     :: description  .text   This tests the .map type, which is an alias for .empty 
     
-    ``` guest
+    <``` guest>
     :: name .text cool guest host
     + address .text testhost
-    ```
+    <```>
     "#;
 
     // Tests the lexer logic
