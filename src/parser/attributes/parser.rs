@@ -91,9 +91,8 @@ impl AttributeParser {
                                     );
                                 }
                                 None => {
-                                    // TODO: Add missing_custom_attribute_type
                                     event!(
-                                        Level::ERROR, 
+                                        Level::TRACE, 
                                         "Did not parse {custom_attr_type}, could not find custom attribute parser", 
                                     );
                                 }
