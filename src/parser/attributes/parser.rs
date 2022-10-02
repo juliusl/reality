@@ -91,6 +91,8 @@ impl AttributeParser {
                                     );
                                 }
                                 None => {
+                                    // This might be intended, but in case it is not
+                                    // this event here is to help figure out config issues
                                     event!(
                                         Level::TRACE, 
                                         "Did not parse {custom_attr_type}, could not find custom attribute parser", 
