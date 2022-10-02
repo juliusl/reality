@@ -579,15 +579,16 @@ fn test_attribute_parser() {
         .init("custom <comment block> .custom-attr <comment block> test custom attr input <comment block>");
     assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::Empty)));
 
-    let mut parser = AttributeParser::default()
-        .with_custom::<TestCustomAttr>()
+    let mut parser = AttributeParser::default();
+    let parser = parser.with_custom::<TestCustomAttr>()
         .init("custom <comment block> .symbol <comment block> test custom attr input <comment block>");
     assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::Symbol("test custom attr input".to_string()))));
 
     
-    let mut parser = AttributeParser::default()
-        .with_custom::<TestCustomAttr>()
+    let mut parser = AttributeParser::default();
+    let parser = parser.with_custom::<TestCustomAttr>()
         .init("custom <comment block> .int_pair <comment block 1> 1, <comment block2>5 <comment block>");
+
     assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::IntPair(1, 5))));
 
 }
