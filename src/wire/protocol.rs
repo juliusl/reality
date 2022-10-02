@@ -1,7 +1,7 @@
-use std::future::Future;
-use tracing::{event, Level};
 use atlier::system::{Attribute, Value};
 use specs::{World, WorldExt};
+use std::future::Future;
+use tracing::{event, Level};
 
 use crate::{Block, Parser};
 
@@ -14,12 +14,12 @@ pub struct Protocol {
     ///
     encoder: Encoder,
     /// World to decode blocks to
-    /// 
+    ///
     world: World,
     /// Enable to assert the entity generation that is created on decode,
-    /// 
+    ///
     /// This can help ensure the integrity of transported frames.
-    /// 
+    ///
     assert_generation: bool,
 }
 
@@ -45,9 +45,9 @@ impl Protocol {
     }
 
     /// Returns self with assert_generation set to true
-    /// 
+    ///
     pub fn enable_entity_generation_assert(mut self) -> Self {
-        self.assert_generation = true; 
+        self.assert_generation = true;
         self
     }
 
@@ -57,8 +57,11 @@ impl Protocol {
     /// Handle should return a future whose output is some result. That
     /// result will be passed to complete.
     ///
-    pub async fn decode<F, T>(&self, handle: impl Fn(&[Frame], Block) -> F, complete: impl Fn(T) -> ())
-    where
+    pub async fn decode<F, T>(
+        &self,
+        handle: impl Fn(&[Frame], Block) -> F,
+        complete: impl Fn(T) -> (),
+    ) where
         F: Future<Output = T>,
     {
         for (_, block_range) in self.encoder.block_index() {
@@ -93,7 +96,12 @@ impl Protocol {
             let attr_entity = frame.get_entity(&self.world, self.assert_generation);
 
             if attr_entity.id() != block.entity() {
-                event!(Level::DEBUG, "Found child entity in frame {} -> {}", block.entity(), attr_entity.id());
+                event!(
+                    Level::DEBUG,
+                    "Found child entity in frame {} -> {}",
+                    block.entity(),
+                    attr_entity.id()
+                );
             }
 
             match frame.keyword() {
@@ -165,7 +173,7 @@ fn test_decode_block() {
     let block = protocol.decode_block(protocol.encoder.frames_slice());
     assert_eq!(block.name(), "call");
     assert_eq!(block.symbol(), "guest");
-    assert_eq!(block.entity(), 1); 
+    assert_eq!(block.entity(), 1);
     let address = block.map_transient("address");
     assert_eq!(
         address.get("protocol"),

@@ -164,12 +164,17 @@ impl Parser {
                             self.world
                                 .write_component()
                                 .insert(child, properties)
-                                .expect("could not add component for child entity");
+                                .expect("should be able to insert block properties");
                         
                             self.world
                                 .write_component()
                                 .insert(child, block_index)
-                                .expect("could not add component for child entity");
+                                .expect("should be able to insert block index");
+
+                            self.world
+                                .write_component()
+                                .insert(child, block.clone())
+                                .expect("should be able to insert block");
 
                             event!(
                                 Level::DEBUG,
