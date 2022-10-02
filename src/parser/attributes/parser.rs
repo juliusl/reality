@@ -64,10 +64,18 @@ impl AttributeParser {
                     let mut elements_lexer = Elements::lexer(&line);
                     match elements_lexer.next() {
                         Some(Elements::AttributeType(custom_attr_type)) => {
-                            let mut input = elements_lexer.remainder().trim();
+                            let mut input = elements_lexer.remainder().trim().to_string();
 
-                            if let Some(Elements::Comment) = elements_lexer.next() {
-                                input = elements_lexer.remainder().trim();
+                            let scanning = input.to_string();
+                            let mut comment_lexer = Elements::lexer(&scanning);
+
+                            while let Some(token) = &mut comment_lexer.next() {
+                                match token {
+                                    Elements::Comment(comment) => {
+                                        input = input.replace(&format!("<{comment}>"), "");
+                                    },
+                                    _ => {}
+                                }
                             }
                             
                             if lexer.extras.name().is_none() {
@@ -284,9 +292,7 @@ pub fn on_comment_start(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_text_attr(lexer: &mut Lexer<Attributes>) {
-    handle_comment(lexer);
-
-    let remaining = lexer.remainder().trim().to_string();
+    let remaining = handle_comment(lexer);
 
     let text_buf = Value::TextBuffer(remaining);
 
@@ -296,8 +302,7 @@ pub fn on_text_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_bool_attr(lexer: &mut Lexer<Attributes>) {
-    handle_comment(lexer);
-    let bool_attr = if let Some(value) = lexer.remainder().trim().parse().ok() {
+    let bool_attr = if let Some(value) = handle_comment(lexer).parse().ok() {
         Value::Bool(value)
     } else {
         Value::Bool(false)
@@ -316,9 +321,7 @@ pub fn on_bool_disable(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_int_attr(lexer: &mut Lexer<Attributes>) {
-    handle_comment(lexer);
-    
-    let int_attr = if let Some(value) = lexer.remainder().trim().parse::<i32>().ok() {
+    let int_attr = if let Some(value) = handle_comment(lexer).parse::<i32>().ok() {
         Value::Int(value)
     } else {
         Value::Int(0)
@@ -329,8 +332,6 @@ pub fn on_int_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_int_pair_attr(lexer: &mut Lexer<Attributes>) {
-    handle_comment(lexer);
-
     let pair = from_comma_sep::<i32>(lexer);
 
     let int_pair = match (pair.get(0), pair.get(1)) {
@@ -343,8 +344,6 @@ pub fn on_int_pair_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_int_range_attr(lexer: &mut Lexer<Attributes>) {
-    handle_comment(lexer);
-
     let range = from_comma_sep::<i32>(lexer);
 
     let int_range = match (range.get(0), range.get(1), range.get(2)) {
@@ -357,9 +356,7 @@ pub fn on_int_range_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_float_attr(lexer: &mut Lexer<Attributes>) {
-    handle_comment(lexer);
-
-    let float = if let Some(value) = lexer.remainder().trim().parse::<f32>().ok() {
+    let float = if let Some(value) = handle_comment(lexer).parse::<f32>().ok() {
         Value::Float(value)
     } else {
         Value::Float(0.0)
@@ -370,8 +367,6 @@ pub fn on_float_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_float_pair_attr(lexer: &mut Lexer<Attributes>) {
-    handle_comment(lexer);
-
     let pair = from_comma_sep::<f32>(lexer);
     let float_pair = match (pair.get(0), pair.get(1)) {
         (Some(f0), Some(f1)) => Value::FloatPair(*f0, *f1),
@@ -383,8 +378,6 @@ pub fn on_float_pair_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_float_range_attr(lexer: &mut Lexer<Attributes>) {
-    handle_comment(lexer);
-
     let range = from_comma_sep::<f32>(lexer);
 
     let float_range = match (range.get(0), range.get(1), range.get(2)) {
@@ -397,9 +390,7 @@ pub fn on_float_range_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_binary_vec_attr(lexer: &mut Lexer<Attributes>) {
-    handle_comment(lexer);
-
-    let binary = match base64::decode(lexer.remainder().trim()) {
+    let binary = match base64::decode(handle_comment(lexer)) {
         Ok(content) => Value::BinaryVector(content),
         Err(_) => Value::BinaryVector(vec![]),
     };
@@ -409,9 +400,7 @@ pub fn on_binary_vec_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_symbol_attr(lexer: &mut Lexer<Attributes>) {
-    handle_comment(lexer);
-
-    let remaining = lexer.remainder().trim().to_string();
+    let remaining = handle_comment(lexer);
 
     let symbol_val = Value::Symbol(remaining);
 
@@ -420,14 +409,11 @@ pub fn on_symbol_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_empty_attr(lexer: &mut Lexer<Attributes>) {    
-    handle_comment(lexer);
-
     lexer.extras.parse_value(Value::Empty);
     lexer.bump(lexer.remainder().len());
 }
 
 pub fn on_complex_attr(lexer: &mut Lexer<Attributes>) {
-    handle_comment(lexer);
     let idents = from_comma_sep::<String>(lexer);
     lexer
         .extras
@@ -439,18 +425,29 @@ pub fn from_comma_sep<T>(lexer: &mut Lexer<Attributes>) -> Vec<T>
 where
     T: FromStr,
 {
-    lexer
-        .remainder()
-        .trim()
+    let input = handle_comment(lexer);
+    input
         .split(",")
         .filter_map(|i| i.trim().parse().ok())
         .collect()
 }
 
-pub fn handle_comment(lexer: &mut Lexer<Attributes>) {
-    if lexer.remainder().trim_start().starts_with("<") {
-        lexer.next();
+pub fn handle_comment(lexer: &mut Lexer<Attributes>) -> String {
+    let mut input = lexer.remainder().trim().to_string();
+
+    let scanning = input.to_string();
+    let mut comment_lexer = Elements::lexer(&scanning);
+
+    while let Some(token) = &mut comment_lexer.next() {
+        match token {
+            Elements::Comment(comment) => {
+                input = input.replace(&format!("<{comment}>"), "");
+            },
+            _ => {}
+        }
     }
+
+    input.trim().to_string()
 }
 
 #[test]
@@ -533,8 +530,20 @@ fn test_attribute_parser() {
     
     let mut parser = AttributeParser::default()
         .with_custom::<TestCustomAttr>()
-        .init("custom <comment block> .custom-attr <comment block> test custom attr input");
+        .init("custom <comment block> .custom-attr <comment block> test custom attr input <comment block>");
     assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::Empty)));
+
+    let mut parser = AttributeParser::default()
+        .with_custom::<TestCustomAttr>()
+        .init("custom <comment block> .symbol <comment block> test custom attr input <comment block>");
+    assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::Symbol("test custom attr input".to_string()))));
+
+    
+    let mut parser = AttributeParser::default()
+        .with_custom::<TestCustomAttr>()
+        .init("custom <comment block> .int_pair <comment block 1> 1, <comment block2>5 <comment block>");
+    assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::IntPair(1, 5))));
+
 }
 
 struct TestCustomAttr();

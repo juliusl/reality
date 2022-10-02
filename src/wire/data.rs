@@ -122,7 +122,7 @@ impl From<Elements> for Data {
                 // the frame are limited to framing values from atlier
                 panic!("attribute type element is not encoded to frame")
             },
-            Elements::Comment => {
+            Elements::Comment(_) => {
                 panic!("comment element is not encoded to frame")
             }
             Elements::Error => {

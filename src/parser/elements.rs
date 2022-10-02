@@ -30,7 +30,7 @@ pub enum Elements {
     #[token(".", on_attribute_type)]
     AttributeType(String),
     #[token("<", on_comment_start)]
-    Comment,
+    Comment(String),
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.
     #[error]
@@ -59,7 +59,7 @@ fn on_attribute_type(lexer: &mut Lexer<Elements>) -> Option<String> {
     }
 }
 
-fn on_comment_start(lexer: &mut Lexer<Elements>) {
+fn on_comment_start(lexer: &mut Lexer<Elements>) -> Option<String> {
     let end_pos = lexer.remainder()
         .lines()
         .take(1)
@@ -67,7 +67,11 @@ fn on_comment_start(lexer: &mut Lexer<Elements>) {
         .and_then(|s| s.find(">"))
         .expect("Didn't find a closing `>`");
     
+    let result = &lexer.remainder()[..end_pos];
+    
     lexer.bump(end_pos + 1);
+
+    Some(result.to_string())
 }
 
 #[test]
