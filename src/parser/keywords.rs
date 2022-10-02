@@ -24,19 +24,21 @@ pub enum Keywords {
     /// the root block will be used as the context.
     ///
     #[token("```", on_block_delimitter)]
+    #[token("<```", on_block_delimitter)]
+    #[token("<```>", on_block_delimitter)]
     BlockDelimitter = 0x0B,
 
     /// Comments are skipped, usually .md list element or header so that the .runmd can be
     /// partially cross compatible w/ .md.
     ///
-    #[token("#")]
-    #[token("*")]
-    #[token("-")]
-    #[token("//")]
-    #[token("``` md")]
-    #[token("``` runmd")]
-    #[token("```md")]
-    #[token("```runmd")]
+    #[token("#", on_comment)]
+    #[token("*", on_comment)]
+    #[token("-", on_comment)]
+    #[token("//", on_comment)]
+    #[token("``` md", on_comment)]
+    #[token("``` runmd", on_comment)]
+    #[token("```md", on_comment)]
+    #[token("```runmd", on_comment)]
     Comment = 0x0C,
 
     /// Writes a transient attribute
@@ -68,6 +70,12 @@ impl From<u8> for Keywords {
     }
 }
 
+fn on_comment(lexer: &mut Lexer<Keywords>) {
+    if let Some(next_line) = lexer.remainder().lines().next() {
+        lexer.bump(next_line.len());
+    }
+}
+ 
 fn on_block_delimitter(lexer: &mut Lexer<Keywords>) {
     if let Some(next_line) = lexer.remainder().lines().next() {
         let mut block_ident = Elements::lexer(next_line);

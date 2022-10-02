@@ -1,6 +1,6 @@
 use std::{fs::create_dir_all, path::Path};
 
-use specs::{Component, DefaultVecStorage, Entity, World, WorldExt};
+use specs::{Component, DefaultVecStorage, World, WorldExt};
 
 use crate::{Block, Interpreter, evaluate};
 
@@ -67,7 +67,7 @@ impl WorldDir {
 
     /// Returns a vector of blocks loaded from the dir,
     ///
-   fn load_blocks(&self, _world: &World) -> Vec<(Entity, Block)> {
+   fn load_blocks(&self, _world: &World) -> Vec<Block> {
         vec![]
     }
 }
@@ -82,13 +82,11 @@ impl WorldDir {
 pub struct NoPlugins();
 
 impl Interpreter for NoPlugins {
-    type Output = Self;
-
     fn initialize(&self, _: &mut World) {
         unimplemented!()
     }
 
-    fn interpret(&self, _: &Block, _: Option<&Self::Output>) -> Option<Self::Output> {
+    fn interpret(&self, _world: &World, _: &Block){
         unimplemented!()
     }
 }

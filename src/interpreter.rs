@@ -1,4 +1,4 @@
-use specs::{Component, World};
+use specs::World;
 
 use crate::Block;
 
@@ -6,10 +6,6 @@ use crate::Block;
 /// 
 pub trait Interpreter
 { 
-    /// Interpreter output 
-    /// 
-    type Output: Component;
-
     /// Initializes the specs world,
     /// 
     /// Initialization could be registering component types, inserting resources, etc.
@@ -21,5 +17,5 @@ pub trait Interpreter
     /// When the component is inserted, if an existing component was replaced, this function is called again
     /// with the previous component.
     /// 
-    fn interpret(&self, block: &Block, previous: Option<&Self::Output>) -> Option<Self::Output>;
+    fn interpret(&self, world: &World, block: &Block);
 }

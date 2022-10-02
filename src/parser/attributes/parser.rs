@@ -5,7 +5,7 @@ use std::{collections::HashMap, sync::Arc};
 use atlier::system::{Value, Attribute};
 use logos::Lexer;
 use logos::Logos;
-use specs::World;
+use specs::{World, WorldExt, Entity};
 use tracing::event;
 use tracing::Level;
 
@@ -40,7 +40,7 @@ pub struct AttributeParser {
 }
 
 impl AttributeParser {
-    pub fn init(mut self, content: impl AsRef<str>) -> Self {
+    pub fn init(&mut self, content: impl AsRef<str>) -> &mut Self {
         self.parse(content);
         self
     }
@@ -122,12 +122,11 @@ impl AttributeParser {
 
     /// Adds a custom attribute parser and returns self,
     ///
-    pub fn with_custom<C>(mut self) -> Self 
+    pub fn with_custom<C>(&mut self) -> &mut Self 
     where
         C: SpecialAttribute
     {
-        let custom_attr = CustomAttribute::new::<C>();
-        self.custom_attributes.insert(custom_attr.ident(), custom_attr);
+        self.add_custom(CustomAttribute::new::<C>());
         self
     }
 
@@ -197,10 +196,39 @@ impl AttributeParser {
         self.symbol.as_ref()
     }
 
+    /// Returns the current value,
+    /// 
+    pub fn value(&self) -> &Value {
+        &self.value
+    }
+
+    /// Returns the last attribute on the stack, 
+    /// 
+    pub fn peek(&self) -> Option<&Attribute> {
+        self.properties.last()
+    }
+
     /// Returns an immutable reference to world,
     /// 
     pub fn world(&self) -> Option<&Arc<World>> {
         self.world.as_ref()
+    }
+
+    /// Returns the entity that owns this parser,
+    /// 
+    pub fn entity(&self) -> Option<Entity> {
+        self.world().and_then(|w| Some(w.entities().entity(self.id)))
+    }
+
+    /// Returns the last child entity created by this parser,
+    /// 
+    pub fn last_child_entity(&self) -> Option<Entity> {
+        match self.peek().and_then(|p| Some(p.id())) {
+            Some(ref child) if (*child != self.id)  => {
+                self.world().and_then(|w| Some(w.entities().entity(*child)))
+            },
+            _ => None
+        }
     }
 
     /// Defines a property for the current name,
@@ -222,6 +250,20 @@ impl AttributeParser {
         self.set_name(name);
         self.set_value(value.into());
         self.parse_attribute();
+    }
+
+    /// Pushes an attribute on to the property stack,
+    /// 
+    /// This method can be used directly when configuring a child entity.
+    /// 
+    pub fn define_child(&mut self, entity: Entity, symbol: impl AsRef<str>, value: impl Into<Value>) {
+        let id = self.id;
+        self.set_id(entity.id());
+        self.set_symbol(symbol);
+        self.set_edit(value.into());
+        self.set_value(Value::Empty);
+        self.parse_attribute();
+        self.set_id(id);
     }
 
     /// Parses the current state into an attribute, pushes onto stack
@@ -483,8 +525,8 @@ fn test_attribute_parser() {
     // Complex Attributes
 
     // Test shortcut for defining an attribute without a name or value
-    let mut parser = AttributeParser::default()
-        .init(".shortcut cool shortcut");
+    let mut parser = AttributeParser::default();
+    let parser = parser.init(".shortcut cool shortcut");
 
     let shortcut = parser.next();
     assert_eq!(
@@ -493,8 +535,9 @@ fn test_attribute_parser() {
     );
 
     // Test parsing .file attribute
-    let mut parser = AttributeParser::default()
-        .with_custom::<crate::parser::File>()
+    let mut parser = AttributeParser::default();
+
+    let parser = parser.with_custom::<crate::parser::File>()
         .init("readme.md .file ./readme.md");
 
     let mut parsed = vec![];
@@ -504,7 +547,8 @@ fn test_attribute_parser() {
     eprintln!("{:#?}", parsed);
 
     // Test parsing .blob attribute
-    let mut parser = AttributeParser::default()
+    let mut parser = AttributeParser::default();
+    let parser = parser
         .with_custom::<crate::parser::BlobDescriptor>()
         .init("readme.md .blob sha256:testdigest");
 
@@ -523,12 +567,14 @@ fn test_attribute_parser() {
         "Could not parse type, checking custom attribute parsers"
     ));
 
-    let mut parser = AttributeParser::default()
+    let mut parser = AttributeParser::default();
+    let parser = parser
         .with_custom::<TestCustomAttr>()
         .init("custom .custom-attr test custom attr input");
     assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::Empty)));
     
-    let mut parser = AttributeParser::default()
+    let mut parser = AttributeParser::default();
+    let parser = parser
         .with_custom::<TestCustomAttr>()
         .init("custom <comment block> .custom-attr <comment block> test custom attr input <comment block>");
     assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::Empty)));
@@ -553,7 +599,7 @@ impl SpecialAttribute for TestCustomAttr {
         "custom-attr"
     }
 
-    fn parse(parser: &mut AttributeParser, _: String) {
+    fn parse(parser: &mut AttributeParser, _: impl AsRef<str>) {
         parser.set_value(Value::Empty);
     }
 }

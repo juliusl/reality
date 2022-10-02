@@ -22,7 +22,7 @@ pub use block_object::BlockObject;
 #[derive(Component, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Clone, Default, Debug)]
 #[storage(DefaultVecStorage)]
 pub struct Block {
-    /// World identifier - assigned by the runtime
+    /// World entity identifier - assigned by the runtime
     entity: u32,
     /// Primary identifier - user/runtime assigned
     name: String, 
@@ -50,7 +50,9 @@ impl Block {
         }
     }
 
-    /// Returns a vector of block indexes,
+    /// Indexes the current block, and returns all of the results
+    /// 
+    /// Each stable attribute of a block can have its own index.
     /// 
     pub fn index(&self) -> Vec<BlockIndex> {
         BlockIndex::index(self)
@@ -62,6 +64,14 @@ impl Block {
     /// 
     pub fn is_root_block(&self) -> bool {
         self.entity == 0
+    }
+
+    /// Returns true if the entity is a control block,
+    /// 
+    /// A control block only has a symbol and no name.
+    /// 
+    pub fn is_control_block(&self) -> bool {
+        self.name.is_empty() && !self.symbol.is_empty()
     }
 
     /// Returns the block name
@@ -89,14 +99,6 @@ impl Block {
     ///
     pub fn add_attribute(&mut self, attr: &Attribute) {
         self.attributes.push(attr.clone());
-    }
-
-    /// Returns a block index from a map of transient attributes,
-    /// 
-    pub fn block_index(&self, prefix: impl AsRef<str>) -> BlockIndex {
-        let property_map = self.map_transient(prefix);
-
-        BlockIndex::from(property_map)
     }
 
     /// Map transient values w/ prefix,
@@ -149,12 +151,8 @@ impl Block {
     /// 
     /// Mechanically this means the transient map w/ the block symbol as the prefix.
     /// 
-    pub fn map_control(&self) -> Option<BTreeMap<String, Value>> {
-        if self.name.is_empty() && !self.symbol.is_empty() {
-            Some(self.map_transient(&self.symbol))
-        } else {
-            None 
-        }
+    pub fn map_control(&self) -> BTreeMap<String, Value> {
+        self.map_transient(&self.symbol)
     }
 
     /// Returns an iterator over all attributes,

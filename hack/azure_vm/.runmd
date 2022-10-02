@@ -13,9 +13,9 @@
 
 ## Build install script
 - Installs a script to create the vm
-
 ``` runmd
 ``` install azure_vm
+: src_dir                       .symbol  lib/sh
 : node_title                    .text    Install make-vm script
 : description                   .text    Installs the make-vm script
 
@@ -40,5 +40,4 @@
 : LOCATION          .env eastus2
 : ADMIN_USERNAME    .env chief
 : DEV_ID            .env tgif5
-
 ```

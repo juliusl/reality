@@ -36,8 +36,16 @@ pub enum Elements {
     #[error]
     // We can also use this variant to define whitespace,
     // or any other matches we wish to skip.
-    #[regex(r"[ \t\n\f]+", logos::skip)]
+    #[regex(r"[ ,\t\n\f]+", logos::skip)]
     Error,
+}
+
+impl Elements {
+    /// Returns an ident element if valid ident,
+    /// 
+    pub fn ident(ident: impl AsRef<str>) -> Option<Elements> {
+        Elements::lexer(ident.as_ref()).next()
+    }
 }
 
 fn on_identifier(lexer: &mut Lexer<Elements>) -> Option<String> {
@@ -82,4 +90,11 @@ fn test_elements() {
         Elements::lexer(test_str).next().expect("parses"),
         Elements::AttributeType("Custom".to_string())
     );
+
+    let test_str = "test, one, two, three";
+    let mut lexer = Elements::lexer(test_str);
+    assert_eq!(lexer.next(), Elements::ident("test"));
+    assert_eq!(lexer.next(), Elements::ident("one"));
+    assert_eq!(lexer.next(), Elements::ident("two"));
+    assert_eq!(lexer.next(), Elements::ident("three"));
 }

@@ -11,7 +11,7 @@ impl SpecialAttribute for Cache {
         "cache"
     }
 
-    fn parse(parser: &mut super::AttributeParser, _: String) {
+    fn parse(parser: &mut super::AttributeParser, _: impl AsRef<str>) {
         parser.define("cache", Value::Bool(true));
     }
 }

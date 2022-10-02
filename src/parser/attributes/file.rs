@@ -1,9 +1,9 @@
 use std::{collections::BTreeSet, path::PathBuf};
 use atlier::system::Value;
-use specs::{Component, DefaultVecStorage, WorldExt};
+use specs::{Component, DefaultVecStorage};
 use tracing::{event, Level};
 
-use crate::{parser::attributes::Cache, Interpreter, wire::BlobDevice, BlockProperties};
+use crate::{parser::attributes::Cache, wire::BlobDevice, BlockProperties};
 
 use super::{custom::SpecialAttribute, AttributeParser};
 
@@ -56,14 +56,14 @@ impl SpecialAttribute for File {
     /// Does not read the contents of the file on disk, so that it can
     /// be handled by a system.
     ///
-    fn parse(attr_parser: &mut AttributeParser, content: String) {
+    fn parse(attr_parser: &mut AttributeParser, content: impl AsRef<str>) {
         assert!(
             attr_parser.symbol().is_none(),
             "Can only be used when adding a stable attribute"
         );
 
         let name = attr_parser.name().clone().expect("has name").to_string();
-        let path = PathBuf::from(content);
+        let path = PathBuf::from(content.as_ref());
 
         // Map if the file exists
         attr_parser.define("exists", Value::Bool(path.exists()));
@@ -123,25 +123,5 @@ impl SpecialAttribute for File {
 
         // Add the `.cache` custom attribute type
         attr_parser.add_custom(Cache());
-    }
-}
-
-impl Interpreter for File {
-    type Output = Self;
-
-    fn initialize(&self, world: &mut specs::World) {
-        world.register::<Self>();
-    }
-
-    fn interpret(&self, block: &crate::Block, _: Option<&Self::Output>) -> Option<Self::Output> {
-        // These are all the attributes with a `file` complex
-        let files = block
-            .index()
-            .iter()
-            .filter_map(|i| i.as_complex("file"))
-            .map(FileDescriptor::new)
-            .collect();
-
-        Some(File { files })
     }
 }
