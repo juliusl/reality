@@ -23,6 +23,7 @@ pub use interner::Interner;
 
 pub mod content_broker;
 pub use content_broker::ContentBroker;
+pub use content_broker::Sha256Digester;
 
 mod control_device;
 pub use control_device::ControlBuffer;
