@@ -159,7 +159,7 @@ impl Display for BlockProperty {
             BlockProperty::Single(single) => display_value(f, single),
             BlockProperty::List(list) => {
                 for val in list {
-                    display_value(f, value)?;
+                    display_value(f, val)?;
                     write!(f, ", ")?;
                 }
                 Ok(())
@@ -177,9 +177,9 @@ fn display_value(f: &mut std::fmt::Formatter<'_>, value: &Value) -> std::fmt::Re
         Value::Bool(b) => write!(f, "{b}"),
         Value::TextBuffer(t) => write!(f, "{t}"),
         Value::Int(i) => write!(f, "{i}"),
-        Value::IntPair(i1, i2) => write!(f, "({i}, {i2})"),
+        Value::IntPair(i1, i2) => write!(f, "({i1}, {i2})"),
         Value::IntRange(i1, i2, i3) => write!(f, "({i1}, {i2}, {i3})"),
-        Value::Float(f) => write!(f, "{f}"),
+        Value::Float(f1) => write!(f, "{f1}"),
         Value::FloatPair(f1, f2) => write!(f, "({f1}, {f2})"),
         Value::FloatRange(f1, f2, f3) => write!(f, "({f1}, {f2}, {f3})"),
         Value::BinaryVector(bin) => write!(f, "binary-vector omitted, len: {}", bin.len()),
