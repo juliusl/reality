@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Display,
+};
 
 use atlier::system::Value;
 use specs::{Component, VecStorage};
@@ -32,7 +35,7 @@ pub enum BlockProperty {
 
 impl BlockProperty {
     /// Returns true if the property is a bool value and true
-    /// 
+    ///
     pub fn is_enabled(&self) -> bool {
         match self {
             BlockProperty::Single(Value::Bool(enabled)) => *enabled,
@@ -58,7 +61,7 @@ impl BlockProperty {
         }
     }
 
-    /// Returns an integer if the property is an int, 
+    /// Returns an integer if the property is an int,
     ///
     pub fn int(&self) -> Option<i32> {
         match self {
@@ -150,9 +153,45 @@ impl Default for BlockProperty {
     }
 }
 
+impl Display for BlockProperty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BlockProperty::Single(single) => display_value(f, single),
+            BlockProperty::List(list) => {
+                for val in list {
+                    display_value(f, value)?;
+                    write!(f, ", ")?;
+                }
+                Ok(())
+            }
+            BlockProperty::Required => write!(f, "required, value is not set"),
+            BlockProperty::Optional => write!(f, "optional, value is not set"),
+            BlockProperty::Empty => write!(f, "empty value"),
+        }
+    }
+}
+
+fn display_value(f: &mut std::fmt::Formatter<'_>, value: &Value) -> std::fmt::Result {
+    match value {
+        Value::Empty => write!(f, "()"),
+        Value::Bool(b) => write!(f, "{b}"),
+        Value::TextBuffer(t) => write!(f, "{t}"),
+        Value::Int(i) => write!(f, "{i}"),
+        Value::IntPair(i1, i2) => write!(f, "({i}, {i2})"),
+        Value::IntRange(i1, i2, i3) => write!(f, "({i1}, {i2}, {i3})"),
+        Value::Float(f) => write!(f, "{f}"),
+        Value::FloatPair(f1, f2) => write!(f, "({f1}, {f2})"),
+        Value::FloatRange(f1, f2, f3) => write!(f, "({f1}, {f2}, {f3})"),
+        Value::BinaryVector(bin) => write!(f, "binary-vector omitted, len: {}", bin.len()),
+        Value::Reference(r) => write!(f, "ref:{r}"),
+        Value::Symbol(s) => write!(f, "{s}"),
+        Value::Complex(c) => write!(f, "{:?}", c),
+    }
+}
+
 impl BlockProperties {
     /// Creates a new set of block properties w/ name
-    /// 
+    ///
     pub fn new(name: impl AsRef<str>) -> Self {
         Self {
             name: name.as_ref().to_string(),
@@ -303,7 +342,7 @@ impl BlockProperties {
     }
 
     /// Returns an iterator over the current map state,
-    /// 
+    ///
     pub fn iter_properties(&self) -> impl Iterator<Item = (&String, &BlockProperty)> {
         self.map.iter()
     }
