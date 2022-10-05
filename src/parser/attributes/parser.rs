@@ -139,6 +139,12 @@ impl AttributeParser {
         self.custom_attributes.insert(custom_attr.ident(), custom_attr);
     }
 
+    /// Adds a custom attribute parser, 
+    /// 
+    pub fn add_custom_with(&mut self, ident: impl AsRef<str>, parse: fn(&mut AttributeParser, String)) {
+        self.add_custom(CustomAttribute::new_with(ident, parse));
+    }
+
     /// Returns the next attribute from the stack
     ///
     pub fn next(&mut self) -> Option<Attribute> {
