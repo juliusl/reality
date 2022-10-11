@@ -10,6 +10,14 @@ pub trait BlockObject {
     ///
     fn query(&self) -> BlockProperties;
 
+    /// Returns block properties to use to check what this block object returned to state,
+    /// 
+    /// *NOTE* Override to declare what to expect after the block object operates on state.
+    /// 
+    fn returns(&self) -> BlockProperties {
+        BlockProperties::default()
+    }
+
     /// Returns a custom attribute parser if implemented,
     /// 
     fn parser(&self) -> Option<CustomAttribute>;
