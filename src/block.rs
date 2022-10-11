@@ -10,6 +10,7 @@ pub use block_index::BlockIndex;
 mod block_properties;
 pub use block_properties::BlockProperties;
 pub use block_properties::BlockProperty;
+pub use block_properties::Documentation;
 
 mod block_object;
 pub use block_object::BlockObject;

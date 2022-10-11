@@ -39,7 +39,7 @@ pub use parser::AttributeParser;
 /// ex. name        .symbol attr_name
 /// ex. custom name .symbol attr_name
 ///
-#[derive(Logos, Debug, PartialEq, Eq)]
+#[derive(Logos, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 #[logos(extras = AttributeParser)]
 pub enum Attributes {
     /// Empty value

@@ -4,6 +4,7 @@ pub use block::BlockIndex;
 pub use block::BlockObject;
 pub use block::BlockProperty;
 pub use block::BlockProperties;
+pub use block::Documentation;
 
 mod parser;
 pub use parser::Parser;
