@@ -10,6 +10,9 @@ pub use parser::Parser;
 pub use parser::AttributeParser;
 pub use parser::SpecialAttribute;
 pub use parser::CustomAttribute;
+pub use parser::Elements;
+pub use parser::Keywords;
+pub use parser::Attributes;
 
 pub mod wire;
 
