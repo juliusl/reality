@@ -113,7 +113,7 @@ impl Block {
         for (name, value) in self
             .attributes
             .iter()
-            .filter(|a| !a.is_stable() && a.name.starts_with(prefix.as_ref()))
+            .filter(|a| !a.is_stable() && a.name.starts_with(&format!("{}::", prefix.as_ref())))
             .filter_map(|a| a.transient())
         {
             map.insert(

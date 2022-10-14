@@ -43,7 +43,7 @@ pub struct Parser {
     parser_stack: Vec<AttributeParser>,
     /// Setting this field will interpret the root block implicitly as a control block, and control blocks as event blocks,
     /// Using the value of this field as the symbol.
-    /// 
+    ///
     implicit_block_symbol: Option<String>,
 }
 
@@ -112,13 +112,13 @@ impl Parser {
     }
 
     /// Sets the implicit symbol for the parser,
-    /// 
+    ///
     pub fn set_implicit_symbol(&mut self, symbol: impl AsRef<str>) {
         self.implicit_block_symbol = Some(symbol.as_ref().to_string());
     }
 
     /// Unset this so that block search works like normal,
-    /// 
+    ///
     pub fn unset_implicit_symbol(&mut self) {
         self.implicit_block_symbol = None;
     }
@@ -177,14 +177,28 @@ impl Parser {
                 }
             }
 
+            let control_block = if !block.is_control_block() {
+                self.index
+                    .get(&format!(" {}", block.symbol()))
+                    .and_then(|e| self.blocks.get(e))
+            } else {
+                None
+            };
+
             for index in block.index() {
                 for (child, properties) in index.iter_children() {
                     let child = self.world.entities().entity(*child);
                     let mut block_index = index.clone();
                     let mut properties = properties.clone();
 
+                    if let Some(control_block) = control_block {
+                        for (name, value) in control_block.map_control() {
+                            properties.add(name.to_string(), value.clone());
+                            block_index.add_control(name.clone(), value.clone());
+                        }
+                    }
+
                     for (name, value) in block.map_control() {
-                        // TODO -- control values are lower precedent then properties on the root
                         properties.add(name.to_string(), value.clone());
                         block_index.add_control(name.clone(), value.clone());
                     }
@@ -534,45 +548,87 @@ fn test_parser() {
     );
 }
 
+mod tests {
+    use specs::WorldExt;
 
-#[test]
-#[tracing_test::traced_test]
-fn test_implicit_symbols() {
-    use atlier::system::Value;
+    use crate::SpecialAttribute;
 
-    let content = r#"
-    ```
-    + address .symbol localhost
-    ```
+    struct TestChild;
 
-    ``` event-1
-    + name .symbol event-1
-    ```
+    impl SpecialAttribute for TestChild {
+        fn ident() -> &'static str {
+            "test_child"
+        }
 
-    ``` event-2
-    + name .symbol event-2
-    ```
-    "#;
+        fn parse(parser: &mut crate::AttributeParser, _: impl AsRef<str>) {
+            let child = parser.world().expect("should have a world").entities().create();
+            parser.define_child(child, "is_child", true);
+        }
+    }
 
-    let mut parser = Parser::new();
-    parser.set_implicit_symbol("test");
-
-    let mut parser = parser.parse(content);
-    parser.unset_implicit_symbol();
-
-
-    let block = parser.get_block("", "test");
-    let address = block.map_stable();
-    let address = address.get("address").expect("should have address stable attr");
-    assert_eq!(address, &Value::Symbol("localhost".to_string()));
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_implicit_symbols() {
+        use crate::Parser;
+        use crate::BlockIndex;
+        use atlier::system::Value;
     
-    let block = parser.get_block("event-1", "test");
-    let name = block.map_stable();
-    let name = name.get("name").expect("should have name stable attr");
-    assert_eq!(name, &Value::Symbol("event-1".to_string()));
+        let content = r#"
+        ```
+        : domain .symbol test
+    
+        + address .symbol localhost
+        ```
+    
+        ``` event-1
+        + name .symbol event-1
+        ```
+    
+        ``` event-2
+        + .test_child
 
-    let block = parser.get_block("event-2", "test");
-    let name = block.map_stable();
-    let name = name.get("name").expect("should have name stable attr");
-    assert_eq!(name, &Value::Symbol("event-2".to_string()));
+        + name .symbol event-2
+        ```
+        "#;
+    
+        let mut parser = Parser::new().with_special_attr::<TestChild>();
+    
+        parser.set_implicit_symbol("test");
+    
+        let mut parser = parser.parse(content);
+        parser.unset_implicit_symbol();
+    
+        let block = parser.get_block("", "test");
+        let address = block.map_stable();
+        let address = address
+            .get("address")
+            .expect("should have address stable attr");
+        assert_eq!(address, &Value::Symbol("localhost".to_string()));
+    
+        let block = parser.get_block("event-1", "test");
+        let name = block.map_stable();
+        let name = name.get("name").expect("should have name stable attr");
+        assert_eq!(name, &Value::Symbol("event-1".to_string()));
+    
+        let block = parser.get_block("event-2", "test");
+        let name = block.map_stable();
+        let name = name.get("name").expect("should have name stable attr");
+        assert_eq!(name, &Value::Symbol("event-2".to_string()));
+    
+        let world = parser.commit();
+    
+        let domain = world
+            .read_component::<BlockIndex>()
+            .get(world.entities().entity(4))
+            .expect("should have a block")
+            .clone();
+    
+        let domain = domain
+            .control_values()
+            .get("domain")
+            .expect("should have a value");
+    
+        assert_eq!(domain, &Value::Symbol("test".to_string()));
+    }
+    
 }
