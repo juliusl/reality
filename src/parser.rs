@@ -41,6 +41,10 @@ pub struct Parser {
     custom_attributes: Vec<CustomAttribute>,
     /// Stack of attribute parsers,
     parser_stack: Vec<AttributeParser>,
+    /// Setting this field will interpret the root block implicitly as a control block, and control blocks as event blocks,
+    /// Using the value of this field as the symbol.
+    /// 
+    implicit_block_symbol: Option<String>,
 }
 
 impl AsRef<World> for Parser {
@@ -103,7 +107,20 @@ impl Parser {
             parsing: None,
             custom_attributes: vec![],
             parser_stack: vec![],
+            implicit_block_symbol: None,
         }
+    }
+
+    /// Sets the implicit symbol for the parser,
+    /// 
+    pub fn set_implicit_symbol(&mut self, symbol: impl AsRef<str>) {
+        self.implicit_block_symbol = Some(symbol.as_ref().to_string());
+    }
+
+    /// Unset this so that block search works like normal,
+    /// 
+    pub fn unset_implicit_symbol(&mut self) {
+        self.implicit_block_symbol = None;
     }
 
     /// Includes a special attribute with this parser,
@@ -285,12 +302,38 @@ impl Parser {
     /// Gets a block by name/symbol, if it doesn't already exist, creates and indexes a new block
     ///
     fn lookup_block(&mut self, name: impl AsRef<str>, symbol: impl AsRef<str>) -> Entity {
-        let name = name.as_ref();
-        let symbol = symbol.as_ref();
+        let mut name = name.as_ref();
+        let mut symbol = symbol.as_ref();
+
+        match self.implicit_block_symbol.as_ref() {
+            Some(implicit_symbol) if symbol.is_empty() && name.is_empty() => {
+                // Case root block -> control block
+                symbol = implicit_symbol.as_str();
+            }
+            Some(implicit_symbol) if name.is_empty() && !symbol.is_empty() => {
+                // Case control block -> event block
+                name = symbol;
+                symbol = implicit_symbol.as_str();
+            }
+            _ => {
+                // No-op
+            }
+        }
 
         let key = format!("{name} {symbol}");
+        event!(Level::TRACE, "Parsing block {key}");
         match self.index.get(&key) {
             Some(block) => *block,
+            // TODO - Enable root block usage
+            // None if key.trim().is_empty() => {
+            //     // This is the root block
+            //     let entity = self.world.entities().entity(0);
+            //     let block = Block::new(entity, name, symbol);
+
+            //     self.blocks.insert(entity, block);
+            //     self.index.insert(key, entity);
+            //     entity
+            // }
             None => {
                 let entity = self.world.entities().create();
                 let block = Block::new(entity, name, symbol);
@@ -489,4 +532,47 @@ fn test_parser() {
             .iter_attributes()
             .collect::<Vec<_>>(),
     );
+}
+
+
+#[test]
+#[tracing_test::traced_test]
+fn test_implicit_symbols() {
+    use atlier::system::Value;
+
+    let content = r#"
+    ```
+    + address .symbol localhost
+    ```
+
+    ``` event-1
+    + name .symbol event-1
+    ```
+
+    ``` event-2
+    + name .symbol event-2
+    ```
+    "#;
+
+    let mut parser = Parser::new();
+    parser.set_implicit_symbol("test");
+
+    let mut parser = parser.parse(content);
+    parser.unset_implicit_symbol();
+
+
+    let block = parser.get_block("", "test");
+    let address = block.map_stable();
+    let address = address.get("address").expect("should have address stable attr");
+    assert_eq!(address, &Value::Symbol("localhost".to_string()));
+    
+    let block = parser.get_block("event-1", "test");
+    let name = block.map_stable();
+    let name = name.get("name").expect("should have name stable attr");
+    assert_eq!(name, &Value::Symbol("event-1".to_string()));
+
+    let block = parser.get_block("event-2", "test");
+    let name = block.map_stable();
+    let name = name.get("name").expect("should have name stable attr");
+    assert_eq!(name, &Value::Symbol("event-2".to_string()));
 }

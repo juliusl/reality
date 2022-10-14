@@ -75,7 +75,7 @@ fn on_comment(lexer: &mut Lexer<Keywords>) {
         lexer.bump(next_line.len());
     }
 }
- 
+
 fn on_block_delimitter(lexer: &mut Lexer<Keywords>) {
     if let Some(next_line) = lexer.remainder().lines().next() {
         let mut block_ident = Elements::lexer(next_line);
@@ -91,6 +91,12 @@ fn on_block_delimitter(lexer: &mut Lexer<Keywords>) {
                 let current = lexer.extras.lookup_block(name, symbol);
                 lexer.extras.parsing = Some(current);
             }
+            // Only enable this new behavior if implicit_block_symbol is enabled
+            (None, None) if lexer.extras.implicit_block_symbol.is_some() => {
+                lexer.extras.evaluate_stack();
+                let current = lexer.extras.lookup_block("", "");
+                lexer.extras.parsing = Some(current);
+            }
             _ => {
                 lexer.extras.evaluate_stack();
                 // If an ident is not set, then
@@ -103,10 +109,7 @@ fn on_block_delimitter(lexer: &mut Lexer<Keywords>) {
 
 fn on_add(lexer: &mut Lexer<Keywords>) {
     if let Some(next_line) = lexer.remainder().lines().next() {
-        lexer
-            .extras
-            .new_attribute()
-            .parse(next_line.trim());
+        lexer.extras.new_attribute().parse(next_line.trim());
 
         lexer.bump(next_line.len());
     }
@@ -125,7 +128,7 @@ fn on_define(lexer: &mut Lexer<Keywords>) {
         if lexer.slice().starts_with(":") {
             let current_block_symbol = lexer.extras.current_block_symbol().to_string();
             let attr_parser = lexer.extras.parse_property();
-            
+
             if attr_parser.name().is_none() {
                 if !current_block_symbol.is_empty() {
                     attr_parser.set_name(current_block_symbol);
@@ -134,7 +137,7 @@ fn on_define(lexer: &mut Lexer<Keywords>) {
                     panic!("Invalid syntax,\n{}", lexer.remainder())
                 }
             }
-            
+
             // Because this is a property, set the value to empty
             attr_parser.set_value(Value::Empty);
             attr_parser.parse(next_line.trim());
