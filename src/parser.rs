@@ -132,8 +132,14 @@ impl Parser {
     where
         S: SpecialAttribute,
     {
-        self.custom_attributes.push(CustomAttribute::new::<S>());
+        self.add_custom_attribute(CustomAttribute::new::<S>());
         self
+    }
+
+    /// Adds a custom attribute parser,
+    /// 
+    pub fn add_custom_attribute(&mut self, custom: CustomAttribute) {
+        self.custom_attributes.push(custom);
     }
 
     /// Returns an immutable ref to the World
