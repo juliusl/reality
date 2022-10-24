@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use logos::Logos;
 
 use crate::parser::Elements;
@@ -80,5 +82,11 @@ where
 {
     fn from(_: T) -> Self {
         CustomAttribute(T::ident().to_string(), T::parse)
+    }
+}
+
+impl Debug for CustomAttribute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("CustomAttribute").field(&self.0).finish()
     }
 }
