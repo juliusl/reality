@@ -151,6 +151,9 @@ impl Parser {
     pub fn commit(mut self) -> World {
         self.evaluate_stack();
 
+        self.blocks
+            .insert(self.world.entities().entity(0), self.root.clone());
+
         for (entity, block) in self.blocks.iter() {
             match self
                 .world
