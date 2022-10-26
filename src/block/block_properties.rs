@@ -179,6 +179,12 @@ impl BlockProperties {
     pub fn iter_properties(&self) -> impl Iterator<Item = (&String, &BlockProperty)> {
         self.map.iter()
     }
+
+    /// Returns a mutable iterator over the current map state,
+    /// 
+    pub fn iter_properties_mut(&mut self) -> impl Iterator<Item = (&String, &mut BlockProperty)> {
+        self.map.iter_mut().map(|(name, property)| (name, property))
+    }
 }
 
 #[test]

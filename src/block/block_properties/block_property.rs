@@ -1,5 +1,5 @@
-use std:: fmt::Display;
 use atlier::system::Value;
+use std::fmt::Display;
 
 /// Enumeration of property types
 ///
@@ -127,6 +127,20 @@ impl BlockProperty {
                     .collect::<Vec<_>>(),
             ),
             _ => None,
+        }
+    }
+
+    /// Edits the value of this property,
+    /// 
+    pub fn edit(&mut self, on_single: fn(&mut Value), on_list: fn(&mut Vec<Value>), on_empty: fn() -> Option<Value>) {
+        match self {
+            BlockProperty::Single(single) => on_single(single),
+            BlockProperty::List(list) => on_list(list.as_mut()),
+            BlockProperty::Empty | BlockProperty::Optional | BlockProperty::Required => match on_empty() {
+                Some(value) => *self = BlockProperty::Single(value),
+                None => {
+                },
+            },
         }
     }
 }
