@@ -132,7 +132,7 @@ impl BlockProperty {
 
     /// Edits the value of this property,
     /// 
-    pub fn edit(&mut self, on_single: fn(&mut Value), on_list: fn(&mut Vec<Value>), on_empty: fn() -> Option<Value>) {
+    pub fn edit(&mut self, on_single: impl Fn(&mut Value), on_list: impl Fn(&mut Vec<Value>), on_empty: impl Fn() -> Option<Value>) {
         match self {
             BlockProperty::Single(single) => on_single(single),
             BlockProperty::List(list) => on_list(list.as_mut()),
