@@ -169,7 +169,9 @@ impl Display for BlockProperty {
     }
 }
 
-fn display_value(f: &mut std::fmt::Formatter<'_>, value: &Value) -> std::fmt::Result {
+/// Function to display a value,
+/// 
+pub fn display_value(f: &mut std::fmt::Formatter<'_>, value: &Value) -> std::fmt::Result {
     match value {
         Value::Empty => write!(f, "()"),
         Value::Bool(b) => write!(f, "{b}"),

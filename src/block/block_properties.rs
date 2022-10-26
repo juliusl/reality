@@ -7,6 +7,7 @@ use specs::{Component, VecStorage};
 
 mod block_property;
 pub use block_property::BlockProperty;
+pub use block_property::display_value;
 
 mod documentation;
 pub use documentation::Documentation;
