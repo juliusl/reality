@@ -44,7 +44,13 @@ impl Elements {
     /// Returns an ident element if valid ident,
     /// 
     pub fn ident(ident: impl AsRef<str>) -> Option<Elements> {
-        Elements::lexer(ident.as_ref()).next()
+        match Elements::lexer(ident.as_ref()).next() {
+            Some(ident) => match ident {
+                Elements::Identifier(_) => Some(ident),
+                _ => None
+            },
+            None => None,
+        }
     }
 }
 

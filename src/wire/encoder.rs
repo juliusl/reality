@@ -1,30 +1,32 @@
-use super::{frame::Frame, BlobDevice, Interner};
-use crate::Block;
+use super::{frame::Frame, BlobDevice, Interner, WireObject};
 use atlier::system::Value;
-use specs::{World, WorldExt};
+use specs::World;
 use std::{collections::BTreeMap, io::Cursor, ops::Range};
 
-/// Encoder for encoding blocks to wire protocol for transport,
+/// Frame index
+/// 
+pub type FrameIndex = BTreeMap<String, Vec<Range<usize>>>;
+
+/// Struct for encoding resources into frames,
 ///
-/// When encoding is completed, all blob data is collected into a single
-/// cursor
-///
+#[derive(Debug)]
 pub struct Encoder {
     /// String interner for storing identifiers and complexes
     /// 
-    /// Can be converted into frames
+    /// Can be converted into frames,
     ///
-    interner: Interner,
-    /// Cursor to a blob device for writing/reading extent data types
+    pub interner: Interner,
+    /// Cursor to a blob device for writing/reading extent data types,
     ///
-    blob_device: Cursor<Vec<u8>>,
-    /// Frames that have been encoded
+    pub blob_device: Cursor<Vec<u8>>,
+    /// Frames that have been encoded,
     ///
-    frames: Vec<Frame>,
-    /// Index of blocks added, uses the key format `{name} {symbol}`,
-    /// the value is a range for the start, end frames for the block.
+    pub frames: Vec<Frame>,
+    /// Index for labeling ranges of frames, 
+    /// 
+    /// Ex. For encoding blocks, uses the key format `{name} {symbol}`,
     ///
-    block_index: BTreeMap<String, Range<usize>>,
+    pub frame_index: FrameIndex,
 }
 
 impl Default for Encoder {
@@ -47,7 +49,7 @@ impl Encoder {
             interner: Interner::default(),
             blob_device: blob_device.into(),
             frames: vec![],
-            block_index: BTreeMap::new(),
+            frame_index: BTreeMap::new(),
         }
     }
 
@@ -77,88 +79,22 @@ impl Encoder {
 
     /// Returns the block index
     ///
-    pub fn block_index(&self) -> &BTreeMap<String, Range<usize>> {
-        &self.block_index
+    pub fn frame_index(&self) -> &FrameIndex {
+        &self.frame_index
     }
 
-    /// Encodes a block into frames
-    ///
-    pub fn encode_block(&mut self, block: &Block, world: &World) {
-        let mut idents = vec![block.name().to_string(), block.symbol().to_string()];
-
-        // Scan attributes for identifiers
-        for attr in block.iter_attributes() {
-            let val = if attr.is_stable() {
-                idents.push(attr.name.to_string());
-                attr.value()
-            } else {
-                let (name, symbol) = attr
-                    .name()
-                    .split_once("::")
-                    .expect("expect transient name format");
-
-                idents.push(name.to_string());
-                idents.push(symbol.to_string());
-
-                &attr.transient().expect("transient should exist").1
-            };
-
-            match val {
-                Value::Symbol(ident) => {
-                    idents.push(ident.to_string());
-                }
-                Value::Complex(_) => {
-                    if let (Value::Reference(key), Value::Complex(idents)) = (val.to_ref(), val) {
-                        self.interner.insert_complex(key, idents);
-                    }
-                }
-                _ => {}
-            }
-        }
-        self.encode_intern_data(idents);
-
-        let start = if self.frames.is_empty() {
-            0
-        } else {
-            self.frames.len() - 1
-        };
-
-        let block_entity = world.entities().entity(block.entity());
-
-        self.frames
-            .push(Frame::start_block(block.name(), block.symbol()).with_parity(block_entity));
-
-        for attr in block.iter_attributes() {
-            let attr_entity = world.entities().entity(attr.id());
-            if attr.is_stable() {
-                self.frames.push(
-                    Frame::add(attr.name(), attr.value(), &mut self.blob_device)
-                        .with_parity(attr_entity),
-                );
-            } else {
-                let (name, symbol) = attr
-                    .name()
-                    .split_once("::")
-                    .expect("expect transient name format");
-                let (_, value) = attr.transient().expect("should be transient");
-
-                self.frames.push(
-                    Frame::define(name, symbol, value, &mut self.blob_device)
-                        .with_parity(attr_entity),
-                );
-            }
-        }
-        self.frames
-            .push(Frame::end_block().with_parity(block_entity));
-
-        let end = self.frames.len();
-        self.block_index
-            .insert(format!("{} {}", block.name(), block.symbol()), start..end);
+    /// Encodes a wire object,
+    /// 
+    pub fn encode<T>(&mut self, obj: &T, world: &World) 
+    where
+        T: WireObject
+    {
+        obj.encode(world, self);
     }
 
-    /// Encodes intern data,
-    ///
-    pub fn encode_intern_data(&mut self, identifiers: Vec<String>) {
+    /// Interns a vector of identifiers,
+    /// 
+    pub fn intern_identifiers(&mut self, identifiers: Vec<String>) {
         identifiers
             .iter()
             .map(|i| Value::Symbol(i.to_string()))
@@ -175,6 +111,7 @@ impl Encoder {
 #[test]
 #[tracing_test::traced_test]
 fn test_encoder() {
+    use crate::Block;
     use tracing::{event, Level};
     let content = r#"
     ``` call host 
@@ -196,6 +133,10 @@ fn test_encoder() {
     ``` guest
     + address .text testhost
     ```
+
+    ``` guest
+    + address .text localhost
+    ```
     "#;
 
     let mut parser = crate::Parser::new().parse(content);
@@ -203,11 +144,16 @@ fn test_encoder() {
 
     let world = parser.world();
     let mut encoder = Encoder::new();
-    encoder.encode_block(parser.get_block("call", "guest"), &world);
-    encoder.encode_block(parser.get_block("call", "host"), &world);
-    encoder.encode_block(parser.get_block("test", "host"), &world);
-    encoder.encode_block(parser.get_block("", "guest"), &world);
-    encoder.encode_block(parser.root(), &world);
+    encoder.encode(parser.get_block("call", "guest"), &world);
+    encoder.encode(parser.get_block("call", "host"), &world);
+    encoder.encode(parser.get_block("test", "host"), &world);
+    encoder.encode(parser.get_block("", "guest"), &world);
+    encoder.encode(parser.get_block("", "guest"), &world);
+    encoder.encode(parser.root(), &world);
+
+    let index = Block::build_index(&encoder.interner(), encoder.frames_slice());
+
+    println!("{:#?}", index);
 
     // Test `call guest`
     let value = encoder.frames[1]

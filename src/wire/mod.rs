@@ -1,11 +1,10 @@
 
 mod frame;
 pub use frame::Frame;
-pub use frame::FrameDevice;
-pub use frame::FrameBus;
 
 mod encoder;
 pub use encoder::Encoder;
+pub use encoder::FrameIndex;
 
 mod data;
 pub use data::Data;
@@ -28,3 +27,6 @@ pub use content_broker::Sha256Digester;
 mod control_device;
 pub use control_device::ControlBuffer;
 pub use control_device::ControlDevice;
+
+mod wire_object;
+pub use wire_object::WireObject;

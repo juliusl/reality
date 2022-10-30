@@ -82,19 +82,19 @@ fn on_block_delimitter(lexer: &mut Lexer<Keywords>) {
 
         match (block_ident.next(), block_ident.next()) {
             (Some(Elements::Identifier(name)), Some(Elements::Identifier(symbol))) => {
-                let current = lexer.extras.lookup_block(name, symbol);
+                let current = lexer.extras.ensure_block(name, symbol);
                 lexer.extras.parsing = Some(current);
             }
             (Some(Elements::Identifier(symbol)), _) => {
                 lexer.extras.evaluate_stack();
                 let name = lexer.extras.current_block().name().to_string();
-                let current = lexer.extras.lookup_block(name, symbol);
+                let current = lexer.extras.ensure_block(name, symbol);
                 lexer.extras.parsing = Some(current);
             }
             // Only enable this new behavior if implicit_block_symbol is enabled
             (None, None) if lexer.extras.implicit_block_symbol.is_some() => {
                 lexer.extras.evaluate_stack();
-                let current = lexer.extras.lookup_block("", "");
+                let current = lexer.extras.ensure_block("", "");
                 lexer.extras.parsing = Some(current);
             }
             _ => {

@@ -1,19 +1,21 @@
-use atlier::system::{Attribute, Value};
-use specs::{World, WorldExt};
-use std::future::Future;
-use tracing::{event, Level};
+use specs::{
+    shred::{Resource, ResourceId},
+    Component, Join, World, WorldExt,
+};
+use std::fmt::Debug;
+use std::{collections::HashMap, future::Future, ops::Deref};
 
 use crate::{Block, Parser};
 
-use super::{Encoder, Frame};
+use super::{Encoder, Frame, WireObject};
 
 /// Struct for protocol state
 ///
 pub struct Protocol {
-    /// Used to encode blocks into frames for transport
+    /// Map of encoders for wire objects,
     ///
-    encoder: Encoder,
-    /// World to decode blocks to
+    encoders: HashMap<ResourceId, Encoder>,
+    /// World used for storage,
     ///
     world: World,
     /// Enable to assert the entity generation that is created on decode,
@@ -24,24 +26,16 @@ pub struct Protocol {
 }
 
 impl Protocol {
-    /// Returns new protocol state from a parser
+    /// Consumes a parser and returns new protocol,
     ///
     pub fn new(parser: Parser) -> Self {
-        let mut encoder = Encoder::new();
-        for block in parser.iter_blocks() {
-            encoder.encode_block(block, &parser.world());
-        }
-
-        Self {
-            encoder,
-            world: {
-                let mut world = World::new();
-                world.register::<Block>();
-                world.entities().create();
-                world
-            },
+        let mut protocol = Self {
+            encoders: HashMap::default(),
+            world: parser.commit(),
             assert_generation: false,
-        }
+        };
+        protocol.encode_components::<Block>();
+        protocol
     }
 
     /// Returns self with assert_generation set to true
@@ -51,107 +45,167 @@ impl Protocol {
         self
     }
 
-    /// Decodes blocks from encoder data, calls handle on each block
-    /// decoded.
+    /// Returns true if decoding should assert entity generation,
     ///
-    /// Handle should return a future whose output is some result. That
-    /// result will be passed to complete.
+    pub fn assert_entity_generation(&self) -> bool {
+        self.assert_generation
+    }
+
+    /// Encodes all components from the world,
     ///
-    pub async fn decode<F, T>(
+    pub fn encode_components<T>(&mut self)
+    where
+        T: WireObject + Component,
+        T::Storage: Default,
+    {
+        let resource_id = ResourceId::new::<T::Storage>();
+        self.encoder(resource_id, |world, encoder| {
+            let components = world.read_component::<T>();
+            for (_, c) in (&world.entities(), &components).join() {
+                // if e.id() > 0 {
+                //     encoder.encode(c, world);
+                // }
+                encoder.encode(c, world);
+            }
+        });
+    }
+
+    /// Encodes a resource from the world,
+    ///
+    pub fn encode_resource<T>(&mut self)
+    where
+        T: WireObject + Resource,
+    {
+        let resource_id = ResourceId::new::<T>();
+
+        self.encoder(resource_id, |world, encoder| {
+            let resource = world.read_resource::<T>();
+
+            encoder.encode(resource.deref(), world);
+        });
+    }
+
+    /// Decodes and reads components,
+    ///
+    pub async fn read_components<F, T>(
         &self,
-        handle: impl Fn(&[Frame], Block) -> F,
+        handle: impl Fn(&[Frame], T) -> F,
         complete: impl Fn(T) -> (),
     ) where
+        T: WireObject + Component,
         F: Future<Output = T>,
     {
-        for (_, block_range) in self.encoder.block_index() {
-            let frames = &self.encoder.frames_slice()[block_range.clone()];
+        let resource_id = ResourceId::new::<T::Storage>();
+        self.read(&resource_id, handle, complete).await;
+    }
 
-            let block = self.decode_block(frames);
+    /// Decodes and reads resources,
+    ///
+    pub async fn read_resources<F, T>(
+        &self,
+        handle: impl Fn(&[Frame], T) -> F,
+        complete: impl Fn(T) -> (),
+    ) where
+        T: WireObject + Resource,
+        F: Future<Output = T>,
+    {
+        let resource_id = ResourceId::new::<T>();
+        self.read(&resource_id, handle, complete).await;
+    }
 
-            complete(handle(frames, block).await)
+    /// Decodes and reads wire objects,
+    ///
+    pub async fn read<F, T>(
+        &self,
+        resource_id: &ResourceId,
+        handle: impl Fn(&[Frame], T) -> F,
+        complete: impl Fn(T) -> (),
+    ) where
+        T: WireObject,
+        F: Future<Output = T>,
+    {
+        if let Some(encoder) = self.encoders.get(&resource_id) {
+            for (_, block_range) in encoder.frame_index() {
+                for block_range in block_range {
+                    let frames = &encoder.frames_slice()[block_range.clone()];
+
+                    let obj = T::decode(&self, encoder, frames);
+
+                    complete(handle(frames, obj).await)
+                }
+            }
         }
     }
 
-    /// Decode frames into a block
+    /// Decodes wire objects into a vector,
     ///
-    fn decode_block(&self, block_frames: &[Frame]) -> Block {
-        let mut block = Block::default();
-        let interner = self.encoder.interner();
-        let blob = self.encoder.blob_device("decode_block");
+    pub fn decode_components<T>(&self) -> Vec<T>
+    where
+        T: WireObject + Component,
+    {
+        let resource_id = ResourceId::new::<T::Storage>();
 
-        if let Some(start) = block_frames.get(0) {
-            let name = start
-                .name(&interner)
-                .expect("starting frame must have a name");
-            let symbol = start
-                .symbol(&interner)
-                .expect("starting frame must have a symbol");
-            let entity = start.get_entity(&self.world, self.assert_generation);
-
-            block = Block::new(entity, name, symbol)
-        }
-
-        for frame in block_frames.iter().skip(1) {
-            let attr_entity = frame.get_entity(&self.world, self.assert_generation);
-
-            if attr_entity.id() != block.entity() {
-                event!(
-                    Level::DEBUG,
-                    "Found child entity in frame {} -> {}",
-                    block.entity(),
-                    attr_entity.id()
-                );
-            }
-
-            match frame.keyword() {
-                crate::parser::Keywords::Add => {
-                    let attr = Attribute::new(
-                        attr_entity.id(),
-                        frame
-                            .name(&interner)
-                            .expect("frame must have a name to add attribute"),
-                        frame
-                            .read_value(&interner, blob.cursor())
-                            .expect("frame must have a value to add attribute"),
-                    );
-
-                    block.add_attribute(&attr);
-                }
-                crate::parser::Keywords::Define => {
-                    let name = frame
-                        .name(&interner)
-                        .expect("frame must have a name to define attribute");
-                    let symbol = frame
-                        .symbol(&interner)
-                        .expect("frame must have a symbol to define attribute");
-                    let value = frame
-                        .read_value(&interner, blob.cursor())
-                        .expect("frame must have value to define attribute");
-
-                    let name = format!("{name}::{symbol}");
-                    let mut attr = Attribute::new(attr_entity.id(), name, Value::Empty);
-                    attr.edit_as(value);
-                    block.add_attribute(&attr);
-                }
-                // Block delimitters are manually handled, so none should be in
-                // the middle.
-                crate::parser::Keywords::BlockDelimitter
-                | crate::parser::Keywords::Comment
-                | crate::parser::Keywords::Error => {}
-            }
-        }
-
-        block
+        self.decode(&resource_id)
     }
 
-    /// Replaces the current world w/ a new world
+    /// Decodes resources,
     ///
-    pub fn reset_world(&mut self) {
-        let mut world = World::new();
-        world.register::<Block>();
-        world.entities().create();
-        self.world = world;
+    pub fn decode_resources<T>(&self) -> Vec<T>
+    where
+        T: WireObject + Resource,
+    {
+        let resource_id = ResourceId::new::<T>();
+
+        self.decode(&resource_id)
+    }
+
+    /// Decodes objects by resource id
+    ///
+    pub fn decode<T>(&self, resource_id: &ResourceId) -> Vec<T>
+    where
+        T: WireObject,
+    {
+        let mut c = vec![];
+
+        if let Some(encoder) = self.encoders.get(&resource_id) {
+            for (_, block_range) in encoder.frame_index() {
+                for block_range in block_range {
+                    let frames = &encoder.frames_slice()[block_range.clone()];
+
+                    let obj = T::decode(&self, encoder, frames);
+                    c.push(obj);
+                }
+            }
+        }
+
+        c
+    }
+
+    /// Finds an encoder and calls encode,
+    ///
+    fn encoder(&mut self, resource_id: ResourceId, encode: fn(&World, &mut Encoder)) {
+        if let Some(encoder) = self.encoders.get_mut(&resource_id) {
+            encode(&self.world, encoder);
+        } else {
+            let mut encoder = Encoder::new();
+            encode(self.as_ref(), &mut encoder);
+            self.encoders.insert(resource_id.clone(), encoder);
+        }
+    }
+}
+
+impl AsRef<World> for Protocol {
+    fn as_ref(&self) -> &World {
+        &self.world
+    }
+}
+
+impl Debug for Protocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Protocol")
+            .field("encoders", &self.encoders)
+            .field("assert_generation", &self.assert_generation)
+            .finish()
     }
 }
 
@@ -160,7 +214,8 @@ impl Protocol {
 #[test]
 #[tracing_test::traced_test]
 fn test_decode_block() {
-    let mut protocol = Protocol::new(Parser::new().parse(
+    use atlier::system::Value;
+    let protocol = Protocol::new(Parser::new().parse(
         r#"
     ``` call guest
     + address .text   localhost
@@ -170,25 +225,11 @@ fn test_decode_block() {
     "#,
     ));
 
-    let block = protocol.decode_block(protocol.encoder.frames_slice());
+    let blocks = protocol.decode_components::<Block>();
+    let block = blocks.get(1).expect("should have a block");
     assert_eq!(block.name(), "call");
     assert_eq!(block.symbol(), "guest");
     assert_eq!(block.entity(), 1);
-    let address = block.map_transient("address");
-    assert_eq!(
-        address.get("protocol"),
-        Some(&Value::Symbol("http".to_string()))
-    );
-    assert_eq!(address.get("port"), Some(&Value::Int(8080)));
-
-    // Test using a new world
-    // Since block frames include entity parity, the expected entity should always be the same
-    protocol.reset_world();
-    let block = protocol.decode_block(protocol.encoder.frames_slice());
-    assert_eq!(block.name(), "call");
-    assert_eq!(block.symbol(), "guest");
-    assert_eq!(block.entity(), 1);
-
     let address = block.map_transient("address");
     assert_eq!(
         address.get("protocol"),

@@ -12,12 +12,6 @@ use std::{
 };
 use tracing::{event, Level};
 
-mod frame_device;
-pub use frame_device::FrameDevice;
-
-mod frame_bus;
-pub use frame_bus::FrameBus;
-
 /// A frame represents the data for a single operation,
 ///
 /// At most a frame can be 64 bytes in length,
