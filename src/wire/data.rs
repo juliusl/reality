@@ -1,4 +1,4 @@
-use std::io::{Cursor, Write};
+use std::io::{Write, Seek, Read};
 
 use atlier::system::Value;
 use bytemuck::cast;
@@ -55,10 +55,10 @@ impl Data {
     /// Parses a text buffer or binary vector value type, and writes to the blob
     /// cursor, returns an extent to look up the value.
     ///
-    pub fn parse_blob(value: Value, blob: &mut Cursor<Vec<u8>>) -> Option<Self> {
+    pub fn parse_blob(value: Value, blob: &mut (impl Read + Write + Seek + Clone )) -> Option<Self> {
         match value {
             Value::TextBuffer(text) => {
-                let cursor = Some(blob.position());
+                let cursor = blob.stream_position().ok();
                 match blob.write(text.as_bytes()) {
                     Ok(written) => {
                         assert_eq!(written, text.len());
@@ -74,7 +74,7 @@ impl Data {
                 }
             }
             Value::BinaryVector(data) => {
-                let cursor = Some(blob.position());
+                let cursor = blob.stream_position().ok();
                 match blob.write(&data) {
                     Ok(written) => {
                         assert_eq!(written, data.len());

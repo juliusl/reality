@@ -1,7 +1,7 @@
 use super::{frame::Frame, BlobDevice, Interner, WireObject};
 use atlier::system::Value;
 use specs::World;
-use std::{collections::BTreeMap, io::Cursor, ops::Range};
+use std::{collections::BTreeMap, io::{Cursor, Seek, Write, Read}, ops::Range};
 
 /// Frame index
 /// 
@@ -10,7 +10,10 @@ pub type FrameIndex = BTreeMap<String, Vec<Range<usize>>>;
 /// Struct for encoding resources into frames,
 ///
 #[derive(Debug)]
-pub struct Encoder {
+pub struct Encoder<BlobImpl = Cursor<Vec<u8>>> 
+where
+    BlobImpl: Read + Write + Seek + Clone
+{
     /// String interner for storing identifiers and complexes
     /// 
     /// Can be converted into frames,
@@ -18,7 +21,7 @@ pub struct Encoder {
     pub interner: Interner,
     /// Cursor to a blob device for writing/reading extent data types,
     ///
-    pub blob_device: Cursor<Vec<u8>>,
+    pub blob_device: BlobImpl,
     /// Frames that have been encoded,
     ///
     pub frames: Vec<Frame>,
@@ -39,24 +42,29 @@ impl Encoder {
     /// Returns a new encoder w/ an empty in-memory blob device
     ///
     pub fn new() -> Self {
-        Self::new_with(Cursor::new(vec![]))
-    }
-
-    /// Returns a new encoder /w a blob_device
-    ///
-    pub fn new_with(blob_device: impl Into<Cursor<Vec<u8>>>) -> Self {
-        Self {
-            interner: Interner::default(),
-            blob_device: blob_device.into(),
-            frames: vec![],
-            frame_index: BTreeMap::new(),
-        }
+        Self::new_with(Cursor::<Vec<u8>>::new(vec![]))
     }
 
     /// Returns a blob device using the current cursor state
     ///
     pub fn blob_device(&self, address: impl AsRef<str>) -> BlobDevice {
         BlobDevice::existing(address, &self.blob_device.clone())
+    }
+}
+
+impl<BlobImpl> Encoder<BlobImpl> 
+where
+    BlobImpl: Read + Write + Seek + Clone
+{
+    /// Returns a new encoder /w a blob_device
+    ///
+    pub fn new_with(blob_device: impl Into<BlobImpl>) -> Self {
+        Self {
+            interner: Interner::default(),
+            blob_device: blob_device.into(),
+            frames: vec![],
+            frame_index: BTreeMap::new(),
+        }
     }
 
     /// Returns an interner using the current interned identifiers

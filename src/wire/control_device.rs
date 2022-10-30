@@ -18,11 +18,11 @@ pub use control_buffer::ControlBuffer;
 /// bootstrap itself, so that it minimizes the amount of data that needs to be transferred before
 /// the rest of the blocks can be decoded.
 ///
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct ControlDevice {
-    data: Vec<Frame>,
-    read: Vec<Frame>,
-    index: Vec<Frame>,
+    pub data: Vec<Frame>,
+    pub read: Vec<Frame>,
+    pub index: Vec<Frame>,
 }
 
 impl ControlDevice {

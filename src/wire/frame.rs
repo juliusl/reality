@@ -1,4 +1,4 @@
-use super::{Data, Interner, BlobDevice};
+use super::{BlobDevice, Data, Interner};
 use crate::parser::{Attributes, Elements, Keywords};
 use atlier::system::Value;
 use bytemuck::cast;
@@ -7,7 +7,7 @@ use specs::{Entity, World, WorldExt};
 use std::{
     collections::HashMap,
     fmt::Display,
-    io::{Cursor, Read, Write},
+    io::{Cursor, Read, Write, Seek},
     ops::Range,
 };
 use tracing::{event, Level};
@@ -75,7 +75,7 @@ use tracing::{event, Level};
 /// As the above example implies, control frames cannot be compiled until there is
 /// control data.
 ///
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Frame {
     data: [u8; 64],
 }
@@ -93,9 +93,15 @@ impl Display for Frame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
             write!(f, "\n\t{:02x}", self.op())?;
-            
+
             if let Some(attr) = self.attribute() {
-                write!(f, " {}\n\t  {:016x} {:016x}\n\t  ", attr, self.name_key(), self.symbol_key())?;
+                write!(
+                    f,
+                    " {}\n\t  {:016x} {:016x}\n\t  ",
+                    attr,
+                    self.name_key(),
+                    self.symbol_key()
+                )?;
                 for b in self.value_bytes() {
                     write!(f, "{:x}", b)?;
                 }
@@ -147,13 +153,13 @@ impl Frame {
                 let mut frame_builder = FrameBuilder::default();
                 let mut written = 0;
                 written += frame_builder
-                    .write(Keywords::BlockDelimitter, None)
+                    .write(Keywords::BlockDelimitter, None::<&mut Cursor<Vec<u8>>>)
                     .expect("can write");
                 written += frame_builder
-                    .write(Elements::Identifier(name.to_string()), None)
+                    .write(Elements::Identifier(name.to_string()), None::<&mut Cursor<Vec<u8>>>)
                     .expect("can write");
                 written += frame_builder
-                    .write(Elements::Identifier(symbol.to_string()), None)
+                    .write(Elements::Identifier(symbol.to_string()), None::<&mut Cursor<Vec<u8>>>)
                     .expect("can write");
 
                 event!(
@@ -172,20 +178,20 @@ impl Frame {
 
     /// Returns a new frame for adding a stable attribute to a block
     ///
-    pub fn add(name: impl AsRef<str>, value: &Value, blob: &mut Cursor<Vec<u8>>) -> Self {
+    pub fn add(name: impl AsRef<str>, value: &Value, blob: &mut (impl Read + Write + Seek + Clone)) -> Self {
         if let Elements::Identifier(name) = Elements::lexer(name.as_ref())
             .next()
             .expect("should be valid identifier")
         {
             let mut frame_builder = FrameBuilder::default();
             let mut written = 0;
-            written += frame_builder.write(Keywords::Add, None).expect("can write");
+            written += frame_builder.write(Keywords::Add, None::<&mut Cursor<Vec<u8>>>).expect("can write");
             written += frame_builder
-                .write(Elements::Identifier(name.to_string()), None)
+                .write(Elements::Identifier(name.to_string()), None::<&mut Cursor<Vec<u8>>>)
                 .expect("can write");
 
             let value_type: Attributes = value.into();
-            written += frame_builder.write(value_type, None).expect("can write");
+            written += frame_builder.write(value_type, None::<&mut Cursor<Vec<u8>>>).expect("can write");
             written += frame_builder.write_value(value, blob).expect("can write");
 
             event!(
@@ -205,7 +211,7 @@ impl Frame {
         name: impl AsRef<str>,
         symbol: impl AsRef<str>,
         value: &Value,
-        blob: &mut Cursor<Vec<u8>>,
+        blob: &mut (impl Read + Write + Seek + Clone),
     ) -> Self {
         let name = Elements::lexer(name.as_ref())
             .next()
@@ -220,17 +226,17 @@ impl Frame {
                 let mut frame_builder = FrameBuilder::default();
                 let mut written = 0;
                 written += frame_builder
-                    .write(Keywords::Define, None)
+                    .write(Keywords::Define, None::<&mut Cursor<Vec<u8>>>)
                     .expect("can write");
                 written += frame_builder
-                    .write(Elements::Identifier(name.to_string()), None)
+                    .write(Elements::Identifier(name.to_string()), None::<&mut Cursor<Vec<u8>>>)
                     .expect("can write");
                 written += frame_builder
-                    .write(Elements::Identifier(symbol.to_string()), None)
+                    .write(Elements::Identifier(symbol.to_string()), None::<&mut Cursor<Vec<u8>>>)
                     .expect("can write");
 
                 let value_type: Attributes = value.into();
-                written += frame_builder.write(value_type, None).expect("can write");
+                written += frame_builder.write(value_type, None::<&mut Cursor<Vec<u8>>>).expect("can write");
                 written += frame_builder.write_value(value, blob).expect("can write");
 
                 event!(
@@ -252,7 +258,7 @@ impl Frame {
     pub fn end_block() -> Self {
         let mut frame_builder = FrameBuilder::default();
         let written = frame_builder
-            .write(Keywords::BlockDelimitter, None)
+            .write(Keywords::BlockDelimitter, None::<&mut Cursor<Vec<u8>>>)
             .expect("can write");
 
         event!(Level::TRACE, "new frame for block end, size: {written}");
@@ -277,7 +283,7 @@ impl Frame {
     }
 
     /// Returns the name key,
-    /// 
+    ///
     pub fn name_key(&self) -> u64 {
         let mut buffer = [0; 16];
         buffer.copy_from_slice(&self.data[1..17]);
@@ -287,7 +293,7 @@ impl Frame {
     }
 
     /// Returns the symbol key,
-    /// 
+    ///
     pub fn symbol_key(&self) -> u64 {
         let mut buffer = [0; 16];
         buffer.copy_from_slice(&self.data[17..33]);
@@ -325,30 +331,22 @@ impl Frame {
                 // 0      |1..17  |17..33  |33
                 Some(self.data[33].into())
             }
-            _ => {
-                None
-            }
+            _ => None,
         }
     }
 
     /// Get the value bytes,
-    /// 
+    ///
     pub fn value_bytes(&self) -> &[u8] {
         match self.keyword() {
-            Keywords::Add => {
-                &self.data[18..34]
-            }
-            Keywords::Define => {
-                &self.data[34..50]
-            }
-            _ => {
-                &self.data[1..]
-            }
+            Keywords::Add => &self.data[18..34],
+            Keywords::Define => &self.data[34..50],
+            _ => &self.data[1..],
         }
     }
 
     /// Returns a slice from the parity range
-    /// 
+    ///
     pub fn parity_bytes(&self) -> [u8; 8] {
         let mut parity_bytes = [0; 8];
         parity_bytes.copy_from_slice(&self.data[56..]);
@@ -356,7 +354,7 @@ impl Frame {
     }
 
     /// Returns the entity from this frame
-    /// 
+    ///
     pub fn get_entity(&self, world: &World, assert_generation: bool) -> Entity {
         let [id, gen] = cast::<[u8; 8], [u32; 2]>(self.parity_bytes());
 
@@ -365,7 +363,7 @@ impl Frame {
             let assert_generation = entity.gen().id() as u32;
             assert_eq!(assert_generation, gen);
         }
-        
+
         entity
     }
 
@@ -388,11 +386,7 @@ impl Frame {
     /// If the value is not inlined, then data must be read from
     /// either the interner data, or a cursor representing a blob device.
     ///
-    pub fn read_value(
-        &self, 
-        interner: &Interner, 
-        blob_device: &Cursor<Vec<u8>>
-    ) -> Option<Value> {
+    pub fn read_value(&self, interner: &Interner, blob_device: &Cursor<Vec<u8>>) -> Option<Value> {
         let mut blob_device = blob_device.clone();
         let value_offset = match self.keyword() {
             Keywords::Add => 18,
@@ -524,9 +518,67 @@ impl Frame {
         }
     }
 
+    /// Returns value data from the frame,
+    ///
+    pub fn value(&self) -> Option<Data> {
+        let value_offset = match self.keyword() {
+            Keywords::Add => 18,
+            Keywords::Define => 34,
+            _ => {
+                panic!("frame does not have a value")
+            }
+        };
+
+        match self.attribute() {
+            Some(attr) => match attr {
+                Attributes::Empty => Some(Data::InlineEmpty),
+                Attributes::Bool => {
+                    Some(if self.data[value_offset..][0] == 0x01 {
+                        Data::InlineTrue
+                    } else {
+                        Data::InlineFalse
+                    })
+                }
+                Attributes::Int
+                | Attributes::IntPair
+                | Attributes::IntRange
+                | Attributes::Float
+                | Attributes::FloatPair
+                | Attributes::FloatRange => {
+                    let mut data = [0; 16];
+                    data.copy_from_slice(&self.data[value_offset..value_offset + 16]);
+
+                    Some(Data::Inline { data })
+                }
+                Attributes::Symbol | Attributes::Complex | Attributes::Identifier => {
+                    let mut buffer = [0; 16];
+                    buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
+                    let [key, ..] = cast::<[u8; 16], [u64; 2]>(buffer);
+
+                    Some(Data::Interned { key })
+                },
+                Attributes::Text | Attributes::BinaryVector=> {
+                    let mut buffer = [0; 16];
+                    buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
+                    let [length, cursor] = cast::<[u8; 16], [u64; 2]>(buffer);
+
+                    Some(Data::Extent { length, cursor: Some(cursor) })
+                },
+                _ => {
+                    None
+                }
+            },
+            None => None,
+        }
+    }
+
     /// Reads current value as a blob device, if current value is a text-buffer or binary vec,
-    /// 
-    pub fn read_as_blob(&self, interner: &Interner, blob_device: &Cursor<Vec<u8>>) -> Option<BlobDevice> {
+    ///
+    pub fn read_as_blob(
+        &self,
+        interner: &Interner,
+        blob_device: &Cursor<Vec<u8>>,
+    ) -> Option<BlobDevice> {
         match self.read_value(interner, blob_device) {
             Some(value) => {
                 let name = self.name(interner).unwrap_or_default();
@@ -534,20 +586,32 @@ impl Frame {
                 let address = format!("{name}::{symbol}");
 
                 match value {
-                    Value::TextBuffer(text_buffer) => Some(
-                        BlobDevice::new(
-                            address, 
-                            Cursor::new(text_buffer.as_bytes().to_vec()))
-                        ),
-                    Value::BinaryVector(binary) =>  Some(
-                        BlobDevice::new(
-                            address, 
-                            Cursor::new(binary))
-                        ),
-                    _ => None
+                    Value::TextBuffer(text_buffer) => Some(BlobDevice::new(
+                        address,
+                        Cursor::new(text_buffer.as_bytes().to_vec()),
+                    )),
+                    Value::BinaryVector(binary) => {
+                        Some(BlobDevice::new(address, Cursor::new(binary)))
+                    }
+                    _ => None,
                 }
             }
             _ => None,
+        }
+    }
+
+    /// Returns true if this frame stores extent data,
+    /// 
+    pub fn is_extent(&self) -> bool {
+        match self.attribute() {
+            Some(attr) => match attr {
+                Attributes::Text |
+                Attributes::BinaryVector => {
+                    true
+                },
+                _ => false,
+            },
+            None => false,
         }
     }
 
@@ -581,7 +645,7 @@ impl Frame {
     }
 
     /// Returns the underlying bytes
-    /// 
+    ///
     pub fn bytes(&self) -> &[u8; 64] {
         &self.data
     }
@@ -635,7 +699,7 @@ impl FrameBuilder {
     fn write_value(
         &mut self,
         value: &Value,
-        blob: &mut Cursor<Vec<u8>>,
+        blob: &mut (impl Read + Write + Seek + Clone),
     ) -> Result<usize, std::io::Error> {
         self.value = Some(value.clone());
         self.write(value, Some(blob))
@@ -648,7 +712,7 @@ impl FrameBuilder {
     fn write(
         &mut self,
         data: impl Into<Data>,
-        blob: Option<&mut Cursor<Vec<u8>>>,
+        blob: Option<&mut (impl Read + Write + Seek + Clone)>,
     ) -> Result<usize, std::io::Error> {
         let data: Data = data.into();
         match data {
@@ -680,7 +744,7 @@ impl FrameBuilder {
                     (Some(blob), Some(value)) => {
                         let data = Data::parse_blob(value.clone(), blob).expect("blob is parsed");
 
-                        self.write(data, None)
+                        self.write(data, None::<&mut Cursor<Vec<u8>>>)
                     }
                     _ => self
                         .cursor
@@ -753,7 +817,10 @@ fn test_frame_building() {
     assert_eq!(frame.name(&interner), Some("count".to_string()));
     assert_eq!(frame.symbol(&interner), None);
     assert_eq!(frame.attribute(), Some(Attributes::Text));
-    assert_eq!(frame.read_value(&interner, &blob), Some(Value::TextBuffer("hello world".to_string())));
+    assert_eq!(
+        frame.read_value(&interner, &blob),
+        Some(Value::TextBuffer("hello world".to_string()))
+    );
 
     let frame = Frame::define(
         "count",
@@ -764,7 +831,10 @@ fn test_frame_building() {
     assert_eq!(frame.name(&interner), Some("count".to_string()));
     assert_eq!(frame.symbol(&interner), Some("label".to_string()));
     assert_eq!(frame.attribute(), Some(Attributes::Text));
-    assert_eq!(frame.read_value(&interner, &blob), Some(Value::TextBuffer("hello world".to_string())));
+    assert_eq!(
+        frame.read_value(&interner, &blob),
+        Some(Value::TextBuffer("hello world".to_string()))
+    );
 
     let frame = Frame::define("count", "label", &Value::Empty, &mut blob);
     assert_eq!(frame.name(&interner), Some("count".to_string()));

@@ -7,7 +7,7 @@ use std::{collections::HashMap, future::Future, ops::Deref};
 
 use crate::{Block, Parser};
 
-use super::{Encoder, Frame, WireObject};
+use super::{Encoder, Frame, WireObject, ControlDevice, BlobDevice};
 
 /// Struct for protocol state
 ///
@@ -26,6 +26,16 @@ pub struct Protocol {
 }
 
 impl Protocol {
+    /// Returns an empty protocol,
+    /// 
+    pub fn empty() -> Self {
+        Self {
+            encoders: HashMap::default(),
+            world: World::new(),
+            assert_generation: false,
+        }
+    }
+
     /// Consumes a parser and returns new protocol,
     ///
     pub fn new(parser: Parser) -> Self {
@@ -58,13 +68,9 @@ impl Protocol {
         T: WireObject + Component,
         T::Storage: Default,
     {
-        let resource_id = ResourceId::new::<T::Storage>();
-        self.encoder(resource_id, |world, encoder| {
+        self.encoder::<T>(|world, encoder| {
             let components = world.read_component::<T>();
             for (_, c) in (&world.entities(), &components).join() {
-                // if e.id() > 0 {
-                //     encoder.encode(c, world);
-                // }
                 encoder.encode(c, world);
             }
         });
@@ -76,60 +82,29 @@ impl Protocol {
     where
         T: WireObject + Resource,
     {
-        let resource_id = ResourceId::new::<T>();
-
-        self.encoder(resource_id, |world, encoder| {
+        self.encoder::<T>(|world, encoder| {
             let resource = world.read_resource::<T>();
 
             encoder.encode(resource.deref(), world);
         });
     }
 
-    /// Decodes and reads components,
-    ///
-    pub async fn read_components<F, T>(
-        &self,
-        handle: impl Fn(&[Frame], T) -> F,
-        complete: impl Fn(T) -> (),
-    ) where
-        T: WireObject + Component,
-        F: Future<Output = T>,
-    {
-        let resource_id = ResourceId::new::<T::Storage>();
-        self.read(&resource_id, handle, complete).await;
-    }
-
-    /// Decodes and reads resources,
-    ///
-    pub async fn read_resources<F, T>(
-        &self,
-        handle: impl Fn(&[Frame], T) -> F,
-        complete: impl Fn(T) -> (),
-    ) where
-        T: WireObject + Resource,
-        F: Future<Output = T>,
-    {
-        let resource_id = ResourceId::new::<T>();
-        self.read(&resource_id, handle, complete).await;
-    }
-
     /// Decodes and reads wire objects,
     ///
     pub async fn read<F, T>(
         &self,
-        resource_id: &ResourceId,
         handle: impl Fn(&[Frame], T) -> F,
         complete: impl Fn(T) -> (),
     ) where
         T: WireObject,
         F: Future<Output = T>,
     {
-        if let Some(encoder) = self.encoders.get(&resource_id) {
+        if let Some(encoder) = self.encoders.get(&T::resource_id()) {
             for (_, block_range) in encoder.frame_index() {
                 for block_range in block_range {
                     let frames = &encoder.frames_slice()[block_range.clone()];
 
-                    let obj = T::decode(&self, encoder, frames);
+                    let obj = T::decode(&self, &encoder.interner, &encoder.blob_device, frames);
 
                     complete(handle(frames, obj).await)
                 }
@@ -137,42 +112,20 @@ impl Protocol {
         }
     }
 
-    /// Decodes wire objects into a vector,
-    ///
-    pub fn decode_components<T>(&self) -> Vec<T>
-    where
-        T: WireObject + Component,
-    {
-        let resource_id = ResourceId::new::<T::Storage>();
-
-        self.decode(&resource_id)
-    }
-
-    /// Decodes resources,
-    ///
-    pub fn decode_resources<T>(&self) -> Vec<T>
-    where
-        T: WireObject + Resource,
-    {
-        let resource_id = ResourceId::new::<T>();
-
-        self.decode(&resource_id)
-    }
-
     /// Decodes objects by resource id
     ///
-    pub fn decode<T>(&self, resource_id: &ResourceId) -> Vec<T>
+    pub fn decode<T>(&self) -> Vec<T>
     where
         T: WireObject,
     {
         let mut c = vec![];
 
-        if let Some(encoder) = self.encoders.get(&resource_id) {
+        if let Some(encoder) = self.encoders.get(&T::resource_id()) {
             for (_, block_range) in encoder.frame_index() {
                 for block_range in block_range {
                     let frames = &encoder.frames_slice()[block_range.clone()];
 
-                    let obj = T::decode(&self, encoder, frames);
+                    let obj = T::decode(&self, &encoder.interner, &encoder.blob_device("decode").cursor(), frames);
                     c.push(obj);
                 }
             }
@@ -181,16 +134,66 @@ impl Protocol {
         c
     }
 
+    /// Returns a control device for resource,
+    /// 
+    pub fn control_device<T>(&self) -> Option<ControlDevice>
+    where
+        T: WireObject
+    {
+        if let Some(encoder) = self.encoders.get(&T::resource_id()).as_ref() {
+            Some(ControlDevice::new(encoder.interner()))
+        } else {
+            None
+        }
+    }
+
+    /// Returns a blob device for resource,
+    /// 
+    pub fn blob_device<T>(&self) -> Option<BlobDevice> 
+    where
+        T: WireObject 
+    {
+        if let Some(encoder) = self.encoders.get(&T::resource_id()).as_ref() {
+            Some(encoder.blob_device(""))
+        } else {
+            None
+        }
+    }
+
+    /// Returns an iterator over objects for transporting,
+    ///
+    pub fn iter_object_frames<T>(
+        &self
+    ) -> impl Iterator<Item = &[Frame]> 
+    where
+        T: WireObject
+    {
+        if let Some(encoder) = self.encoders.get(&T::resource_id()) {
+            encoder
+                .frame_index
+                .iter()
+                .map(|(_, range)| range)
+                .flatten()
+                .cloned()
+                .map(|r| &encoder.frames[r])
+        } else {
+            panic!("Protocol does not store resource {:?}", T::resource_id());
+        }
+    }
+
     /// Finds an encoder and calls encode,
     ///
-    fn encoder(&mut self, resource_id: ResourceId, encode: fn(&World, &mut Encoder)) {
-        if let Some(encoder) = self.encoders.get_mut(&resource_id) {
+    fn encoder<T>(&mut self, encode: fn(&World, &mut Encoder)) 
+    where
+        T: WireObject
+    {
+        if let Some(encoder) = self.encoders.get_mut(&T::resource_id()) {
             encode(&self.world, encoder);
         } else {
             let mut encoder = Encoder::new();
             encode(self.as_ref(), &mut encoder);
-            self.encoders.insert(resource_id.clone(), encoder);
-        }
+            self.encoders.insert(T::resource_id(), encoder);
+        } 
     }
 }
 
@@ -225,7 +228,7 @@ fn test_decode_block() {
     "#,
     ));
 
-    let blocks = protocol.decode_components::<Block>();
+    let blocks = protocol.decode::<Block>();
     let block = blocks.get(1).expect("should have a block");
     assert_eq!(block.name(), "call");
     assert_eq!(block.symbol(), "guest");

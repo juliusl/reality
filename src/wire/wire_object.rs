@@ -1,4 +1,6 @@
-use specs::World;
+use std::io::{Cursor, Seek, Write, Read};
+
+use specs::{World, shred::ResourceId};
 
 use super::{Encoder, Frame, Protocol, encoder::FrameIndex, Interner};
 
@@ -7,13 +9,19 @@ use super::{Encoder, Frame, Protocol, encoder::FrameIndex, Interner};
 pub trait WireObject {
     /// Encodes self into frames,
     ///
-    fn encode(&self, world: &World, encoder: &mut Encoder);
+    fn encode<BlobImpl>(&self, world: &World, encoder: &mut Encoder<BlobImpl>)
+    where
+        BlobImpl: Read + Write + Seek + Clone;
 
     /// Decodes frames into self,
     ///
-    fn decode(protocol: &Protocol, encoder: &Encoder, frames: &[Frame]) -> Self;
+    fn decode(protocol: &Protocol, interner: &Interner, blob_device: &Cursor<Vec<u8>>, frames: &[Frame]) -> Self;
 
     /// Build frame index,
     /// 
-    fn build_index(interner: &Interner, frames: &[Frame]) -> FrameIndex; 
+    fn build_index(interner: &Interner, frames: &[Frame]) -> FrameIndex;
+
+    /// Returns the resource id for this type,
+    /// 
+    fn resource_id() -> ResourceId;
 }

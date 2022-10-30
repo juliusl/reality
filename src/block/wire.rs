@@ -1,5 +1,7 @@
+use std::io::{Cursor, Read, Write, Seek};
+
 use atlier::system::{Attribute, Value};
-use specs::WorldExt;
+use specs::{WorldExt, shred::ResourceId, Component};
 use tracing::{event, Level};
 
 use crate::{
@@ -8,7 +10,10 @@ use crate::{
 };
 
 impl WireObject for Block {
-    fn encode(&self, world: &specs::World, encoder: &mut Encoder) {
+    fn encode<BlobImpl>(&self, world: &specs::World, encoder: &mut Encoder<BlobImpl>) 
+    where
+        BlobImpl: Read + Write + Seek + Clone
+    {
         let mut idents = vec![self.name().to_string(), self.symbol().to_string()];
 
         // Scan attributes for identifiers
@@ -88,10 +93,8 @@ impl WireObject for Block {
         }
     }
 
-    fn decode(protocol: &Protocol, encoder: &Encoder, frames: &[Frame]) -> Self {
+    fn decode(protocol: &Protocol, interner: &Interner, blob: &Cursor<Vec<u8>>, frames: &[Frame]) -> Self {
         let mut block = Block::default();
-        let interner = encoder.interner();
-        let blob = encoder.blob_device("decode_block");
 
         if let Some(start) = frames.get(0) {
             let name = start.name(&interner).unwrap_or_default();
@@ -122,7 +125,7 @@ impl WireObject for Block {
                             .name(&interner)
                             .expect("frame must have a name to add attribute"),
                         frame
-                            .read_value(&interner, blob.cursor())
+                            .read_value(&interner, blob)
                             .expect("frame must have a value to add attribute"),
                     );
 
@@ -136,7 +139,7 @@ impl WireObject for Block {
                         .symbol(&interner)
                         .expect("frame must have a symbol to define attribute");
                     let value = frame
-                        .read_value(&interner, blob.cursor())
+                        .read_value(&interner, blob)
                         .expect("frame must have value to define attribute");
 
                     let name = format!("{name}::{symbol}");
@@ -188,5 +191,9 @@ impl WireObject for Block {
         }
 
         frame_index
+    }
+
+    fn resource_id() -> specs::shred::ResourceId {
+        ResourceId::new::<<Block as Component>::Storage>()
     }
 }
