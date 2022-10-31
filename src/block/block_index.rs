@@ -120,6 +120,12 @@ impl BlockIndex {
         &self.control
     }
 
+    /// Returns mutable reference to control values,
+    /// 
+    pub fn control_values_mut(&mut self) -> &mut BTreeMap<String, Value> {
+        &mut self.control
+    }
+
     /// Returns a set of child block properties that were indexed
     /// 
     /// Since this index is built of a vector of attributes, if a root has
