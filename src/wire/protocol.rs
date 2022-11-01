@@ -203,6 +203,12 @@ impl AsRef<World> for Protocol {
     }
 }
 
+impl AsMut<World> for Protocol {
+    fn as_mut(&mut self) -> &mut World {
+        &mut self.world
+    }
+}
+
 impl Debug for Protocol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Protocol")
