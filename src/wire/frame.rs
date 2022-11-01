@@ -693,6 +693,12 @@ impl Default for FrameBuilder {
     }
 }
 
+impl Into<Frame> for FrameBuilder {
+    fn into(self) -> Frame {
+        self.cursor.into()
+    }
+}
+
 impl FrameBuilder {
     /// Write value sets the current value the frame builder is adding,
     ///
