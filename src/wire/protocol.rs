@@ -183,7 +183,7 @@ impl Protocol {
 
     /// Finds an encoder and calls encode,
     ///
-    fn encoder<T>(&mut self, encode: fn(&World, &mut Encoder)) 
+    pub fn encoder<T>(&mut self, encode: fn(&World, &mut Encoder)) 
     where
         T: WireObject
     {
