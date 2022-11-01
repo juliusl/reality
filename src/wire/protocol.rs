@@ -283,6 +283,8 @@ impl Protocol {
                 encoder.frames.push(frame);
                 frame_buffer = [0; 64]
             }
+
+            encoder.frame_index = T::build_index(&encoder.interner, &encoder.frames);
         });
     }
 }
