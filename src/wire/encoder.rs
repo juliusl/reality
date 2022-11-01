@@ -12,7 +12,7 @@ pub type FrameIndex = BTreeMap<String, Vec<Range<usize>>>;
 #[derive(Debug)]
 pub struct Encoder<BlobImpl = Cursor<Vec<u8>>> 
 where
-    BlobImpl: Read + Write + Seek + Clone
+    BlobImpl: Read + Write + Seek + Clone + Default
 {
     /// String interner for storing identifiers and complexes
     /// 
@@ -54,7 +54,7 @@ impl Encoder {
 
 impl<BlobImpl> Encoder<BlobImpl> 
 where
-    BlobImpl: Read + Write + Seek + Clone
+    BlobImpl: Read + Write + Seek + Clone + Default
 {
     /// Returns a new encoder /w a blob_device
     ///
@@ -113,6 +113,15 @@ where
                     unreachable!()
                 }
             })
+    }
+
+    /// Clears the protocol,
+    /// 
+    pub fn clear(&mut self) {
+        self.blob_device = BlobImpl::default();
+        self.frame_index.clear();
+        self.frames.clear();
+        self.interner = Interner::default();
     }
 }
 

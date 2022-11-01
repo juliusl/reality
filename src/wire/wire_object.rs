@@ -11,7 +11,7 @@ pub trait WireObject {
     ///
     fn encode<BlobImpl>(&self, world: &World, encoder: &mut Encoder<BlobImpl>)
     where
-        BlobImpl: Read + Write + Seek + Clone;
+        BlobImpl: Read + Write + Seek + Clone + Default;
 
     /// Decodes frames into self,
     ///

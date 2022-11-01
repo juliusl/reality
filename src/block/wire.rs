@@ -12,7 +12,7 @@ use crate::{
 impl WireObject for Block {
     fn encode<BlobImpl>(&self, world: &specs::World, encoder: &mut Encoder<BlobImpl>) 
     where
-        BlobImpl: Read + Write + Seek + Clone
+        BlobImpl: Read + Write + Seek + Clone + Default
     {
         let mut idents = vec![self.name().to_string(), self.symbol().to_string()];
 

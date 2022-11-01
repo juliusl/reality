@@ -235,6 +235,8 @@ impl Protocol {
 
             let blob_len = encoder.blob_device.get_ref().len();
             assert_eq!(std::io::copy(&mut encoder.blob_device, &mut blob_stream).ok(), Some(blob_len as u64));
+
+            encoder.clear();
         });
     }
 
