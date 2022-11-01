@@ -285,6 +285,16 @@ impl Protocol {
     }
 }
 
+impl From<World> for Protocol {
+    fn from(world: World) -> Self {
+        Self {
+            world,
+            encoders: HashMap::default(),
+            assert_generation: false,
+        }
+    }
+}
+
 impl AsRef<World> for Protocol {
     fn as_ref(&self) -> &World {
         &self.world
