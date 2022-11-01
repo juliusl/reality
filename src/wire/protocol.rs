@@ -9,6 +9,8 @@ use crate::{Block, Parser};
 
 use super::{Encoder, Frame, WireObject, ControlDevice, BlobDevice};
 
+pub mod async_ext;
+
 /// Struct for protocol state
 ///
 pub struct Protocol {
