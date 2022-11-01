@@ -7,9 +7,6 @@ mod encoder;
 pub use encoder::Encoder;
 pub use encoder::FrameIndex;
 
-mod transport;
-pub use transport::Transport;
-
 mod data;
 pub use data::Data;
 

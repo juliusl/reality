@@ -2,7 +2,7 @@ use specs::{
     shred::{Resource, ResourceId},
     Component, Join, World, WorldExt,
 };
-use std::fmt::Debug;
+use std::{fmt::Debug, io::{Write, Read}};
 use std::{collections::HashMap, future::Future, ops::Deref};
 
 use crate::{Block, Parser};
@@ -183,7 +183,7 @@ impl Protocol {
 
     /// Finds an encoder and calls encode,
     ///
-    pub fn encoder<T>(&mut self, encode: fn(&World, &mut Encoder)) 
+    pub fn encoder<T>(&mut self, encode: impl FnOnce(&World, &mut Encoder) + 'static) 
     where
         T: WireObject
     {
@@ -193,7 +193,93 @@ impl Protocol {
             let mut encoder = Encoder::new();
             encode(self.as_ref(), &mut encoder);
             self.encoders.insert(T::resource_id(), encoder);
-        } 
+        }
+    }
+
+    /// Sends protocol data w/ streams
+    /// 
+    pub fn send<T, W, F>(&mut self, control_stream: F, frame_stream: F, blob_stream: F)  
+    where 
+        T: WireObject,
+        W: Write,
+        F: FnOnce() -> W + 'static, 
+    {
+        self.encoder::<T>(move |_, encoder| {
+            let mut control_stream = control_stream();
+            let control_stream = &mut control_stream;
+
+            let control_device = ControlDevice::new(encoder.interner.clone());
+            for f in control_device.data_frames() {
+                assert_eq!(control_stream.write(f.bytes()).ok(), Some(64));
+            }
+
+            for f in control_device.read_frames() {
+                assert_eq!(control_stream.write(f.bytes()).ok(), Some(64));
+            }
+
+            for f in control_device.index_frames() {
+                assert_eq!(control_stream.write(f.bytes()).ok(), Some(64));
+            }
+
+            let mut frame_stream = frame_stream();
+            let frame_stream = &mut frame_stream;
+
+            for f in encoder.frames_slice() {
+                assert_eq!(frame_stream.write(f.bytes()).ok(), Some(64));
+            }
+
+            let mut blob_stream = blob_stream();
+            encoder.blob_device.set_position(0);
+
+            let blob_len = encoder.blob_device.get_ref().len();
+            assert_eq!(std::io::copy(&mut encoder.blob_device, &mut blob_stream).ok(), Some(blob_len as u64));
+        });
+    }
+
+    /// Receive data for a protocol,
+    /// 
+    /// This will replace the active interner, so it's best this is used with an empty protocol.
+    /// 
+    pub fn receive<T, R, F>(&mut self, control_stream: F, frame_stream: F, blob_stream: F)  
+    where 
+        T: WireObject,
+        R: Read,
+        F: FnOnce() -> R + 'static, 
+    {
+        self.encoder::<T>(move |_, encoder| {
+            let mut control_device  = ControlDevice::default();
+
+            let mut control_stream = control_stream();
+
+            let mut frame_buffer = [0; 64];
+            while let Ok(()) = control_stream.read_exact(&mut frame_buffer) {
+                let frame = Frame::from(frame_buffer);
+                if frame.op() == 0x00 {
+                    control_device.data.push(frame.clone());
+                } else if frame.op() > 0x00 && frame.op() < 0x06 {
+                    control_device.read.push(frame.clone());
+                } else {
+                    assert!(
+                        frame.op() >= 0xC1 && frame.op() <= 0xC6,
+                        "Index frames have a specific op code range"
+                    );
+                    control_device.index.push(frame.clone());
+                }
+
+                frame_buffer = [0; 64]
+            }
+            encoder.interner = control_device.into();
+            
+            let mut blob_stream = blob_stream();
+            std::io::copy(&mut blob_stream, &mut encoder.blob_device).ok();
+
+            let mut frame_stream = frame_stream();
+            while let Ok(()) = frame_stream.read_exact(&mut frame_buffer) {
+                let frame = Frame::from(frame_buffer);
+                encoder.frames.push(frame);
+                frame_buffer = [0; 64]
+            }
+        });
     }
 }
 
