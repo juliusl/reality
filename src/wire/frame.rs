@@ -679,7 +679,7 @@ impl Default for Frame {
 
 /// Interim structure for building a new frame
 ///
-struct FrameBuilder {
+pub struct FrameBuilder {
     cursor: Cursor<[u8; 64]>,
     value: Option<Value>,
 }
@@ -696,7 +696,7 @@ impl Default for FrameBuilder {
 impl FrameBuilder {
     /// Write value sets the current value the frame builder is adding,
     ///
-    fn write_value(
+    pub fn write_value(
         &mut self,
         value: &Value,
         blob: &mut (impl Read + Write + Seek + Clone),
@@ -709,7 +709,7 @@ impl FrameBuilder {
     ///
     /// If successful returns the bytes written, otherwise returns an error.
     ///
-    fn write(
+    pub fn write(
         &mut self,
         data: impl Into<Data>,
         blob: Option<&mut (impl Read + Write + Seek + Clone)>,
