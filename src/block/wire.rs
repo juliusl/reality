@@ -1,7 +1,7 @@
-use std::io::{Cursor, Read, Write, Seek};
+use std::io::{Cursor, Read, Seek, Write};
 
 use atlier::system::{Attribute, Value};
-use specs::{WorldExt, shred::ResourceId, Component};
+use specs::{shred::ResourceId, Component, WorldExt};
 use tracing::{event, Level};
 
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
 impl WireObject for BlockProperties {
     fn encode<BlobImpl>(&self, _: &specs::World, encoder: &mut Encoder<BlobImpl>)
     where
-        BlobImpl: Read + Write + Seek + Clone + Default 
+        BlobImpl: Read + Write + Seek + Clone + Default,
     {
         let mut frame = Frame::add(self.name(), &Value::Empty, &mut encoder.blob_device);
 
@@ -25,47 +25,65 @@ impl WireObject for BlockProperties {
         for (name, property) in self.iter_properties() {
             match property {
                 crate::BlockProperty::Single(prop) => {
-                    let mut frame = Frame::define(self.name(), name, prop, &mut encoder.blob_device);
+                    let mut frame =
+                        Frame::define(self.name(), name, prop, &mut encoder.blob_device);
                     if let Some(entity) = encoder.last_entity {
                         frame = frame.with_parity(entity);
                     }
                     encoder.frames.push(frame);
-                },
+                }
                 crate::BlockProperty::List(props) => {
                     for prop in props {
-                        let mut frame = Frame::define(self.name(), name, prop, &mut encoder.blob_device);
+                        let mut frame =
+                            Frame::define(self.name(), name, prop, &mut encoder.blob_device);
                         if let Some(entity) = encoder.last_entity {
                             frame = frame.with_parity(entity);
                         }
                         encoder.frames.push(frame);
                     }
-                },
+                }
                 crate::BlockProperty::Required => {
-                    let mut frame = Frame::define(self.name(), name, &Value::Symbol("{property:REQUIRED}".to_string()), &mut encoder.blob_device);
+                    let mut frame = Frame::define(
+                        self.name(),
+                        name,
+                        &Value::Symbol("{property:REQUIRED}".to_string()),
+                        &mut encoder.blob_device,
+                    );
                     if let Some(entity) = encoder.last_entity {
                         frame = frame.with_parity(entity);
                     }
                     encoder.frames.push(frame);
-                },
+                }
                 crate::BlockProperty::Optional => {
-                    let mut frame = Frame::define(self.name(), name, &Value::Symbol("{property:OPTIONAL}".to_string()), &mut encoder.blob_device);
+                    let mut frame = Frame::define(
+                        self.name(),
+                        name,
+                        &Value::Symbol("{property:OPTIONAL}".to_string()),
+                        &mut encoder.blob_device,
+                    );
                     if let Some(entity) = encoder.last_entity {
                         frame = frame.with_parity(entity);
                     }
                     encoder.frames.push(frame);
-                },
+                }
                 crate::BlockProperty::Empty => {
-                    let mut frame = Frame::define(self.name(), name, &Value::Empty, &mut encoder.blob_device);
+                    let mut frame =
+                        Frame::define(self.name(), name, &Value::Empty, &mut encoder.blob_device);
                     if let Some(entity) = encoder.last_entity {
                         frame = frame.with_parity(entity);
                     }
                     encoder.frames.push(frame);
-                },
+                }
             }
         }
     }
 
-    fn decode(protocol: &Protocol, interner: &Interner, blob_device: &Cursor<Vec<u8>>, frames: &[Frame]) -> Self {
+    fn decode(
+        protocol: &Protocol,
+        interner: &Interner,
+        blob_device: &Cursor<Vec<u8>>,
+        frames: &[Frame],
+    ) -> Self {
         let root = frames.get(0).expect("should have a starting frame");
 
         let root_entity = root.get_entity(protocol.as_ref(), protocol.assert_entity_generation());
@@ -79,14 +97,25 @@ impl WireObject for BlockProperties {
         for frame in frames.iter().skip(1) {
             match frame.keyword() {
                 Keywords::Define => {
-                    let prop_entity = frame.get_entity(protocol.as_ref(), protocol.assert_entity_generation());
+                    let prop_entity =
+                        frame.get_entity(protocol.as_ref(), protocol.assert_entity_generation());
                     assert_eq!(root_entity, prop_entity);
-                    properties.add(frame.symbol(interner).expect("should have a symbol"), frame.read_value(interner, blob_device).expect("should have a value"));
+                    properties.add(
+                        frame.symbol(interner).expect("should have a symbol"),
+                        frame
+                            .read_value(interner, blob_device)
+                            .expect("should have a value"),
+                    );
                 }
-                _ => {
-                }
+                _ => {}
             }
         }
+
+        protocol
+            .as_ref()
+            .write_component()
+            .insert(root_entity, properties.clone())
+            .expect("should be able to insert propeties");
 
         properties
     }
@@ -96,7 +125,10 @@ impl WireObject for BlockProperties {
         for (idx, frame) in frames.iter().enumerate() {
             if frame.keyword() == Keywords::Add {
                 let key = format!("{}", frame.name(interner).expect("should have a name"));
-                let range = if let Some(end) = frames[idx + 1..].iter().position(|f| f.keyword() == Keywords::Add) {
+                let range = if let Some(end) = frames[idx + 1..]
+                    .iter()
+                    .position(|f| f.keyword() == Keywords::Add)
+                {
                     let range = idx..idx + end + 1;
                     assert!(range.start < range.end, "{:?}, {:?}", range, frames);
                     range
@@ -123,9 +155,9 @@ impl WireObject for BlockProperties {
 }
 
 impl WireObject for Block {
-    fn encode<BlobImpl>(&self, world: &specs::World, encoder: &mut Encoder<BlobImpl>) 
+    fn encode<BlobImpl>(&self, world: &specs::World, encoder: &mut Encoder<BlobImpl>)
     where
-        BlobImpl: Read + Write + Seek + Clone + Default
+        BlobImpl: Read + Write + Seek + Clone + Default,
     {
         let mut idents = vec![self.name().to_string(), self.symbol().to_string()];
 
@@ -206,7 +238,12 @@ impl WireObject for Block {
         }
     }
 
-    fn decode(protocol: &Protocol, interner: &Interner, blob: &Cursor<Vec<u8>>, frames: &[Frame]) -> Self {
+    fn decode(
+        protocol: &Protocol,
+        interner: &Interner,
+        blob: &Cursor<Vec<u8>>,
+        frames: &[Frame],
+    ) -> Self {
         let mut block = Block::default();
 
         if let Some(start) = frames.get(0) {
