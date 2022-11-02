@@ -15,7 +15,7 @@ impl Protocol {
     {
         let resource_id = W::resource_id();
 
-        if self.encoders.contains_key(&resource_id) {
+        if !self.encoders.contains_key(&resource_id) {
             self.encoders.insert(resource_id.clone(), Encoder::new());
         }
 
