@@ -72,7 +72,8 @@ impl Protocol {
     {
         self.encoder::<T>(|world, encoder| {
             let components = world.read_component::<T>();
-            for (_, c) in (&world.entities(), &components).join() {
+            for (e, c) in (&world.entities(), &components).join() {
+                encoder.last_entity = Some(e);
                 encoder.encode(c, world);
             }
         });

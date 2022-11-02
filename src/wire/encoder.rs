@@ -1,6 +1,6 @@
 use super::{frame::Frame, BlobDevice, Interner, WireObject};
 use atlier::system::Value;
-use specs::World;
+use specs::{World, Entity};
 use std::{collections::BTreeMap, io::{Cursor, Seek, Write, Read}, ops::Range};
 
 /// Frame index
@@ -30,6 +30,9 @@ where
     /// Ex. For encoding blocks, uses the key format `{name} {symbol}`,
     ///
     pub frame_index: FrameIndex,
+    /// This is the last enttiy whose component was encoded
+    /// 
+    pub last_entity: Option<Entity>,
 }
 
 impl Default for Encoder {
@@ -64,6 +67,7 @@ where
             blob_device: blob_device.into(),
             frames: vec![],
             frame_index: BTreeMap::new(),
+            last_entity: None
         }
     }
 

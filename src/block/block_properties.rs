@@ -33,6 +33,12 @@ impl BlockProperties {
         }
     }
 
+    /// Returns the name of the root attribute that owns these properties,
+    /// 
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+
     /// Adds a new property to the collection
     ///
     pub fn add(&mut self, name: impl AsRef<str>, value: impl Into<Value>) {

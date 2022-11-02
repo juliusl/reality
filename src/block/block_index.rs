@@ -46,7 +46,7 @@ impl BlockIndex {
         BlockIndex {
             control: BTreeMap::default(),
             root: root.clone(),
-            properties: BlockProperties::default(),
+            properties: BlockProperties::new(root.name()),
             complexes: BTreeMap::default(),
             children: BTreeMap::default(),
         }
@@ -193,7 +193,7 @@ impl BlockIndex {
                                     props.add(symbol.to_string(), value.clone());
                                 },
                                 None => {
-                                    let mut props = BlockProperties::default();
+                                    let mut props = BlockProperties::new(stable_attr.name());
                                     props.add(symbol.to_string(), value.clone());
                                     block_index.children.insert(prop.id(), props);
                                 },
