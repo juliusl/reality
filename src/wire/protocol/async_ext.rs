@@ -113,5 +113,8 @@ impl Protocol {
             self.ensure_encoder::<W>().frames.push(frame);
             frame_buffer = [0; 64]
         }
+        
+        let encoder = self.ensure_encoder::<W>(); 
+        encoder.frame_index = W::build_index(&encoder.interner, &encoder.frames);
     }
 }
