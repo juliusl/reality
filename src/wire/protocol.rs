@@ -186,7 +186,7 @@ impl Protocol {
 
     /// Finds an encoder and calls encode,
     ///
-    pub fn encoder<T>(&mut self, encode: impl FnOnce(&World, &mut Encoder) + 'static) 
+    pub fn encoder<T>(&mut self, encode: impl FnOnce(&World, &mut Encoder)) 
     where
         T: WireObject
     {
@@ -205,7 +205,7 @@ impl Protocol {
     where 
         T: WireObject,
         W: Write,
-        F: FnOnce() -> W + 'static, 
+        F: FnOnce() -> W, 
     {
         self.encoder::<T>(move |_, encoder| {
             let mut control_stream = control_stream();
@@ -249,7 +249,7 @@ impl Protocol {
     where 
         T: WireObject,
         R: Read,
-        F: FnOnce() -> R + 'static, 
+        F: FnOnce() -> R, 
     {
         self.encoder::<T>(move |_, encoder| {
             let mut control_device  = ControlDevice::default();
