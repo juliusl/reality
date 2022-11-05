@@ -288,6 +288,17 @@ impl Protocol {
             encoder.frame_index = T::build_index(&encoder.interner, &encoder.frames);
         });
     }
+
+    /// Clears an encoder,
+    /// 
+    pub fn clear<T>(&mut self) 
+    where 
+        T: WireObject
+    {
+        if let Some(encoder) = self.encoders.get_mut(&T::resource_id()) {
+            encoder.clear()
+        }
+    }
 }
 
 impl From<World> for Protocol {
