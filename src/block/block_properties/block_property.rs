@@ -10,9 +10,9 @@ pub enum BlockProperty {
     /// Property is a list of values
     List(Vec<Value>),
     /// Reverse property that indicates this property name is required
-    Required,
+    Required(Option<Value>),
     /// Reverse property that indiciates this property name is required
-    Optional,
+    Optional(Option<Value>),
     /// Indicates that this block property is currently empty
     Empty,
 }
@@ -131,16 +131,29 @@ impl BlockProperty {
     }
 
     /// Edits the value of this property,
-    /// 
-    pub fn edit(&mut self, on_single: impl Fn(&mut Value), on_list: impl Fn(&mut Vec<Value>), on_empty: impl Fn() -> Option<Value>) {
+    ///
+    pub fn edit(
+        &mut self,
+        on_single: impl Fn(&mut Value),
+        on_list: impl Fn(&mut Vec<Value>),
+        on_empty: impl Fn() -> Option<Value>,
+    ) {
         match self {
             BlockProperty::Single(single) => on_single(single),
             BlockProperty::List(list) => on_list(list.as_mut()),
-            BlockProperty::Empty | BlockProperty::Optional | BlockProperty::Required => match on_empty() {
+            BlockProperty::Empty => match on_empty() {
                 Some(value) => *self = BlockProperty::Single(value),
-                None => {
-                },
+                None => {}
             },
+            BlockProperty::Optional(default_value) | BlockProperty::Required(default_value) => {
+                match on_empty() {
+                    Some(value) => *self = BlockProperty::Single(value),
+                    None => match default_value {
+                        Some(value) => *self = BlockProperty::Single(value.clone()),
+                        None => {}
+                    },
+                }
+            }
         }
     }
 }
@@ -162,15 +175,15 @@ impl Display for BlockProperty {
                 }
                 Ok(())
             }
-            BlockProperty::Required => write!(f, "required, value is not set"),
-            BlockProperty::Optional => write!(f, "optional, value is not set"),
+            BlockProperty::Required(_) => write!(f, "required, value is not set"),
+            BlockProperty::Optional(_) => write!(f, "optional, value is not set"),
             BlockProperty::Empty => write!(f, "empty value"),
         }
     }
 }
 
 /// Function to display a value,
-/// 
+///
 pub fn display_value(f: &mut std::fmt::Formatter<'_>, value: &Value) -> std::fmt::Result {
     match value {
         Value::Empty => write!(f, "()"),

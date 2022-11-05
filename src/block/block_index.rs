@@ -75,8 +75,8 @@ impl BlockIndex {
                 Some(property) => match property {
                     BlockProperty::Single(_) => Some(property.clone()),
                     BlockProperty::List(_) => Some(property.clone()),
-                    BlockProperty::Required => panic!("Missing required property {}", name.as_ref()),
-                    BlockProperty::Optional => None,
+                    BlockProperty::Required(_) => panic!("Missing required property {}", name.as_ref()),
+                    BlockProperty::Optional(_) => None,
                     BlockProperty::Empty => None,
                 },
                 None => None,
@@ -106,6 +106,12 @@ impl BlockIndex {
     /// 
     pub fn child_properties_mut(&mut self, child: u32) -> Option<&mut BlockProperties> {
         self.children.get_mut(&child)
+    }
+
+    /// Ensure a child properties exist,
+    /// 
+    pub fn ensure_child(&mut self, child: u32) {
+        self.children.insert(child, BlockProperties::default());
     }
 
     /// Add's a control value to the index, 

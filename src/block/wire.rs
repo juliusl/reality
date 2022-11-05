@@ -42,11 +42,15 @@ impl WireObject for BlockProperties {
                         encoder.frames.push(frame);
                     }
                 }
-                crate::BlockProperty::Required => {
+                crate::BlockProperty::Required(value) => {
                     let mut frame = Frame::define(
                         self.name(),
                         name,
-                        &Value::Symbol("{property:REQUIRED}".to_string()),
+                        &if let Some(value) = value { 
+                            value.clone()
+                        } else {
+                            Value::Symbol("{property:REQUIRED}".to_string())
+                        },
                         &mut encoder.blob_device,
                     );
                     if let Some(entity) = encoder.last_entity {
@@ -54,11 +58,15 @@ impl WireObject for BlockProperties {
                     }
                     encoder.frames.push(frame);
                 }
-                crate::BlockProperty::Optional => {
+                crate::BlockProperty::Optional(value) => {
                     let mut frame = Frame::define(
                         self.name(),
                         name,
-                        &Value::Symbol("{property:OPTIONAL}".to_string()),
+                        &if let Some(value) = value { 
+                            value.clone()
+                        } else {
+                            Value::Symbol("{property:OPTIONAL}".to_string())
+                        },
                         &mut encoder.blob_device,
                     );
                     if let Some(entity) = encoder.last_entity {

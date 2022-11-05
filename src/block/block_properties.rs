@@ -50,7 +50,7 @@ impl BlockProperties {
                 BlockProperty::List(values) => {
                     values.push(value.into());
                 }
-                BlockProperty::Empty | BlockProperty::Required | BlockProperty::Optional => {
+                BlockProperty::Empty | BlockProperty::Required(_) | BlockProperty::Optional(_) => {
                     *existing = BlockProperty::Single(value.into());
                 }
             },
@@ -80,13 +80,25 @@ impl BlockProperties {
     /// Sets a required flag on the property name
     ///
     pub fn require(&self, property: impl AsRef<str>) -> Self {
-        self.with(property, BlockProperty::Required)
+        self.with(property, BlockProperty::Required(None))
     }
 
     /// Sets a optional flag on the property name
     ///
     pub fn optional(&self, property: impl AsRef<str>) -> Self {
-        self.with(property, BlockProperty::Optional)
+        self.with(property, BlockProperty::Optional(None))
+    }
+
+    /// Sets a required flag on the property name with a default value,
+    ///
+    pub fn require_with(&self, property: impl AsRef<str>, default_value: Value) -> Self {
+        self.with(property, BlockProperty::Required(Some(default_value)))
+    }
+
+    /// Sets a optional flag on the property name with a default value,
+    ///
+    pub fn optional_with(&self, property: impl AsRef<str>, default_value: Value) -> Self {
+        self.with(property, BlockProperty::Optional(Some(default_value)))
     }
 
     /// Queries a source for required/optional properties this collection has,
@@ -98,7 +110,7 @@ impl BlockProperties {
 
         for (name, property) in self.query_parameters() {
             match property {
-                BlockProperty::Required => {
+                BlockProperty::Required(_) => {
                     if let Some(required) = source.property(name) {
                         match required {
                             BlockProperty::Single(_) | BlockProperty::List(_) => {
@@ -112,7 +124,7 @@ impl BlockProperties {
                         return None;
                     }
                 }
-                BlockProperty::Optional => {
+                BlockProperty::Optional(_) => {
                     if let Some(optional) = source.property(name) {
                         match optional {
                             BlockProperty::Single(_) | BlockProperty::List(_) => {
@@ -137,7 +149,7 @@ impl BlockProperties {
     ///
     fn query_parameters(&self) -> impl Iterator<Item = (&String, &BlockProperty)> {
         self.map.iter().filter(|(_, prop)| match prop {
-            BlockProperty::Required | BlockProperty::Optional => true,
+            BlockProperty::Required(_) | BlockProperty::Optional(_) => true,
             _ => false,
         })
     }
@@ -157,7 +169,7 @@ impl BlockProperties {
                 *b = BlockProperty::Empty;
                 taken
             }
-            BlockProperty::Required | BlockProperty::Optional | BlockProperty::Empty => None,
+            BlockProperty::Required(_) | BlockProperty::Optional(_) | BlockProperty::Empty => None,
         })
     }
 
