@@ -262,7 +262,7 @@ impl WireObject for Block {
             block = Block::new(entity, name, symbol)
         }
 
-        for frame in frames.iter().skip(1) {
+        for (idx, frame) in frames.iter().skip(1).enumerate() {
             let attr_entity =
                 frame.get_entity(protocol.as_ref(), protocol.assert_entity_generation());
 
@@ -290,6 +290,7 @@ impl WireObject for Block {
                     block.add_attribute(&attr);
                 }
                 crate::parser::Keywords::Define => {
+                    event!(Level::DEBUG, "decoding define frame {idx}");
                     let name = frame
                         .name(&interner)
                         .expect("frame must have a name to define attribute");
