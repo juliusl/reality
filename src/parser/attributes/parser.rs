@@ -322,6 +322,12 @@ impl AttributeParser {
             self.set_symbol(symbol)
         }
     }
+
+    /// Returns an iterator over special attributes installed on this parser,
+    /// 
+    pub fn iter_special_attributes(&self) -> impl Iterator<Item = (&String, &CustomAttribute)>{
+        self.custom_attributes.iter()
+    }
 }
 
 pub fn on_identifier(lexer: &mut Lexer<Attributes>) {
