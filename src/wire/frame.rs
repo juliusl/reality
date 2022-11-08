@@ -284,29 +284,46 @@ impl Frame {
     /// An extension frame does not parse into a block, but is a shortcut for defining
     /// custom wire objects that act like blocks.
     ///
-    pub fn extension(name: impl AsRef<str>) -> Self {
-        if let Elements::Identifier(name) = Elements::lexer(name.as_ref())
+    pub fn extension(namespace: impl AsRef<str>, symbol: impl AsRef<str>) -> Self {
+        let namespace = Elements::lexer(namespace.as_ref())
             .next()
-            .expect("should be valid identifier")
-        {
-            let mut frame_builder = FrameBuilder::default();
-            let mut written = 0;
-            written += frame_builder
-                .write(Keywords::Extension, None::<&mut Cursor<Vec<u8>>>)
-                .expect("can write");
-            written += frame_builder
-                .write(
-                    Elements::Identifier(name.to_string()),
-                    None::<&mut Cursor<Vec<u8>>>,
-                )
-                .expect("can write");
-            event!(
-                Level::TRACE,
-                "new frame for `extension` `{name}`, size: {written}"
-            );
-            frame_builder.cursor.into()
-        } else {
-            panic!("invalid extension syntax, expected identifier")
+            .expect("should be valid identifier");
+
+        let symbol = Elements::lexer(symbol.as_ref())
+            .next()
+            .expect("should be a valid identifier");
+
+        match (namespace, symbol) {
+            (Elements::Identifier(namespace), Elements::Identifier(symbol)) => {
+                let mut frame_builder = FrameBuilder::default();
+                let mut written = 0;
+                written += frame_builder
+                    .write(Keywords::Extension, None::<&mut Cursor<Vec<u8>>>)
+                    .expect("can write");
+                written += frame_builder
+                    .write(
+                        Elements::Identifier(namespace.to_string()),
+                        None::<&mut Cursor<Vec<u8>>>,
+                    )
+                    .expect("can write");
+                written += frame_builder
+                    .write(
+                        Elements::Identifier(symbol.to_string()),
+                        None::<&mut Cursor<Vec<u8>>>,
+                    )
+                    .expect("can write");
+
+                event!(
+                    Level::TRACE,
+                    "new frame for `extension` `{namespace}` `{symbol}`, size: {written}"
+                );
+
+                frame_builder.cursor.into()
+            }
+            // This is more strict than the parser implementation,
+            _ => {
+                panic!("Cannot create start block frame")
+            }
         }
     }
 
