@@ -330,9 +330,8 @@ impl WireObject for Block {
                             let key = format!("{} {}", name, symbol);
                             entry = Some((key, idx));
                         }
-                        (None, Some(symbol)) => {
-                            let key = format!(" {}", symbol);
-                            entry = Some((key, idx));
+                        (None, Some(_)) => {
+                            panic!("This should be an impossible frame to reach")
                         }
                         _ => {
                             if let Some((key, start)) = entry.take() {
