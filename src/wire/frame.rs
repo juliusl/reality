@@ -8,7 +8,7 @@ use specs::{Entity, World, WorldExt};
 use std::{
     collections::HashMap,
     fmt::Display,
-    io::{Cursor, Read, Write, Seek},
+    io::{Cursor, Read, Seek, Write},
     ops::Range,
 };
 use tracing::{event, Level};
@@ -157,10 +157,16 @@ impl Frame {
                     .write(Keywords::BlockDelimitter, None::<&mut Cursor<Vec<u8>>>)
                     .expect("can write");
                 written += frame_builder
-                    .write(Elements::Identifier(name.to_string()), None::<&mut Cursor<Vec<u8>>>)
+                    .write(
+                        Elements::Identifier(name.to_string()),
+                        None::<&mut Cursor<Vec<u8>>>,
+                    )
                     .expect("can write");
                 written += frame_builder
-                    .write(Elements::Identifier(symbol.to_string()), None::<&mut Cursor<Vec<u8>>>)
+                    .write(
+                        Elements::Identifier(symbol.to_string()),
+                        None::<&mut Cursor<Vec<u8>>>,
+                    )
                     .expect("can write");
 
                 event!(
@@ -179,20 +185,31 @@ impl Frame {
 
     /// Returns a new frame for adding a stable attribute to a block
     ///
-    pub fn add(name: impl AsRef<str>, value: &Value, blob: &mut (impl Read + Write + Seek + Clone)) -> Self {
+    pub fn add(
+        name: impl AsRef<str>,
+        value: &Value,
+        blob: &mut (impl Read + Write + Seek + Clone),
+    ) -> Self {
         if let Elements::Identifier(name) = Elements::lexer(name.as_ref())
             .next()
             .expect("should be valid identifier")
         {
             let mut frame_builder = FrameBuilder::default();
             let mut written = 0;
-            written += frame_builder.write(Keywords::Add, None::<&mut Cursor<Vec<u8>>>).expect("can write");
             written += frame_builder
-                .write(Elements::Identifier(name.to_string()), None::<&mut Cursor<Vec<u8>>>)
+                .write(Keywords::Add, None::<&mut Cursor<Vec<u8>>>)
+                .expect("can write");
+            written += frame_builder
+                .write(
+                    Elements::Identifier(name.to_string()),
+                    None::<&mut Cursor<Vec<u8>>>,
+                )
                 .expect("can write");
 
             let value_type: Attributes = value.into();
-            written += frame_builder.write(value_type, None::<&mut Cursor<Vec<u8>>>).expect("can write");
+            written += frame_builder
+                .write(value_type, None::<&mut Cursor<Vec<u8>>>)
+                .expect("can write");
             written += frame_builder.write_value(value, blob).expect("can write");
 
             event!(
@@ -230,14 +247,22 @@ impl Frame {
                     .write(Keywords::Define, None::<&mut Cursor<Vec<u8>>>)
                     .expect("can write");
                 written += frame_builder
-                    .write(Elements::Identifier(name.to_string()), None::<&mut Cursor<Vec<u8>>>)
+                    .write(
+                        Elements::Identifier(name.to_string()),
+                        None::<&mut Cursor<Vec<u8>>>,
+                    )
                     .expect("can write");
                 written += frame_builder
-                    .write(Elements::Identifier(symbol.to_string()), None::<&mut Cursor<Vec<u8>>>)
+                    .write(
+                        Elements::Identifier(symbol.to_string()),
+                        None::<&mut Cursor<Vec<u8>>>,
+                    )
                     .expect("can write");
 
                 let value_type: Attributes = value.into();
-                written += frame_builder.write(value_type, None::<&mut Cursor<Vec<u8>>>).expect("can write");
+                written += frame_builder
+                    .write(value_type, None::<&mut Cursor<Vec<u8>>>)
+                    .expect("can write");
                 written += frame_builder.write_value(value, blob).expect("can write");
 
                 event!(
@@ -260,6 +285,12 @@ impl Frame {
         let mut frame_builder = FrameBuilder::default();
         let _ = frame_builder
             .write(Keywords::BlockDelimitter, None::<&mut Cursor<Vec<u8>>>)
+            .expect("can write");
+        let _ = frame_builder
+            .write(Data::Entropy, None::<&mut Cursor<Vec<u8>>>)
+            .expect("can write");
+        let _ = frame_builder
+            .write(Data::Entropy, None::<&mut Cursor<Vec<u8>>>)
             .expect("can write");
 
         event!(Level::TRACE, "new frame for block end");
@@ -533,13 +564,11 @@ impl Frame {
         match self.attribute() {
             Some(attr) => match attr {
                 Attributes::Empty => Some(Data::InlineEmpty),
-                Attributes::Bool => {
-                    Some(if self.data[value_offset..][0] == 0x01 {
-                        Data::InlineTrue
-                    } else {
-                        Data::InlineFalse
-                    })
-                }
+                Attributes::Bool => Some(if self.data[value_offset..][0] == 0x01 {
+                    Data::InlineTrue
+                } else {
+                    Data::InlineFalse
+                }),
                 Attributes::Int
                 | Attributes::IntPair
                 | Attributes::IntRange
@@ -557,17 +586,18 @@ impl Frame {
                     let [key, ..] = cast::<[u8; 16], [u64; 2]>(buffer);
 
                     Some(Data::Interned { key })
-                },
-                Attributes::Text | Attributes::BinaryVector=> {
+                }
+                Attributes::Text | Attributes::BinaryVector => {
                     let mut buffer = [0; 16];
                     buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
                     let [length, cursor] = cast::<[u8; 16], [u64; 2]>(buffer);
 
-                    Some(Data::Extent { length, cursor: Some(cursor) })
-                },
-                _ => {
-                    None
+                    Some(Data::Extent {
+                        length,
+                        cursor: Some(cursor),
+                    })
                 }
+                _ => None,
             },
             None => None,
         }
@@ -602,14 +632,11 @@ impl Frame {
     }
 
     /// Returns true if this frame stores extent data,
-    /// 
+    ///
     pub fn is_extent(&self) -> bool {
         match self.attribute() {
             Some(attr) => match attr {
-                Attributes::Text |
-                Attributes::BinaryVector => {
-                    true
-                },
+                Attributes::Text | Attributes::BinaryVector => true,
                 _ => false,
             },
             None => false,
@@ -723,6 +750,10 @@ impl FrameBuilder {
     ) -> Result<usize, std::io::Error> {
         let data: Data = data.into();
         match data {
+            // 8 0's followed by entropy bytes
+            Data::Entropy => self
+                .cursor
+                .write(&cast::<[u64; 2], [u8; 16]>([0, Self::entropy()])),
             // The first byte of the frame is always an operation
             Data::Operation(op) => self.cursor.write(&[op]),
             // After 1-2 identifiers, 1 byte identifies the value type the frame
@@ -737,7 +768,9 @@ impl FrameBuilder {
             Data::Inline { data } => self.cursor.write(&data),
             // Interned data can be in the middle and end of the frame,
             // so it's important this gets padded
-            Data::Interned { key } => self.cursor.write(&cast::<[u64; 2], [u8; 16]>([key, Self::entropy()])),
+            Data::Interned { key } => self
+                .cursor
+                .write(&cast::<[u64; 2], [u8; 16]>([key, Self::entropy()])),
             // An extent will never be in the middle of the frame,
             // So it does not require any padding.
             // However, extents require a write to a blob to figure out the cursor pos
@@ -771,7 +804,7 @@ impl FrameBuilder {
     }
 
     /// Returns some entropy,
-    /// 
+    ///
     fn entropy() -> u64 {
         rand::thread_rng().next_u64()
     }

@@ -15,6 +15,9 @@ pub type Chunk = [u8; 16];
 /// Wire data types, to use for frame encoding
 ///
 pub enum Data {
+    /// Random data, 
+    /// 
+    Entropy,
     /// Inlined false value
     ///
     /// Will be encoded as 0x00
