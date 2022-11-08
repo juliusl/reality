@@ -571,19 +571,19 @@ mod tests {
     
         let content = r#"
         ```
-        : domain .symbol test
+        <test inline comment>  : domain .symbol test
     
-        + address .symbol localhost
+        <test inline comment>  + address .symbol localhost
         ```
     
         ``` event-1
-        + name .symbol event-1
+        <test inline comment> + name .symbol event-1
         ```
     
         ``` event-2
-        + .test_child
+        <test inline comment>  + .test_child
 
-        + name .symbol event-2
+        <test inline comment> + name .symbol event-2
         ```
         "#;
     

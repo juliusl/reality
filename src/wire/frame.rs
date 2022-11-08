@@ -279,6 +279,37 @@ impl Frame {
         }
     }
 
+    /// Starts an extension frame,
+    ///
+    /// An extension frame does not parse into a block, but is a shortcut for defining
+    /// custom wire objects that act like blocks.
+    ///
+    pub fn extension(name: impl AsRef<str>) -> Self {
+        if let Elements::Identifier(name) = Elements::lexer(name.as_ref())
+            .next()
+            .expect("should be valid identifier")
+        {
+            let mut frame_builder = FrameBuilder::default();
+            let mut written = 0;
+            written += frame_builder
+                .write(Keywords::Extension, None::<&mut Cursor<Vec<u8>>>)
+                .expect("can write");
+            written += frame_builder
+                .write(
+                    Elements::Identifier(name.to_string()),
+                    None::<&mut Cursor<Vec<u8>>>,
+                )
+                .expect("can write");
+            event!(
+                Level::TRACE,
+                "new frame for `extension` `{name}`, size: {written}"
+            );
+            frame_builder.cursor.into()
+        } else {
+            panic!("invalid extension syntax, expected identifier")
+        }
+    }
+
     /// Returns a new frame for closing the current block selection
     ///
     pub fn end_block() -> Self {

@@ -39,6 +39,7 @@ pub enum Keywords {
     #[token("``` runmd", on_comment)]
     #[token("```md", on_comment)]
     #[token("```runmd", on_comment)]
+    #[token("<", on_inline_comment)]
     Comment = 0x0C,
 
     /// Writes a transient attribute
@@ -48,6 +49,11 @@ pub enum Keywords {
     #[token("define", on_define)]
     #[token(":", on_define)]
     Define = 0x0D,
+
+    /// Extension keyword, allows for wire protocol to include user frames
+    /// 
+    #[token("_", on_comment)]
+    Extension = 0x0E,
 
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.
@@ -65,6 +71,7 @@ impl From<u8> for Keywords {
             0x0B => Keywords::BlockDelimitter,
             0x0C => Keywords::Comment,
             0x0D => Keywords::Define,
+            0x0E => Keywords::Extension,
             _ => Keywords::Error,
         }
     }
@@ -73,6 +80,12 @@ impl From<u8> for Keywords {
 fn on_comment(lexer: &mut Lexer<Keywords>) {
     if let Some(next_line) = lexer.remainder().lines().next() {
         lexer.bump(next_line.len());
+    }
+}
+
+fn on_inline_comment(lexer: &mut Lexer<Keywords>) {
+    if let Some(next_line) = lexer.remainder().lines().next() {
+        lexer.bump(next_line.find(">").unwrap_or(next_line.len()));
     }
 }
 
