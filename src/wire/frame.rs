@@ -261,7 +261,6 @@ impl Frame {
         let _ = frame_builder
             .write(Keywords::BlockDelimitter, None::<&mut Cursor<Vec<u8>>>)
             .expect("can write");
-        
 
         event!(Level::TRACE, "new frame for block end");
 
@@ -273,7 +272,7 @@ impl Frame {
     /// **Caveat** The value must exist in the interner.
     ///
     pub fn name(&self, interner_data: &Interner) -> Option<String> {
-        self.read_interned(1..16, interner_data.strings())
+        self.read_interned(1..17, interner_data.strings())
     }
 
     /// Gets the symbol value from the frame,
@@ -281,7 +280,7 @@ impl Frame {
     /// **Caveat** The value must exist to the interner.
     ///
     pub fn symbol(&self, interner_data: &Interner) -> Option<String> {
-        self.read_interned(17..32, interner_data.strings())
+        self.read_interned(17..33, interner_data.strings())
     }
 
     /// Returns the name key,
