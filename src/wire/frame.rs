@@ -3,6 +3,7 @@ use crate::parser::{Attributes, Elements, Keywords};
 use atlier::system::Value;
 use bytemuck::cast;
 use logos::Logos;
+use rand::RngCore;
 use specs::{Entity, World, WorldExt};
 use std::{
     collections::HashMap,
@@ -736,7 +737,7 @@ impl FrameBuilder {
             Data::Inline { data } => self.cursor.write(&data),
             // Interned data can be in the middle and end of the frame,
             // so it's important this gets padded
-            Data::Interned { key } => self.cursor.write(&cast::<[u64; 2], [u8; 16]>([key, 0])),
+            Data::Interned { key } => self.cursor.write(&cast::<[u64; 2], [u8; 16]>([key, Self::entropy()])),
             // An extent will never be in the middle of the frame,
             // So it does not require any padding.
             // However, extents require a write to a blob to figure out the cursor pos
@@ -754,7 +755,7 @@ impl FrameBuilder {
                     }
                     _ => self
                         .cursor
-                        .write(&cast::<[u64; 2], [u8; 16]>([length, u64::MAX])),
+                        .write(&cast::<[u64; 2], [u8; 16]>([length, Self::entropy()])),
                 },
             },
             // Frame extents will be constructed from regular extents,
@@ -767,6 +768,12 @@ impl FrameBuilder {
                 .cursor
                 .write(&cast::<[u64; 4], [u8; 32]>([start, end, cursor, length])),
         }
+    }
+
+    /// Returns some entropy,
+    /// 
+    fn entropy() -> u64 {
+        rand::thread_rng().next_u64()
     }
 }
 

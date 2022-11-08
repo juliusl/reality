@@ -10,6 +10,7 @@ atlier = { git = "https://github.com/juliusl/atlier.git", branch="pr/v1" }
 base64 = "0.13.0"
 bytemuck = "1.12.1"
 logos = "0.12.1"
+rand = "0.8.5"
 serde = "1.0.144"
 sha2 = "0.10.2"
 specs = { version = "0.18.0", features = ["default", "derive", "shred-derive"] }
