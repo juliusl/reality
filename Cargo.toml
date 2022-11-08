@@ -9,10 +9,11 @@ edition = "2021"
 atlier = { git = "https://github.com/juliusl/atlier.git", branch="pr/v1" }
 base64 = "0.13.0"
 bytemuck = "1.12.1"
+bytes = "1.2.1"
 logos = "0.12.1"
 serde = "1.0.144"
 sha2 = "0.10.2"
 specs = { version = "0.18.0", features = ["default", "derive", "shred-derive"] }
-tokio = { version = "1.19.2", features = ["default", "rt-multi-thread", "sync", "fs", "process", "io-util", "io-std", "macros"] }
+tokio = { version = "1.19.2", features = ["default", "rt-multi-thread", "net", "sync", "fs", "process", "io-util", "io-std", "macros"] }
 tracing = "0.1.36"
 tracing-test = "0.2.3"

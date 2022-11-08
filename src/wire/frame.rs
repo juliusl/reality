@@ -89,6 +89,12 @@ impl From<&[u8]> for Frame {
     }
 }
 
+impl From<&[u8; 64]> for Frame {
+    fn from(data: &[u8; 64]) -> Self {
+        Frame { data: data.clone() }
+    }
+}
+
 impl Display for Frame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {

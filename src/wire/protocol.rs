@@ -184,19 +184,25 @@ impl Protocol {
         }
     }
 
+    /// Finds an encoder by resource id, and calls encode,
+    /// 
+    pub fn encoder_by_id(&mut self, resource_id: &ResourceId, encode: impl FnOnce(&World, &mut Encoder)) {
+        if let Some(encoder) = self.encoders.get_mut(resource_id) {
+            encode(&self.world, encoder);
+        } else {
+            let mut encoder = Encoder::new();
+            encode(self.as_ref(), &mut encoder);
+            self.encoders.insert(resource_id.clone(), encoder);
+        }
+    }
+
     /// Finds an encoder and calls encode,
     ///
     pub fn encoder<T>(&mut self, encode: impl FnOnce(&World, &mut Encoder)) 
     where
         T: WireObject
     {
-        if let Some(encoder) = self.encoders.get_mut(&T::resource_id()) {
-            encode(&self.world, encoder);
-        } else {
-            let mut encoder = Encoder::new();
-            encode(self.as_ref(), &mut encoder);
-            self.encoders.insert(T::resource_id(), encoder);
-        }
+        self.encoder_by_id(&T::resource_id(), encode);
     }
 
     /// Sends protocol data w/ streams

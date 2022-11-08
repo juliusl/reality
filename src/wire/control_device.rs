@@ -58,6 +58,29 @@ impl ControlDevice {
         control_device
     }
 
+    /// Pushes the frame to the correct buffer,
+    /// 
+    /// Returns true if the frame was a control frame
+    /// 
+    pub fn accept(&mut self, frame: Frame) -> bool {
+        if frame.op() == 0x00 {
+            self.data.push(frame.clone());
+            true
+        } else if frame.op() > 0x00 && frame.op() < 0x06 {
+            self.read.push(frame.clone());
+            true
+        } else if frame.op() >= 0xC1 && frame.op() <= 0xC6 {
+            assert!(
+                frame.op() >= 0xC1 && frame.op() <= 0xC6,
+                "Index frames have a specific op code range"
+            );
+            self.index.push(frame.clone());
+            true
+        } else {
+            false
+        }
+    }
+
     /// Returns the size in bytes of the control device,
     ///
     pub fn size(&self) -> usize {

@@ -1,4 +1,6 @@
 
+pub mod framedb;
+
 mod frame;
 pub use frame::Frame;
 pub use frame::FrameBuilder;
