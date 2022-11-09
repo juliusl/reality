@@ -63,6 +63,12 @@ impl Protocol {
         self.assert_generation
     }
 
+    /// Returns an iterator over encoders,
+    /// 
+    pub fn iter_encoders(&self) -> impl Iterator<Item=(&ResourceId, &Encoder)> {
+        self.encoders.iter()
+    }
+
     /// Encodes all components from the world,
     ///
     pub fn encode_components<T>(&mut self)

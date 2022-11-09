@@ -64,6 +64,22 @@ impl Interner {
     pub fn complexes(&self) -> &InternedComplexes {
         self.as_ref()
     }
+
+    /// Merges two interners and returns a new interner,
+    /// 
+    pub fn merge(&self, other: &Interner) -> Interner {
+        let mut interner = self.clone();
+
+        for (_, s) in other.strings.iter() {
+            interner.add_ident(s);
+        }
+
+        for (k, c) in other.complexes.iter() {
+            interner.insert_complex(*k, &c);
+        }
+
+        interner
+    }
 }
 
 impl From<InternedStrings> for Interner {
