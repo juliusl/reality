@@ -69,6 +69,12 @@ impl Protocol {
         self.encoders.iter()
     }
 
+    /// Returns an encoder by id,
+    /// 
+    pub fn encoder_mut_by_id(&mut self, id: ResourceId) -> Option<&mut Encoder> {
+        self.encoders.get_mut(&id)
+    }
+
     /// Encodes all components from the world,
     ///
     pub fn encode_components<T>(&mut self)
