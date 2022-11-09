@@ -185,17 +185,23 @@ impl Protocol {
     }
 
     /// Finds an encoder and calls encode,
+    /// 
+    /// Returns the number of frames encoded
     ///
-    pub fn encoder<T>(&mut self, encode: impl FnOnce(&World, &mut Encoder)) 
+    pub fn encoder<T>(&mut self, encode: impl FnOnce(&World, &mut Encoder))  -> usize
     where
         T: WireObject
     {
         if let Some(encoder) = self.encoders.get_mut(&T::resource_id()) {
+            let current = encoder.frames.len();
             encode(&self.world, encoder);
+            encoder.frames.len() - current
         } else {
             let mut encoder = Encoder::new();
             encode(self.as_ref(), &mut encoder);
+            let frame_count = encoder.frames.len();
             self.encoders.insert(T::resource_id(), encoder);
+            frame_count
         }
     }
 
