@@ -33,3 +33,4 @@ mod wire_object;
 pub use wire_object::WireObject;
 
 pub use specs::shred::ResourceId;
+pub use specs::World;
