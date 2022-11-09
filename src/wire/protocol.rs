@@ -186,16 +186,15 @@ impl Protocol {
 
     /// Finds an encoder and calls encode,
     /// 
-    /// Returns the number of frames encoded
+    /// Returns the current number of frames encoded
     ///
     pub fn encoder<T>(&mut self, encode: impl FnOnce(&World, &mut Encoder))  -> usize
     where
         T: WireObject
     {
         if let Some(encoder) = self.encoders.get_mut(&T::resource_id()) {
-            let current = encoder.frames.len();
             encode(&self.world, encoder);
-            encoder.frames.len() - current
+            encoder.frames.len()
         } else {
             let mut encoder = Encoder::new();
             encode(self.as_ref(), &mut encoder);
