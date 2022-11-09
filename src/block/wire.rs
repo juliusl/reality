@@ -341,6 +341,8 @@ impl WireObject for Block {
                                 } else {
                                     frame_index.insert(key, vec![start..idx]);
                                 }
+                            } else {
+                                entry = Some((String::default(), idx));
                             }
                         }
                     }
