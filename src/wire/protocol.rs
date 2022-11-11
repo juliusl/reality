@@ -142,9 +142,16 @@ impl Protocol {
         let mut c = vec![];
 
         if let Some(encoder) = self.encoders.get(&T::resource_id()) {
-            for (_, block_range) in encoder.frame_index() {
+            for (name, block_range) in encoder.frame_index() {
                 for block_range in block_range {
-                    let frames = &encoder.frames_slice()[block_range.clone()];
+                    let start = block_range.start;
+                    let end = block_range.end;
+
+                    if end > encoder.frames_slice().len() {
+                        panic!("Invalid range {name}, {:#?}", encoder.frame_index());
+                    }
+
+                    let frames = &encoder.frames_slice()[start..end];
 
                     let obj = T::decode(&self, &encoder.interner, &encoder.blob_device("decode").cursor(), frames);
                     c.push(obj);
