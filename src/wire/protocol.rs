@@ -148,11 +148,13 @@ impl Protocol {
                     let end = block_range.end;
 
                     if end > encoder.frames_slice().len() {
+                        for frame in encoder.frames_slice() {
+                            eprintln!("{:#}", frame);
+                        }
                         panic!(
-                            "Invalid range {name}, {end} > {},  {:#?}, {:#?}",
+                            "Invalid range {name}, {end} > {},  {:#?}",
                             encoder.frames_slice().len(),
                             encoder.frame_index(),
-                            encoder.frames_slice(),
                         );
                     }
 
