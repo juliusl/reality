@@ -75,6 +75,12 @@ impl Protocol {
         self.encoders.get_mut(&id)
     }
 
+    /// Takes an encoder from the protocol,
+    /// 
+    pub fn take_encoder(&mut self, id: ResourceId) -> Option<Encoder> {
+        self.encoders.remove(&id)
+    }
+
     /// Encodes all components from the world,
     ///
     pub fn encode_components<T>(&mut self)
