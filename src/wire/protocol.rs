@@ -2,12 +2,15 @@ use specs::{
     shred::{Resource, ResourceId},
     Component, Join, World, WorldExt,
 };
-use std::{fmt::Debug, io::{Write, Read}};
 use std::{collections::HashMap, future::Future, ops::Deref};
+use std::{
+    fmt::Debug,
+    io::{Read, Write},
+};
 
 use crate::{Block, Parser};
 
-use super::{Encoder, Frame, WireObject, ControlDevice, BlobDevice};
+use super::{BlobDevice, ControlDevice, Encoder, Frame, WireObject};
 
 pub mod async_ext;
 
@@ -29,7 +32,7 @@ pub struct Protocol {
 
 impl Protocol {
     /// Returns an empty protocol,
-    /// 
+    ///
     pub fn empty() -> Self {
         Self {
             encoders: HashMap::default(),
@@ -64,19 +67,19 @@ impl Protocol {
     }
 
     /// Returns an iterator over encoders,
-    /// 
-    pub fn iter_encoders(&self) -> impl Iterator<Item=(&ResourceId, &Encoder)> {
+    ///
+    pub fn iter_encoders(&self) -> impl Iterator<Item = (&ResourceId, &Encoder)> {
         self.encoders.iter()
     }
 
     /// Returns an encoder by id,
-    /// 
+    ///
     pub fn encoder_mut_by_id(&mut self, id: ResourceId) -> Option<&mut Encoder> {
         self.encoders.get_mut(&id)
     }
 
     /// Takes an encoder from the protocol,
-    /// 
+    ///
     pub fn take_encoder(&mut self, id: ResourceId) -> Option<Encoder> {
         self.encoders.remove(&id)
     }
@@ -112,11 +115,8 @@ impl Protocol {
 
     /// Decodes and reads wire objects,
     ///
-    pub async fn read<F, T>(
-        &self,
-        handle: impl Fn(&[Frame], T) -> F,
-        complete: impl Fn(T) -> (),
-    ) where
+    pub async fn read<F, T>(&self, handle: impl Fn(&[Frame], T) -> F, complete: impl Fn(T) -> ())
+    where
         T: WireObject,
         F: Future<Output = T>,
     {
@@ -148,12 +148,22 @@ impl Protocol {
                     let end = block_range.end;
 
                     if end > encoder.frames_slice().len() {
-                        panic!("Invalid range {name}, {:#?}", encoder.frame_index());
+                        panic!(
+                            "Invalid range {name}, {end} > {},  {:#?}, {:#?}",
+                            encoder.frames_slice().len(),
+                            encoder.frame_index(),
+                            encoder.frames_slice(),
+                        );
                     }
 
                     let frames = &encoder.frames_slice()[start..end];
 
-                    let obj = T::decode(&self, &encoder.interner, &encoder.blob_device("decode").cursor(), frames);
+                    let obj = T::decode(
+                        &self,
+                        &encoder.interner,
+                        &encoder.blob_device("decode").cursor(),
+                        frames,
+                    );
                     c.push(obj);
                 }
             }
@@ -163,10 +173,10 @@ impl Protocol {
     }
 
     /// Returns a control device for resource,
-    /// 
+    ///
     pub fn control_device<T>(&self) -> Option<ControlDevice>
     where
-        T: WireObject
+        T: WireObject,
     {
         if let Some(encoder) = self.encoders.get(&T::resource_id()).as_ref() {
             Some(ControlDevice::new(encoder.interner()))
@@ -176,10 +186,10 @@ impl Protocol {
     }
 
     /// Returns a blob device for resource,
-    /// 
-    pub fn blob_device<T>(&self) -> Option<BlobDevice> 
+    ///
+    pub fn blob_device<T>(&self) -> Option<BlobDevice>
     where
-        T: WireObject 
+        T: WireObject,
     {
         if let Some(encoder) = self.encoders.get(&T::resource_id()).as_ref() {
             Some(encoder.blob_device(""))
@@ -190,11 +200,9 @@ impl Protocol {
 
     /// Returns an iterator over objects for transporting,
     ///
-    pub fn iter_object_frames<T>(
-        &self
-    ) -> impl Iterator<Item = &[Frame]> 
+    pub fn iter_object_frames<T>(&self) -> impl Iterator<Item = &[Frame]>
     where
-        T: WireObject
+        T: WireObject,
     {
         if let Some(encoder) = self.encoders.get(&T::resource_id()) {
             encoder
@@ -210,12 +218,12 @@ impl Protocol {
     }
 
     /// Finds an encoder and calls encode,
-    /// 
+    ///
     /// Returns the current number of frames encoded
     ///
-    pub fn encoder<T>(&mut self, encode: impl FnOnce(&World, &mut Encoder))  -> usize
+    pub fn encoder<T>(&mut self, encode: impl FnOnce(&World, &mut Encoder)) -> usize
     where
-        T: WireObject
+        T: WireObject,
     {
         if let Some(encoder) = self.encoders.get_mut(&T::resource_id()) {
             encode(&self.world, encoder);
@@ -230,12 +238,12 @@ impl Protocol {
     }
 
     /// Sends protocol data w/ streams
-    /// 
-    pub fn send<T, W, F>(&mut self, control_stream: F, frame_stream: F, blob_stream: F)  
-    where 
+    ///
+    pub fn send<T, W, F>(&mut self, control_stream: F, frame_stream: F, blob_stream: F)
+    where
         T: WireObject,
         W: Write,
-        F: FnOnce() -> W, 
+        F: FnOnce() -> W,
     {
         self.encoder::<T>(move |_, encoder| {
             let mut control_stream = control_stream();
@@ -265,24 +273,27 @@ impl Protocol {
             encoder.blob_device.set_position(0);
 
             let blob_len = encoder.blob_device.get_ref().len();
-            assert_eq!(std::io::copy(&mut encoder.blob_device, &mut blob_stream).ok(), Some(blob_len as u64));
+            assert_eq!(
+                std::io::copy(&mut encoder.blob_device, &mut blob_stream).ok(),
+                Some(blob_len as u64)
+            );
 
             encoder.clear();
         });
     }
 
     /// Receive data for a protocol,
-    /// 
+    ///
     /// This will replace the active interner, so it's best this is used with an empty protocol.
-    /// 
-    pub fn receive<T, R, F>(&mut self, control_stream: F, frame_stream: F, blob_stream: F)  
-    where 
+    ///
+    pub fn receive<T, R, F>(&mut self, control_stream: F, frame_stream: F, blob_stream: F)
+    where
         T: WireObject,
         R: Read,
-        F: FnOnce() -> R, 
+        F: FnOnce() -> R,
     {
         self.encoder::<T>(move |_, encoder| {
-            let mut control_device  = ControlDevice::default();
+            let mut control_device = ControlDevice::default();
 
             let mut control_stream = control_stream();
 
@@ -304,7 +315,7 @@ impl Protocol {
                 frame_buffer = [0; 64]
             }
             encoder.interner = control_device.into();
-            
+
             let mut blob_stream = blob_stream();
             std::io::copy(&mut blob_stream, &mut encoder.blob_device).ok();
 
@@ -320,10 +331,10 @@ impl Protocol {
     }
 
     /// Clears an encoder,
-    /// 
-    pub fn clear<T>(&mut self) 
-    where 
-        T: WireObject
+    ///
+    pub fn clear<T>(&mut self)
+    where
+        T: WireObject,
     {
         if let Some(encoder) = self.encoders.get_mut(&T::resource_id()) {
             encoder.clear()
