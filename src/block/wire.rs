@@ -14,8 +14,14 @@ impl WireObject for BlockProperties {
     where
         BlobImpl: Read + Write + Seek + Clone + Default,
     {
-        encoder.interner.add_ident(self.name());
-        let mut frame = Frame::add(self.name(), &Value::Empty, &mut encoder.blob_device);
+        let name = if self.name().is_empty() {
+            String::from("root")
+        } else {
+            self.name().to_string()
+        };
+
+        encoder.interner.add_ident(&name);
+        let mut frame = Frame::add(&name, &Value::Empty, &mut encoder.blob_device);
 
         if let Some(entity) = encoder.last_entity {
             frame = frame.with_parity(entity);
@@ -45,7 +51,7 @@ impl WireObject for BlockProperties {
                 crate::BlockProperty::Single(prop) => {
                     intern_properties(prop, &mut encoder.interner);
                     let mut frame =
-                        Frame::define(self.name(), name, prop, &mut encoder.blob_device);
+                        Frame::define(name, name, prop, &mut encoder.blob_device);
                     if let Some(entity) = encoder.last_entity {
                         frame = frame.with_parity(entity);
                     }
@@ -55,7 +61,7 @@ impl WireObject for BlockProperties {
                     for prop in props {
                         intern_properties(prop, &mut encoder.interner);
                         let mut frame =
-                            Frame::define(self.name(), name, prop, &mut encoder.blob_device);
+                            Frame::define(name, name, prop, &mut encoder.blob_device);
                         if let Some(entity) = encoder.last_entity {
                             frame = frame.with_parity(entity);
                         }
@@ -64,7 +70,7 @@ impl WireObject for BlockProperties {
                 }
                 crate::BlockProperty::Required(value) => {
                     let mut frame = Frame::define(
-                        self.name(),
+                        name,
                         name,
                         &if let Some(value) = value { 
                             intern_properties(value, &mut encoder.interner);
@@ -84,7 +90,7 @@ impl WireObject for BlockProperties {
                 }
                 crate::BlockProperty::Optional(value) => {
                     let mut frame = Frame::define(
-                        self.name(),
+                        name,
                         name,
                         &if let Some(value) = value { 
                             intern_properties(&value, &mut encoder.interner);
@@ -103,7 +109,7 @@ impl WireObject for BlockProperties {
                 }
                 crate::BlockProperty::Empty => {
                     let mut frame =
-                        Frame::define(self.name(), name, &Value::Empty, &mut encoder.blob_device);
+                        Frame::define(name, name, &Value::Empty, &mut encoder.blob_device);
                     if let Some(entity) = encoder.last_entity {
                         frame = frame.with_parity(entity);
                     }
