@@ -192,7 +192,7 @@ impl Frame {
     ) -> Self {
         if let Elements::Identifier(name) = Elements::lexer(name.as_ref())
             .next()
-            .expect("should be valid identifier")
+            .expect(&format!("should be valid identifier, {}", name.as_ref()))
         {
             let mut frame_builder = FrameBuilder::default();
             let mut written = 0;
