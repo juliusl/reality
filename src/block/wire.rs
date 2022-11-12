@@ -14,6 +14,7 @@ impl WireObject for BlockProperties {
     where
         BlobImpl: Read + Write + Seek + Clone + Default,
     {
+        encoder.interner.add_ident(self.name());
         let mut frame = Frame::add(self.name(), &Value::Empty, &mut encoder.blob_device);
 
         if let Some(entity) = encoder.last_entity {
@@ -22,9 +23,27 @@ impl WireObject for BlockProperties {
 
         encoder.frames.push(frame);
 
+        fn intern_properties(value: &Value, interner: &mut Interner) {
+            match value {
+                Value::Symbol(s) => {
+                    interner.add_ident(s);
+                },
+                Value::Complex(complex) => {
+                    for c in complex.iter() {
+                        interner.add_ident(c);
+                    }
+                },
+                _ => {
+
+                }
+            }
+        }
+
         for (name, property) in self.iter_properties() {
+            encoder.interner.add_ident(name);
             match property {
                 crate::BlockProperty::Single(prop) => {
+                    intern_properties(prop, &mut encoder.interner);
                     let mut frame =
                         Frame::define(self.name(), name, prop, &mut encoder.blob_device);
                     if let Some(entity) = encoder.last_entity {
@@ -34,6 +53,7 @@ impl WireObject for BlockProperties {
                 }
                 crate::BlockProperty::List(props) => {
                     for prop in props {
+                        intern_properties(prop, &mut encoder.interner);
                         let mut frame =
                             Frame::define(self.name(), name, prop, &mut encoder.blob_device);
                         if let Some(entity) = encoder.last_entity {
@@ -47,9 +67,13 @@ impl WireObject for BlockProperties {
                         self.name(),
                         name,
                         &if let Some(value) = value { 
+                            intern_properties(value, &mut encoder.interner);
                             value.clone()
                         } else {
-                            Value::Symbol("{property:REQUIRED}".to_string())
+                            let value = 
+                            Value::Symbol("{property:REQUIRED}".to_string());
+                            intern_properties(&value, &mut encoder.interner);
+                            value
                         },
                         &mut encoder.blob_device,
                     );
@@ -63,9 +87,12 @@ impl WireObject for BlockProperties {
                         self.name(),
                         name,
                         &if let Some(value) = value { 
+                            intern_properties(&value, &mut encoder.interner);
                             value.clone()
                         } else {
-                            Value::Symbol("{property:OPTIONAL}".to_string())
+                            let value = Value::Symbol("{property:OPTIONAL}".to_string());
+                            intern_properties(&value, &mut encoder.interner);
+                            value
                         },
                         &mut encoder.blob_device,
                     );
