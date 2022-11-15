@@ -13,6 +13,9 @@ use std::{
 };
 use tracing::{event, Level};
 
+mod extension_token;
+pub use extension_token::ExtensionToken;
+
 /// A frame represents the data for a single operation,
 ///
 /// At most a frame can be 64 bytes in length,
@@ -279,12 +282,21 @@ impl Frame {
         }
     }
 
-    /// Starts an extension frame,
+    /// Returns an extension frame,
     ///
     /// An extension frame does not parse into a block, but is a shortcut for defining
     /// custom wire objects that act like blocks.
     ///
     pub fn extension(namespace: impl AsRef<str>, symbol: impl AsRef<str>) -> Self {
+        Self::start_extension(namespace, symbol).cursor.into()
+    }
+
+    /// Starts an extension framebuilder,
+    ///
+    /// An extension frame does not parse into a block, but is a shortcut for defining
+    /// custom wire objects that act like blocks.
+    ///
+    pub fn start_extension(namespace: impl AsRef<str>, symbol: impl AsRef<str>) -> FrameBuilder {
         let namespace = Elements::lexer(namespace.as_ref())
             .next()
             .expect("should be valid identifier");
@@ -318,11 +330,11 @@ impl Frame {
                     "new frame for `extension` `{namespace}` `{symbol}`, size: {written}"
                 );
 
-                frame_builder.cursor.into()
+                frame_builder
             }
             // This is more strict than the parser implementation,
             _ => {
-                panic!("Cannot create start block frame")
+                panic!("Cannot create extension frame")
             }
         }
     }
@@ -360,6 +372,25 @@ impl Frame {
     ///
     pub fn symbol(&self, interner_data: &Interner) -> Option<String> {
         self.read_interned(17..33, interner_data.strings())
+    }
+
+    /// Length of frames (including this frame)
+    /// 
+    pub fn frame_len(&self) -> usize {
+        match self.keyword() {
+            Keywords::Extension => {
+                // 1 byte - keyword
+                // 16 bytes - namespace [1 ..17]
+                // 16 bytes - symbol    [17..33]
+                // 16 bytes - len       [33..49]
+
+                let mut buffer = [0; 16];
+                buffer.copy_from_slice(&self.bytes()[33..49]);
+                let [len, _] = cast::<[u8; 16], [u64; 2]>(buffer);
+                1 + len as usize
+            },
+            _ => 1
+        }
     }
 
     /// Returns the name key,
@@ -707,7 +738,7 @@ impl Frame {
     }
 
     /// Sets the parity bits for this frame,
-    /// 
+    ///
     pub fn set_parity(&mut self, entity: Entity) {
         let id = entity.id();
         let gen = entity.gen().id() as u32;
@@ -808,6 +839,10 @@ impl FrameBuilder {
     ) -> Result<usize, std::io::Error> {
         let data: Data = data.into();
         match data {
+            // u64 followed by entropy bytes
+            Data::Length(len) => self
+                .cursor
+                .write(&cast::<[u64; 2], [u8; 16]>([len as u64, Self::entropy()])),
             // 8 0's followed by entropy bytes
             Data::Entropy => self
                 .cursor

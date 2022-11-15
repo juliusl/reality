@@ -1,4 +1,7 @@
-use super::{frame::Frame, BlobDevice, Interner, WireObject};
+use super::{
+    frame::{ExtensionToken, Frame},
+    BlobDevice, Interner, WireObject,
+};
 use atlier::system::Value;
 use specs::{Entity, World};
 use std::{
@@ -137,18 +140,23 @@ impl<BlobImpl> Encoder<BlobImpl>
 where
     BlobImpl: std::io::Read + std::io::Write + std::io::Seek + Clone + Default,
 {
-    /// Creates and adds a new extension frame,
+    /// Starts an extension frame w/ this encoder,
     /// 
-    pub fn extension(&mut self, namespace: impl AsRef<str>, symbol: impl AsRef<str>) -> &mut Frame {
+    /// Returns an ExtensionToken, when the token is dropped, the extension frame will be encoded,
+    /// w/ the number of frames that were encoded before it was dropped
+    ///
+    pub fn start_extension<'a>(
+        &'a mut self,
+        namespace: impl AsRef<str>,
+        symbol: impl AsRef<str>,
+    ) -> ExtensionToken<'a, BlobImpl>
+    where
+        BlobImpl: Read + Write + Seek + Clone + Default,
+    {
         self.interner.add_ident(namespace.as_ref());
         self.interner.add_ident(symbol.as_ref());
 
-        self.frames.push(Frame::extension(
-            namespace.as_ref(),
-            symbol.as_ref(),
-        ));
-
-        self.frames.last_mut().expect("should exist, just added")
+        ExtensionToken::<'a, BlobImpl>::new(namespace, symbol, self)
     }
 
     /// Adds a stable symbol frame,
@@ -480,8 +488,8 @@ fn test_encoder() {
     let test_entity = world.entities().create();
     {
         encoder
-        .add_symbol("test_symbol", "symbol_value")
-        .set_parity(test_entity);
+            .add_symbol("test_symbol", "symbol_value")
+            .set_parity(test_entity);
     }
     encoder.add_int("test_int", 10);
     encoder.add_float("name", 10.99);
@@ -492,4 +500,15 @@ fn test_encoder() {
         Some(Value::Symbol("symbol_value".to_string()))
     );
     assert_eq!(encoder.frames[0].get_entity(&world, true), test_entity);
+
+    // 
+    {
+        let mut token = encoder.start_extension("test_extension", "object");
+
+        token.as_mut().add_symbol("name", "hello");
+        token.as_mut().add_int("name", 10);
+    }
+
+    assert_eq!(encoder.frames[3].keyword(), Keywords::Extension);
+    assert_eq!(encoder.frames[3].frame_len(), 3);
 }
