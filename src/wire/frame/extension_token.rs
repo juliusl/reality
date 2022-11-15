@@ -1,5 +1,7 @@
 use std::io::{Read, Write, Seek, Cursor};
 
+use specs::Entity;
+
 use crate::wire::{Data, Encoder};
 
 use super::{FrameBuilder, Frame};
@@ -21,6 +23,20 @@ where
     /// Position the extension frame will be inserted to on drop,
     ///
     insert_at: usize,
+    /// Sets the entity to use for parity,
+    /// 
+    entity: Option<Entity>
+}
+
+impl<'a, BlobImpl> ExtensionToken<'a, BlobImpl> 
+where
+    BlobImpl: Read + Write + Seek + Clone + Default 
+{
+    /// Sets the entity to use for parity on the extension frame,
+    /// 
+    pub fn set_entity(&mut self, entity: Entity) {
+        self.entity = Some(entity);
+    }
 }
 
 impl<'a, BlobImpl> ExtensionToken<'a, BlobImpl> 
@@ -36,6 +52,7 @@ where
             builder,
             encoder,
             insert_at,
+            entity: None
         }
     }
 }
@@ -60,6 +77,12 @@ where
             .write(Data::Length(len), Some(&mut self.encoder.blob_device))
             .expect("should be able to finish frame");
 
-        self.encoder.frames.insert(self.insert_at, self.builder.cursor.clone().into());
+        let mut frame: Frame = self.builder.cursor.clone().into();
+
+        if let Some(entity) = self.entity.take() {
+            frame.set_parity(entity);
+        }
+
+        self.encoder.frames.insert(self.insert_at, frame);
     }
 }
