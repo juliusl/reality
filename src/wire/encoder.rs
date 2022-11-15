@@ -137,6 +137,20 @@ impl<BlobImpl> Encoder<BlobImpl>
 where
     BlobImpl: std::io::Read + std::io::Write + std::io::Seek + Clone + Default,
 {
+    /// Creates and adds a new extension frame,
+    /// 
+    pub fn extension(&mut self, namespace: impl AsRef<str>, symbol: impl AsRef<str>) -> &mut Frame {
+        self.interner.add_ident(namespace.as_ref());
+        self.interner.add_ident(symbol.as_ref());
+
+        self.frames.push(Frame::extension(
+            namespace.as_ref(),
+            symbol.as_ref(),
+        ));
+
+        self.frames.last_mut().expect("should exist, just added")
+    }
+
     /// Adds a stable symbol frame,
     ///
     /// Symbol values are interned so they are sent w/ the control device and centralized,
