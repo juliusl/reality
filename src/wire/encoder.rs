@@ -1,21 +1,27 @@
+use crate::Keywords;
+
 use super::{frame::Frame, BlobDevice, Interner, WireObject};
 use atlier::system::Value;
-use specs::{World, Entity};
-use std::{collections::BTreeMap, io::{Cursor, Seek, Write, Read}, ops::Range};
+use specs::{Entity, World};
+use std::{
+    collections::BTreeMap,
+    io::{Cursor, Read, Seek, Write},
+    ops::Range,
+};
 
 /// Frame index
-/// 
+///
 pub type FrameIndex = BTreeMap<String, Vec<Range<usize>>>;
 
 /// Struct for encoding resources into frames,
 ///
 #[derive(Debug)]
-pub struct Encoder<BlobImpl = Cursor<Vec<u8>>> 
+pub struct Encoder<BlobImpl = Cursor<Vec<u8>>>
 where
-    BlobImpl: Read + Write + Seek + Clone + Default
+    BlobImpl: Read + Write + Seek + Clone + Default,
 {
     /// String interner for storing identifiers and complexes
-    /// 
+    ///
     /// Can be converted into frames,
     ///
     pub interner: Interner,
@@ -25,13 +31,13 @@ where
     /// Frames that have been encoded,
     ///
     pub frames: Vec<Frame>,
-    /// Index for labeling ranges of frames, 
-    /// 
+    /// Index for labeling ranges of frames,
+    ///
     /// Ex. For encoding blocks, uses the key format `{name} {symbol}`,
     ///
     pub frame_index: FrameIndex,
     /// This is the last enttiy whose component was encoded
-    /// 
+    ///
     pub last_entity: Option<Entity>,
 }
 
@@ -55,9 +61,9 @@ impl Encoder {
     }
 }
 
-impl<BlobImpl> Encoder<BlobImpl> 
+impl<BlobImpl> Encoder<BlobImpl>
 where
-    BlobImpl: Read + Write + Seek + Clone + Default
+    BlobImpl: Read + Write + Seek + Clone + Default,
 {
     /// Returns a new encoder /w a blob_device
     ///
@@ -67,7 +73,7 @@ where
             blob_device: blob_device.into(),
             frames: vec![],
             frame_index: BTreeMap::new(),
-            last_entity: None
+            last_entity: None,
         }
     }
 
@@ -96,16 +102,16 @@ where
     }
 
     /// Encodes a wire object,
-    /// 
-    pub fn encode<T>(&mut self, obj: &T, world: &World) 
+    ///
+    pub fn encode<T>(&mut self, obj: &T, world: &World)
     where
-        T: WireObject
+        T: WireObject,
     {
         obj.encode(world, self);
     }
 
     /// Interns a vector of identifiers,
-    /// 
+    ///
     pub fn intern_identifiers(&mut self, identifiers: Vec<String>) {
         identifiers
             .iter()
@@ -120,12 +126,176 @@ where
     }
 
     /// Clears the protocol,
-    /// 
+    ///
     pub fn clear(&mut self) {
         self.blob_device = BlobImpl::default();
         self.frame_index.clear();
         self.frames.clear();
         self.interner = Interner::default();
+    }
+}
+
+impl Encoder {
+    /// Adds a stable symbol frame,
+    /// 
+    /// Symbol values are interned so they are sent w/ the control device and centralized,
+    ///
+    pub fn add_symbol(&mut self, name: impl AsRef<str>, symbol: impl AsRef<str>) {
+        self.interner.add_ident(name.as_ref());
+        self.interner.add_ident(symbol.as_ref());
+
+        self.frames.push(Frame::add(
+            name.as_ref(),
+            &Value::Symbol(symbol.as_ref().to_string()),
+            &mut self.blob_device,
+        ));
+    }
+
+    /// Adds a stable text-buffer frame,
+    /// 
+    /// Text buffer values are UTF8 strings stored in the blob-device, and are transported last,
+    /// 
+    pub fn add_text(&mut self, name: impl AsRef<str>, text_buffer: impl AsRef<str>) {
+        self.interner.add_ident(name.as_ref());
+
+        self.frames.push(Frame::add(
+            name,
+            &Value::TextBuffer(text_buffer.as_ref().to_string()),
+            &mut self.blob_device,
+        ));
+    }
+
+    /// Adds a stable binary frame,
+    /// 
+    /// Binary values are stored in the blob-device, and are transported last, 
+    /// 
+    pub fn add_binary(&mut self, name: impl AsRef<str>, bytes: impl Into<Vec<u8>>) {
+        self.interner.add_ident(name.as_ref());
+
+        self.frames.push(Frame::add(
+            name,
+            &Value::BinaryVector(bytes.into()),
+            &mut self.blob_device,
+        ));
+    }
+
+    /// Adds a stable int frame,
+    /// 
+    /// Int values are stored inline and transported w/ the frame,
+    /// 
+    pub fn add_int(&mut self, name: impl AsRef<str>, int: impl Into<i32>) {
+        self.interner.add_ident(name.as_ref());
+
+        self.frames.push(Frame::add(
+            name,
+            &Value::Int(int.into()),
+            &mut self.blob_device,
+        ));
+    }
+
+    /// Adds a stable float frame,
+    /// 
+    /// Float values are stored inline and transported w/ the frame,
+    /// 
+    pub fn add_float(&mut self, name: impl AsRef<str>, float: impl Into<f32>) {
+        self.interner.add_ident(name.as_ref());
+
+        self.frames.push(Frame::add(
+            name,
+            &Value::Float(float.into()),
+            &mut self.blob_device,
+        ));
+    }
+
+    /// Defines a transient symbol property frame and add's to the encoder,
+    /// 
+    /// Symbol values are interned so they are sent w/ the control device and centralized,
+    /// 
+    /// Transient values are represented by two identifiers and can be interpreted as transient properties of a stable attribute,
+    ///
+    pub fn define_symbol(&mut self, name: impl AsRef<str>, property: impl AsRef<str>, symbol: impl AsRef<str>) {
+        self.interner.add_ident(name.as_ref());
+        self.interner.add_ident(property.as_ref());
+        self.interner.add_ident(symbol.as_ref());
+
+        self.frames.push(Frame::define(
+            name.as_ref(),
+            property.as_ref(),
+            &Value::Symbol(symbol.as_ref().to_string()),
+            &mut self.blob_device,
+        ));
+    }
+
+    /// Defines a transient text buffer property frame and add's to the encoder,
+    /// 
+    /// Text buffer values are UTF8 strings stored in the blob-device, and are transported last,
+    /// 
+    /// Transient values are represented by two identifiers and can be interpreted as transient properties of a stable attribute,
+    /// 
+    pub fn define_text(&mut self, name: impl AsRef<str>, property: impl AsRef<str>, text_buffer: impl AsRef<str>) {
+        self.interner.add_ident(name.as_ref());
+        self.interner.add_ident(property.as_ref());
+
+        self.frames.push(Frame::define(
+            name,
+            property,
+            &Value::TextBuffer(text_buffer.as_ref().to_string()),
+            &mut self.blob_device,
+        ));
+    }
+
+    /// Defines a transient binary property frame and add's to the encoder,
+    /// 
+    /// Binary values are stored in the blob-device, and are transported last, 
+    /// 
+    /// Transient values are represented by two identifiers and can be interpreted as transient properties of a stable attribute,
+    /// 
+    pub fn define_binary(&mut self, name: impl AsRef<str>, property: impl AsRef<str>, bytes: impl Into<Vec<u8>>) {
+        self.interner.add_ident(name.as_ref());
+        self.interner.add_ident(property.as_ref());
+
+        self.frames.push(Frame::define(
+            name,
+            property,
+            &Value::BinaryVector(bytes.into()),
+            &mut self.blob_device,
+        ));
+    }
+
+    /// Defines a transient int property frame and add's to the encoder,
+    /// 
+    /// Int values are stored inline and transported w/ the frame,
+    /// 
+    /// Transient values are represented by two identifiers and can be interpreted as transient properties of a stable attribute,
+    /// 
+    pub fn define_int(&mut self, name: impl AsRef<str>, property: impl AsRef<str>, int: impl Into<i32>) {
+        self.interner.add_ident(name.as_ref());
+        self.interner.add_ident(property.as_ref());
+
+        self.frames.push(Frame::define(
+            name,
+            property,
+            &Value::Int(int.into()),
+            &mut self.blob_device,
+        ));
+    }
+
+    /// Defines a transient float property frame and add's to the encoder,
+    /// 
+    /// Int values are stored inline and transported w/ the frame,
+    /// 
+    /// Transient values are represented by two identifiers and can be interpreted as transient properties of a stable attribute,
+    /// 
+    pub fn define_float(&mut self, name: impl AsRef<str>, property: impl AsRef<str>, float: impl Into<f32>) {
+        self.interner.add_ident(name.as_ref());
+        self.interner.add_ident(property.as_ref());
+
+        self.frames.push(Frame::define(
+            name,
+            property,
+            &Value::Float(float.into()),
+            &mut self.blob_device,
+        ));
     }
 }
 
@@ -242,4 +412,12 @@ fn test_encoder() {
         "total blob device size : {} bytes",
         &encoder.blob_device("").size()
     );
+
+    let mut encoder = Encoder::default();
+    encoder.add_symbol("test_symbol", "symbol_value");
+    encoder.add_int("test_int", 10);
+    encoder.add_float("name", 10.99);
+
+    assert_eq!(encoder.frames[0].keyword(), Keywords::Add);
+    assert_eq!(encoder.frames[0].read_value(&encoder.interner, &encoder.blob_device), Some(Value::Symbol("symbol_value".to_string())));
 }
