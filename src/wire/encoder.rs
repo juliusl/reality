@@ -135,7 +135,10 @@ where
     }
 }
 
-impl Encoder {
+impl<BlobImpl> Encoder<BlobImpl>
+where
+    BlobImpl: std::io::Read + std::io::Write + std::io::Seek + Clone + Default,
+{
     /// Adds a stable symbol frame,
     /// 
     /// Symbol values are interned so they are sent w/ the control device and centralized,
