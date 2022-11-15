@@ -1,5 +1,3 @@
-use crate::Keywords;
-
 use super::{frame::Frame, BlobDevice, Interner, WireObject};
 use atlier::system::Value;
 use specs::{Entity, World};
@@ -140,10 +138,10 @@ where
     BlobImpl: std::io::Read + std::io::Write + std::io::Seek + Clone + Default,
 {
     /// Adds a stable symbol frame,
-    /// 
+    ///
     /// Symbol values are interned so they are sent w/ the control device and centralized,
     ///
-    pub fn add_symbol(&mut self, name: impl AsRef<str>, symbol: impl AsRef<str>) {
+    pub fn add_symbol(&mut self, name: impl AsRef<str>, symbol: impl AsRef<str>) -> &mut Frame {
         self.interner.add_ident(name.as_ref());
         self.interner.add_ident(symbol.as_ref());
 
@@ -152,13 +150,15 @@ where
             &Value::Symbol(symbol.as_ref().to_string()),
             &mut self.blob_device,
         ));
+
+        self.frames.last_mut().expect("should exist, just added")
     }
 
     /// Adds a stable text-buffer frame,
-    /// 
+    ///
     /// Text buffer values are UTF8 strings stored in the blob-device, and are transported last,
-    /// 
-    pub fn add_text(&mut self, name: impl AsRef<str>, text_buffer: impl AsRef<str>) {
+    ///
+    pub fn add_text(&mut self, name: impl AsRef<str>, text_buffer: impl AsRef<str>) -> &mut Frame {
         self.interner.add_ident(name.as_ref());
 
         self.frames.push(Frame::add(
@@ -166,13 +166,15 @@ where
             &Value::TextBuffer(text_buffer.as_ref().to_string()),
             &mut self.blob_device,
         ));
+
+        self.frames.last_mut().expect("should exist, just added")
     }
 
     /// Adds a stable binary frame,
-    /// 
-    /// Binary values are stored in the blob-device, and are transported last, 
-    /// 
-    pub fn add_binary(&mut self, name: impl AsRef<str>, bytes: impl Into<Vec<u8>>) {
+    ///
+    /// Binary values are stored in the blob-device, and are transported last,
+    ///
+    pub fn add_binary(&mut self, name: impl AsRef<str>, bytes: impl Into<Vec<u8>>) -> &mut Frame {
         self.interner.add_ident(name.as_ref());
 
         self.frames.push(Frame::add(
@@ -180,13 +182,15 @@ where
             &Value::BinaryVector(bytes.into()),
             &mut self.blob_device,
         ));
+
+        self.frames.last_mut().expect("should exist, just added")
     }
 
     /// Adds a stable int frame,
-    /// 
+    ///
     /// Int values are stored inline and transported w/ the frame,
-    /// 
-    pub fn add_int(&mut self, name: impl AsRef<str>, int: impl Into<i32>) {
+    ///
+    pub fn add_int(&mut self, name: impl AsRef<str>, int: impl Into<i32>) -> &mut Frame {
         self.interner.add_ident(name.as_ref());
 
         self.frames.push(Frame::add(
@@ -194,13 +198,15 @@ where
             &Value::Int(int.into()),
             &mut self.blob_device,
         ));
+
+        self.frames.last_mut().expect("should exist, just added")
     }
 
     /// Adds a stable float frame,
-    /// 
+    ///
     /// Float values are stored inline and transported w/ the frame,
-    /// 
-    pub fn add_float(&mut self, name: impl AsRef<str>, float: impl Into<f32>) {
+    ///
+    pub fn add_float(&mut self, name: impl AsRef<str>, float: impl Into<f32>) -> &mut Frame {
         self.interner.add_ident(name.as_ref());
 
         self.frames.push(Frame::add(
@@ -208,15 +214,22 @@ where
             &Value::Float(float.into()),
             &mut self.blob_device,
         ));
+
+        self.frames.last_mut().expect("should exist, just added")
     }
 
     /// Defines a transient symbol property frame and add's to the encoder,
-    /// 
+    ///
     /// Symbol values are interned so they are sent w/ the control device and centralized,
-    /// 
+    ///
     /// Transient values are represented by two identifiers and can be interpreted as transient properties of a stable attribute,
     ///
-    pub fn define_symbol(&mut self, name: impl AsRef<str>, property: impl AsRef<str>, symbol: impl AsRef<str>) {
+    pub fn define_symbol(
+        &mut self,
+        name: impl AsRef<str>,
+        property: impl AsRef<str>,
+        symbol: impl AsRef<str>,
+    ) -> &mut Frame {
         self.interner.add_ident(name.as_ref());
         self.interner.add_ident(property.as_ref());
         self.interner.add_ident(symbol.as_ref());
@@ -227,15 +240,22 @@ where
             &Value::Symbol(symbol.as_ref().to_string()),
             &mut self.blob_device,
         ));
+
+        self.frames.last_mut().expect("should exist, just added")
     }
 
     /// Defines a transient text buffer property frame and add's to the encoder,
-    /// 
+    ///
     /// Text buffer values are UTF8 strings stored in the blob-device, and are transported last,
-    /// 
+    ///
     /// Transient values are represented by two identifiers and can be interpreted as transient properties of a stable attribute,
-    /// 
-    pub fn define_text(&mut self, name: impl AsRef<str>, property: impl AsRef<str>, text_buffer: impl AsRef<str>) {
+    ///
+    pub fn define_text(
+        &mut self,
+        name: impl AsRef<str>,
+        property: impl AsRef<str>,
+        text_buffer: impl AsRef<str>,
+    ) -> &mut Frame {
         self.interner.add_ident(name.as_ref());
         self.interner.add_ident(property.as_ref());
 
@@ -245,15 +265,22 @@ where
             &Value::TextBuffer(text_buffer.as_ref().to_string()),
             &mut self.blob_device,
         ));
+
+        self.frames.last_mut().expect("should exist, just added")
     }
 
     /// Defines a transient binary property frame and add's to the encoder,
-    /// 
-    /// Binary values are stored in the blob-device, and are transported last, 
-    /// 
+    ///
+    /// Binary values are stored in the blob-device, and are transported last,
+    ///
     /// Transient values are represented by two identifiers and can be interpreted as transient properties of a stable attribute,
-    /// 
-    pub fn define_binary(&mut self, name: impl AsRef<str>, property: impl AsRef<str>, bytes: impl Into<Vec<u8>>) {
+    ///
+    pub fn define_binary(
+        &mut self,
+        name: impl AsRef<str>,
+        property: impl AsRef<str>,
+        bytes: impl Into<Vec<u8>>,
+    ) -> &mut Frame {
         self.interner.add_ident(name.as_ref());
         self.interner.add_ident(property.as_ref());
 
@@ -263,15 +290,22 @@ where
             &Value::BinaryVector(bytes.into()),
             &mut self.blob_device,
         ));
+
+        self.frames.last_mut().expect("should exist, just added")
     }
 
     /// Defines a transient int property frame and add's to the encoder,
-    /// 
+    ///
     /// Int values are stored inline and transported w/ the frame,
-    /// 
+    ///
     /// Transient values are represented by two identifiers and can be interpreted as transient properties of a stable attribute,
-    /// 
-    pub fn define_int(&mut self, name: impl AsRef<str>, property: impl AsRef<str>, int: impl Into<i32>) {
+    ///
+    pub fn define_int(
+        &mut self,
+        name: impl AsRef<str>,
+        property: impl AsRef<str>,
+        int: impl Into<i32>,
+    ) -> &mut Frame {
         self.interner.add_ident(name.as_ref());
         self.interner.add_ident(property.as_ref());
 
@@ -281,15 +315,22 @@ where
             &Value::Int(int.into()),
             &mut self.blob_device,
         ));
+
+        self.frames.last_mut().expect("should exist, just added")
     }
 
     /// Defines a transient float property frame and add's to the encoder,
-    /// 
+    ///
     /// Int values are stored inline and transported w/ the frame,
-    /// 
+    ///
     /// Transient values are represented by two identifiers and can be interpreted as transient properties of a stable attribute,
-    /// 
-    pub fn define_float(&mut self, name: impl AsRef<str>, property: impl AsRef<str>, float: impl Into<f32>) {
+    ///
+    pub fn define_float(
+        &mut self,
+        name: impl AsRef<str>,
+        property: impl AsRef<str>,
+        float: impl Into<f32>,
+    ) -> &mut Frame {
         self.interner.add_ident(name.as_ref());
         self.interner.add_ident(property.as_ref());
 
@@ -299,6 +340,8 @@ where
             &Value::Float(float.into()),
             &mut self.blob_device,
         ));
+
+        self.frames.last_mut().expect("should exist, just added")
     }
 }
 
@@ -306,7 +349,10 @@ where
 #[tracing_test::traced_test]
 fn test_encoder() {
     use crate::Block;
+    use crate::Keywords;
+    use specs::WorldExt;
     use tracing::{event, Level};
+
     let content = r#"
     ``` call host 
     add address .text localhost 
@@ -417,10 +463,19 @@ fn test_encoder() {
     );
 
     let mut encoder = Encoder::default();
-    encoder.add_symbol("test_symbol", "symbol_value");
+    let test_entity = world.entities().create();
+    {
+        encoder
+        .add_symbol("test_symbol", "symbol_value")
+        .set_parity(test_entity);
+    }
     encoder.add_int("test_int", 10);
     encoder.add_float("name", 10.99);
 
     assert_eq!(encoder.frames[0].keyword(), Keywords::Add);
-    assert_eq!(encoder.frames[0].read_value(&encoder.interner, &encoder.blob_device), Some(Value::Symbol("symbol_value".to_string())));
+    assert_eq!(
+        encoder.frames[0].read_value(&encoder.interner, &encoder.blob_device),
+        Some(Value::Symbol("symbol_value".to_string()))
+    );
+    assert_eq!(encoder.frames[0].get_entity(&world, true), test_entity);
 }

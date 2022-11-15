@@ -706,6 +706,16 @@ impl Frame {
         clone
     }
 
+    /// Sets the parity bits for this frame,
+    /// 
+    pub fn set_parity(&mut self, entity: Entity) {
+        let id = entity.id();
+        let gen = entity.gen().id() as u32;
+        let parity = cast::<[u32; 2], [u8; 8]>([id, gen]);
+
+        self.data[56..].copy_from_slice(&parity);
+    }
+
     /// Returns the data portion of the frame
     ///
     pub fn data(&self) -> [u8; 63] {
