@@ -846,7 +846,7 @@ impl FrameBuilder {
                     }
                     _ => self
                         .cursor
-                        .write(&cast::<[u64; 2], [u8; 16]>([length, Self::entropy()])),
+                        .write(&cast::<[u64; 2], [u8; 16]>([length, u64::MAX])),
                 },
             },
             // Frame extents will be constructed from regular extents,
