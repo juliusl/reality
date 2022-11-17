@@ -19,9 +19,9 @@ pub trait WireObject {
     fn decode(protocol: &Protocol, interner: &Interner, blob_device: &Cursor<Vec<u8>>, frames: &[Frame]) -> Self;
 
 
-    /// Decodes frames into self,
-    ///
-    fn decode2<'a, BlobImpl>(_decoder: Decoder<'a, BlobImpl>) -> Self
+    /// Uses a decoder to decode into self,
+    /// 
+    fn decode_v2<'a, BlobImpl>(_decoder: Decoder<'a, BlobImpl>) -> Self
     where
         Self: Sized,
         BlobImpl: Read + Write + Seek + Clone + Default 
