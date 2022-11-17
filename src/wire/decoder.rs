@@ -1,3 +1,5 @@
+use atlier::system::Value;
+
 use super::{Encoder, Frame};
 use std::{
     collections::VecDeque,
@@ -85,47 +87,38 @@ where
         self.frames.iter()
     }
 
-    // /// Consumes a frame and returns a decoding task iff the next frame has the expected name,
-    // ///
-    // /// Returns None if there are no more frames to decode or the decoder has encountered a boundary.
-    // ///
-    // pub fn decode_next(&mut self, expect: impl AsRef<str>) -> Option<DecodingTask<'a, BlobImpl>> {
-    //     if let Some(front) = self.frames.pop_front() {
-    //         if let Some(name) = front.name(&self.encoder.interner) {
-    //             if name != expect.as_ref() {
-    //                 panic!("unexpected frame `{name}`, expected {}", expect.as_ref());
+    /// Returns and decodes a value if the next frame is `add {name} .{attribute}`
+    /// 
+    pub fn decode_value(&mut self, name: impl AsRef<str>) -> Option<Value> {
+        match self.frames.front() {
+            Some(ref front) if front.is_add() => {
+                let _name = front.name(&self.encoder.interner).expect("should have a name");
+                if _name == name.as_ref() {
+                    let front = self.frames.pop_front().expect("should have a frame");
+                    front.read_value(&self.encoder.interner, &self.encoder.blob_device)
+                } else {
+                    None
+                }
+            },
+            _ => None
+        }
+    }
+
+
+    // Returns an decodes properties if the next frames are decoable into a block properties struct,
+    //
+    // pub fn decode_properties(&mut self, name: impl AsRef<str>) -> Option<BlockProperties> {
+    //     match self.frames.front() {
+    //         Some(ref front) if front.is_add() => {
+    //             let _name = front.name(&self.encoder.interner).expect("should have a name");
+    //             if _name == name.as_ref() {
+    //                 let front = self.frames.pop_front().expect("should have a frame");
+    //                 front.read_value(&self.encoder.interner, &self.encoder.blob_device)
+    //             } else {
+    //                 None
     //             }
-
-    //             let mut children = None::<Vec<Frame>>;
-    //             if front.frame_len() > 1 {
-    //                 let mut _children = vec![];
-
-    //                 while _children.len() < (front.frame_len() - 1) {
-    //                     if let Some(frame) = self.frames.pop_front() {
-    //                         _children.push(frame);
-    //                     } else {
-    //                         break;
-    //                     }
-    //                 }
-
-    //                 children = Some(_children);
-    //             }
-
-    //             Some(DecodingTask::<'a> {
-    //                 frame: front,
-    //                 name: Some(name.to_string()),
-    //                 symbol: None,
-    //                 value: None,
-    //                 interner: &self.encoder.interner,
-    //                 blob_device: &self.encoder.blob_device,
-    //                 children,
-    //             })
-    //         } else {
-    //             // This means that there is a wire object encoding/decoding issue
-    //             panic!("Could not decode name, incomplete interner")
-    //         }
-    //     } else {
-    //         None
+    //         },
+    //         _ => None
     //     }
     // }
 }

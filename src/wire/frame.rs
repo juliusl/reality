@@ -8,7 +8,7 @@ use specs::{Entity, World, WorldExt};
 use std::{
     collections::HashMap,
     fmt::Display,
-    io::{Cursor, Read, Seek, Write},
+    io::{Cursor, Read, Seek, Write, SeekFrom},
     ops::Range,
 };
 use tracing::{event, Level};
@@ -515,7 +515,10 @@ impl Frame {
     /// If the value is not inlined, then data must be read from
     /// either the interner data, or a cursor representing a blob device.
     ///
-    pub fn read_value(&self, interner: &Interner, blob_device: &Cursor<Vec<u8>>) -> Option<Value> {
+    pub fn read_value<BlobImpl>(&self, interner: &Interner, blob_device: &BlobImpl) -> Option<Value> 
+    where
+        BlobImpl: Read + Write + Seek + Clone + Default,
+    {
         let mut blob_device = blob_device.clone();
         let value_offset = match self.keyword() {
             Keywords::Add => 18,
@@ -595,7 +598,7 @@ impl Frame {
                         buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
                         let [len, cursor] = cast::<[u8; 16], [u64; 2]>(buffer);
 
-                        blob_device.set_position(cursor);
+                        blob_device.seek(SeekFrom::Start(cursor)).expect("should be able to seek to cursor");
 
                         let mut buf = vec![0; len as usize];
 
@@ -617,7 +620,8 @@ impl Frame {
                         let mut buffer = [0; 16];
                         buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
                         let [len, cursor] = cast::<[u8; 16], [u64; 2]>(buffer);
-                        blob_device.set_position(cursor);
+                        
+                        blob_device.seek(SeekFrom::Start(cursor)).expect("should be able to seek to cursor");
 
                         let mut buf = vec![0; len as usize];
                         match blob_device.read_exact(&mut buf) {
