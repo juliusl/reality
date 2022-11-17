@@ -32,5 +32,8 @@ pub use control_device::ControlDevice;
 mod wire_object;
 pub use wire_object::WireObject;
 
+mod decoder;
+pub use decoder::Decoder;
+
 pub use specs::shred::ResourceId;
 pub use specs::World;

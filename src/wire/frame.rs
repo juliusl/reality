@@ -425,6 +425,24 @@ impl Frame {
         self.data.len()
     }
 
+    /// Returns true if this is an extension frame,
+    /// 
+    pub fn is_extension(&self) -> bool {
+        self.keyword() == Keywords::Extension
+    }
+
+    /// Returns true if this is an add frame,
+    /// 
+    pub fn is_add(&self) -> bool {
+        self.keyword() == Keywords::Add
+    }
+
+    /// Returns true if this is a define frame, 
+    /// 
+    pub fn is_define(&self) -> bool {
+        self.keyword() == Keywords::Define
+    }
+
     /// Returns the attribute value type if the frame contains
     /// a value,
     ///
