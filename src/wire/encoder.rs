@@ -163,6 +163,21 @@ where
     /// 
     pub fn add_value(&mut self, name: impl AsRef<str>, value: impl Into<Value>) -> &mut Frame {
         self.interner.add_ident(name.as_ref());
+
+        let value: Value = value.into();
+
+        match &value {
+            Value::Symbol(symbol) => {
+                self.interner.add_ident(symbol);
+            },
+            Value::Complex(complex) => {
+                for s in complex.iter() {
+                    self.interner.add_ident(s);
+                }
+            },
+            _ => {}
+        }
+
         self.frames.push(Frame::add(
             name.as_ref(),
             &value.into(),
@@ -194,7 +209,6 @@ where
     /// Symbol values are interned so they are sent w/ the control device and centralized,
     ///
     pub fn add_symbol(&mut self, name: impl AsRef<str>, symbol: impl AsRef<str>) -> &mut Frame {
-        self.interner.add_ident(symbol.as_ref());
         self.add_value(name.as_ref(), Value::Symbol(symbol.as_ref().to_string()))
     }
 
