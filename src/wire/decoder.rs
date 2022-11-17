@@ -210,6 +210,7 @@ where
                         .expect("should have a name");
 
                     if _name == name.as_ref() {
+                        let front = self.frames.pop_front().expect("should have a frame");
                         let _name = front
                             .symbol(&self.encoder.interner)
                             .expect("should have a symbol");
