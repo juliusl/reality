@@ -2,9 +2,9 @@ use atlier::system::Value;
 
 use crate::BlockProperties;
 
-use super::{Encoder, Frame};
+use super::{Encoder, Frame, Interner};
 use std::{
-    collections::{VecDeque, BTreeMap},
+    collections::{BTreeMap, VecDeque},
     io::{Read, Seek, Write},
     sync::Arc,
 };
@@ -52,7 +52,7 @@ where
     ///
     pub fn decode_namespace(
         &mut self,
-        namespace: impl AsRef<str>
+        namespace: impl AsRef<str>,
     ) -> BTreeMap<String, Decoder<'a, BlobImpl>> {
         let mut map = BTreeMap::default();
         while let Some(front) = self.frames.front() {
@@ -67,7 +67,7 @@ where
                 if let Some(decoder) = self.decode_extension(namespace.as_ref(), &_symbol) {
                     map.insert(_symbol.to_string(), decoder);
                 }
-            } 
+            }
         }
 
         map
@@ -115,6 +115,18 @@ where
         self.frames.iter()
     }
 
+    /// Returns the current interner,
+    ///
+    pub fn interner(&self) -> &Interner {
+        &self.encoder.interner
+    }
+
+    /// Returns the current interner,
+    ///
+    pub fn blob_device(&self) -> &BlobImpl {
+        &self.encoder.blob_device
+    }
+
     /// Returns the next frame that would be decoded,
     ///
     pub fn peek(&'a self) -> Option<Frame> {
@@ -138,6 +150,33 @@ where
             }
             _ => None,
         }
+    }
+
+    /// Consumes add frames until can no longer decode add frames,
+    ///
+    /// Panics if the current decoder does not have complete data.
+    /// 
+    pub fn decode_values(&mut self) -> Vec<(String, Value)> {
+        let mut values = vec![];
+
+        loop {
+            match self.frames.front() {
+                Some(ref front) if front.is_add() => {
+                    let front = self.frames.pop_front().expect("should have a frame");
+                    if let (Some(name), Some(value)) = (
+                        front.name(&self.encoder.interner),
+                        front.read_value(&self.encoder.interner, &self.encoder.blob_device),
+                    ) {
+                        values.push((name, value));
+                    } else {
+                        panic!("Expecting a name and value, current decoder has incomplete data");
+                    }
+                }
+                _ => break,
+            }
+        }
+
+        values
     }
 
     /// Will consume current frames into a block properties struct,
