@@ -620,7 +620,7 @@ impl Frame {
                         let mut buffer = [0; 16];
                         buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
                         let [len, cursor] = cast::<[u8; 16], [u64; 2]>(buffer);
-                        
+
                         blob_device.seek(SeekFrom::Start(cursor)).expect("should be able to seek to cursor");
 
                         let mut buf = vec![0; len as usize];
@@ -767,6 +767,16 @@ impl Frame {
         let parity = cast::<[u32; 2], [u8; 8]>([id, gen]);
 
         self.data[56..].copy_from_slice(&parity);
+    }
+
+    /// Returns the current parity for this frame, 
+    /// 
+    /// Parity is measured w/ a world's entity id/generation. If this frame is being decoded remotely to clone a world, 
+    /// then the parity must match.
+    /// 
+    pub fn parity(&self) -> (u32, u32) {
+        let [id, gen] = cast::<[u8; 8], [u32; 2]>(self.parity_bytes());
+        (id, gen)
     }
 
     /// Returns the data portion of the frame
