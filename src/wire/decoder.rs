@@ -87,6 +87,12 @@ where
         self.frames.iter()
     }
 
+    /// Returns the next frame that would be decoded,
+    /// 
+    pub fn peek(&'a self) -> Option<Frame> {
+        self.frames.front().cloned()
+    }
+
     /// Returns and decodes a value if the next frame is `add {name} .{attribute}`
     /// 
     pub fn decode_value(&mut self, name: impl AsRef<str>) -> Option<Value> {
