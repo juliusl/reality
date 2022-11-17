@@ -21,7 +21,7 @@ pub trait WireObject {
 
     /// Uses a decoder to decode into self,
     /// 
-    fn decode_v2<'a, BlobImpl>(_decoder: Decoder<'a, BlobImpl>) -> Self
+    fn decode_v2<'a, BlobImpl>(_world: &World, _decoder: Decoder<'a, BlobImpl>) -> Self
     where
         Self: Sized,
         BlobImpl: Read + Write + Seek + Clone + Default 
