@@ -37,6 +37,12 @@ where
     pub fn set_entity(&mut self, entity: Entity) {
         self.entity = Some(entity);
     }
+
+    /// Returns position the extension frame will be added to on drop,
+    /// 
+    pub fn insert_at(&self) -> usize {
+        self.insert_at
+    }
 }
 
 impl<'a, BlobImpl> ExtensionToken<'a, BlobImpl> 
