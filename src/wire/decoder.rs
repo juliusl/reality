@@ -4,7 +4,7 @@ use crate::BlockProperties;
 
 use super::{Encoder, Frame};
 use std::{
-    collections::VecDeque,
+    collections::{VecDeque, BTreeMap},
     io::{Read, Seek, Write},
     sync::Arc,
 };
@@ -50,11 +50,37 @@ where
     /// Returns a new decoder if the front frame is an extension frame w/ the
     /// matching namespace and symbol
     ///
+    pub fn decode_namespace(
+        &mut self,
+        namespace: impl AsRef<str>
+    ) -> BTreeMap<String, Decoder<'a, BlobImpl>> {
+        let mut map = BTreeMap::default();
+        while let Some(front) = self.frames.front() {
+            let _name = front
+                .name(&self.encoder.interner)
+                .expect("should have a name");
+            let _symbol = front
+                .symbol(&self.encoder.interner)
+                .expect("should have a symbol");
+
+            if front.is_extension() && _name == namespace.as_ref() {
+                if let Some(decoder) = self.decode_extension(namespace.as_ref(), &_symbol) {
+                    map.insert(_symbol.to_string(), decoder);
+                }
+            } 
+        }
+
+        map
+    }
+
+    /// Returns a new decoder if the front frame is an extension frame w/ the
+    /// matching namespace and symbol
+    ///
     pub fn decode_extension(
         &mut self,
         namespace: impl AsRef<str>,
         symbol: impl AsRef<str>,
-    ) -> Option<Decoder<BlobImpl>> {
+    ) -> Option<Decoder<'a, BlobImpl>> {
         if let Some(front) = self.frames.front() {
             let _name = front
                 .name(&self.encoder.interner)
