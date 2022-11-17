@@ -15,7 +15,7 @@ pub trait WireObject {
 
     /// Decodes frames into self,
     ///
-    #[deprecated = "use decode2 instead"]
+    #[deprecated = "use decode_v2 instead"]
     fn decode(protocol: &Protocol, interner: &Interner, blob_device: &Cursor<Vec<u8>>, frames: &[Frame]) -> Self;
 
 
