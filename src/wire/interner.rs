@@ -4,7 +4,7 @@ use atlier::system::Value;
 
 /// Struct to wrap interned data 
 /// 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Interner {
     /// Strings that have been interned
     /// 
@@ -78,6 +78,16 @@ impl Interner {
             interner.insert_complex(*k, &c);
         }
 
+        interner
+    }
+}
+
+impl Default for Interner {
+    fn default() -> Self {
+        let mut interner = Self { strings: Default::default(), complexes: Default::default() };
+        // When this is converted into a control device, since a read must be > 0, this can't normally be encoded
+        // So by default add this to the interner as a special case
+        interner.add_ident("");
         interner
     }
 }
