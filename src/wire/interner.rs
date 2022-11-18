@@ -1,6 +1,7 @@
 use std::collections::{HashMap, BTreeSet};
 
 use atlier::system::Value;
+use tracing::{event, Level};
 
 /// Struct to wrap interned data 
 /// 
@@ -25,19 +26,27 @@ pub type InternedComplexes = HashMap<u64, BTreeSet<String>>;
 impl Interner {
     /// Adds an ident to the interner
     /// 
-    pub fn add_ident(&mut self, ident: impl AsRef<str>) {
+    pub fn add_ident(&mut self, ident: impl AsRef<str>) -> u64 {
         let ident = Value::Symbol(ident.as_ref().to_string());
         if let (Value::Reference(key), Value::Symbol(ident)) = (ident.to_ref(), ident) {
             self.insert_string(key, ident);
+            key 
+        } else {
+            event!(Level::ERROR, "Could not add string to interner");
+            0
         }
     }
 
     /// Adds a map to the interner
     /// 
-    pub fn add_map(&mut self, map: Vec<&str>) {
+    pub fn add_map(&mut self, map: Vec<&str>) -> u64 {
         let complex = Value::Complex(BTreeSet::from_iter(map.iter().map(|m| m.to_string())));
         if let (Value::Reference(key), Value::Complex(complex)) = (complex.to_ref(), complex) {
             self.insert_complex(key, &complex);
+            key
+        } else {
+            event!(Level::ERROR, "Could not add map to interner");
+            0
         }
     }
 
