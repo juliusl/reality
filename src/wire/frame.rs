@@ -711,12 +711,12 @@ impl Frame {
         const EMPTY_BLOB: Option<&mut Cursor<Vec<u8>>> = None::<&mut Cursor<Vec<u8>>>;
         match self.keyword() {
             Keywords::Add => { 
-                frame_builder.cursor.write(&self.data[..18]).expect("should be able to write");
+                frame_builder.cursor.write(&self.data[..17]).expect("should be able to write");
                 frame_builder.write(attribute, EMPTY_BLOB).expect("should be able to write");
                 frame_builder.write(data, EMPTY_BLOB).expect("should be able to write");
             },
             Keywords::Define => {
-                frame_builder.cursor.write(&self.data[..34]).expect("should be able to write");
+                frame_builder.cursor.write(&self.data[..33]).expect("should be able to write");
                 frame_builder.write(attribute, EMPTY_BLOB).expect("should be able to write");
                 frame_builder.write(data, EMPTY_BLOB).expect("should be able to write");
             }
