@@ -1,4 +1,4 @@
-use std::io::{Cursor, Seek, Write, Read};
+use std::io::{Seek, Write, Read};
 
 use specs::{World, shred::ResourceId};
 
@@ -16,7 +16,9 @@ pub trait WireObject {
     /// Decodes frames into self,
     ///
     #[deprecated = "use decode_v2 instead"]
-    fn decode(protocol: &Protocol, interner: &Interner, blob_device: &Cursor<Vec<u8>>, frames: &[Frame]) -> Self;
+    fn decode<BlobImpl>(protocol: &Protocol<BlobImpl>, interner: &Interner, blob_device: &BlobImpl, frames: &[Frame]) -> Self
+    where
+        BlobImpl: Read + Write + Seek + Clone + Default;
 
 
     /// Uses a decoder to decode into self,

@@ -1,4 +1,4 @@
-use std::io::{Cursor, Read, Seek, Write};
+use std::io::{Read, Seek, Write};
 
 use atlier::system::{Attribute, Value};
 use specs::{shred::ResourceId, Component, WorldExt};
@@ -33,15 +33,13 @@ impl WireObject for BlockProperties {
             match value {
                 Value::Symbol(s) => {
                     interner.add_ident(s);
-                },
+                }
                 Value::Complex(complex) => {
                     for c in complex.iter() {
                         interner.add_ident(c);
                     }
-                },
-                _ => {
-
                 }
+                _ => {}
             }
         }
 
@@ -72,12 +70,11 @@ impl WireObject for BlockProperties {
                     let mut frame = Frame::define(
                         &properties_name,
                         name,
-                        &if let Some(value) = value { 
+                        &if let Some(value) = value {
                             intern_properties(value, &mut encoder.interner);
                             value.clone()
                         } else {
-                            let value = 
-                            Value::Symbol("{property:REQUIRED}".to_string());
+                            let value = Value::Symbol("{property:REQUIRED}".to_string());
                             intern_properties(&value, &mut encoder.interner);
                             value
                         },
@@ -92,7 +89,7 @@ impl WireObject for BlockProperties {
                     let mut frame = Frame::define(
                         &properties_name,
                         name,
-                        &if let Some(value) = value { 
+                        &if let Some(value) = value {
                             intern_properties(&value, &mut encoder.interner);
                             value.clone()
                         } else {
@@ -108,8 +105,12 @@ impl WireObject for BlockProperties {
                     encoder.frames.push(frame);
                 }
                 crate::BlockProperty::Empty => {
-                    let mut frame =
-                        Frame::define(&properties_name, name, &Value::Empty, &mut encoder.blob_device);
+                    let mut frame = Frame::define(
+                        &properties_name,
+                        name,
+                        &Value::Empty,
+                        &mut encoder.blob_device,
+                    );
                     if let Some(entity) = encoder.last_entity {
                         frame = frame.with_parity(entity);
                     }
@@ -119,12 +120,15 @@ impl WireObject for BlockProperties {
         }
     }
 
-    fn decode(
-        protocol: &Protocol,
+    fn decode<BlobImpl>(
+        protocol: &Protocol<BlobImpl>,
         interner: &Interner,
-        blob_device: &Cursor<Vec<u8>>,
+        blob_device: &BlobImpl,
         frames: &[Frame],
-    ) -> Self {
+    ) -> Self
+    where
+        BlobImpl: Read + Write + Seek + Clone + Default,
+    {
         let root = frames.get(0).expect("should have a starting frame");
 
         let root_entity = root.get_entity(protocol.as_ref(), protocol.assert_entity_generation());
@@ -279,12 +283,15 @@ impl WireObject for Block {
         }
     }
 
-    fn decode(
-        protocol: &Protocol,
+    fn decode<BlobImpl>(
+        protocol: &Protocol<BlobImpl>,
         interner: &Interner,
-        blob: &Cursor<Vec<u8>>,
+        blob: &BlobImpl,
         frames: &[Frame],
-    ) -> Self {
+    ) -> Self
+    where
+        BlobImpl: Read + Write + Seek + Clone + Default,
+    {
         let mut block = Block::default();
 
         if let Some(start) = frames.get(0) {

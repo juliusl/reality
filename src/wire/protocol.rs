@@ -2,7 +2,7 @@ use specs::{
     shred::{Resource, ResourceId},
     Component, Join, World, WorldExt,
 };
-use std::{collections::HashMap, future::Future, ops::Deref};
+use std::{collections::HashMap, future::Future, ops::Deref, io::{Seek, Cursor}};
 use std::{
     fmt::Debug,
     io::{Read, Write},
@@ -16,10 +16,13 @@ pub mod async_ext;
 
 /// Struct for protocol state
 ///
-pub struct Protocol {
+pub struct Protocol<BlobImpl = Cursor<Vec<u8>>>
+where
+    BlobImpl: Read + Write + Seek + Clone + Default,
+{
     /// Map of encoders for wire objects,
     ///
-    encoders: HashMap<ResourceId, Encoder>,
+    encoders: HashMap<ResourceId, Encoder<BlobImpl>>,
     /// World used for storage,
     ///
     world: World,
@@ -31,17 +34,7 @@ pub struct Protocol {
 }
 
 impl Protocol {
-    /// Returns an empty protocol,
-    ///
-    pub fn empty() -> Self {
-        Self {
-            encoders: HashMap::default(),
-            world: World::new(),
-            assert_generation: false,
-        }
-    }
-
-    /// Consumes a parser and returns new protocol,
+    /// Consumes a parser and returns new protocol using in-memory blob devices,
     ///
     pub fn new(parser: Parser) -> Self {
         let mut protocol = Self {
@@ -51,6 +44,21 @@ impl Protocol {
         };
         protocol.encode_components::<Block>();
         protocol
+    }
+}
+
+impl<BlobImpl> Protocol<BlobImpl> 
+where
+    BlobImpl: Read + Write + Seek + Clone + Default,
+{
+    /// Returns an empty protocol,
+    ///
+    pub fn empty() -> Self {
+        Self {
+            encoders: HashMap::default(),
+            world: World::new(),
+            assert_generation: false,
+        }
     }
 
     /// Returns self with assert_generation set to true
@@ -68,25 +76,25 @@ impl Protocol {
 
     /// Returns an iterator over encoders,
     ///
-    pub fn iter_encoders(&self) -> impl Iterator<Item = (&ResourceId, &Encoder)> {
+    pub fn iter_encoders(&self) -> impl Iterator<Item = (&ResourceId, &Encoder<BlobImpl>)> {
         self.encoders.iter()
     }
 
     /// Returns an encoder by id,
     ///
-    pub fn encoder_mut_by_id(&mut self, id: ResourceId) -> Option<&mut Encoder> {
+    pub fn encoder_mut_by_id(&mut self, id: ResourceId) -> Option<&mut Encoder<BlobImpl>> {
         self.encoders.get_mut(&id)
     }
 
     /// Takes an encoder from the protocol,
     ///
-    pub fn take_encoder(&mut self, id: ResourceId) -> Option<Encoder> {
+    pub fn take_encoder(&mut self, id: ResourceId) -> Option<Encoder<BlobImpl>> {
         self.encoders.remove(&id)
     }
 
     /// Sets an encoder by resource id,
     /// 
-    pub fn set_encoder(&mut self, id: ResourceId, encoder: Encoder) {
+    pub fn set_encoder(&mut self, id: ResourceId, encoder: Encoder<BlobImpl>) {
         self.encoders.insert(id, encoder);
     }
 
@@ -167,9 +175,9 @@ impl Protocol {
                     let frames = &encoder.frames_slice()[start..end];
 
                     let obj = T::decode(
-                        &self,
+                        self,
                         &encoder.interner,
-                        &encoder.blob_device("decode").cursor(),
+                        &encoder.blob_device,
                         frames,
                     );
                     c.push(obj);
@@ -229,7 +237,7 @@ impl Protocol {
     ///
     /// Returns the current number of frames encoded
     ///
-    pub fn encoder<T>(&mut self, encode: impl FnOnce(&World, &mut Encoder)) -> usize
+    pub fn encoder<T>(&mut self, encode: impl FnOnce(&World, &mut Encoder<BlobImpl>)) -> usize
     where
         T: WireObject,
     {
@@ -237,7 +245,7 @@ impl Protocol {
             encode(&self.world, encoder);
             encoder.frames.len()
         } else {
-            let mut encoder = Encoder::new();
+            let mut encoder = Encoder::<BlobImpl>::default();
             encode(self.as_ref(), &mut encoder);
             let frame_count = encoder.frames.len();
             self.encoders.insert(T::resource_id(), encoder);
@@ -278,9 +286,9 @@ impl Protocol {
             }
 
             let mut blob_stream = blob_stream();
-            encoder.blob_device.set_position(0);
+            encoder.blob_device.seek(std::io::SeekFrom::Start(0)).ok();
 
-            let blob_len = encoder.blob_device.get_ref().len();
+            let blob_len = encoder.blob_device.clone().bytes().count();
             assert_eq!(
                 std::io::copy(&mut encoder.blob_device, &mut blob_stream).ok(),
                 Some(blob_len as u64)
@@ -360,22 +368,30 @@ impl From<World> for Protocol {
     }
 }
 
-impl AsRef<World> for Protocol {
+impl<BlobImpl> AsRef<World> for Protocol<BlobImpl> 
+where
+    BlobImpl: Read + Write + Seek + Clone + Default,
+{
     fn as_ref(&self) -> &World {
         &self.world
     }
 }
 
-impl AsMut<World> for Protocol {
+impl<BlobImpl> AsMut<World> for Protocol<BlobImpl> 
+where
+    BlobImpl: Read + Write + Seek + Clone + Default, 
+{
     fn as_mut(&mut self) -> &mut World {
         &mut self.world
     }
 }
 
-impl Debug for Protocol {
+impl<BlobImpl> Debug for Protocol<BlobImpl> 
+where
+    BlobImpl: Read + Write + Seek + Clone + Default,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Protocol")
-            .field("encoders", &self.encoders)
             .field("assert_generation", &self.assert_generation)
             .finish()
     }

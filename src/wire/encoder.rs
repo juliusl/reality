@@ -57,18 +57,18 @@ impl Encoder {
     pub fn new() -> Self {
         Self::new_with(Cursor::<Vec<u8>>::new(vec![]))
     }
-
-    /// Returns a blob device using the current cursor state
-    ///
-    pub fn blob_device(&self, address: impl AsRef<str>) -> BlobDevice {
-        BlobDevice::existing(address, &self.blob_device.clone())
-    }
 }
 
 impl<BlobImpl> Encoder<BlobImpl>
 where
     BlobImpl: Read + Write + Seek + Clone + Default,
 {
+    /// Returns a blob device using the current cursor state
+    ///
+    pub fn blob_device(&self, address: impl AsRef<str>) -> BlobDevice {
+        BlobDevice::existing(address, &self.blob_device.clone())
+    }
+
     /// Returns a new encoder /w a blob_device
     ///
     pub fn new_with(blob_device: impl Into<BlobImpl>) -> Self {

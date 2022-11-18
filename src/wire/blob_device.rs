@@ -1,4 +1,4 @@
-use std::{io::Cursor, collections::HashMap};
+use std::{io::{Cursor, Read, Write, Seek}, collections::HashMap};
 
 mod memory;
 pub use memory::MemoryBlobSource;
@@ -49,12 +49,20 @@ impl BlobDevice {
 
     /// Returns a new blob device, cloning an existing cursor
     ///
-    pub fn existing(address: impl AsRef<str>, cursor: &Cursor<Vec<u8>>) -> Self {
+    pub fn existing<BlobImpl>(address: impl AsRef<str>, cursor: &BlobImpl) -> Self 
+    where
+        BlobImpl: Read + Write + Seek + Clone + Default,
+    {
         let mut clone = cursor.clone();
-        clone.set_position(0);
+        clone.seek(std::io::SeekFrom::Start(0)).ok();
+
+        let mut cursor = Cursor::new(vec![]);
+
+        std::io::copy(&mut clone, &mut cursor).ok();
+
         Self {
             address: address.as_ref().to_string(),
-            cursor: clone,
+            cursor,
         }
     }
 
@@ -94,7 +102,6 @@ impl AsRef<Cursor<Vec<u8>>> for BlobDevice {
         &self.cursor
     }
 }
-
 
 impl Into<Cursor<Vec<u8>>> for BlobDevice {
     fn into(self) -> Cursor<Vec<u8>> {

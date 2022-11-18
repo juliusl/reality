@@ -57,16 +57,13 @@ impl BlockProperty {
     /// Returns a vector of strings if the property is a single text buffer,
     /// or if the property is a list of values, filters all text buffers
     ///
-    pub fn text_vec(&self) -> Option<Vec<&String>> {
+    pub fn text_vec(&self) -> Option<Vec<String>> {
         match self {
-            BlockProperty::Single(Value::TextBuffer(text)) => Some(vec![text]),
+            BlockProperty::Single(Value::TextBuffer(text)) => Some(vec![text.to_string()]),
             BlockProperty::List(values) => Some(
                 values
                     .iter()
-                    .filter_map(|m| match m {
-                        Value::TextBuffer(t) => Some(t),
-                        _ => None,
-                    })
+                    .filter_map(Value::text)
                     .collect::<Vec<_>>(),
             ),
             _ => None,
@@ -76,16 +73,13 @@ impl BlockProperty {
     /// Returns a vector of strings if the property is a single symbol,
     /// or if the property is a list of values, filters all symbols
     ///
-    pub fn symbol_vec(&self) -> Option<Vec<&String>> {
+    pub fn symbol_vec(&self) -> Option<Vec<String>> {
         match self {
-            BlockProperty::Single(Value::Symbol(text)) => Some(vec![text]),
+            BlockProperty::Single(Value::Symbol(text)) => Some(vec![text.to_string()]),
             BlockProperty::List(values) => Some(
                 values
                     .iter()
-                    .filter_map(|m| match m {
-                        Value::Symbol(t) => Some(t),
-                        _ => None,
-                    })
+                    .filter_map(Value::symbol)
                     .collect::<Vec<_>>(),
             ),
             _ => None,
@@ -95,16 +89,13 @@ impl BlockProperty {
     /// Returns a vector of integers if the property is a single int,
     /// or if the property is a list of values, filters all ints
     ///
-    pub fn int_vec(&self) -> Option<Vec<&i32>> {
+    pub fn int_vec(&self) -> Option<Vec<i32>> {
         match self {
-            BlockProperty::Single(Value::Int(int)) => Some(vec![int]),
+            BlockProperty::Single(Value::Int(int)) => Some(vec![*int]),
             BlockProperty::List(values) => Some(
                 values
                     .iter()
-                    .filter_map(|m| match m {
-                        Value::Int(i) => Some(i),
-                        _ => None,
-                    })
+                    .filter_map(Value::int)
                     .collect::<Vec<_>>(),
             ),
             _ => None,
@@ -114,16 +105,13 @@ impl BlockProperty {
     /// Returns a vector of integers if the property is a single int,
     /// or if the property is a list of values, filters all ints
     ///
-    pub fn float_vec(&self) -> Option<Vec<&f32>> {
+    pub fn float_vec(&self) -> Option<Vec<f32>> {
         match self {
-            BlockProperty::Single(Value::Float(float)) => Some(vec![float]),
+            BlockProperty::Single(Value::Float(float)) => Some(vec![*float]),
             BlockProperty::List(values) => Some(
                 values
                     .iter()
-                    .filter_map(|m| match m {
-                        Value::Float(i) => Some(i),
-                        _ => None,
-                    })
+                    .filter_map(Value::float)
                     .collect::<Vec<_>>(),
             ),
             _ => None,
