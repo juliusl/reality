@@ -195,6 +195,7 @@ where
         value: impl Into<Value>,
     ) -> &mut Frame {
         self.interner.add_ident(name.as_ref());
+        self.interner.add_ident(property.as_ref());
 
         let value: Value = value.into();
 
