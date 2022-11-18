@@ -25,7 +25,7 @@ use logos::{Lexer, Logos};
 pub enum Elements {
     /// Identifier string, this is either a name or symbol
     ///
-    #[regex("[/A-Za-z]+[A-Za-z-._:=/#0-9]*", on_identifier)]
+    #[regex("[./A-Za-z]+[A-Za-z-._:=/#0-9]*", on_identifier)]
     Identifier(String),
     /// Attribute type,
     /// 
