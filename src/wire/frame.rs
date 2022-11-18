@@ -706,16 +706,18 @@ impl Frame {
 
     /// Returns this frame with data as it's value,
     /// 
-    pub fn with_value(&self, data: Data) -> Frame {
+    pub fn with_value(&self, attribute: Attributes, data: Data) -> Frame {
         let mut frame_builder = FrameBuilder::default();
         const EMPTY_BLOB: Option<&mut Cursor<Vec<u8>>> = None::<&mut Cursor<Vec<u8>>>;
         match self.keyword() {
             Keywords::Add => { 
                 frame_builder.cursor.write(&self.data[..18]).expect("should be able to write");
+                frame_builder.write(attribute, EMPTY_BLOB).expect("should be able to write");
                 frame_builder.write(data, EMPTY_BLOB).expect("should be able to write");
             },
             Keywords::Define => {
                 frame_builder.cursor.write(&self.data[..34]).expect("should be able to write");
+                frame_builder.write(attribute, EMPTY_BLOB).expect("should be able to write");
                 frame_builder.write(data, EMPTY_BLOB).expect("should be able to write");
             }
             _ => {
@@ -791,12 +793,20 @@ impl Frame {
         self.data[56..].copy_from_slice(&parity);
     }
 
-    /// Set an extent to this frame,
+    /// Set a binary extent to this frame,
     /// 
-    pub fn set_extent(&self, length: u64, cursor: u64) -> Frame {
+    pub fn set_binary_extent(&self, length: u64, cursor: u64) -> Frame {
         let data = Data::Extent { length, cursor: Some(cursor) };
 
-        self.with_value(data)
+        self.with_value(Attributes::BinaryVector, data)
+    }
+
+    /// Set a text extent to this frame,
+    /// 
+    pub fn set_text_extent(&self, length: u64, cursor: u64) -> Frame {
+        let data = Data::Extent { length, cursor: Some(cursor) };
+
+        self.with_value(Attributes::Text, data)
     }
 
     /// Returns the current parity for this frame, 
