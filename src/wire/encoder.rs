@@ -194,6 +194,22 @@ where
         property: impl AsRef<str>,
         value: impl Into<Value>,
     ) -> &mut Frame {
+        self.interner.add_ident(name.as_ref());
+
+        let value: Value = value.into();
+
+        match &value {
+            Value::Symbol(symbol) => {
+                self.interner.add_ident(symbol);
+            },
+            Value::Complex(complex) => {
+                for s in complex.iter() {
+                    self.interner.add_ident(s);
+                }
+            },
+            _ => {}
+        }
+
         self.frames.push(Frame::define(
             name.as_ref(),
             property.as_ref(),
