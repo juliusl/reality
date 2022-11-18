@@ -42,9 +42,12 @@ where
     pub last_entity: Option<Entity>,
 }
 
-impl Default for Encoder {
+impl<BlobImpl> Default for Encoder<BlobImpl>
+where
+    BlobImpl: Read + Write + Seek + Clone + Default,
+{
     fn default() -> Self {
-        Self::new()
+        Self::new_with(BlobImpl::default())
     }
 }
 
@@ -160,7 +163,7 @@ where
     }
 
     /// Adds a stable value frame, returns the frame for final configuration,
-    /// 
+    ///
     pub fn add_value(&mut self, name: impl AsRef<str>, value: impl Into<Value>) -> &mut Frame {
         self.interner.add_ident(name.as_ref());
 
@@ -169,12 +172,12 @@ where
         match &value {
             Value::Symbol(symbol) => {
                 self.interner.add_ident(symbol);
-            },
+            }
             Value::Complex(complex) => {
                 for s in complex.iter() {
                     self.interner.add_ident(s);
                 }
-            },
+            }
             _ => {}
         }
 
@@ -187,7 +190,7 @@ where
     }
 
     /// Defines a transient property value, returns the frame for final configuration,
-    /// 
+    ///
     pub fn define_property(
         &mut self,
         name: impl AsRef<str>,
@@ -202,12 +205,12 @@ where
         match &value {
             Value::Symbol(symbol) => {
                 self.interner.add_ident(symbol);
-            },
+            }
             Value::Complex(complex) => {
                 for s in complex.iter() {
                     self.interner.add_ident(s);
                 }
-            },
+            }
             _ => {}
         }
 
@@ -463,7 +466,7 @@ fn test_encoder() {
         &encoder.blob_device("").size()
     );
 
-    let mut encoder = Encoder::default();
+    let mut encoder = Encoder::new();
     let test_entity = world.entities().create();
     {
         encoder
