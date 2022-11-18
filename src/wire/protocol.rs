@@ -84,6 +84,12 @@ impl Protocol {
         self.encoders.remove(&id)
     }
 
+    /// Sets an encoder by resource id,
+    /// 
+    pub fn set_encoder(&mut self, id: ResourceId, encoder: Encoder) {
+        self.encoders.insert(id, encoder);
+    }
+
     /// Encodes all components from the world,
     ///
     pub fn encode_components<T>(&mut self)
