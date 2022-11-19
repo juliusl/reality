@@ -80,10 +80,16 @@ where
         self.encoders.iter()
     }
 
-    /// Returns an encoder by id,
+    /// Returns a mutable encoder by id,
     ///
     pub fn encoder_mut_by_id(&mut self, id: ResourceId) -> Option<&mut Encoder<BlobImpl>> {
         self.encoders.get_mut(&id)
+    }
+
+    /// Returns an encoder by id,
+    ///
+    pub fn encoder_by_id(&mut self, id: ResourceId) -> Option<&Encoder<BlobImpl>> {
+        self.encoders.get(&id)
     }
 
     /// Takes an encoder from the protocol,
