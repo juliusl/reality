@@ -17,3 +17,4 @@ specs = { version = "0.18.0", features = ["default", "derive", "shred-derive"] }
 tokio = { version = "1.19.2", features = ["default", "rt-multi-thread", "sync", "fs", "process", "io-util", "io-std", "macros"] }
 tracing = "0.1.36"
 tracing-test = "0.2.3"
+bytes = "1.2.1"

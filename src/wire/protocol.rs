@@ -288,7 +288,7 @@ where
             let frame_stream = &mut frame_stream;
 
             for f in encoder.frames_slice() {
-                assert_eq!(frame_stream.write(f.bytes()).ok(), Some(64));
+                assert_eq!(frame_stream.write(f.bytes().as_ref()).ok(), Some(64));
             }
 
             let mut blob_stream = blob_stream();

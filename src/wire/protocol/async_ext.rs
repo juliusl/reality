@@ -41,20 +41,20 @@ impl Protocol {
         let mut control_stream = control_stream().await;
         let control_device = ControlDevice::new(self.ensure_encoder::<W>().interner.clone());
         for f in control_device.data_frames() {
-            assert_eq!(control_stream.write(f.bytes()).await.ok(), Some(64))
+            assert_eq!(control_stream.write(f.bytes().as_ref()).await.ok(), Some(64))
         }
 
         for f in control_device.read_frames() {
-            assert_eq!(control_stream.write(f.bytes()).await.ok(), Some(64));
+            assert_eq!(control_stream.write(f.bytes().as_ref()).await.ok(), Some(64));
         }
 
         for f in control_device.index_frames() {
-            assert_eq!(control_stream.write(f.bytes()).await.ok(), Some(64));
+            assert_eq!(control_stream.write(f.bytes().as_ref()).await.ok(), Some(64));
         }
 
         let mut frame_stream = frame_stream().await;
         for f in self.ensure_encoder::<W>().frames_slice() {
-            assert_eq!(frame_stream.write(f.bytes()).await.ok(), Some(64));
+            assert_eq!(frame_stream.write(f.bytes().as_ref()).await.ok(), Some(64));
         }
 
         self.ensure_encoder::<W>().blob_device.set_position(0);

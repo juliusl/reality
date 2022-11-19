@@ -63,7 +63,8 @@ impl AttributeParser {
 
                     let mut elements_lexer = Elements::lexer(&line);
                     match elements_lexer.next() {
-                        Some(Elements::AttributeType(custom_attr_type)) => {
+                        Some(Elements::Identifier(custom_attr_type)) => {
+                            let custom_attr_type = custom_attr_type.trim_start_matches(".").to_string();
                             let mut input = elements_lexer.remainder().trim().to_string();
 
                             let scanning = input.to_string();

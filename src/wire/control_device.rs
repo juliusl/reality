@@ -138,7 +138,7 @@ impl Into<Interner> for ControlDevice {
                 }
                 // Class 2 means each read is a u16
                 0x02 => {
-                    let reads = cast::<[u8; 64], [u16; 32]>(*read.bytes());
+                    let reads = cast::<[u8; 64], [u16; 32]>(read.byte_slice());
                     let reads = &reads[1..];
 
                     for read in reads {
@@ -152,7 +152,7 @@ impl Into<Interner> for ControlDevice {
                 }
                 // Class 3 means each read is a u32
                 0x03 => {
-                    let reads = cast::<[u8; 64], [u32; 16]>(*read.bytes());
+                    let reads = cast::<[u8; 64], [u32; 16]>(read.byte_slice());
                     let reads = &reads[1..];
 
                     for read in reads {
@@ -166,7 +166,7 @@ impl Into<Interner> for ControlDevice {
                 }
                 // Class 4 means each read is a u64
                 0x04 => {
-                    let reads = cast::<[u8; 64], [u64; 8]>(*read.bytes());
+                    let reads = cast::<[u8; 64], [u64; 8]>(read.byte_slice());
                     let reads = &reads[1..];
 
                     for read in reads {

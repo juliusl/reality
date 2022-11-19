@@ -2,6 +2,7 @@ use super::{BlobDevice, Data, Interner};
 use crate::parser::{Attributes, Elements, Keywords};
 use atlier::system::Value;
 use bytemuck::cast;
+use bytes::Bytes;
 use logos::Logos;
 use rand::RngCore;
 use specs::{Entity, World, WorldExt};
@@ -81,7 +82,7 @@ pub use extension_token::ExtensionToken;
 ///
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Frame {
-    data: [u8; 64],
+    data: Bytes,
 }
 
 impl From<&[u8]> for Frame {
@@ -89,7 +90,7 @@ impl From<&[u8]> for Frame {
         let mut data = [0; 64];
         data.copy_from_slice(slice);
 
-        Frame { data }
+        Frame { data: Bytes::from(data.to_vec()) }
     }
 }
 
@@ -126,7 +127,7 @@ impl Display for Frame {
                 Ok(())
             }
         } else {
-            write!(f, "{}", base64::encode(self.data))
+            write!(f, "{}", base64::encode(self.data.as_ref()))
         }
     }
 }
@@ -138,7 +139,7 @@ impl Frame {
         let mut data = [0; 64];
         data[0] = op.into();
         data[1..].copy_from_slice(argument);
-        Self { data }
+        Self { data: Bytes::from(data.to_vec()) }
     }
 
     /// Returns a new frame for the block delimitter keyword in normal block mode
@@ -779,7 +780,9 @@ impl Frame {
         let gen = entity.gen().id() as u32;
         let parity = cast::<[u32; 2], [u8; 8]>([id, gen]);
 
-        clone.data[56..].copy_from_slice(&parity);
+        let mut data = clone.data.to_vec();
+        data.splice(56.., parity);
+        clone.data = data.into();
         clone
     }
 
@@ -790,7 +793,9 @@ impl Frame {
         let gen = entity.gen().id() as u32;
         let parity = cast::<[u32; 2], [u8; 8]>([id, gen]);
 
-        self.data[56..].copy_from_slice(&parity);
+        let mut data = self.data.to_vec();
+        data.splice(56.., parity);
+        self.data = data.into();
     }
 
     /// Set a binary extent to this frame,
@@ -835,34 +840,38 @@ impl Frame {
 
     /// Returns the underlying bytes
     ///
-    pub fn bytes(&self) -> &[u8; 64] {
-        &self.data
+    pub fn bytes(&self) -> &[u8] {
+        &self.data.as_ref()[..64]
     }
 
-    /// Creates a cursor w/ inner data
+    /// Returns the underlying bytes
     ///
-    fn cursor(&self) -> Cursor<[u8; 64]> {
-        Cursor::new(self.data)
+    pub fn byte_slice(&self) -> [u8; 64] {
+        let mut slice = [0; 64];
+
+        slice.copy_from_slice(self.data.as_ref());
+
+        slice
     }
 }
 
 impl From<Cursor<[u8; 64]>> for Frame {
     fn from(data: Cursor<[u8; 64]>) -> Self {
         Self {
-            data: data.into_inner(),
+            data: Bytes::from(data.into_inner().to_vec()),
         }
     }
 }
 
 impl From<[u8; 64]> for Frame {
     fn from(data: [u8; 64]) -> Self {
-        Self { data }
+        Self { data: Bytes::from(data.to_vec()) }
     }
 }
 
 impl Default for Frame {
     fn default() -> Self {
-        Self { data: [0; 64] }
+        Self { data: Bytes::from_static(&[0; 64]) }
     }
 }
 
@@ -876,7 +885,7 @@ pub struct FrameBuilder {
 impl Default for FrameBuilder {
     fn default() -> Self {
         Self {
-            cursor: Frame::default().cursor(),
+            cursor: Cursor::new([0; 64]),
             value: None,
         }
     }
@@ -973,24 +982,6 @@ impl FrameBuilder {
     fn entropy() -> u64 {
         rand::thread_rng().next_u64()
     }
-}
-
-#[test]
-fn test_frame() {
-    let mut frame = Frame::default();
-
-    // Test writing to the frame
-    let mut cursor = frame.cursor();
-    let written = std::io::Write::write(&mut cursor, &[0x01, 0x02, 0x03]).expect("can write");
-    assert_eq!(written, 3);
-    assert_eq!(cursor.position(), 3);
-
-    // Test reading from the frame
-    frame = cursor.into();
-    let mut cursor = frame.cursor();
-    let mut buf = [0; 3];
-    std::io::Read::read_exact(&mut cursor, &mut buf).expect("can read");
-    assert_eq!(buf, [0x01, 0x02, 0x03]);
 }
 
 /// Tests frame building and decoding

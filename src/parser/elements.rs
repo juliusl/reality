@@ -27,10 +27,6 @@ pub enum Elements {
     ///
     #[regex("[./A-Za-z]+[A-Za-z-._:=/#0-9]*", on_identifier)]
     Identifier(String),
-    /// Attribute type,
-    /// 
-    #[token(".", on_attribute_type)]
-    AttributeType(String),
     /// Comment,
     /// 
     #[token("<", on_comment_start)]
@@ -67,16 +63,6 @@ fn on_identifier(lexer: &mut Lexer<Elements>) -> Option<String> {
     Some(slice.to_string())
 }
 
-fn on_attribute_type(lexer: &mut Lexer<Elements>) -> Option<String> {
-    match lexer.next() {
-        Some(elem) => match elem {
-            Elements::Identifier(ident) => Some(ident),
-            _ => None,
-        },
-        None => None,
-    }
-}
-
 fn on_comment_start(lexer: &mut Lexer<Elements>) -> Option<String> {
     let end_pos = lexer.remainder()
         .lines()
@@ -98,7 +84,7 @@ fn test_elements() {
 
     assert_eq!(
         Elements::lexer(test_str).next().expect("parses"),
-        Elements::AttributeType("Custom".to_string())
+        Elements::Identifier(".Custom".to_string())
     );
 
     let test_str = "test, one, two, three";
