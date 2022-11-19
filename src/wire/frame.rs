@@ -840,8 +840,8 @@ impl Frame {
 
     /// Returns the underlying bytes
     ///
-    pub fn bytes(&self) -> &[u8] {
-        &self.data.as_ref()[..64]
+    pub fn bytes(&self) -> Bytes {
+        self.data.clone()
     }
 
     /// Returns the underlying bytes

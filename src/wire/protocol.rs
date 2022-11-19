@@ -273,15 +273,15 @@ where
 
             let control_device = ControlDevice::new(encoder.interner.clone());
             for f in control_device.data_frames() {
-                assert_eq!(control_stream.write(f.bytes()).ok(), Some(64));
+                assert_eq!(control_stream.write(f.bytes().as_ref()).ok(), Some(64));
             }
 
             for f in control_device.read_frames() {
-                assert_eq!(control_stream.write(f.bytes()).ok(), Some(64));
+                assert_eq!(control_stream.write(f.bytes().as_ref()).ok(), Some(64));
             }
 
             for f in control_device.index_frames() {
-                assert_eq!(control_stream.write(f.bytes()).ok(), Some(64));
+                assert_eq!(control_stream.write(f.bytes().as_ref()).ok(), Some(64));
             }
 
             let mut frame_stream = frame_stream();
