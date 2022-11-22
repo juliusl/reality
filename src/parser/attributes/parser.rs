@@ -545,20 +545,8 @@ fn test_attribute_parser() {
     let shortcut = parser.next();
     assert_eq!(
         shortcut, 
-        Some(atlier::system::Attribute::new(0, "shortcut", Value::Symbol("cool shortcut".to_string())))
+        Some(Attribute::new(0, "shortcut", Value::Symbol("cool shortcut".to_string())))
     );
-
-    // Test parsing .file attribute
-    let mut parser = AttributeParser::default();
-
-    let parser = parser.with_custom::<crate::parser::File>()
-        .init("readme.md .file ./readme.md");
-
-    let mut parsed = vec![];
-    while let Some(attr) = parser.next() {
-        parsed.push(attr);
-    }
-    eprintln!("{:#?}", parsed);
 
     // Test parsing .blob attribute
     let mut parser = AttributeParser::default();
@@ -585,25 +573,25 @@ fn test_attribute_parser() {
     let parser = parser
         .with_custom::<TestCustomAttr>()
         .init("custom .custom-attr test custom attr input");
-    assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::Empty)));
+    assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Empty)));
     
     let mut parser = AttributeParser::default();
     let parser = parser
         .with_custom::<TestCustomAttr>()
         .init("custom <comment block> .custom-attr <comment block> test custom attr input <comment block>");
-    assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::Empty)));
+    assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Empty)));
 
     let mut parser = AttributeParser::default();
     let parser = parser.with_custom::<TestCustomAttr>()
         .init("custom <comment block> .symbol <comment block> test custom attr input <comment block>");
-    assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::Symbol("test custom attr input".to_string()))));
+    assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Symbol("test custom attr input".to_string()))));
 
     
     let mut parser = AttributeParser::default();
     let parser = parser.with_custom::<TestCustomAttr>()
         .init("custom <comment block> .int_pair <comment block 1> 1, <comment block2>5 <comment block>");
 
-    assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::IntPair(1, 5))));
+    assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::IntPair(1, 5))));
 
 }
 

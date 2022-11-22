@@ -12,7 +12,6 @@ pub use attributes::AttributeParser;
 pub use attributes::Attributes;
 pub use attributes::BlobDescriptor;
 pub use attributes::CustomAttribute;
-pub use attributes::File;
 pub use attributes::SpecialAttribute;
 
 mod keywords;

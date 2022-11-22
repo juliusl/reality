@@ -26,5 +26,8 @@ pub use interpreter::Interpreter;
 mod evaluate;
 pub use evaluate::evaluate;
 
-pub use atlier::system::Value;
-pub use atlier::system::Attribute;
+mod attribute;
+pub use attribute::Attribute;
+
+mod value;
+pub use value::Value;

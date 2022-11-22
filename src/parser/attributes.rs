@@ -9,9 +9,6 @@ pub use custom::SpecialAttribute;
 mod cache;
 pub use cache::Cache;
 
-mod file;
-pub use file::File;
-
 mod blob;
 pub use blob::BlobDescriptor;
 
