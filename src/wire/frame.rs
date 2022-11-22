@@ -1,6 +1,6 @@
 use super::{BlobDevice, Data, Interner};
 use crate::parser::{Attributes, Elements, Keywords};
-use atlier::system::Value;
+use crate::Value;
 use bytemuck::cast;
 use bytes::Bytes;
 use logos::Logos;

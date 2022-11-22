@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::str::FromStr;
 use std::{collections::HashMap, sync::Arc};
 
-use atlier::system::{Value, Attribute};
+use crate::{Value, Attribute};
 use logos::Lexer;
 use logos::Logos;
 use specs::{World, WorldExt, Entity};

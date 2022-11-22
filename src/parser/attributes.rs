@@ -1,5 +1,5 @@
 use std::fmt::Display;
-use atlier::system::Value;
+use crate::Value;
 use logos::Logos;
 
 mod custom;

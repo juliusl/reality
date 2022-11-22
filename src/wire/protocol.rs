@@ -408,7 +408,7 @@ where
 #[test]
 #[tracing_test::traced_test]
 fn test_decode_block() {
-    use atlier::system::Value;
+    use crate::Value;
     let protocol = Protocol::new(Parser::new().parse(
         r#"
     ``` call guest

@@ -1,6 +1,6 @@
 use std::io::{Read, Seek, Write};
 
-use atlier::system::{Attribute, Value};
+use crate::{Attribute, Value};
 use specs::{shred::ResourceId, Component, WorldExt};
 use tracing::{event, Level};
 

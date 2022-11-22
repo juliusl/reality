@@ -1,6 +1,6 @@
 use std::{collections::{BTreeSet, HashMap, HashSet}, io::{Cursor, Write}};
 
-use atlier::system::Value;
+use crate::Value;
 use bytemuck::cast;
 
 use crate::wire::Frame;

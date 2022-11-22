@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
 };
 
-use atlier::system::Value;
+use crate::Value;
 use specs::{Component, VecStorage};
 
 mod block_property;

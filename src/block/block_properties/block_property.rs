@@ -1,4 +1,4 @@
-use atlier::system::Value;
+use crate::Value;
 use std::fmt::Display;
 
 /// Enumeration of property types

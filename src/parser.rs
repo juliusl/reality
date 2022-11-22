@@ -401,7 +401,7 @@ impl Parser {
 
 #[test]
 fn test_parser() {
-    use atlier::system::Value;
+    use crate::Value;
 
     let content = r#"
     ``` call host 
@@ -567,7 +567,7 @@ mod tests {
     fn test_implicit_symbols() {
         use crate::Parser;
         use crate::BlockIndex;
-        use atlier::system::Value;
+        use crate::Value;
     
         let content = r#"
         ```

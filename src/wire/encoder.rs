@@ -2,7 +2,7 @@ use super::{
     frame::{ExtensionToken, Frame},
     BlobDevice, Interner, WireObject,
 };
-use atlier::system::Value;
+use crate::Value;
 use specs::{Entity, World};
 use std::{
     collections::BTreeMap,
