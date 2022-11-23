@@ -15,6 +15,9 @@ pub use blob_device::BlobSource;
 pub use blob_device::BlobDevice;
 pub use blob_device::MemoryBlobSource;
 
+mod blob_client;
+pub use blob_client::BlobClient;
+
 mod protocol;
 pub use protocol::Protocol;
 
