@@ -16,7 +16,7 @@ pub type FrameIndex = BTreeMap<String, Vec<Range<usize>>>;
 
 /// Struct for encoding resources into frames,
 ///
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Encoder<BlobImpl = Cursor<Vec<u8>>>
 where
     BlobImpl: Read + Write + Seek + Clone + Default,
