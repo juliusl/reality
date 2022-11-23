@@ -12,7 +12,6 @@ pub use attributes::AttributeParser;
 pub use attributes::Attributes;
 pub use attributes::BlobDescriptor;
 pub use attributes::CustomAttribute;
-pub use attributes::File;
 pub use attributes::SpecialAttribute;
 
 mod keywords;
@@ -401,7 +400,7 @@ impl Parser {
 
 #[test]
 fn test_parser() {
-    use atlier::system::Value;
+    use crate::Value;
 
     let content = r#"
     ``` call host 
@@ -567,7 +566,7 @@ mod tests {
     fn test_implicit_symbols() {
         use crate::Parser;
         use crate::BlockIndex;
-        use atlier::system::Value;
+        use crate::Value;
     
         let content = r#"
         ```

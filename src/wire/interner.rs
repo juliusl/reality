@@ -1,6 +1,6 @@
 use std::collections::{HashMap, BTreeSet};
 
-use atlier::system::Value;
+use crate::Value;
 use tracing::{event, Level};
 
 /// Struct to wrap interned data 

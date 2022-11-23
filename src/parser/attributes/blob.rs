@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use atlier::system::Value;
+use crate::Value;
 
 use super::{custom::SpecialAttribute, AttributeParser};
 

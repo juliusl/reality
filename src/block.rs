@@ -1,4 +1,4 @@
-use atlier::system::{Attribute, Value};
+use crate::{Attribute, Value};
 use std::collections::BTreeMap;
 use specs::{Entity, Component};
 use specs::storage::DefaultVecStorage;

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use atlier::system::{Attribute, Value};
+use crate::{Attribute, Value};
 use specs::{Component, VecStorage};
 
 use crate::{BlockProperties, BlockProperty};
