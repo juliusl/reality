@@ -49,7 +49,7 @@ pub trait BlockStoreBuilder {
 
     /// Returns a join handle, whose result is the result of putting a block in the store,
     /// 
-    fn put_block(&mut self, frame: &Frame, blob: Option<impl Into<Bytes>>) -> PutBlock;
+    fn put_block(&mut self, frame: &Frame, blob: impl Into<Bytes>) -> PutBlock;
 
     /// Returns a join handle, whose result is the completed store, 
     /// 
