@@ -21,6 +21,10 @@ pub use block_client::BlockClient;
 pub use block_client::BlockEntry;
 pub use block_client::ListBlocks;
 
+mod block_store;
+pub use block_store::BlockStore;
+pub use block_store::BlockStoreBuilder;
+
 mod protocol;
 pub use protocol::Protocol;
 
