@@ -19,11 +19,16 @@ pub use blob_device::MemoryBlobSource;
 mod block_client;
 pub use block_client::BlockClient;
 pub use block_client::BlockEntry;
-pub use block_client::ListBlocks;
 
 mod block_store;
 pub use block_store::BlockStore;
 pub use block_store::BlockStoreBuilder;
+
+pub mod block_tasks {
+    pub use crate::wire::block_client::ListBlocks;
+    pub use crate::wire::block_store::FinishStore;
+    pub use crate::wire::block_store::PutBlock;
+}
 
 mod protocol;
 pub use protocol::Protocol;
