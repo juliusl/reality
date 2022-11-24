@@ -17,6 +17,9 @@ use tracing::{event, Level};
 mod extension_token;
 pub use extension_token::ExtensionToken;
 
+mod frame_buffer;
+pub use frame_buffer::FrameBuffer;
+
 /// A frame represents the data for a single operation,
 ///
 /// At most a frame can be 64 bytes in length,
