@@ -18,6 +18,8 @@ pub use blob_device::MemoryBlobSource;
 
 mod block_client;
 pub use block_client::BlockClient;
+pub use block_client::BlockEntry;
+pub use block_client::ListBlocks;
 
 mod protocol;
 pub use protocol::Protocol;
