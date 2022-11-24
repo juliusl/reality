@@ -22,6 +22,7 @@ pub use block_client::BlockEntry;
 
 mod block_store;
 pub use block_store::BlockStore;
+pub use block_store::BlockBuilder;
 pub use block_store::BlockStoreBuilder;
 
 pub mod block_tasks {
