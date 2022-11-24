@@ -85,6 +85,16 @@ pub struct Frame {
     data: Bytes,
 }
 
+impl From<Bytes> for Frame {
+    fn from(data: Bytes) -> Self {
+        assert_eq!(data.len(), 64, "data being converted into a frame is greater than 64 bytes");
+
+        Frame { 
+            data
+        }
+    }
+}
+
 impl From<&[u8]> for Frame {
     fn from(slice: &[u8]) -> Self {
         let mut data = [0; 64];
