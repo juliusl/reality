@@ -30,6 +30,21 @@ impl<Client> Index<Client>
 where
     Client: BlockClient,
 {
+    /// Returns a new index,
+    /// 
+    pub fn new(mut interner: Interner, block_client: Client) -> Self {
+        interner.add_ident("");
+        interner.add_ident("store");
+        interner.add_ident("control");
+        
+        Self {
+            interner,
+            block_client,
+            map: HashMap::default(),
+            blob_device_map: HashMap::default(),
+        }
+    }
+
     /// Returns the interner,
     ///
     #[inline]
