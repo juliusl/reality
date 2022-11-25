@@ -17,3 +17,5 @@ tracing-test = "0.2.3"
 serde = { version = "1.0.144", features = ["derive"] }
 specs = { version = "0.18.0", features = ["default", "derive", "shred-derive"] }
 tokio = { version = "1.19.2", features = ["default", "rt-multi-thread", "sync", "fs", "process", "io-util", "io-std", "macros"] }
+tokio-stream = "0.1.11"
+futures = "0.3.25"
