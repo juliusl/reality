@@ -57,7 +57,10 @@ pub trait BlockStoreBuilder {
 
     /// Returns a join handle, whose result is the completed store, 
     /// 
-    fn finish(&mut self) -> FinishStore<Self::Store>;
+    /// If a block order is provided, the store builder will arrange the final store using the order in the list.
+    /// If there are remaining blocks that were not in the block_order, they will be appended to the bottom of the store.
+    /// 
+    fn finish(&mut self, block_order: Option<Vec<impl AsRef<str>>>) -> FinishStore<Self::Store>;
 }
 
 /// Trait that abstracts building a single block in a block store,
