@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use crate::store::StoreIndex;
 
 use super::{BlockClient, Frame, Interner};
 
@@ -32,6 +33,18 @@ pub trait BlockStore {
     /// Returns a reference to an interner,
     /// 
     fn interner(&self) -> &Interner;
+
+    /// Returns a store index for this store,
+    /// 
+    /// The index is uinitialized initially, .index() needs to be called for the index to be populated,
+    /// 
+    fn index(&self) -> Option<StoreIndex<Self::Client>> {
+        if let Some(client) = self.client() {
+            Some(StoreIndex::new(self.interner().clone(), client))
+        } else {
+            None
+        }
+    }
 }
 
 /// Trait to abstract building a block store,
