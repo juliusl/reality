@@ -1,19 +1,18 @@
-
 use std::{
     collections::HashSet,
     future::IntoFuture,
     io::{Cursor, Read, Seek, Write},
 };
 
-use futures::Future;
 use crate::{
     store::StoreContainer,
     wire::{BlockBuilder, BlockStore, BlockStoreBuilder, Encoder, Frame, Interner, ResourceId},
 };
+use futures::Future;
 use tokio::{select, task::JoinSet};
 use tracing::{event, Level};
 
-use super::{Streamer, Blob};
+use super::{Blob, Streamer};
 
 /// Type alias for frame being streamed
 ///
@@ -56,6 +55,19 @@ where
     StoreImpl: BlockStore,
     BlobImpl: Read + Write + Seek + Clone + Default,
 {
+    /// Returns a new store stream,
+    /// 
+    pub fn new(container: StoreContainer<(), BlobImpl>, block_store: StoreImpl) -> Self {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<(ResourceId, Frame, Option<Blob>)>();
+        Self {
+            rx,
+            tx,
+            container,
+            interner: Interner::default(),
+            block_store,
+        }
+    }
+
     /// Returns a new streamer w/ resource_id
     ///
     pub fn streamer(&self, resource_id: ResourceId) -> Streamer {
