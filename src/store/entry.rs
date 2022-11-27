@@ -100,6 +100,14 @@ where
         self.index.client().stream_range(self.start..self.end)
     }
 
+    /// Returns a reader to transport bytes for this entry,
+    /// 
+    /// This indicates to the client that the bytes should not be modified in their currently stored state.
+    /// 
+    pub fn transport(&self) -> Client::Stream {
+        self.index.client().transport_range(self.start..self.end)
+    }
+
     /// Returns true if this entry has a blob device,
     ///
     pub fn has_blob_device(&self) -> bool {
