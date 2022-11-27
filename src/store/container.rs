@@ -1,11 +1,11 @@
 use std::{
     collections::{BTreeMap, HashMap},
-    io::{Cursor, Read, Seek, Write}, sync::Arc,
+    io::{Cursor, Read, Seek, Write},
 };
 
 use specs::shred::ResourceId;
 
-use crate::wire::Encoder;
+use crate::wire::{Encoder, Protocol};
 
 /// Shallow wrapper struct for containing store data,
 ///
@@ -18,19 +18,40 @@ where
     inner: T,
     /// Protocol for stored wire objects,
     ///
-    encoders: HashMap<ResourceId, Encoder<BlobImpl>>,
+    pub encoders: HashMap<ResourceId, Encoder<BlobImpl>>,
     /// Index of registered object names,
     ///
-    index: HashMap<ResourceId, String>,
+    pub index: HashMap<ResourceId, String>,
     /// Index of registered object names,
     ///
-    reverse_index: BTreeMap<String, ResourceId>,
+    pub reverse_index: BTreeMap<String, ResourceId>,
 }
 
 impl<T, BlobImpl> Container<T, BlobImpl>
 where
     BlobImpl: Read + Write + Seek + Clone + Default,
 {
+    /// Returns a new container,
+    ///
+    pub fn new(
+        inner: T,
+        protocol: &Protocol<BlobImpl>,
+        index: &HashMap<ResourceId, String>,
+    ) -> Self {
+        let mut reverse_index = BTreeMap::<String, ResourceId>::default();
+
+        for (rid, name) in index.iter() {
+            reverse_index.insert(name.clone(), rid.clone());
+        }
+
+        Self {
+            inner,
+            encoders: protocol.encoders().clone(),
+            index: index.clone(),
+            reverse_index,
+        }
+    }
+
     /// Searches for a resource id by name,
     ///
     #[inline]
