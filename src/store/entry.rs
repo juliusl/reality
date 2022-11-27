@@ -6,7 +6,7 @@ use tokio::io::{DuplexStream, AsyncReadExt, AsyncWriteExt};
 use tokio_stream::StreamExt;
 use tracing::{event, Level};
 
-use crate::wire::{BlockClient, Interner, Encoder, FrameBuffer, Frame};
+use crate::wire::{BlockClient, Interner, Encoder, FrameBuffer, Frame, BlockEntry};
 
 use super::{StoreIndex, StoreKey};
 
@@ -280,5 +280,15 @@ where
     ///
     pub fn hash_code(&self) -> u64 {
         self.key().hash_code()
+    }
+}
+
+impl<Client: BlockClient> BlockEntry for Entry<Client> {
+    fn frame(&self) -> Frame {
+        self.store_key.frame()
+    }
+
+    fn size(&self) -> usize {
+        self.end - self.start
     }
 }

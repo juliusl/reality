@@ -34,6 +34,12 @@ impl Key {
         interner.strings().get(&self.symbol)
     }
 
+    /// Returns the frame for this key,
+    /// 
+    pub fn frame(&self) -> Frame {
+        self.frame.clone()
+    }
+
     /// Returns the hash code for this store key,
     ///
     /// This is jsut key ^ symbol

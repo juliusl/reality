@@ -80,26 +80,36 @@ where
         self.encoders.iter()
     }
 
+    /// Returns a reference to the encoder map,
+    /// 
+    pub fn encoders(&self) -> &HashMap<ResourceId, Encoder<BlobImpl>> {
+        &self.encoders
+    }
+
     /// Returns a mutable encoder by id,
     ///
-    pub fn encoder_mut_by_id(&mut self, id: ResourceId) -> Option<&mut Encoder<BlobImpl>> {
-        self.encoders.get_mut(&id)
+    #[inline]
+    pub fn encoder_mut_by_id(&mut self, id: &ResourceId) -> Option<&mut Encoder<BlobImpl>> {
+        self.encoders.get_mut(id)
     }
 
     /// Returns an encoder by id,
     ///
-    pub fn encoder_by_id(&self, id: ResourceId) -> Option<&Encoder<BlobImpl>> {
-        self.encoders.get(&id)
+    #[inline]
+    pub fn encoder_by_id(&self, id: &ResourceId) -> Option<&Encoder<BlobImpl>> {
+        self.encoders.get(id)
     }
 
     /// Takes an encoder from the protocol,
     ///
-    pub fn take_encoder(&mut self, id: ResourceId) -> Option<Encoder<BlobImpl>> {
-        self.encoders.remove(&id)
+    #[inline]
+    pub fn take_encoder(&mut self, id: &ResourceId) -> Option<Encoder<BlobImpl>> {
+        self.encoders.remove(id)
     }
 
     /// Sets an encoder by resource id,
     /// 
+    #[inline]
     pub fn set_encoder(&mut self, id: ResourceId, encoder: Encoder<BlobImpl>) {
         self.encoders.insert(id, encoder);
     }
