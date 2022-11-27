@@ -20,8 +20,12 @@ pub trait BlockClient: Clone + Send + Sync + 'static {
     type Entry: BlockEntry;
 
     /// Returns a stream to read a range of bytes,
-    ///
+    /// 
     fn stream_range(&self, range: Range<usize>) -> Self::Stream;
+
+    /// Returns a stream to transport a range of bytes,
+    /// 
+    fn transport_range(&self, range: Range<usize>) -> Self::Stream;
 
     /// Returns a join handle whose result if successful is a vector of block entries,
     /// 
@@ -58,11 +62,15 @@ mod test {
         type Entry = TestBlockEntry;
 
         fn stream_range(&self, range: std::ops::Range<usize>) -> Self::Stream {
-            &self.data[range.start..range.end]
+            self.transport_range(range)
         }
 
         fn list_blocks(&self) -> super::ListBlocks<Self::Entry> {
             tokio::task::spawn(std::future::ready(Ok(self.blocks.clone())))
+        }
+
+        fn transport_range(&self, range: std::ops::Range<usize>) -> Self::Stream {
+            &self.data[range.start..range.end]
         }
     }
 

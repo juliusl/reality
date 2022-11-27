@@ -88,11 +88,8 @@ where
     ///
     /// When all tasks in the joinset complete, the upload will be finalized
     ///
-    pub async fn start<F>(
-        mut self,
-        select: impl Fn(&ResourceId, &Encoder<BlobImpl>, &Stream<StoreImpl, BlobImpl>) -> Option<F>
-            + 'static,
-    ) where
+    pub async fn start<F>(mut self, select: impl Fn(&ResourceId, &Encoder<BlobImpl>, &Stream<StoreImpl, BlobImpl>) -> Option<F> + 'static) 
+    where
         F: Future<Output = Option<Interner>> + Send + 'static,
     {
         let (tx, rx) = tokio::sync::oneshot::channel();
