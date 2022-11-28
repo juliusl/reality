@@ -36,7 +36,7 @@ where
     /// Returns a new index, short for new_with_interner(client, Interner::default())
     /// 
     pub fn new(block_client: Client) -> Self {
-        let mut interner = Interner::default();
+        let interner = Interner::default();
         Self::new_with_interner(block_client, interner)
     }
 
