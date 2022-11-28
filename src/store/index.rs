@@ -1,4 +1,7 @@
-use crate::wire::{BlockClient, BlockEntry, Decoder, Encoder, Frame, Interner};
+use tokio::io::AsyncReadExt;
+use tracing::{event, Level};
+
+use crate::wire::{BlockClient, BlockEntry, Decoder, Encoder, Frame, Interner, ControlDevice, FrameBuffer};
 use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use super::{entry::Entry, StoreKey};
@@ -64,6 +67,26 @@ where
     #[inline]
     pub fn blob_devices(&self, name: impl AsRef<str>) -> Option<Vec<StoreKey>> {
         self.blob_device_map.get(name.as_ref()).cloned()
+    }
+
+    /// Load the interner into state,
+    /// 
+    pub async fn load_interner(&mut self) {
+        match self.block_client.list_blocks().await.expect("should be able to join") {
+            Ok(resp) => {
+                if let Some(entry) = resp.iter().find(|e| {
+                    e.frame().name(&self.interner) == Some(String::from("store"))
+                        && e.frame().symbol(&self.interner) == Some(String::from("control"))
+                }) {
+                    let control_device = self.block_client.stream_range(0..entry.size());
+                    let interner = read_control_device(control_device).await;
+                    self.interner = self.interner.merge(&interner);
+                }
+            }
+            Err(err) => {
+                event!(Level::ERROR, "Could not list blocks, {err}");
+            },
+        }
     }
 
     /// Index a block list,
@@ -163,4 +186,33 @@ where
 
         Some(frame)
     }
+}
+
+/// Reads a control device from reader, and returns an Interner,
+/// 
+pub async fn read_control_device(mut reader: impl AsyncReadExt + tokio::io::AsyncRead + Unpin,) -> Interner{
+    let mut control_device = ControlDevice::default();
+
+    let mut frame_buffer = FrameBuffer::new(100);
+
+    let mut b = frame_buffer.next();
+    while let Ok(r) = reader.read_exact(b.as_mut()).await {
+        assert_eq!(r, 64);
+        let frame = Frame::from(b.freeze());
+        b = frame_buffer.next();
+
+        if frame.op() == 0x00 {
+            control_device.data.push(frame.clone());
+        } else if frame.op() > 0x00 && frame.op() < 0x06 {
+            control_device.read.push(frame.clone());
+        } else if frame.op() >= 0xC1 && frame.op() <= 0xC6 {
+            assert!(
+                frame.op() >= 0xC1 && frame.op() <= 0xC6,
+                "Index frames have a specific op code range"
+            );
+            control_device.index.push(frame.clone());
+        }
+    }
+
+    control_device.into()
 }
