@@ -40,7 +40,7 @@ pub trait BlockStore {
     /// 
     fn index(&self) -> Option<StoreIndex<Self::Client>> {
         if let Some(client) = self.client() {
-            Some(StoreIndex::new(self.interner().clone(), client))
+            Some(StoreIndex::new_with_interner(client, self.interner().clone()))
         } else {
             None
         }

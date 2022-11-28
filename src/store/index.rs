@@ -33,9 +33,17 @@ impl<Client> Index<Client>
 where
     Client: BlockClient,
 {
-    /// Returns a new index,
+    /// Returns a new index, short for new_with_interner(client, Interner::default())
     /// 
-    pub fn new(mut interner: Interner, block_client: Client) -> Self {
+    pub fn new(block_client: Client) -> Self {
+        let mut interner = Interner::default();
+        Self::new_with_interner(block_client, interner)
+    }
+
+        /// Returns a new index,
+    /// 
+    pub fn new_with_interner(block_client: Client, mut interner: Interner) -> Self {
+
         interner.add_ident("");
         interner.add_ident("store");
         interner.add_ident("control");
