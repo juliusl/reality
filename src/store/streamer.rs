@@ -3,7 +3,7 @@ use crate::{
     Attributes,
 };
 use bytes::Bytes;
-use signature::{RandomizedSigner, Signature, Verifier};
+pub use signature::{RandomizedSigner, Signature, Verifier};
 use std::vec;
 use tokio::io::AsyncWriteExt;
 use tracing::{event, Level};
