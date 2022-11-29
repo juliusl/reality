@@ -66,7 +66,7 @@ impl Documentation {
 
     /// Sets is_custom_attr to true,
     /// 
-    pub fn custom_attr(&mut self) -> &Self {
+    pub fn custom_attr(&mut self) -> &mut Self {
         self.is_custom_attr = true;
         self 
     }
