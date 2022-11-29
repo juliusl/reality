@@ -154,8 +154,8 @@ impl Documentation {
     }
 }
 
-impl From<&'static str> for Documentation {
-    fn from(value: &'static str) -> Self {
+impl<'a> From<&'a str> for Documentation {
+    fn from(value: &'a str) -> Self {
         Self::summary(value)
     }
 }
