@@ -153,3 +153,16 @@ impl Documentation {
         self
     }
 }
+
+impl From<&'static str> for Documentation {
+    fn from(value: &'static str) -> Self {
+        Self::summary(value)
+    }
+}
+
+#[test]
+fn test_from_static_str() {
+    let doc: Documentation = "test doc".into();
+
+    assert_eq!(doc.summary.as_str(), "test doc");
+}
