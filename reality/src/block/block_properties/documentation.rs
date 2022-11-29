@@ -18,18 +18,21 @@ pub struct Documentation {
     /// Additional notes,
     /// 
     pub notes: Vec<String>,
-    /// Whether this property is required for the object to operate,
+    /// Whether this attribute is required for the object to operate,
     /// 
     pub is_required: bool,
-    /// Whether this property is input to the object, or set by the object,
+    /// Whether this attribute is input to the object, or set by the object,
     /// 
     pub is_input: bool,
-    /// Whether this property is intended to be a list,
+    /// Whether this attribute is intended to be a list,
     /// 
     pub is_list: bool,
-    /// Whether or not this property will have a custom attr parser,
+    /// Whether or not this attribute will have a custom attr parser,
     /// 
     pub is_custom_attr: bool,
+    /// Whether this attribute requires a name, 
+    /// 
+    pub name_required: bool,
 }
 
 /// API for constructing documentation, uses method chaining style, 
@@ -69,6 +72,21 @@ impl Documentation {
     pub fn custom_attr(&mut self) -> &mut Self {
         self.is_custom_attr = true;
         self 
+    }
+
+    /// Sets name_required to true,
+    /// 
+    /// If true, this means that this property attribute requires a name to be used. 
+    /// 
+    /// For example,
+    /// 
+    /// ```norun
+    /// : {name} .env {value}
+    /// ```
+    /// 
+    pub fn name_required(&mut self) -> &mut Self {
+        self.name_required = true;
+        self
     }
 
     /// Adds an additional note to documentation,
