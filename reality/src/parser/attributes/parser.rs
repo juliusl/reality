@@ -142,8 +142,12 @@ impl AttributeParser {
 
     /// Adds a custom attribute parser, 
     /// 
-    pub fn add_custom_with(&mut self, ident: impl AsRef<str>, parse: fn(&mut AttributeParser, String)) {
-        self.add_custom(CustomAttribute::new_with(ident, parse));
+    /// Returns a clone of the custom attribute added,
+    /// 
+    pub fn add_custom_with(&mut self, ident: impl AsRef<str>, parse: fn(&mut AttributeParser, String)) -> CustomAttribute {
+        let attr = CustomAttribute::new_with(ident, parse);
+        self.add_custom(attr.clone());
+        attr
     }
 
     /// Returns the next attribute from the stack
