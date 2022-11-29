@@ -5,7 +5,7 @@ use std::{collections::HashMap, sync::Arc};
 use crate::{Value, Attribute};
 use logos::Lexer;
 use logos::Logos;
-use specs::{World, WorldExt, Entity};
+use specs::{World, WorldExt, Entity, LazyUpdate};
 use tracing::event;
 use tracing::Level;
 
@@ -328,6 +328,27 @@ impl AttributeParser {
     /// 
     pub fn iter_special_attributes(&self) -> impl Iterator<Item = (&String, &CustomAttribute)>{
         self.custom_attributes.iter()
+    }
+
+    /// Lazily executes exec mut fn w/ world if the world is set,
+    /// 
+    pub fn lazy_exec_mut(&mut self, exec: impl FnOnce(&mut World) + 'static + Send + Sync) {
+        if let Some(world) = self.world() {
+            let lazy_update = world.read_resource::<LazyUpdate>();
+
+            lazy_update.exec_mut(exec);
+        }
+    }
+
+    /// Lazily execute exec fn w/ world if the world is set,
+    /// 
+    pub fn lazy_exec(&mut self, exec: impl FnOnce(&World) + 'static + Send + Sync) {
+        if let Some(world) = self.world() {
+            let lazy_update = world.read_resource::<LazyUpdate>();
+
+            // It looks like the fn signatures are the same, so this enforces immutable access,
+            lazy_update.exec(|world| exec(&world));
+        }
     }
 }
 

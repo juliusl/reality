@@ -25,7 +25,11 @@ pub use block_store::BlockStore;
 pub use block_store::BlockBuilder;
 pub use block_store::BlockStoreBuilder;
 
+mod block_transport;
+pub use block_transport::BlockTransport;
+
 pub mod block_tasks {
+    pub use crate::wire::block_transport::TransportSource;
     pub use crate::wire::block_client::ListBlocks;
     pub use crate::wire::block_store::FinishStore;
     pub use crate::wire::block_store::PutBlock;
