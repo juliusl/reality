@@ -1,25 +1,7 @@
-[package]
-name = "reality"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-base64 = "0.13.0"
-bytes = "1.2.1"
-bytemuck = "1.12.1"
-logos = "0.12.1"
-rand = "0.8.5"
-sha2 = "0.10.6"
-tracing = "0.1.36"
-tracing-test = "0.2.3"
-serde = { version = "1.0.144", features = ["derive"] }
-specs = { version = "0.18.0", features = ["default", "derive", "shred-derive"] }
-tokio = { version = "1.19.2", features = ["default", "rt-multi-thread", "sync", "fs", "process", "io-util", "io-std", "macros"] }
-tokio-stream = "0.1.11"
-futures = "0.3.25"
-rsa = "0.7.0"
-signature = "1.6.4"
-pkcs8 = { version = "0.9.0", features = [ "encryption" ] }
-async-compression = { version = "0.3.15", features = ["tokio", "gzip"] }
+[workspace]
+resolver = "2"
+members = [
+    "reality",
+    "reality_azure",
+    "reality_tar",
+]
