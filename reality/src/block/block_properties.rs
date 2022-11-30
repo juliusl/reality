@@ -63,6 +63,12 @@ impl BlockProperties {
         }
     }
 
+    /// Removes a property,
+    /// 
+    pub fn remove(&mut self, name: impl AsRef<str>) -> Option<BlockProperty> {
+        self.map.remove(name.as_ref())
+    }
+
     /// Sets a property
     ///
     pub fn set(&mut self, name: impl AsRef<str>, property: BlockProperty) {
