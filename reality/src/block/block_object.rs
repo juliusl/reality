@@ -1,7 +1,5 @@
 use crate::{BlockProperties, CustomAttribute};
 
-use super::block_properties::Documentation;
-
 /// Types implement this trait to provide query settings at runtime,
 /// 
 /// When interpreting runmd, the complex value type can be used to serve the same purpose,
@@ -18,12 +16,6 @@ pub trait BlockObject {
     /// 
     fn returns(&self) -> BlockProperties {
         BlockProperties::default()
-    }
-
-    /// Returns documentation on a property, 
-    /// 
-    fn documentation(&self, _property: impl AsRef<str>) -> Option<Documentation> {
-        None
     }
 
     /// Returns a custom attribute parser if implemented,
