@@ -160,6 +160,12 @@ impl BlockProperties {
         self.map.get(name.as_ref())
     }
 
+    /// Returns mutable value by property name
+    /// 
+    pub fn property_mut(&mut self, name: impl AsRef<str>) -> Option<&mut BlockProperty> {
+        self.map.get_mut(name.as_ref())
+    }
+
     /// Takes a property from this collection, replaces with `Empty`
     ///
     pub fn take(&mut self, name: impl AsRef<str>) -> Option<BlockProperty> {
