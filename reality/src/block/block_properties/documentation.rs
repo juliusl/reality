@@ -1,8 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
+
+use specs::shred::ResourceId;
 
 use crate::Attributes;
 
-/// Struct for constructing documentation for a block property,
+/// Struct for constructing documentation for a block attribute property,
 /// 
 #[derive(Default, Debug, Clone)]
 pub struct Documentation {
@@ -33,6 +35,26 @@ pub struct Documentation {
     /// Whether this attribute requires a name, 
     /// 
     pub name_required: bool,
+    /// These fields are for more advanced scenarios where a custom attribute parser may interact with 
+    /// resources from the world. This is to facilitate hot-reloading scenarios.
+    /// 
+    /// If this is a custom attribute, this is a list of resources that this attribute will create,
+    /// 
+    pub creates: HashSet<ResourceId>,
+    /// If this is a custom attribute, this is a list of resources that this attribute will read,
+    /// 
+    /// If this list is non-empty, then that implies the attribute parser is not standalone and has dependencies.
+    /// Special care would need to be taken if the parser backing this attribute would do any sort of hot reloading.
+    /// Ideally, a check would be made to the current world in the parser's scope for existance before applying the parser.
+    /// 
+    pub reads: HashSet<ResourceId>,
+    /// If this is a custom attribute, this is a list of resources that this attribute will modify,
+    /// 
+    /// If this list is non-empty, then that implies the attribute parser is not standalone and has dependencies.
+    /// Special care would need to be taken if the parser backing this attribute would do any sort of hot reloading.
+    /// Ideally, a check would be made to the current world in the parser's scope for existance before applying the parser.
+    /// 
+    pub modifies: HashSet<ResourceId>,
 }
 
 /// API for constructing documentation, uses method chaining style, 
@@ -71,6 +93,28 @@ impl Documentation {
     /// 
     pub fn custom_attr(&mut self) -> &mut Self {
         self.is_custom_attr = true;
+        self 
+    }
+
+
+    /// Inserts a resource id that the custom attribute will create on parse,
+    /// 
+    pub fn creates(&mut self, resource_id: ResourceId) -> &mut Self {
+        self.creates.insert(resource_id);
+        self 
+    }
+
+    /// Inserts a resource id that the custom attribute will read on parse,
+    /// 
+    pub fn reads(&mut self, resource_id: ResourceId) -> &mut Self {
+        self.reads.insert(resource_id);
+        self
+    }
+
+    /// Inserts a resource id that the custom attribute will modify on parse,
+    /// 
+    pub fn modifies(&mut self, resource_id: ResourceId) -> &mut Self {
+        self.modifies.insert(resource_id);
         self 
     }
 
@@ -138,7 +182,7 @@ impl Documentation {
         self.with_attribute_type(Attributes::IntPair, comment)
     }
 
-    /// Adds a comment about teh property as an integer range,
+    /// Adds a comment about the property as an integer range,
     /// 
     pub fn int_range(&mut self, comment: impl AsRef<str>) -> &mut Self {
         self.with_attribute_type(Attributes::IntRange, comment)
