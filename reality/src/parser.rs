@@ -112,8 +112,8 @@ impl Parser {
 
     /// Sets the implicit symbol for the parser,
     ///
-    pub fn set_implicit_symbol(&mut self, symbol: impl AsRef<str>) {
-        self.implicit_block_symbol = Some(symbol.as_ref().to_string());
+    pub fn set_implicit_symbol(&mut self, symbol: impl Into<String>) {
+        self.implicit_block_symbol = Some(symbol.into());
     }
 
     /// Unset this so that block search works like normal,

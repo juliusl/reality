@@ -93,10 +93,10 @@ impl Into<(String, Value)> for &mut Attribute {
 }
 
 impl Attribute {
-    pub fn new(id: u32, name: impl AsRef<str>, value: Value) -> Attribute {
+    pub fn new(id: u32, name: impl Into<String>, value: Value) -> Attribute {
         Attribute {
             id,
-            name: { name.as_ref().to_string() },
+            name: { name.into() },
             value,
             transient: None,
         }

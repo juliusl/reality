@@ -26,15 +26,15 @@ impl BlockTransport for ArchiveBlockTransport {
     /// Returns a new transport from a store index,
     ///
     fn transport<Client>(
-        prefix: impl AsRef<str>,
-        name: impl AsRef<str>,
+        prefix: impl Into<String>,
+        name: impl Into<String>,
         index: &StoreIndex<Client>,
     ) -> TransportSource<Self>
     where
         Client: BlockClient,
     {
-        let prefix = prefix.as_ref().to_string();
-        let name = name.as_ref().to_string();
+        let prefix = prefix.into();
+        let name = name.into();
         let mut entries = index.entries_ordered();
         
         tokio::spawn(async move {

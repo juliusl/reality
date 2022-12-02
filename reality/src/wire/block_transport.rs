@@ -23,7 +23,7 @@ pub trait BlockTransport: Sized {
 
     /// Returns a new transport from a source index,
     ///
-    fn transport<Client: BlockClient>(prefix: impl AsRef<str>, name: impl AsRef<str>, source: &StoreIndex<Client>) -> TransportSource<Self>;
+    fn transport<Client: BlockClient>(prefix: impl Into<String>, name: impl Into<String>, source: &StoreIndex<Client>) -> TransportSource<Self>;
 
     /// Returns a new block client,
     ///

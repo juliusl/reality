@@ -44,11 +44,11 @@ impl Into<Vec<Attribute>> for &'_ Block {
 impl Block {
     /// Creates a new empty block
     ///
-    pub fn new(entity: Entity, name: impl AsRef<str>, symbol: impl AsRef<str>) -> Self {
+    pub fn new(entity: Entity, name: impl Into<String>, symbol: impl Into<String>) -> Self {
         Self {
             entity: entity.id(),
-            name: name.as_ref().to_string(),
-            symbol: symbol.as_ref().to_string(),
+            name: name.into(),
+            symbol: symbol.into(),
             attributes: vec![],
         }
     }
