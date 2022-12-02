@@ -35,6 +35,11 @@ pub struct Documentation {
     /// Whether this attribute requires a name, 
     /// 
     pub name_required: bool,
+    /// Whether a name is optional, 
+    /// 
+    /// If optional, this implies that a name is used in some way but is set implicitly.
+    /// 
+    pub name_optional: bool,
     /// These fields are for more advanced scenarios where a custom attribute parser may interact with 
     /// resources from the world. This is to facilitate hot-reloading scenarios.
     /// 
@@ -130,6 +135,32 @@ impl Documentation {
     /// 
     pub fn name_required(&mut self) -> &mut Self {
         self.name_required = true;
+        self
+    }
+
+    /// Sets name_optional to true,
+    /// 
+    /// If true, this means that the name is used, but if no name is passed then it is inferred.
+    /// 
+    /// For example given,
+    /// 
+    /// ```norun
+    /// : .parent {value}
+    /// : .child {child}
+    /// ```
+    /// It is possible the custom attribute `parent` will somehow store {value}, and then the custom attribute `child` will use {value} as the name.
+    /// 
+    /// This is the case because if a name was strictly required then the above would look like this, 
+    /// 
+    /// ```norun
+    /// : .parent
+    /// : {value} .child {child}
+    /// ```
+    /// 
+    /// Since `.parent` is an attribute itself and can hold a value, the former scenario saves a bit of space.
+    /// 
+    pub fn name_optional(&mut self) -> &mut Self {
+        self.name_optional = true;
         self
     }
 
