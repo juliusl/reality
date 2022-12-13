@@ -1,5 +1,5 @@
 use std::fmt::Display;
-use atlier::system::Value;
+use crate::Value;
 use logos::Logos;
 
 mod custom;
@@ -8,9 +8,6 @@ pub use custom::SpecialAttribute;
 
 mod cache;
 pub use cache::Cache;
-
-mod file;
-pub use file::File;
 
 mod blob;
 pub use blob::BlobDescriptor;

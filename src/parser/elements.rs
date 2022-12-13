@@ -25,10 +25,10 @@ use logos::{Lexer, Logos};
 pub enum Elements {
     /// Identifier string, this is either a name or symbol
     ///
-    #[regex("[A-Za-z]+[A-Za-z-._:=/#0-9]*", on_identifier)]
+    #[regex("[./A-Za-z]+[A-Za-z-._:=/#0-9]*", on_identifier)]
     Identifier(String),
-    #[token(".", on_attribute_type)]
-    AttributeType(String),
+    /// Comment,
+    /// 
     #[token("<", on_comment_start)]
     Comment(String),
     // Logos requires one token variant to handle errors,
@@ -44,7 +44,13 @@ impl Elements {
     /// Returns an ident element if valid ident,
     /// 
     pub fn ident(ident: impl AsRef<str>) -> Option<Elements> {
-        Elements::lexer(ident.as_ref()).next()
+        match Elements::lexer(ident.as_ref()).next() {
+            Some(ident) => match ident {
+                Elements::Identifier(_) => Some(ident),
+                _ => None
+            },
+            None => None,
+        }
     }
 }
 
@@ -55,16 +61,6 @@ fn on_identifier(lexer: &mut Lexer<Elements>) -> Option<String> {
     }
 
     Some(slice.to_string())
-}
-
-fn on_attribute_type(lexer: &mut Lexer<Elements>) -> Option<String> {
-    match lexer.next() {
-        Some(elem) => match elem {
-            Elements::Identifier(ident) => Some(ident),
-            _ => None,
-        },
-        None => None,
-    }
 }
 
 fn on_comment_start(lexer: &mut Lexer<Elements>) -> Option<String> {
@@ -88,7 +84,7 @@ fn test_elements() {
 
     assert_eq!(
         Elements::lexer(test_str).next().expect("parses"),
-        Elements::AttributeType("Custom".to_string())
+        Elements::Identifier(".Custom".to_string())
     );
 
     let test_str = "test, one, two, three";

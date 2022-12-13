@@ -1,6 +1,6 @@
-use std::io::{Cursor, Write};
+use std::io::{Write, Seek, Read};
 
-use atlier::system::Value;
+use crate::Value;
 use bytemuck::cast;
 use tracing::{event, Level};
 
@@ -15,6 +15,12 @@ pub type Chunk = [u8; 16];
 /// Wire data types, to use for frame encoding
 ///
 pub enum Data {
+    /// Frame length,
+    /// 
+    Length(usize),
+    /// Random data, 
+    /// 
+    Entropy,
     /// Inlined false value
     ///
     /// Will be encoded as 0x00
@@ -55,10 +61,10 @@ impl Data {
     /// Parses a text buffer or binary vector value type, and writes to the blob
     /// cursor, returns an extent to look up the value.
     ///
-    pub fn parse_blob(value: Value, blob: &mut Cursor<Vec<u8>>) -> Option<Self> {
+    pub fn parse_blob(value: Value, blob: &mut (impl Read + Write + Seek + Clone )) -> Option<Self> {
         match value {
             Value::TextBuffer(text) => {
-                let cursor = Some(blob.position());
+                let cursor = blob.stream_position().ok();
                 match blob.write(text.as_bytes()) {
                     Ok(written) => {
                         assert_eq!(written, text.len());
@@ -74,7 +80,7 @@ impl Data {
                 }
             }
             Value::BinaryVector(data) => {
-                let cursor = Some(blob.position());
+                let cursor = blob.stream_position().ok();
                 match blob.write(&data) {
                     Ok(written) => {
                         assert_eq!(written, data.len());
@@ -115,12 +121,6 @@ impl From<Elements> for Data {
                 } else {
                     unreachable!("to_ref should always return a reference value")
                 }
-            },
-            Elements::AttributeType(_) => {
-                // This element is mainly for parsing
-                // This is because the set of attributes encoded to
-                // the frame are limited to framing values from atlier
-                panic!("attribute type element is not encoded to frame")
             },
             Elements::Comment(_) => {
                 panic!("comment element is not encoded to frame")

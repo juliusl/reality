@@ -16,6 +16,7 @@ pub use parser::Keywords;
 pub use parser::Attributes;
 
 pub mod wire;
+pub mod store;
 
 mod world_dir;
 pub use world_dir::WorldDir;
@@ -26,3 +27,8 @@ pub use interpreter::Interpreter;
 mod evaluate;
 pub use evaluate::evaluate;
 
+mod attribute;
+pub use attribute::Attribute;
+
+mod value;
+pub use value::Value;

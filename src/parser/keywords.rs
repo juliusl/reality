@@ -1,4 +1,4 @@
-use atlier::system::Value;
+use crate::Value;
 use logos::{Lexer, Logos};
 
 use crate::parser::Elements;
@@ -39,6 +39,7 @@ pub enum Keywords {
     #[token("``` runmd", on_comment)]
     #[token("```md", on_comment)]
     #[token("```runmd", on_comment)]
+    #[token("<", on_inline_comment)]
     Comment = 0x0C,
 
     /// Writes a transient attribute
@@ -48,6 +49,11 @@ pub enum Keywords {
     #[token("define", on_define)]
     #[token(":", on_define)]
     Define = 0x0D,
+
+    /// Extension keyword, allows for wire protocol to include user frames
+    /// 
+    #[token("_", on_comment)]
+    Extension = 0x0E,
 
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.
@@ -65,6 +71,7 @@ impl From<u8> for Keywords {
             0x0B => Keywords::BlockDelimitter,
             0x0C => Keywords::Comment,
             0x0D => Keywords::Define,
+            0x0E => Keywords::Extension,
             _ => Keywords::Error,
         }
     }
@@ -76,25 +83,31 @@ fn on_comment(lexer: &mut Lexer<Keywords>) {
     }
 }
 
+fn on_inline_comment(lexer: &mut Lexer<Keywords>) {
+    if let Some(next_line) = lexer.remainder().lines().next() {
+        lexer.bump(next_line.find(">").unwrap_or(next_line.len()));
+    }
+}
+
 fn on_block_delimitter(lexer: &mut Lexer<Keywords>) {
     if let Some(next_line) = lexer.remainder().lines().next() {
         let mut block_ident = Elements::lexer(next_line);
 
         match (block_ident.next(), block_ident.next()) {
             (Some(Elements::Identifier(name)), Some(Elements::Identifier(symbol))) => {
-                let current = lexer.extras.lookup_block(name, symbol);
+                let current = lexer.extras.ensure_block(name, symbol);
                 lexer.extras.parsing = Some(current);
             }
             (Some(Elements::Identifier(symbol)), _) => {
                 lexer.extras.evaluate_stack();
                 let name = lexer.extras.current_block().name().to_string();
-                let current = lexer.extras.lookup_block(name, symbol);
+                let current = lexer.extras.ensure_block(name, symbol);
                 lexer.extras.parsing = Some(current);
             }
             // Only enable this new behavior if implicit_block_symbol is enabled
             (None, None) if lexer.extras.implicit_block_symbol.is_some() => {
                 lexer.extras.evaluate_stack();
-                let current = lexer.extras.lookup_block("", "");
+                let current = lexer.extras.ensure_block("", "");
                 lexer.extras.parsing = Some(current);
             }
             _ => {

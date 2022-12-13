@@ -9,28 +9,28 @@ use crate::Attributes;
 pub struct Documentation {
     /// Short summary on what the property is for,
     /// 
-    summary: String, 
+    pub summary: String, 
     /// Attribute types this property supports, (In priority order)
     ///  
-    attribute_types: Vec<Attributes>,
+    pub attribute_types: Vec<Attributes>,
     /// Comment about what the property is for, per attribute type
     /// 
-    comments: BTreeMap<Attributes, String>,
+    pub comments: BTreeMap<Attributes, String>,
     /// Additional notes,
     /// 
-    notes: Vec<String>,
+    pub notes: Vec<String>,
     /// Whether this property is required for the object to operate,
     /// 
-    is_required: bool,
+    pub is_required: bool,
     /// Whether this property is input to the object, or set by the object,
     /// 
-    is_input: bool,
+    pub is_input: bool,
     /// Whether this property is intended to be a list,
     /// 
-    is_list: bool,
+    pub is_list: bool,
     /// Whether or not this property will have a custom attr parser,
     /// 
-    is_custom_attr: bool,
+    pub is_custom_attr: bool,
 }
 
 /// API for constructing documentation, uses method chaining style, 

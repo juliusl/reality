@@ -1,4 +1,4 @@
-use atlier::system::{Attribute, Value};
+use crate::{Attribute, Value};
 use std::collections::BTreeMap;
 use specs::{Entity, Component};
 use specs::storage::DefaultVecStorage;
@@ -14,6 +14,8 @@ pub use block_properties::Documentation;
 
 mod block_object;
 pub use block_object::BlockObject;
+
+pub mod wire;
 
 /// Data structure parsed from .runmd, 
 /// 

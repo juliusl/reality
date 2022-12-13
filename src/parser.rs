@@ -12,7 +12,6 @@ pub use attributes::AttributeParser;
 pub use attributes::Attributes;
 pub use attributes::BlobDescriptor;
 pub use attributes::CustomAttribute;
-pub use attributes::File;
 pub use attributes::SpecialAttribute;
 
 mod keywords;
@@ -265,7 +264,7 @@ impl Parser {
     /// Gets a block from the parser
     ///
     pub fn get_block(&mut self, name: impl AsRef<str>, symbol: impl AsRef<str>) -> &Block {
-        let block = self.lookup_block(name, symbol);
+        let block = self.ensure_block(name, symbol);
 
         self.blocks
             .get(&block)
@@ -285,9 +284,6 @@ impl Parser {
     ///
     pub fn new_attribute(&mut self) -> &mut AttributeParser {
         let mut attr_parser = AttributeParser::default();
-        let attr_parser = attr_parser
-            .with_custom::<File>()
-            .with_custom::<BlobDescriptor>();
 
         attr_parser.set_world(self.world.clone());
 
@@ -324,7 +320,7 @@ impl Parser {
 impl Parser {
     /// Gets a block by name/symbol, if it doesn't already exist, creates and indexes a new block
     ///
-    fn lookup_block(&mut self, name: impl AsRef<str>, symbol: impl AsRef<str>) -> Entity {
+    fn ensure_block(&mut self, name: impl AsRef<str>, symbol: impl AsRef<str>) -> Entity {
         let mut name = name.as_ref();
         let mut symbol = symbol.as_ref();
 
@@ -347,16 +343,6 @@ impl Parser {
         event!(Level::TRACE, "Parsing block {key}");
         match self.index.get(&key) {
             Some(block) => *block,
-            // TODO - Enable root block usage
-            // None if key.trim().is_empty() => {
-            //     // This is the root block
-            //     let entity = self.world.entities().entity(0);
-            //     let block = Block::new(entity, name, symbol);
-
-            //     self.blocks.insert(entity, block);
-            //     self.index.insert(key, entity);
-            //     entity
-            // }
             None => {
                 let entity = self.world.entities().create();
                 let block = Block::new(entity, name, symbol);
@@ -414,7 +400,7 @@ impl Parser {
 
 #[test]
 fn test_parser() {
-    use atlier::system::Value;
+    use crate::Value;
 
     let content = r#"
     ``` call host 
@@ -580,23 +566,23 @@ mod tests {
     fn test_implicit_symbols() {
         use crate::Parser;
         use crate::BlockIndex;
-        use atlier::system::Value;
+        use crate::Value;
     
         let content = r#"
         ```
-        : domain .symbol test
+        <test inline comment>  : domain .symbol test
     
-        + address .symbol localhost
+        <test inline comment>  + address .symbol localhost
         ```
     
         ``` event-1
-        + name .symbol event-1
+        <test inline comment> + name .symbol event-1
         ```
     
         ``` event-2
-        + .test_child
+        <test inline comment>  + .test_child
 
-        + name .symbol event-2
+        <test inline comment> + name .symbol event-2
         ```
         "#;
     

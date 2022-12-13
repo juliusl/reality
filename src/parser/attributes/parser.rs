@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::str::FromStr;
 use std::{collections::HashMap, sync::Arc};
 
-use atlier::system::{Value, Attribute};
+use crate::{Value, Attribute};
 use logos::Lexer;
 use logos::Logos;
 use specs::{World, WorldExt, Entity};
@@ -63,7 +63,8 @@ impl AttributeParser {
 
                     let mut elements_lexer = Elements::lexer(&line);
                     match elements_lexer.next() {
-                        Some(Elements::AttributeType(custom_attr_type)) => {
+                        Some(Elements::Identifier(custom_attr_type)) => {
+                            let custom_attr_type = custom_attr_type.trim_start_matches(".").to_string();
                             let mut input = elements_lexer.remainder().trim().to_string();
 
                             let scanning = input.to_string();
@@ -322,6 +323,12 @@ impl AttributeParser {
             self.set_symbol(symbol)
         }
     }
+
+    /// Returns an iterator over special attributes installed on this parser,
+    /// 
+    pub fn iter_special_attributes(&self) -> impl Iterator<Item = (&String, &CustomAttribute)>{
+        self.custom_attributes.iter()
+    }
 }
 
 pub fn on_identifier(lexer: &mut Lexer<Attributes>) {
@@ -538,20 +545,8 @@ fn test_attribute_parser() {
     let shortcut = parser.next();
     assert_eq!(
         shortcut, 
-        Some(atlier::system::Attribute::new(0, "shortcut", Value::Symbol("cool shortcut".to_string())))
+        Some(Attribute::new(0, "shortcut", Value::Symbol("cool shortcut".to_string())))
     );
-
-    // Test parsing .file attribute
-    let mut parser = AttributeParser::default();
-
-    let parser = parser.with_custom::<crate::parser::File>()
-        .init("readme.md .file ./readme.md");
-
-    let mut parsed = vec![];
-    while let Some(attr) = parser.next() {
-        parsed.push(attr);
-    }
-    eprintln!("{:#?}", parsed);
 
     // Test parsing .blob attribute
     let mut parser = AttributeParser::default();
@@ -578,25 +573,25 @@ fn test_attribute_parser() {
     let parser = parser
         .with_custom::<TestCustomAttr>()
         .init("custom .custom-attr test custom attr input");
-    assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::Empty)));
+    assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Empty)));
     
     let mut parser = AttributeParser::default();
     let parser = parser
         .with_custom::<TestCustomAttr>()
         .init("custom <comment block> .custom-attr <comment block> test custom attr input <comment block>");
-    assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::Empty)));
+    assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Empty)));
 
     let mut parser = AttributeParser::default();
     let parser = parser.with_custom::<TestCustomAttr>()
         .init("custom <comment block> .symbol <comment block> test custom attr input <comment block>");
-    assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::Symbol("test custom attr input".to_string()))));
+    assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Symbol("test custom attr input".to_string()))));
 
     
     let mut parser = AttributeParser::default();
     let parser = parser.with_custom::<TestCustomAttr>()
         .init("custom <comment block> .int_pair <comment block 1> 1, <comment block2>5 <comment block>");
 
-    assert_eq!(parser.next(), Some(atlier::system::Attribute::new(0, "custom", Value::IntPair(1, 5))));
+    assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::IntPair(1, 5))));
 
 }
 

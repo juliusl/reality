@@ -1,19 +1,29 @@
-use atlier::system::{Attribute, Value};
-use specs::{World, WorldExt};
-use std::future::Future;
-use tracing::{event, Level};
+use specs::{
+    shred::{Resource, ResourceId},
+    Component, Join, World, WorldExt,
+};
+use std::{collections::HashMap, future::Future, ops::Deref, io::{Seek, Cursor}};
+use std::{
+    fmt::Debug,
+    io::{Read, Write},
+};
 
 use crate::{Block, Parser};
 
-use super::{Encoder, Frame};
+use super::{BlobDevice, ControlDevice, Encoder, Frame, WireObject};
+
+pub mod async_ext;
 
 /// Struct for protocol state
 ///
-pub struct Protocol {
-    /// Used to encode blocks into frames for transport
+pub struct Protocol<BlobImpl = Cursor<Vec<u8>>>
+where
+    BlobImpl: Read + Write + Seek + Clone + Default,
+{
+    /// Map of encoders for wire objects,
     ///
-    encoder: Encoder,
-    /// World to decode blocks to
+    encoders: HashMap<ResourceId, Encoder<BlobImpl>>,
+    /// World used for storage,
     ///
     world: World,
     /// Enable to assert the entity generation that is created on decode,
@@ -24,22 +34,29 @@ pub struct Protocol {
 }
 
 impl Protocol {
-    /// Returns new protocol state from a parser
+    /// Consumes a parser and returns new protocol using in-memory blob devices,
     ///
     pub fn new(parser: Parser) -> Self {
-        let mut encoder = Encoder::new();
-        for block in parser.iter_blocks() {
-            encoder.encode_block(block, &parser.world());
-        }
+        let mut protocol = Self {
+            encoders: HashMap::default(),
+            world: parser.commit(),
+            assert_generation: false,
+        };
+        protocol.encode_components::<Block>();
+        protocol
+    }
+}
 
+impl<BlobImpl> Protocol<BlobImpl> 
+where
+    BlobImpl: Read + Write + Seek + Clone + Default,
+{
+    /// Returns an empty protocol,
+    ///
+    pub fn empty() -> Self {
         Self {
-            encoder,
-            world: {
-                let mut world = World::new();
-                world.register::<Block>();
-                world.entities().create();
-                world
-            },
+            encoders: HashMap::default(),
+            world: World::new(),
             assert_generation: false,
         }
     }
@@ -51,107 +68,348 @@ impl Protocol {
         self
     }
 
-    /// Decodes blocks from encoder data, calls handle on each block
-    /// decoded.
+    /// Returns true if decoding should assert entity generation,
     ///
-    /// Handle should return a future whose output is some result. That
-    /// result will be passed to complete.
+    pub fn assert_entity_generation(&self) -> bool {
+        self.assert_generation
+    }
+
+    /// Returns an iterator over encoders,
     ///
-    pub async fn decode<F, T>(
-        &self,
-        handle: impl Fn(&[Frame], Block) -> F,
-        complete: impl Fn(T) -> (),
-    ) where
+    pub fn iter_encoders(&self) -> impl Iterator<Item = (&ResourceId, &Encoder<BlobImpl>)> {
+        self.encoders.iter()
+    }
+
+    /// Returns a reference to the encoder map,
+    /// 
+    pub fn encoders(&self) -> &HashMap<ResourceId, Encoder<BlobImpl>> {
+        &self.encoders
+    }
+
+    /// Returns a mutable encoder by id,
+    ///
+    #[inline]
+    pub fn encoder_mut_by_id(&mut self, id: &ResourceId) -> Option<&mut Encoder<BlobImpl>> {
+        self.encoders.get_mut(id)
+    }
+
+    /// Returns an encoder by id,
+    ///
+    #[inline]
+    pub fn encoder_by_id(&self, id: &ResourceId) -> Option<&Encoder<BlobImpl>> {
+        self.encoders.get(id)
+    }
+
+    /// Takes an encoder from the protocol,
+    ///
+    #[inline]
+    pub fn take_encoder(&mut self, id: &ResourceId) -> Option<Encoder<BlobImpl>> {
+        self.encoders.remove(id)
+    }
+
+    /// Sets an encoder by resource id,
+    /// 
+    #[inline]
+    pub fn set_encoder(&mut self, id: ResourceId, encoder: Encoder<BlobImpl>) {
+        self.encoders.insert(id, encoder);
+    }
+
+    /// Encodes all components from the world,
+    ///
+    pub fn encode_components<T>(&mut self)
+    where
+        T: WireObject + Component,
+        T::Storage: Default,
+    {
+        self.encoder::<T>(|world, encoder| {
+            let components = world.read_component::<T>();
+            for (e, c) in (&world.entities(), &components).join() {
+                encoder.last_entity = Some(e);
+                encoder.encode(c, world);
+            }
+        });
+    }
+
+    /// Encodes a resource from the world,
+    ///
+    pub fn encode_resource<T>(&mut self)
+    where
+        T: WireObject + Resource,
+    {
+        self.encoder::<T>(|world, encoder| {
+            let resource = world.read_resource::<T>();
+
+            encoder.encode(resource.deref(), world);
+        });
+    }
+
+    /// Decodes and reads wire objects,
+    ///
+    pub async fn read<F, T>(&self, handle: impl Fn(&[Frame], T) -> F, complete: impl Fn(T) -> ())
+    where
+        T: WireObject,
         F: Future<Output = T>,
     {
-        for (_, block_range) in self.encoder.block_index() {
-            let frames = &self.encoder.frames_slice()[block_range.clone()];
+        if let Some(encoder) = self.encoders.get(&T::resource_id()) {
+            for (_, block_range) in encoder.frame_index() {
+                for block_range in block_range {
+                    let frames = &encoder.frames_slice()[block_range.clone()];
 
-            let block = self.decode_block(frames);
+                    let obj = T::decode(&self, &encoder.interner, &encoder.blob_device, frames);
 
-            complete(handle(frames, block).await)
+                    complete(handle(frames, obj).await)
+                }
+            }
         }
     }
 
-    /// Decode frames into a block
+    /// Decodes objects by resource id
     ///
-    fn decode_block(&self, block_frames: &[Frame]) -> Block {
-        let mut block = Block::default();
-        let interner = self.encoder.interner();
-        let blob = self.encoder.blob_device("decode_block");
+    pub fn decode<T>(&self) -> Vec<T>
+    where
+        T: WireObject,
+    {
+        let mut c = vec![];
 
-        if let Some(start) = block_frames.get(0) {
-            let name = start
-                .name(&interner)
-                .expect("starting frame must have a name");
-            let symbol = start
-                .symbol(&interner)
-                .expect("starting frame must have a symbol");
-            let entity = start.get_entity(&self.world, self.assert_generation);
+        if let Some(encoder) = self.encoders.get(&T::resource_id()) {
+            for (name, block_range) in encoder.frame_index() {
+                for block_range in block_range {
+                    let start = block_range.start;
+                    let end = block_range.end;
 
-            block = Block::new(entity, name, symbol)
-        }
+                    if end > encoder.frames_slice().len() {
+                        for frame in encoder.frames_slice() {
+                            eprintln!("{:#}", frame);
+                        }
+                        panic!(
+                            "Invalid range {name}, {end} > {},  {:#?}",
+                            encoder.frames_slice().len(),
+                            encoder.frame_index(),
+                        );
+                    }
 
-        for frame in block_frames.iter().skip(1) {
-            let attr_entity = frame.get_entity(&self.world, self.assert_generation);
+                    let frames = &encoder.frames_slice()[start..end];
 
-            if attr_entity.id() != block.entity() {
-                event!(
-                    Level::DEBUG,
-                    "Found child entity in frame {} -> {}",
-                    block.entity(),
-                    attr_entity.id()
-                );
-            }
-
-            match frame.keyword() {
-                crate::parser::Keywords::Add => {
-                    let attr = Attribute::new(
-                        attr_entity.id(),
-                        frame
-                            .name(&interner)
-                            .expect("frame must have a name to add attribute"),
-                        frame
-                            .read_value(&interner, blob.cursor())
-                            .expect("frame must have a value to add attribute"),
+                    let obj = T::decode(
+                        self,
+                        &encoder.interner,
+                        &encoder.blob_device,
+                        frames,
                     );
-
-                    block.add_attribute(&attr);
+                    c.push(obj);
                 }
-                crate::parser::Keywords::Define => {
-                    let name = frame
-                        .name(&interner)
-                        .expect("frame must have a name to define attribute");
-                    let symbol = frame
-                        .symbol(&interner)
-                        .expect("frame must have a symbol to define attribute");
-                    let value = frame
-                        .read_value(&interner, blob.cursor())
-                        .expect("frame must have value to define attribute");
-
-                    let name = format!("{name}::{symbol}");
-                    let mut attr = Attribute::new(attr_entity.id(), name, Value::Empty);
-                    attr.edit_as(value);
-                    block.add_attribute(&attr);
-                }
-                // Block delimitters are manually handled, so none should be in
-                // the middle.
-                crate::parser::Keywords::BlockDelimitter
-                | crate::parser::Keywords::Comment
-                | crate::parser::Keywords::Error => {}
             }
         }
 
-        block
+        c
     }
 
-    /// Replaces the current world w/ a new world
+    /// Returns a control device for resource,
     ///
-    pub fn reset_world(&mut self) {
-        let mut world = World::new();
-        world.register::<Block>();
-        world.entities().create();
-        self.world = world;
+    pub fn control_device<T>(&self) -> Option<ControlDevice>
+    where
+        T: WireObject,
+    {
+        if let Some(encoder) = self.encoders.get(&T::resource_id()).as_ref() {
+            Some(ControlDevice::new(encoder.interner()))
+        } else {
+            None
+        }
+    }
+
+    /// Returns a blob device for resource,
+    ///
+    pub fn blob_device<T>(&self) -> Option<BlobDevice>
+    where
+        T: WireObject,
+    {
+        if let Some(encoder) = self.encoders.get(&T::resource_id()).as_ref() {
+            Some(encoder.blob_device(""))
+        } else {
+            None
+        }
+    }
+
+    /// Returns an iterator over objects for transporting,
+    ///
+    pub fn iter_object_frames<T>(&self) -> impl Iterator<Item = &[Frame]>
+    where
+        T: WireObject,
+    {
+        if let Some(encoder) = self.encoders.get(&T::resource_id()) {
+            encoder
+                .frame_index
+                .iter()
+                .map(|(_, range)| range)
+                .flatten()
+                .cloned()
+                .map(|r| &encoder.frames[r])
+        } else {
+            panic!("Protocol does not store resource {:?}", T::resource_id());
+        }
+    }
+
+    /// Finds an encoder and calls encode,
+    ///
+    /// Returns the current number of frames encoded
+    ///
+    pub fn encoder<T>(&mut self, encode: impl FnOnce(&World, &mut Encoder<BlobImpl>)) -> usize
+    where
+        T: WireObject,
+    {
+        if let Some(encoder) = self.encoders.get_mut(&T::resource_id()) {
+            encode(&self.world, encoder);
+            encoder.frames.len()
+        } else {
+            let mut encoder = Encoder::<BlobImpl>::default();
+            encode(self.as_ref(), &mut encoder);
+            let frame_count = encoder.frames.len();
+            self.encoders.insert(T::resource_id(), encoder);
+            frame_count
+        }
+    }
+
+    /// Sends protocol data w/ streams
+    ///
+    pub fn send<T, W, F>(&mut self, control_stream: F, frame_stream: F, blob_stream: F)
+    where
+        T: WireObject,
+        W: Write,
+        F: FnOnce() -> W,
+    {
+        self.encoder::<T>(move |_, encoder| {
+            let mut control_stream = control_stream();
+            let control_stream = &mut control_stream;
+
+            let control_device = ControlDevice::new(encoder.interner.clone());
+            for f in control_device.data_frames() {
+                assert_eq!(control_stream.write(f.bytes().as_ref()).ok(), Some(64));
+            }
+
+            for f in control_device.read_frames() {
+                assert_eq!(control_stream.write(f.bytes().as_ref()).ok(), Some(64));
+            }
+
+            for f in control_device.index_frames() {
+                assert_eq!(control_stream.write(f.bytes().as_ref()).ok(), Some(64));
+            }
+
+            let mut frame_stream = frame_stream();
+            let frame_stream = &mut frame_stream;
+
+            for f in encoder.frames_slice() {
+                assert_eq!(frame_stream.write(f.bytes().as_ref()).ok(), Some(64));
+            }
+
+            let mut blob_stream = blob_stream();
+            encoder.blob_device.seek(std::io::SeekFrom::Start(0)).ok();
+
+            let blob_len = encoder.blob_device.clone().bytes().count();
+            assert_eq!(
+                std::io::copy(&mut encoder.blob_device, &mut blob_stream).ok(),
+                Some(blob_len as u64)
+            );
+
+            encoder.clear();
+        });
+    }
+
+    /// Receive data for a protocol,
+    ///
+    /// This will replace the active interner, so it's best this is used with an empty protocol.
+    ///
+    pub fn receive<T, R, F>(&mut self, control_stream: F, frame_stream: F, blob_stream: F)
+    where
+        T: WireObject,
+        R: Read,
+        F: FnOnce() -> R,
+    {
+        self.encoder::<T>(move |_, encoder| {
+            let mut control_device = ControlDevice::default();
+
+            let mut control_stream = control_stream();
+
+            let mut frame_buffer = [0; 64];
+            while let Ok(()) = control_stream.read_exact(&mut frame_buffer) {
+                let frame = Frame::from(frame_buffer);
+                if frame.op() == 0x00 {
+                    control_device.data.push(frame.clone());
+                } else if frame.op() > 0x00 && frame.op() < 0x06 {
+                    control_device.read.push(frame.clone());
+                } else {
+                    assert!(
+                        frame.op() >= 0xC1 && frame.op() <= 0xC6,
+                        "Index frames have a specific op code range"
+                    );
+                    control_device.index.push(frame.clone());
+                }
+
+                frame_buffer = [0; 64]
+            }
+            encoder.interner = control_device.into();
+
+            let mut blob_stream = blob_stream();
+            std::io::copy(&mut blob_stream, &mut encoder.blob_device).ok();
+
+            let mut frame_stream = frame_stream();
+            while let Ok(()) = frame_stream.read_exact(&mut frame_buffer) {
+                let frame = Frame::from(frame_buffer);
+                encoder.frames.push(frame);
+                frame_buffer = [0; 64]
+            }
+
+            encoder.frame_index = T::build_index(&encoder.interner, &encoder.frames);
+        });
+    }
+
+    /// Clears an encoder,
+    ///
+    pub fn clear<T>(&mut self)
+    where
+        T: WireObject,
+    {
+        if let Some(encoder) = self.encoders.get_mut(&T::resource_id()) {
+            encoder.clear()
+        }
+    }
+}
+
+impl From<World> for Protocol {
+    fn from(world: World) -> Self {
+        Self {
+            world,
+            encoders: HashMap::default(),
+            assert_generation: false,
+        }
+    }
+}
+
+impl<BlobImpl> AsRef<World> for Protocol<BlobImpl> 
+where
+    BlobImpl: Read + Write + Seek + Clone + Default,
+{
+    fn as_ref(&self) -> &World {
+        &self.world
+    }
+}
+
+impl<BlobImpl> AsMut<World> for Protocol<BlobImpl> 
+where
+    BlobImpl: Read + Write + Seek + Clone + Default, 
+{
+    fn as_mut(&mut self) -> &mut World {
+        &mut self.world
+    }
+}
+
+impl<BlobImpl> Debug for Protocol<BlobImpl> 
+where
+    BlobImpl: Read + Write + Seek + Clone + Default,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Protocol")
+            .field("assert_generation", &self.assert_generation)
+            .finish()
     }
 }
 
@@ -160,7 +418,8 @@ impl Protocol {
 #[test]
 #[tracing_test::traced_test]
 fn test_decode_block() {
-    let mut protocol = Protocol::new(Parser::new().parse(
+    use crate::Value;
+    let protocol = Protocol::new(Parser::new().parse(
         r#"
     ``` call guest
     + address .text   localhost
@@ -170,25 +429,11 @@ fn test_decode_block() {
     "#,
     ));
 
-    let block = protocol.decode_block(protocol.encoder.frames_slice());
+    let blocks = protocol.decode::<Block>();
+    let block = blocks.get(1).expect("should have a block");
     assert_eq!(block.name(), "call");
     assert_eq!(block.symbol(), "guest");
     assert_eq!(block.entity(), 1);
-    let address = block.map_transient("address");
-    assert_eq!(
-        address.get("protocol"),
-        Some(&Value::Symbol("http".to_string()))
-    );
-    assert_eq!(address.get("port"), Some(&Value::Int(8080)));
-
-    // Test using a new world
-    // Since block frames include entity parity, the expected entity should always be the same
-    protocol.reset_world();
-    let block = protocol.decode_block(protocol.encoder.frames_slice());
-    assert_eq!(block.name(), "call");
-    assert_eq!(block.symbol(), "guest");
-    assert_eq!(block.entity(), 1);
-
     let address = block.map_transient("address");
     assert_eq!(
         address.get("protocol"),

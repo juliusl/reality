@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use atlier::system::{Attribute, Value};
+use crate::{Attribute, Value};
 use specs::{Component, VecStorage};
 
 use crate::{BlockProperties, BlockProperty};
@@ -46,7 +46,7 @@ impl BlockIndex {
         BlockIndex {
             control: BTreeMap::default(),
             root: root.clone(),
-            properties: BlockProperties::default(),
+            properties: BlockProperties::new(root.name()),
             complexes: BTreeMap::default(),
             children: BTreeMap::default(),
         }
@@ -75,8 +75,8 @@ impl BlockIndex {
                 Some(property) => match property {
                     BlockProperty::Single(_) => Some(property.clone()),
                     BlockProperty::List(_) => Some(property.clone()),
-                    BlockProperty::Required => panic!("Missing required property {}", name.as_ref()),
-                    BlockProperty::Optional => None,
+                    BlockProperty::Required(_) => panic!("Missing required property {}", name.as_ref()),
+                    BlockProperty::Optional(_) => None,
                     BlockProperty::Empty => None,
                 },
                 None => None,
@@ -108,6 +108,12 @@ impl BlockIndex {
         self.children.get_mut(&child)
     }
 
+    /// Ensure a child properties exist,
+    /// 
+    pub fn ensure_child(&mut self, child: u32) {
+        self.children.insert(child, BlockProperties::default());
+    }
+
     /// Add's a control value to the index, 
     /// 
     pub fn add_control(&mut self, name: impl AsRef<str>, value: impl Into<Value>) {
@@ -120,6 +126,12 @@ impl BlockIndex {
         &self.control
     }
     
+    /// Returns mutable reference to control values,
+    /// 
+    pub fn control_values_mut(&mut self) -> &mut BTreeMap<String, Value> {
+        &mut self.control
+    }
+
     /// Returns mutable reference to control values,
     /// 
     pub fn control_values_mut(&mut self) -> &mut BTreeMap<String, Value> {
@@ -193,7 +205,7 @@ impl BlockIndex {
                                     props.add(symbol.to_string(), value.clone());
                                 },
                                 None => {
-                                    let mut props = BlockProperties::default();
+                                    let mut props = BlockProperties::new(stable_attr.name());
                                     props.add(symbol.to_string(), value.clone());
                                     block_index.children.insert(prop.id(), props);
                                 },

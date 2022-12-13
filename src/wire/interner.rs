@@ -1,10 +1,11 @@
 use std::collections::{HashMap, BTreeSet};
 
-use atlier::system::Value;
+use crate::Value;
+use tracing::{event, Level};
 
 /// Struct to wrap interned data 
 /// 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Interner {
     /// Strings that have been interned
     /// 
@@ -25,19 +26,27 @@ pub type InternedComplexes = HashMap<u64, BTreeSet<String>>;
 impl Interner {
     /// Adds an ident to the interner
     /// 
-    pub fn add_ident(&mut self, ident: impl AsRef<str>) {
+    pub fn add_ident(&mut self, ident: impl AsRef<str>) -> u64 {
         let ident = Value::Symbol(ident.as_ref().to_string());
         if let (Value::Reference(key), Value::Symbol(ident)) = (ident.to_ref(), ident) {
             self.insert_string(key, ident);
+            key 
+        } else {
+            event!(Level::ERROR, "Could not add string to interner");
+            0
         }
     }
 
     /// Adds a map to the interner
     /// 
-    pub fn add_map(&mut self, map: Vec<&str>) {
+    pub fn add_map(&mut self, map: Vec<&str>) -> u64 {
         let complex = Value::Complex(BTreeSet::from_iter(map.iter().map(|m| m.to_string())));
         if let (Value::Reference(key), Value::Complex(complex)) = (complex.to_ref(), complex) {
             self.insert_complex(key, &complex);
+            key
+        } else {
+            event!(Level::ERROR, "Could not add map to interner");
+            0
         }
     }
 
@@ -63,6 +72,32 @@ impl Interner {
     /// 
     pub fn complexes(&self) -> &InternedComplexes {
         self.as_ref()
+    }
+
+    /// Merges two interners and returns a new interner,
+    /// 
+    pub fn merge(&self, other: &Interner) -> Interner {
+        let mut interner = self.clone();
+
+        for (_, s) in other.strings.iter() {
+            interner.add_ident(s);
+        }
+
+        for (k, c) in other.complexes.iter() {
+            interner.insert_complex(*k, &c);
+        }
+
+        interner
+    }
+}
+
+impl Default for Interner {
+    fn default() -> Self {
+        let mut interner = Self { strings: Default::default(), complexes: Default::default() };
+        // When this is converted into a control device, since a read must be > 0, this can't normally be encoded
+        // So by default add this to the interner as a special case
+        interner.add_ident("");
+        interner
     }
 }
 
