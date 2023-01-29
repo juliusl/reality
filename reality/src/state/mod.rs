@@ -8,6 +8,7 @@ pub use provider::iter_state;
 /// Tests viable usage of state module traits in a tiny example,
 /// 
 #[allow(dead_code)]
+#[allow(unused_imports)]
 mod tests {
     use specs::prelude::*;
     use specs::{join::MaybeJoin, Component, Entities, Join, ReadStorage, SystemData, VecStorage};
