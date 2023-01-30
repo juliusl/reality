@@ -1,5 +1,6 @@
 use crate::Value;
 use logos::{Lexer, Logos};
+use specs::WorldExt;
 
 use crate::parser::Elements;
 use crate::Parser;
@@ -54,7 +55,6 @@ pub enum Keywords {
     /// Extension keyword, allows for wire protocol to include user frames
     /// 
     #[token("<>", on_extension)]
-    #[token("<:c>", on_comment)]
     Extension = 0x0E,
 
     // Logos requires one token variant to handle errors,
@@ -167,9 +167,17 @@ fn on_define(lexer: &mut Lexer<Keywords>) {
 }
 
 fn on_extension(lexer: &mut Lexer<Keywords>) {
-    
-}
+    if let Some(line) = lexer.remainder().lines().next() {
+        let last_id = lexer.extras.parser_top().and_then(|a| a.entity()).map(|e| e.id()).unwrap_or_default();
+        let parser = lexer.extras.new_attribute();
+        if last_id > 0 {
+            parser.set_id(last_id);
+        }
 
-fn on_extension_c(lexer: &mut Lexer<Keywords>) {
-    
+        // TODO -- Should this be seperate from the attribute parsers? But it might be redundant?
+        parser.parse(line);
+
+        let ext_entity = parser.world().unwrap().entities().create();
+        parser.define_child(ext_entity, "world_id", "<>");
+    }
 }

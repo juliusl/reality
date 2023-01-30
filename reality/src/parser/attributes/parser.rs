@@ -6,7 +6,7 @@ use crate::{Value, Attribute};
 use logos::Lexer;
 use logos::Logos;
 use specs::{World, WorldExt, Entity, LazyUpdate};
-use tracing::event;
+use tracing::{event, trace};
 use tracing::Level;
 
 use crate::SpecialAttribute;
@@ -29,6 +29,8 @@ pub struct AttributeParser {
     symbol: Option<String>,
     /// Transient value
     edit: Option<Value>,
+    /// Attribute type identifier,
+    attr_ident: Option<String>,
     /// The parsed stable attribute
     parsed: Option<Attribute>,
     /// Stack of transient attribute properties
@@ -83,13 +85,15 @@ impl AttributeParser {
                                 lexer.extras.set_name(custom_attr_type.to_string());
                                 lexer.extras.set_value(Value::Symbol(input.to_string()));
                             }
-
+                            
                             match custom_attributes.get(&custom_attr_type) {
                                 Some(custom_attr) => {
+                                    lexer.extras.attr_ident = Some(custom_attr_type);
                                     custom_attr.parse(
                                         &mut lexer.extras, 
                                         input.to_string()
                                     );
+                                    lexer.extras.attr_ident.take();
                                 }
                                 None => {
                                     // This might be intended, but in case it is not
@@ -137,6 +141,7 @@ impl AttributeParser {
     pub fn add_custom(&mut self, custom_attr: impl Into<CustomAttribute>)
     {
         let custom_attr = custom_attr.into();
+        trace!("Adding custom parser {}", custom_attr.ident());
         self.custom_attributes.insert(custom_attr.ident(), custom_attr);
     }
 
@@ -214,6 +219,12 @@ impl AttributeParser {
         &self.value
     }
 
+    /// Returns the current attr ident,
+    /// 
+    pub fn attr_ident(&self) -> Option<&String> {
+        self.attr_ident.as_ref()
+    }
+
     /// Returns the last attribute on the stack, 
     /// 
     pub fn peek(&self) -> Option<&Attribute> {
@@ -276,6 +287,12 @@ impl AttributeParser {
         self.set_value(Value::Empty);
         self.parse_attribute();
         self.set_id(id);
+    }
+
+    pub fn try_define_child(&mut self, symbol: impl AsRef<str>, value: impl Into<Value>) {
+        if let Some(last_entity) = self.last_child_entity() {
+            self.define_child(last_entity, symbol, value);
+        }
     }
 
     /// Parses the current state into an attribute, pushes onto stack
@@ -647,5 +664,11 @@ impl Into<Vec<Attribute>> for AttributeParser {
 
         attrs.append(&mut self.properties);
         attrs
+    }
+}
+
+impl AsMut<AttributeParser> for AttributeParser {
+    fn as_mut(&mut self) -> &mut AttributeParser {
+        self
     }
 }

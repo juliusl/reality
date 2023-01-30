@@ -2,15 +2,26 @@ mod extension;
 use std::collections::HashMap;
 
 pub use extension::Extension;
+pub use extension::ExtensionCompileFunc;
 
 mod root;
 pub use root::Root;
-use specs::World;
-use tracing::{event, Level, trace};
 
-use crate::{Keywords, Parser};
+mod extension_parser;
+pub use extension_parser::ExtensionParser;
 
-/// Enumeration of compile errors,
+
+use specs::Join;
+use specs::LazyUpdate;
+use specs::ReadStorage;
+use specs::WorldExt;
+use tracing::trace;
+
+use crate::{parser::LineInfo, Keywords, Parser};
+
+use self::extension::ExtensionThunk;
+
+/// Enumeration of compiler errors,
 ///
 pub enum CompileError {}
 
@@ -24,31 +35,37 @@ pub struct Compiler {
     /// Main runmd parser,
     ///
     parser: Option<Parser>,
-    /// If an extension is called that references a sub-world, then a new world is generated and added here,
+    /// Collection of extensions supported by the compiler,
     ///
-    world_map: HashMap<String, World>,
+    /// Extensions can be added directly to the compiler, or through a root implementation
+    ///
+    extensions: HashMap<String, ExtensionThunk<Parser>>,
 }
 
 impl Compiler {
     pub fn new() -> Self {
+        let parser = Parser::new();
+        parser.world().read_resource::<LazyUpdate>().exec_mut(|world| world.register::<Root>());
         Self {
-            parser: Some(Parser::new()),
-            world_map: HashMap::default(),
+            parser: Some(parser),
+            extensions: HashMap::default(),
         }
     }
 
     pub fn new_with(parser: Parser) -> Self {
+        parser.world().read_resource::<LazyUpdate>().exec_mut(|world| world.register::<Root>());
         Self {
             parser: Some(parser),
-            world_map: HashMap::default(),
+            extensions: HashMap::default(),
         }
     }
 
-    pub fn with_root(self, name: impl Into<String>) -> Self {
-        self
-    }
-
-    pub fn with_extension(self, name: impl Into<String>) -> Self {
+    pub fn with_extension<E>(mut self) -> Self
+    where
+        E: Extension<Parser>,
+    {
+        self.extensions
+            .insert(E::ident().to_string(), E::as_thunk());
         self
     }
 
@@ -64,29 +81,104 @@ impl Compiler {
                 parser.unset_implicit_symbol();
             }
 
-            if let Some(mut token) = parser.parse_once(runmd) {
-                if let (Some(entity), name, symbol, value) = token.line_info() {
-                    trace!("{:?} {:?} {:?} {:?} {:?}", token.keyword(), entity, name, symbol, value);
-                }
+            if let Ok(mut token) = parser.parse_once(runmd) {
+                loop {
+                    match token.parse_next() {
+                        Ok(mut _token) => {
+                            match _token.keyword() {
+                                // If an extension was just parsed, we need to find the impl
+                                // and install parsers -- 
+                                Keywords::Extension => {
+                                    if let LineInfo {
+                                        name: Some(extension_name),
+                                        ..
+                                    } = _token.line_info()
+                                    {
+                                        if let Some(ExtensionThunk(parser, compile)) =
+                                            self.extensions.get(extension_name)
+                                        {
+                                            parser(_token.parser_mut());
+                                            _token.add_compile(*compile);
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
 
-                while let Some(_token) = token.parse_next() {
-                    if let (Some(entity), name, symbol, value) = _token.line_info() {
-                        trace!("{:?} {:?} {:?} {:?} {:?}", _token.keyword(), entity, name, symbol, value);
+                            if let Keywords::Error = _token.keyword() {
+
+                            } else {
+                                let LineInfo {
+                                    name,
+                                    entity,
+                                    symbol,
+                                    value,
+                                    ..
+                                } = _token.line_info();
+                                trace!(
+                                    "{:?} {:?} {:?} {:?} {:?}",
+                                    _token.keyword(),
+                                    entity,
+                                    name,
+                                    symbol,
+                                    value
+                                );
+                            }
+
+                            token = _token;
+                        }
+                        Err(parser) => {
+                            self.parser = Some(parser);
+                            break;
+                        }
                     }
-
-                    token = _token;
                 }
             }
+        }
+    }
+
+    pub fn link(mut self) {
+        if let Some(parser) = self.parser.take() {
+            let mut world = parser.commit();
+            world.maintain();
+
+            world.exec(|roots: ReadStorage<Root>| {
+                for root in roots.join() {
+                    // TODO:
+                    trace!("Found root --- {}", root.ident());
+                }
+            });
         }
     }
 }
 
 #[allow(unused_imports)]
 mod tests {
+    use super::{Compiler, Extension};
+    use crate::{compiler::ExtensionParser, AttributeParser, CustomAttribute, Parser, Value};
     use specs::WorldExt;
     use tracing::trace;
-    use crate::{Parser, CustomAttribute, Value};
-    use super::Compiler;
+
+    struct TestExtension;
+
+    impl<Parser: ExtensionParser> Extension<Parser> for TestExtension {
+        fn ident() -> &'static str {
+            "test_extension"
+        }
+
+        fn parser(extension_parser: &mut Parser) {
+            extension_parser.parse_symbol("load");
+            extension_parser.parse_number("test_number");
+            extension_parser.parse_bool("test_bool");
+        }
+
+        fn compile(
+            _: specs::EntityBuilder,
+            _: crate::BlockProperties,
+        ) -> Result<specs::Entity, super::CompileError> {
+            todo!()
+        }
+    }
 
     #[test]
     #[tracing_test::traced_test]
@@ -95,27 +187,30 @@ mod tests {
         parser.add_custom_attribute(CustomAttribute::new_with("test_root", |a, c| {
             let entity = a.world().unwrap().entities().create();
             a.define_child(entity, "test_root", Value::Symbol(c));
-
-            a.add_custom_with("load", |a, c| {
-                let last = a.last_child_entity().unwrap();
-
-                a.define_child(last, "load", Value::Symbol(c));
-            });
+            a.set_id(entity.id());
         }));
 
-        let mut compiler = Compiler::new_with(parser);
+        let mut compiler = Compiler::new_with(parser).with_extension::<TestExtension>();
+
         compiler.compile(
             r#"
         ``` start
         + .test_root root_name
+        <> test_extension
         : .load name_1_test
         : .load name_2_test
+        : .test_number .float 0.10
+        : load .test_number .float 0.12
+        : .test_bool
         ```
-        "#.trim(),
+        "#
+            .trim(),
             Some("test"),
         );
 
-    //    let index =  compiler.parser.unwrap().get_block("test", "start").index();
-    //    trace!("{:?}", index);
+        compiler.link();
+
+        //    let index =  compiler.parser.unwrap().get_block("test", "start").index();
+        //    trace!("{:?}", index);
     }
 }

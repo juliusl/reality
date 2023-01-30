@@ -1,14 +1,37 @@
-use crate::AttributeParser;
+use specs::{Component, VecStorage};
 
-/// The root trait represents a custom stable attribute acting as a root container for state extensions,
+use super::{extension::ExtensionCompileFunc};
+
+/// Struct that represents a block root,
 /// 
-pub trait Root {
-    /// Identifier for this root,
+#[derive(Component, Clone)]
+#[storage(VecStorage)]
+pub struct Root {
+    /// Name of the stable attribute that represents this root,
     /// 
-    fn ident() -> String;
-
-    /// Returns an attribute parser given an extension symbol and input,
+    ident: String,
+    /// Extensions that have been initialized under this root,
     /// 
-    fn compile_extension(self, extension_name: impl Into<String>, input: impl Into<String>) -> Option<AttributeParser>;
+    extensions: Vec<ExtensionCompileFunc>,
 }
 
+impl Root {
+    /// Creates a new root,
+    /// 
+    pub fn new(ident: impl Into<String>) -> Self {
+        Self { ident: ident.into(), extensions: vec![] }
+    }
+
+    /// Returns the identifer for this root,
+    /// 
+    pub fn ident(&self) -> &String {
+        &self.ident
+    }
+
+    /// Add's an extension compile function to this root,
+    /// 
+    pub fn add_extension_compile(&mut self, func: ExtensionCompileFunc)
+    {
+        self.extensions.push(func);
+    }
+}

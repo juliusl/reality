@@ -1,10 +1,11 @@
-use specs::{Entity, World, WorldExt};
+use specs::{Entity, LazyUpdate, World, WorldExt};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use tracing::{event, Level};
 
 use logos::Logos;
 
+use crate::compiler::{ExtensionCompileFunc, Root};
 use crate::{Block, BlockIndex, BlockProperties, Value};
 
 mod attributes;
@@ -52,10 +53,15 @@ pub struct ContinueParserToken {
     parser: Parser,
     keyword: Keywords,
     remaining: Option<String>,
-    current_name: Option<String>,
-    current_entity: Option<Entity>,
-    current_symbol: Option<String>,
-    current_value: Option<Value>,
+    current_line: LineInfo,
+    root: Option<Root>,
+}
+
+pub struct LineInfo {
+    pub name: Option<String>,
+    pub entity: Option<Entity>,
+    pub symbol: Option<String>,
+    pub value: Option<Value>,
 }
 
 impl ContinueParserToken {
@@ -65,20 +71,8 @@ impl ContinueParserToken {
         &self.keyword
     }
 
-    pub fn line_info(
-        &self,
-    ) -> (
-        Option<&Entity>,
-        Option<&String>,
-        Option<&String>,
-        Option<&Value>,
-    ) {
-        (
-            self.current_entity.as_ref(),
-            self.current_name.as_ref(),
-            self.current_symbol.as_ref(),
-            self.current_value.as_ref(),
-        )
+    pub fn line_info(&self) -> &LineInfo {
+        &self.current_line
     }
 
     /// Returns a mutable reference to parser,
@@ -87,20 +81,69 @@ impl ContinueParserToken {
         &mut self.parser
     }
 
-    /// Parses next keyyword,
+    pub fn parser(&self) -> &Parser {
+        &self.parser
+    }
+
+    pub fn add_compile(&mut self, compile: ExtensionCompileFunc) {
+        if let Some(root) = self.root.as_mut() {
+            root.add_extension_compile(compile);
+        }
+    }
+
+    /// Parses next keyword,
     ///
-    pub fn parse_next(mut self) -> Option<ContinueParserToken> {
+    pub fn parse_next(mut self) -> Result<ContinueParserToken, Parser> {
         if let Some(remaining) = self.remaining.take() {
+            let mut root = self.root.take();
+
             let parser: Parser = self.into();
 
-            parser.parse_once(remaining)
+            match parser.parse_once(remaining) {
+                Ok(mut next) if next.root.is_none() => {
+                    next.root = root;
+                    Ok(next)
+                }
+                Ok(mut next) => {
+                    if let Some(root) = root.take() {
+                        if let Some(entity) = next.parser.parse_property().entity() {
+                            next.parser
+                                .world()
+                                .read_resource::<LazyUpdate>()
+                                .insert(entity, root)
+                        }
+                    }
+
+                    Ok(next)
+                }
+                Err(mut parser) => { 
+                    if let Some(root) = root.take() {
+                        if let Some(entity) = parser.parse_property().entity() {
+                            parser
+                                .world()
+                                .read_resource::<LazyUpdate>()
+                                .insert(entity, root)
+                        }
+                    }
+
+                    Err(parser)
+                },
+            }
         } else {
-            None
+            if let Some(root) = self.root.take() {
+                if let Some(entity) = self.parser.parse_property().entity() {
+                    self.parser
+                        .world()
+                        .read_resource::<LazyUpdate>()
+                        .insert(entity, root)
+                }
+            }
+            Err(self.into())
         }
     }
 }
 
-impl Into<Parser> for ContinueParserToken {
+impl<'a> Into<Parser> for ContinueParserToken {
     fn into(self) -> Parser {
         self.parser
     }
@@ -321,9 +364,11 @@ impl Parser {
         lexer.extras
     }
 
-    /// Parses .runmd content, updating internal state once, and returns self/token and reamining content
+    /// Parses .runmd content, updating internal state once, and returns a continuation token,
     ///
-    pub fn parse_once<'a>(self, content: impl AsRef<str>) -> Option<ContinueParserToken> {
+    /// If parsing is complete, returns the parser in an Error,
+    ///
+    pub fn parse_once<'a>(self, content: impl AsRef<str>) -> Result<ContinueParserToken, Parser> {
         let mut lexer = Keywords::lexer_with_extras(content.as_ref(), self);
         if let Some(token) = lexer.next() {
             let remaining = lexer.remainder();
@@ -334,19 +379,25 @@ impl Parser {
             let mut current_symbol = None::<String>;
             let mut current_entity = None::<Entity>;
             let mut current_value = None::<Value>;
+            let mut current_root = None::<Root>;
 
             match token {
-                //  | Keywords::Extension => {
-                //     if let Some(top) = parser.parser_top() {
-                //         current_name = top.name().cloned();
-                //         current_entity = top.entity();
-                //         current_symbol = top.symbol().cloned();
-                //         current_value = Some(top.value().clone());
-                //     }
-                // }
+                Keywords::Extension => {
+                    if let Some(top) = parser.parser_top() {
+                        current_name = top.name().cloned();
+                        current_entity = top.entity();
+                        current_symbol = top.symbol().cloned();
+                        current_value = Some(top.value().clone());
+                    }
+                }
                 Keywords::Add | Keywords::Define => {
                     if let Some(top) = parser.parser_top() {
                         current_name = top.name().cloned();
+                        if let Some(name) = current_name.as_ref() {
+                            if let Keywords::Add = token {
+                                current_root = Some(Root::new(name));
+                            }
+                        }
                         if let Some(attr) = top.peek() {
                             if let Some((symbol, value)) = attr.transient() {
                                 current_symbol = Some(symbol.to_string());
@@ -360,17 +411,20 @@ impl Parser {
                 _ => {}
             }
 
-            Some(ContinueParserToken {
+            Ok(ContinueParserToken {
                 parser,
                 keyword: token,
                 remaining: Some(remaining.to_string()),
-                current_name,
-                current_entity,
-                current_symbol,
-                current_value,
+                current_line: LineInfo {
+                    name: current_name.clone(),
+                    entity: current_entity.clone(),
+                    symbol: current_symbol.clone(),
+                    value: current_value.clone(),
+                },
+                root: current_root,
             })
         } else {
-            None
+            Err(lexer.extras)
         }
     }
 
@@ -512,6 +566,13 @@ impl Parser {
     ///
     fn parser_top(&mut self) -> Option<&mut AttributeParser> {
         self.parser_stack.last_mut()
+    }
+}
+
+impl AsMut<AttributeParser> for Parser {
+    fn as_mut(&mut self) -> &mut AttributeParser {
+        self.parser_top()
+            .expect("should have an attribute parser at the top")
     }
 }
 
