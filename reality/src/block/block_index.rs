@@ -243,14 +243,14 @@ fn test_block_index() {
     r#"
     ``` test block
     + test_attr .empty
-    :: general      .complex name, type
-    :: computation  .complex type, factor, enabled
-    :: name         .symbol test_block
-    :: type         .symbol block_example_1
-    :: factor       .int 10
+    : general      .complex name, type
+    : computation  .complex type, factor, enabled
+    : name         .symbol test_block
+    : type         .symbol block_example_1
+    : factor       .int 10
 
     + test_attr .empty
-    :: name .symbol test_block_2
+    : name .symbol test_block_2
     ```
     "#,
     );

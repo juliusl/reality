@@ -5,7 +5,7 @@ use tracing::{event, Level};
 
 use logos::Logos;
 
-use crate::{Block, BlockIndex, BlockProperties};
+use crate::{Block, BlockIndex, BlockProperties, Value};
 
 mod attributes;
 pub use attributes::AttributeParser;
@@ -44,6 +44,66 @@ pub struct Parser {
     /// Using the value of this field as the symbol.
     ///
     implicit_block_symbol: Option<String>,
+}
+
+/// Struct for stopping the parser after it parses a token, and to continue where it left off,
+///
+pub struct ContinueParserToken {
+    parser: Parser,
+    keyword: Keywords,
+    remaining: Option<String>,
+    current_name: Option<String>,
+    current_entity: Option<Entity>,
+    current_symbol: Option<String>,
+    current_value: Option<Value>,
+}
+
+impl ContinueParserToken {
+    /// Returns the current keyword,
+    ///
+    pub fn keyword(&self) -> &Keywords {
+        &self.keyword
+    }
+
+    pub fn line_info(
+        &self,
+    ) -> (
+        Option<&Entity>,
+        Option<&String>,
+        Option<&String>,
+        Option<&Value>,
+    ) {
+        (
+            self.current_entity.as_ref(),
+            self.current_name.as_ref(),
+            self.current_symbol.as_ref(),
+            self.current_value.as_ref(),
+        )
+    }
+
+    /// Returns a mutable reference to parser,
+    ///
+    pub fn parser_mut(&mut self) -> &mut Parser {
+        &mut self.parser
+    }
+
+    /// Parses next keyyword,
+    ///
+    pub fn parse_next(mut self) -> Option<ContinueParserToken> {
+        if let Some(remaining) = self.remaining.take() {
+            let parser: Parser = self.into();
+
+            parser.parse_once(remaining)
+        } else {
+            None
+        }
+    }
+}
+
+impl Into<Parser> for ContinueParserToken {
+    fn into(self) -> Parser {
+        self.parser
+    }
 }
 
 impl AsRef<World> for Parser {
@@ -136,7 +196,7 @@ impl Parser {
     }
 
     /// Adds a custom attribute parser,
-    /// 
+    ///
     pub fn add_custom_attribute(&mut self, custom: CustomAttribute) {
         self.custom_attributes.push(custom);
     }
@@ -259,6 +319,59 @@ impl Parser {
         }
 
         lexer.extras
+    }
+
+    /// Parses .runmd content, updating internal state once, and returns self/token and reamining content
+    ///
+    pub fn parse_once<'a>(self, content: impl AsRef<str>) -> Option<ContinueParserToken> {
+        let mut lexer = Keywords::lexer_with_extras(content.as_ref(), self);
+        if let Some(token) = lexer.next() {
+            let remaining = lexer.remainder();
+
+            let mut parser = lexer.extras;
+
+            let mut current_name = None::<String>;
+            let mut current_symbol = None::<String>;
+            let mut current_entity = None::<Entity>;
+            let mut current_value = None::<Value>;
+
+            match token {
+                //  | Keywords::Extension => {
+                //     if let Some(top) = parser.parser_top() {
+                //         current_name = top.name().cloned();
+                //         current_entity = top.entity();
+                //         current_symbol = top.symbol().cloned();
+                //         current_value = Some(top.value().clone());
+                //     }
+                // }
+                Keywords::Add | Keywords::Define => {
+                    if let Some(top) = parser.parser_top() {
+                        current_name = top.name().cloned();
+                        if let Some(attr) = top.peek() {
+                            if let Some((symbol, value)) = attr.transient() {
+                                current_symbol = Some(symbol.to_string());
+                                current_value = Some(value.clone());
+                            }
+
+                            current_entity = Some(top.world().unwrap().entities().entity(attr.id));
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+            Some(ContinueParserToken {
+                parser,
+                keyword: token,
+                remaining: Some(remaining.to_string()),
+                current_name,
+                current_entity,
+                current_symbol,
+                current_value,
+            })
+        } else {
+            None
+        }
     }
 
     /// Gets a block from the parser
@@ -387,12 +500,16 @@ impl Parser {
     ///
     fn parse_property(&mut self) -> &mut AttributeParser {
         if !self.parser_stack.is_empty() {
-            self.parser_top().unwrap()
+            self.parser_top().expect(
+                "should return a parser since we check if the stack is empty before this line",
+            )
         } else {
             self.new_attribute()
         }
     }
 
+    /// Returns the current attribute parser,
+    ///
     fn parser_top(&mut self) -> Option<&mut AttributeParser> {
         self.parser_stack.last_mut()
     }
@@ -564,7 +681,11 @@ mod tests {
         }
 
         fn parse(parser: &mut crate::AttributeParser, _: impl AsRef<str>) {
-            let child = parser.world().expect("should have a world").entities().create();
+            let child = parser
+                .world()
+                .expect("should have a world")
+                .entities()
+                .create();
             parser.define_child(child, "is_child", true);
         }
     }
@@ -572,10 +693,10 @@ mod tests {
     #[test]
     #[tracing_test::traced_test]
     fn test_implicit_symbols() {
-        use crate::Parser;
         use crate::BlockIndex;
+        use crate::Parser;
         use crate::Value;
-    
+
         let content = r#"
         ```
         <test inline comment>  : domain .symbol test
@@ -593,45 +714,44 @@ mod tests {
         <test inline comment> + name .symbol event-2
         ```
         "#;
-    
+
         let mut parser = Parser::new().with_special_attr::<TestChild>();
-    
+
         parser.set_implicit_symbol("test");
-    
+
         let mut parser = parser.parse(content);
         parser.unset_implicit_symbol();
-    
+
         let block = parser.get_block("", "test");
         let address = block.map_stable();
         let address = address
             .get("address")
             .expect("should have address stable attr");
         assert_eq!(address, &Value::Symbol("localhost".to_string()));
-    
+
         let block = parser.get_block("event-1", "test");
         let name = block.map_stable();
         let name = name.get("name").expect("should have name stable attr");
         assert_eq!(name, &Value::Symbol("event-1".to_string()));
-    
+
         let block = parser.get_block("event-2", "test");
         let name = block.map_stable();
         let name = name.get("name").expect("should have name stable attr");
         assert_eq!(name, &Value::Symbol("event-2".to_string()));
-    
+
         let world = parser.commit();
-    
+
         let domain = world
             .read_component::<BlockIndex>()
             .get(world.entities().entity(4))
             .expect("should have a block")
             .clone();
-    
+
         let domain = domain
             .control_values()
             .get("domain")
             .expect("should have a value");
-    
+
         assert_eq!(domain, &Value::Symbol("test".to_string()));
     }
-    
 }
