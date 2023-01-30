@@ -404,13 +404,15 @@ fn test_parser() {
 
     let content = r#"
     ``` call host 
+    <>
     add address .text localhost 
-    :: ipv6 .enable 
-    :: path .text api/test 
+    : ipv6 .enable 
+    : path .text api/test 
+    :: name .text test_name
     ``` guest 
     + address .text localhost
-    :: ipv4 .enable
-    :: path .text api/test2
+    : ipv4 .enable
+    : path .text api/test2
     ```
 
     ``` test host 
@@ -420,11 +422,11 @@ fn test_parser() {
     ```
     + debug         .enable  
     + test          .map    Everything after this is ignored when parsed 
-    :: name         .text   Test map 
-    :: description  .text   This tests the .map type, which is an alias for .empty 
+    : name         .text   Test map 
+    : description  .text   This tests the .map type, which is an alias for .empty 
     
     <``` guest>
-    :: name .text cool guest host
+    : name .text cool guest host
     + address .text testhost
     <```>
     "#;
@@ -445,7 +447,9 @@ fn test_parser() {
     ```
     */
     assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
+    assert_eq!(lexer.next(), Some(Keywords::Extension));
     assert_eq!(lexer.next(), Some(Keywords::Add));
+    assert_eq!(lexer.next(), Some(Keywords::Define));
     assert_eq!(lexer.next(), Some(Keywords::Define));
     assert_eq!(lexer.next(), Some(Keywords::Define));
     assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
@@ -492,6 +496,10 @@ fn test_parser() {
     assert_eq!(
         address.get("path"),
         Some(&Value::TextBuffer("api/test".to_string()))
+    );
+    assert_eq!(
+        address.get("name"),
+        Some(&Value::TextBuffer("test_name".to_string()))
     );
 
     let address = parser.get_block("call", "guest").map_transient("address");

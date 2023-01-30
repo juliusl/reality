@@ -87,10 +87,11 @@ fn test_elements() {
         Elements::Identifier(".Custom".to_string())
     );
 
-    let test_str = "test, one, two, three";
+    let test_str = "test, one, two, three <test one two three>";
     let mut lexer = Elements::lexer(test_str);
     assert_eq!(lexer.next(), Elements::ident("test"));
     assert_eq!(lexer.next(), Elements::ident("one"));
     assert_eq!(lexer.next(), Elements::ident("two"));
     assert_eq!(lexer.next(), Elements::ident("three"));
+    assert_eq!(lexer.next(), Some(Elements::Comment("test one two three".to_string())));
 }

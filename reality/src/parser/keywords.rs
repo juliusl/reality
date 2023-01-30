@@ -48,11 +48,12 @@ pub enum Keywords {
     ///
     #[token("define", on_define)]
     #[token(":", on_define)]
+    #[token("::", on_define)]
     Define = 0x0D,
 
     /// Extension keyword, allows for wire protocol to include user frames
     /// 
-    #[token("_", on_comment)]
+    #[token("<>", on_comment)]
     Extension = 0x0E,
 
     // Logos requires one token variant to handle errors,
