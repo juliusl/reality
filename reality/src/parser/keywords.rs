@@ -53,7 +53,8 @@ pub enum Keywords {
 
     /// Extension keyword, allows for wire protocol to include user frames
     /// 
-    #[token("<>", on_comment)]
+    #[token("<>", on_extension)]
+    #[token("<:c>", on_comment)]
     Extension = 0x0E,
 
     // Logos requires one token variant to handle errors,
@@ -163,4 +164,12 @@ fn on_define(lexer: &mut Lexer<Keywords>) {
 
         lexer.bump(next_line.len());
     }
+}
+
+fn on_extension(lexer: &mut Lexer<Keywords>) {
+    
+}
+
+fn on_extension_c(lexer: &mut Lexer<Keywords>) {
+    
 }
