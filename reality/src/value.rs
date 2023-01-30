@@ -137,6 +137,22 @@ impl Value {
         }
     }
 
+    /// Returns value if self is a number type,
+    /// 
+    pub fn number(&self) -> Option<Value> {
+        match self {
+            Value::Int(_) |
+            Value::IntPair(_, _) |
+            Value::IntRange(_, _, _) |
+            Value::Float(_) |
+            Value::FloatPair(_, _) |
+            Value::FloatRange(_, _, _) => Some(self.clone()),
+            _ => {
+                None
+            }
+        }
+    }
+
     /// Converts to Value::Reference(),
     ///
     /// If self is already Value::Reference(), returns self w/o rehashing
