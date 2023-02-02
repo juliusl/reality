@@ -3,7 +3,7 @@ use crate::{
     Attributes,
 };
 use bytes::Bytes;
-pub use signature::{RandomizedSigner, Signature, Verifier};
+pub use signature::{Signature, Verifier};
 use std::vec;
 use tokio::io::AsyncWriteExt;
 use tracing::{event, Level};
@@ -207,23 +207,23 @@ impl Blob {
 
     /// Signs a blob w/ the provided signer,
     ///
-    pub fn sign<S: Signature>(self, signer: &impl RandomizedSigner<S>) -> Blob {
-        let rng = rand::thread_rng();
+    // pub fn sign<S: Signature>(self, signer: &impl RandomizedSigner<S>) -> Blob {
+    //     let rng = rand::thread_rng();
 
-        let signature = signer.sign_with_rng(
-            rng,
-            match self {
-                Blob::Text(ref t) => t.as_bytes(),
-                Blob::Binary(ref b) | Blob::Compressed(ref b) => b.as_ref(),
-                _ => unimplemented!("signing a signed blob is not implemented"),
-            },
-        );
+    //     let signature = signer.sign_with_rng(
+    //         rng,
+    //         match self {
+    //             Blob::Text(ref t) => t.as_bytes(),
+    //             Blob::Binary(ref b) | Blob::Compressed(ref b) => b.as_ref(),
+    //             _ => unimplemented!("signing a signed blob is not implemented"),
+    //         },
+    //     );
 
-        Blob::Signed(
-            Box::new(self.clone()),
-            Bytes::copy_from_slice(signature.as_bytes()),
-        )
-    }
+    //     Blob::Signed(
+    //         Box::new(self.clone()),
+    //         Bytes::copy_from_slice(signature.as_bytes()),
+    //     )
+    // }
 
     /// If blob is signed, unwraps and returns the source blob if the signature can be verified,
     ///
@@ -264,47 +264,3 @@ impl Into<Bytes> for Blob {
     }
 }
 
-/// Tests signing blobs,
-///
-#[tokio::test]
-async fn test_signing() {
-    let mut rng = rand::thread_rng();
-    let bits = 2048;
-    let private_key = rsa::RsaPrivateKey::new(&mut rng, bits).expect("failed to generate a key");
-
-    let signing_key = rsa::pss::BlindedSigningKey::<sha2::Sha256>::new(private_key);
-    let verifying_key: rsa::pss::VerifyingKey<_> = (&signing_key).into();
-
-    let blob = Blob::Binary(b"test binary content".to_vec().into());
-    let blob = blob.sign(&signing_key);
-    let unwrapped = blob.verify(&verifying_key).expect("should be valid");
-    assert_eq!(
-        Blob::Binary(b"test binary content".to_vec().into()),
-        unwrapped
-    );
-
-    let blob = Blob::Binary(b"test binary content".to_vec().into());
-    let blob = blob.compress().await.sign(&signing_key);
-    let unwrapped = blob.verify(&verifying_key).expect("should be valid");
-    assert_eq!(
-        Blob::Binary(b"test binary content".to_vec().into())
-            .compress()
-            .await,
-        unwrapped
-    );
-
-    let blob = Blob::Text("test binary content".to_string());
-    let blob = blob.sign(&signing_key);
-    let unwrapped = blob.verify(&verifying_key).expect("should be valid");
-    assert_eq!(Blob::Text("test binary content".to_string()), unwrapped);
-
-    let blob = Blob::Text("test binary content".to_string());
-    let blob = blob.compress().await.sign(&signing_key);
-    let unwrapped = blob.verify(&verifying_key).expect("should be valid");
-    assert_eq!(
-        Blob::Text("test binary content".to_string())
-            .compress()
-            .await,
-        unwrapped
-    );
-}

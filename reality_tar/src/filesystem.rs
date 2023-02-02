@@ -1,6 +1,5 @@
 use reality::{
     store::{
-        streamer::{RandomizedSigner, Signature},
         Blob, StoreEntry, Streamer,
     },
     wire::{Frame, Interner},
@@ -237,107 +236,107 @@ impl Filesystem {
 
     /// Consumes the inner-archive and stream's w/ streamer, signs each tar entry
     ///
-    pub async fn stream_signed<S: Signature>(
-        &mut self,
-        streamer: &mut Streamer,
-        signer: impl RandomizedSigner<S>,
-    ) -> Interner {
-        let mut interner = Interner::default();
-        interner.add_ident("tar");
-        interner.add_ident("EOF");
+    // pub async fn stream_signed<S: Signature>(
+    //     &mut self,
+    //     streamer: &mut Streamer,
+    //     signer: impl RandomizedSigner<S>,
+    // ) -> Interner {
+    //     let mut interner = Interner::default();
+    //     interner.add_ident("tar");
+    //     interner.add_ident("EOF");
 
-        if let Some(mut archive) = self.take() {
-            match archive.entries() {
-                Ok(mut entries) => {
-                    while let Some(entry) = entries.next().await {
-                        match entry {
-                            Ok(mut entry) => {
-                                let header = entry.header();
-                                let path = header
-                                    .path()
-                                    .expect("should be a path")
-                                    .to_str()
-                                    .expect("should be a string")
-                                    .to_string();
-                                let size = header.size().expect("should have a size");
-                                interner.add_ident(&path);
+    //     if let Some(mut archive) = self.take() {
+    //         match archive.entries() {
+    //             Ok(mut entries) => {
+    //                 while let Some(entry) = entries.next().await {
+    //                     match entry {
+    //                         Ok(mut entry) => {
+    //                             let header = entry.header();
+    //                             let path = header
+    //                                 .path()
+    //                                 .expect("should be a path")
+    //                                 .to_str()
+    //                                 .expect("should be a string")
+    //                                 .to_string();
+    //                             let size = header.size().expect("should have a size");
+    //                             interner.add_ident(&path);
 
-                                let mut buf = entry.header().as_bytes().to_vec();
-                                buf.reserve(size as usize);
+    //                             let mut buf = entry.header().as_bytes().to_vec();
+    //                             buf.reserve(size as usize);
 
-                                match entry.read_to_end(&mut buf).await {
-                                    Ok(_) => {
-                                        let blob = Blob::Binary(buf.into());
-                                        if let Blob::Signed(blob, signature) = blob.sign(&signer) {
-                                            let signature = Blob::Binary(signature);
-                                            streamer
-                                                .submit_frame(
-                                                    Frame::define(
-                                                        "signature",
-                                                        &path,
-                                                        &Value::Empty,
-                                                        &mut Cursor::<[u8; 1]>::default(),
-                                                    ),
-                                                    Some(signature),
-                                                )
-                                                .await;
+    //                             match entry.read_to_end(&mut buf).await {
+    //                                 Ok(_) => {
+    //                                     let blob = Blob::Binary(buf.into());
+    //                                     if let Blob::Signed(blob, signature) = blob.sign(&signer) {
+    //                                         let signature = Blob::Binary(signature);
+    //                                         streamer
+    //                                             .submit_frame(
+    //                                                 Frame::define(
+    //                                                     "signature",
+    //                                                     &path,
+    //                                                     &Value::Empty,
+    //                                                     &mut Cursor::<[u8; 1]>::default(),
+    //                                                 ),
+    //                                                 Some(signature),
+    //                                             )
+    //                                             .await;
 
-                                            streamer
-                                                .submit_frame(
-                                                    Frame::define(
-                                                        "tar",
-                                                        path,
-                                                        &Value::Empty,
-                                                        &mut Cursor::<[u8; 1]>::default(),
-                                                    ),
-                                                    Some(*blob),
-                                                )
-                                                .await;
-                                        } else {
-                                            panic!("expected signature")
-                                        }
-                                    }
-                                    Err(err) => {
-                                        event!(Level::ERROR, "Could not read entry {err}");
-                                    }
-                                }
-                            }
-                            Err(err) => {
-                                event!(Level::ERROR, "Could not get next entry, {err}");
-                            }
-                        }
-                    }
-                }
-                Err(err) => {
-                    event!(Level::ERROR, "Could not iterate over entries, {err}");
-                }
-            }
+    //                                         streamer
+    //                                             .submit_frame(
+    //                                                 Frame::define(
+    //                                                     "tar",
+    //                                                     path,
+    //                                                     &Value::Empty,
+    //                                                     &mut Cursor::<[u8; 1]>::default(),
+    //                                                 ),
+    //                                                 Some(*blob),
+    //                                             )
+    //                                             .await;
+    //                                     } else {
+    //                                         panic!("expected signature")
+    //                                     }
+    //                                 }
+    //                                 Err(err) => {
+    //                                     event!(Level::ERROR, "Could not read entry {err}");
+    //                                 }
+    //                             }
+    //                         }
+    //                         Err(err) => {
+    //                             event!(Level::ERROR, "Could not get next entry, {err}");
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //             Err(err) => {
+    //                 event!(Level::ERROR, "Could not iterate over entries, {err}");
+    //             }
+    //         }
 
-            let mut eof = vec![];
-            match archive.read_to_end(&mut eof).await {
-                Ok(read) => {
-                    event!(Level::TRACE, "Read {read} bytes, at EOF");
-                }
-                Err(err) => {
-                    event!(Level::ERROR, "Could not read end of file, {err}");
-                }
-            }
+    //         let mut eof = vec![];
+    //         match archive.read_to_end(&mut eof).await {
+    //             Ok(read) => {
+    //                 event!(Level::TRACE, "Read {read} bytes, at EOF");
+    //             }
+    //             Err(err) => {
+    //                 event!(Level::ERROR, "Could not read end of file, {err}");
+    //             }
+    //         }
 
-            streamer
-                .submit_frame(
-                    Frame::define(
-                        "tar",
-                        "EOF",
-                        &Value::Empty,
-                        &mut Cursor::<[u8; 1]>::default(),
-                    ),
-                    Some(Blob::Binary(eof.into())),
-                )
-                .await;
-        }
+    //         streamer
+    //             .submit_frame(
+    //                 Frame::define(
+    //                     "tar",
+    //                     "EOF",
+    //                     &Value::Empty,
+    //                     &mut Cursor::<[u8; 1]>::default(),
+    //                 ),
+    //                 Some(Blob::Binary(eof.into())),
+    //             )
+    //             .await;
+    //     }
 
-        interner
-    }
+    //     interner
+    // }
 
     /// Writes an archive to writer, w/ the parent fs entry
     ///
