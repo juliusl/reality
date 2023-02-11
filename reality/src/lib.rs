@@ -26,6 +26,7 @@ pub use interpreter::Interpreter;
 
 mod attribute;
 pub use attribute::Attribute;
+pub use attribute::v2;
 
 mod value;
 pub use value::Value;
