@@ -24,6 +24,18 @@ pub type InternedStrings = HashMap<u64, String>;
 pub type InternedComplexes = HashMap<u64, BTreeSet<String>>;
 
 impl Interner {
+    /// Returns the key for this ident,
+    /// 
+    pub fn ident(&self, ident: impl AsRef<str>) -> u64 {
+        let ident = Value::Symbol(ident.as_ref().to_string());
+        if let (Value::Reference(key), Value::Symbol(_)) = (ident.to_ref(), ident) {
+            key 
+        } else {
+            event!(Level::ERROR, "Could not add string to interner");
+            0
+        }
+    }
+
     /// Adds an ident to the interner
     /// 
     pub fn add_ident(&mut self, ident: impl AsRef<str>) -> u64 {

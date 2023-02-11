@@ -7,17 +7,17 @@ pub trait Loader
 where
     Self: Sized
 {
-    /// The type of world data required to load self,
+    /// The data storage layout,
     /// 
-    type Data: Join;
+    type Layout: Join;
 
     /// Loads state for self frin world data,
     /// 
-    fn load(state: <Self::Data as Join>::Type) -> Self;
+    fn load(state: <Self::Layout as Join>::Type) -> Self;
 
     /// Returns the current self from world data if it's data exists,
     /// 
-    fn current<'a>(entity: Entity, entities: &Entities<'a>, data: Self::Data) -> Option<Self> {
+    fn current<'a>(entity: Entity, entities: &Entities<'a>, data: Self::Layout) -> Option<Self> {
         data.join()
             .get(entity, entities)
             .map(|s| Self::load(s))

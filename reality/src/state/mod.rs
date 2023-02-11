@@ -73,9 +73,9 @@ mod tests {
     }
 
     impl<'a> Loader for Object<'a> {
-        type Data = GravityData<'a>;
+        type Layout = GravityData<'a>;
 
-        fn load((weight, pos): <Self::Data as Join>::Type) -> Self {
+        fn load((weight, pos): <Self::Layout as Join>::Type) -> Self {
             Self { weight, pos }
         }
     }

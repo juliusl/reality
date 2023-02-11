@@ -18,7 +18,7 @@ where
     fn state<L>(&'a self, entity: Entity) -> Option<L>
     where
         Self: AsRef<Entities<'a>>,
-        L: Loader<Data = Data> + 'a,
+        L: Loader<Layout = Data> + 'a,
     {
         self.state_with(entity, self.as_ref())
     }
@@ -27,7 +27,7 @@ where
     ///
     fn state_with<L>(&'a self, entity: Entity, entities: &Entities<'a>) -> Option<L>
     where
-        L: Loader<Data = Data> + 'a,
+        L: Loader<Layout = Data> + 'a,
     {
         let data = self.provide();
 
@@ -41,7 +41,7 @@ where
     fn iter_preload_state<L>(&'a self) -> JoinIter<(&'a Entities<'a>, Data)>
     where
         Self: AsRef<Entities<'a>>,
-        L: Loader<Data = Data> + 'a,
+        L: Loader<Layout = Data> + 'a,
     {
         (self.as_ref(), self.provide()).join()
     }
@@ -51,7 +51,7 @@ where
     fn state_vec<L>(&'a self) -> Vec<(Entity, L)>
     where
         Self: AsRef<Entities<'a>>,
-        L: Loader<Data = Data> + 'a,
+        L: Loader<Layout = Data> + 'a,
     {
         iter_state(self).collect::<Vec<_>>()
     }
@@ -61,7 +61,7 @@ where
 ///
 pub fn iter_state<'a, L, P>(provider: &'a P) -> impl Iterator<Item = (Entity, L)> + 'a
 where
-    P: Provider<'a, L::Data> + AsRef<Entities<'a>>,
+    P: Provider<'a, L::Layout> + AsRef<Entities<'a>>,
     L: Loader + 'a,
 {
     provider
