@@ -45,6 +45,13 @@ pub struct Parser {
     /// Using the value of this field as the symbol.
     ///
     implicit_block_symbol: Option<String>,
+    /// Implicit extension symbol to use when an extension keyword is found,
+    /// 
+    /// Can either be set directly or when an identifier is declared inside of an extension keyword, i.e. `<extension>` would set this value to extension
+    /// 
+    /// When applied to the attribute parser it will be used to recall custom components in the current scope,
+    /// 
+    implicit_extension_symbol: Option<String>,
 }
 
 /// Struct for stopping the parser after it parses a token, and to continue where it left off,
@@ -210,6 +217,7 @@ impl Parser {
             custom_attributes: vec![],
             parser_stack: vec![],
             implicit_block_symbol: None,
+            implicit_extension_symbol: None,
         }
     }
 
@@ -802,11 +810,14 @@ mod tests {
         "#;
 
         let mut parser = Parser::new().with_special_attr::<TestChild>();
-
         parser.set_implicit_symbol("test");
 
         let mut parser = parser.parse(content);
         parser.unset_implicit_symbol();
+
+        
+        let max = parser.blocks.iter().max_by_key(|k| k.0.id());
+        eprintln!("{:#?}", max);
 
         let block = parser.get_block("", "test");
         let address = block.map_stable();

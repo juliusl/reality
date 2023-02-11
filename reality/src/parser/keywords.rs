@@ -54,6 +54,7 @@ pub enum Keywords {
 
     /// Extension keyword, allows for wire protocol to include user frames
     ///
+    #[regex(r"<[a-zA-Z]+>", on_extension)]
     #[token("<>", on_extension)]
     Extension = 0x0E,
 
@@ -171,6 +172,12 @@ fn on_define(lexer: &mut Lexer<Keywords>) {
 }
 
 fn on_extension(lexer: &mut Lexer<Keywords>) {
+    // Set a new extension symbol in the parser,
+    if lexer.slice().len() > 2 {
+        let extension_symbol = lexer.slice()[1..lexer.slice().len()-1].to_string();
+        lexer.extras.implicit_extension_symbol = Some(extension_symbol);
+    }
+
     if let Some(line) = lexer.remainder().lines().next() {
         let last_id = lexer
             .extras
@@ -190,3 +197,25 @@ fn on_extension(lexer: &mut Lexer<Keywords>) {
         parser.define_child(ext_entity, "world_id", "<>");
     }
 }
+
+#[allow(unused_imports)]
+mod tests {
+    use logos::Logos;
+
+    use crate::{Keywords, Parser};
+
+    #[test]
+    fn test_extension_keyword() {
+        let mut lexer = Keywords::lexer_with_extras("<call>\n<>", Parser::new());
+        let keyword = lexer.next().expect("should have a keyword");
+        assert_eq!(Keywords::Extension, keyword);
+        assert_eq!("<call>", lexer.slice());
+        assert_eq!("call", lexer.extras.implicit_extension_symbol.as_ref().unwrap().as_str());
+
+        let keyword = lexer.next().expect("should have a keyword");
+        assert_eq!(Keywords::Extension, keyword);
+        assert_eq!("<>", lexer.slice());
+        assert_eq!("call", lexer.extras.implicit_extension_symbol.unwrap().as_str());
+    }
+}
+
