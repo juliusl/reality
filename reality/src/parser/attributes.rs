@@ -83,7 +83,6 @@ pub enum Attributes {
     /// 
     #[token(".complex", parser::on_complex_attr)]
     Complex = 0x09,
-
     /// Text buffer of UTF8 characters,
     ///
     #[token(".text", parser::on_text_attr)]
@@ -159,6 +158,7 @@ impl From<u8> for Attributes {
             0x0B => Attributes::BinaryVector,
             0xF0 => Attributes::Comment,
             0xF1 => Attributes::Identifier,
+            0xF2 => Attributes::Whitespace,
             _ => Attributes::Error,
         }
     }
