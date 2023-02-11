@@ -157,6 +157,7 @@ mod tests {
     use super::{Compiler, Extension};
     use crate::{compiler::ExtensionParser, AttributeParser, CustomAttribute, Parser, Value};
     use specs::WorldExt;
+    use toml_edit::{Document, table, value, array, Item, ArrayOfTables, Table};
     use tracing::trace;
 
     struct TestExtension;
@@ -181,6 +182,66 @@ mod tests {
     }
 
     #[test]
+    fn test_toml_doc() {
+        let mut doc = Document::new();
+
+        doc["."] = table();
+        doc["."]["roots"] = Item::ArrayOfTables(ArrayOfTables::new());
+        doc["."]["roots"].as_array_of_tables_mut().map(|t| {
+            t.push(Table::new());
+            t.push(Table::new());
+            t.push(Table::new());
+        });
+
+        doc["."]["roots"][0]["tag"] = value("");
+        doc["."]["roots"][0]["symbol"] = value("operation");
+        doc["."]["roots"][0]["name"] = value("resolve.manifest");
+        doc["."]["operation/resolve.manifest"] = Item::ArrayOfTables(ArrayOfTables::new());
+        doc["."]["operation/resolve.manifest"].as_array_of_tables_mut().map(|t| {
+            t.push(Table::new());
+            t.push(Table::new());
+        });
+        
+        doc["."]["operation/resolve.manifest"][0] = table();
+        doc["."]["operation/resolve.manifest"][0]["println"] = value("message");
+
+        doc["."]["operation/resolve.manifest"][1] = table();
+        doc["."]["operation/resolve.manifest"][1]["println"] = value("message2");
+
+
+        doc["."]["roots"][1]["tag"] = value("");
+        doc["."]["roots"][1]["symbol"] = value("operation");
+        doc["."]["roots"][1]["name"] = value("pull.blob");
+        doc["."]["operation/pull.blob"] = Item::ArrayOfTables(ArrayOfTables::new());
+        doc["."]["operation/pull.blob"].as_array_of_tables_mut().map(|t| {
+            t.push(Table::new());
+            t.push(Table::new());
+        });
+        
+        doc["."]["operation/pull.blob"][0] = table();
+        doc["."]["operation/pull.blob"][0]["println"] = value("message");
+
+        doc["."]["operation/pull.blob"][1] = table();
+        doc["."]["operation/pull.blob"][1]["println"] = value("message2");
+
+        doc["."]["roots"][2]["tag"] = value("debug");
+        doc["."]["roots"][2]["symbol"] = value("operation");
+        doc["."]["roots"][2]["name"] = value("pull.blob");
+        doc["."]["operation/pull.blob#debug"] = Item::ArrayOfTables(ArrayOfTables::new());
+        doc["."]["operation/pull.blob#debug"].as_array_of_tables_mut().map(|t| {
+            t.push(Table::new());
+            t.push(Table::new());
+        });
+        
+        doc["."]["operation/pull.blob#debug"][0] = table();
+        doc["."]["operation/pull.blob#debug"][0]["println"] = value("message");
+
+        doc["."]["operation/pull.blob#debug"][1] = table();
+        doc["."]["operation/pull.blob#debug"][1]["println"] = value("message2");
+        println!("{}", doc);
+    }
+
+    #[test]
     #[tracing_test::traced_test]
     fn test() {
         let mut parser = Parser::new();
@@ -190,18 +251,14 @@ mod tests {
             a.set_id(entity.id());
         }));
 
-        let mut compiler = Compiler::new_with(parser).with_extension::<TestExtension>();
+        let mut compiler = Compiler::new_with(parser)
+            .with_extension::<TestExtension>();
 
         compiler.compile(
             r#"
         ``` start
         + .test_root root_name
-        <> test_extension
-        : .load name_1_test
-        : .load name_2_test
-        : .test_number .float 0.10
-        : load .test_number .float 0.12
-        : .test_bool
+        <> test_extension : .load name_1_test : .load name_2_test : .test_number .float 0.10 : load .test_number .float 0.12 : .test_bool
         ```
         "#
             .trim(),
