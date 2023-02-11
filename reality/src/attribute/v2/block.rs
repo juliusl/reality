@@ -1,12 +1,14 @@
-use specs::{Component, VecStorage};
-use toml_edit::{Document, Item};
-
-use super::{Attribute, ValueProvider};
+use specs::HashMapStorage;
+use specs::Component;
+use toml_edit::Item;
+use toml_edit::Document;
+use super::ValueProvider;
+use super::Attribute;
 
 /// Struct representing a .runmd block,
 /// 
 #[derive(Component)]
-#[storage(VecStorage)]
+#[storage(HashMapStorage)]
 pub struct Block {
     /// Internal toml document compiled from .runmd block,
     /// 

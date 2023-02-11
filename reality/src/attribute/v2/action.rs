@@ -2,6 +2,8 @@
 use crate::Value;
 
 mod expand;
+mod build;
+mod build_root;
 mod edit_toml;
 mod build_toml;
 
@@ -9,6 +11,8 @@ mod build_toml;
 /// 
 pub mod extensions {
     pub use super::expand::Expand;
+    pub use super::build::Build;
+    pub use super::build_root::BuildRoot;
     pub use super::edit_toml::EditToml;
     pub use super::build_toml::BuildToml;
 }
@@ -25,12 +29,18 @@ pub enum Action {
     ///
     With(String, Value),
     /// Expand is an extension action that will expand into a vector of actions when applied,
-    /// 
+    ///
     Expand(String),
-    /// Edit toml is an extension action that will the toml document in the current scope,
+    /// Build is an extension action that will build an entity,
+    ///
+    Build(String),
+    /// Build root is an extension action that will build an entity from a root,
     /// 
+    BuildRoot(String),
+    /// Edit toml is an extension action that will the toml document in the current scope,
+    ///
     EditToml(String),
-    /// Build toml is an extension action that will build an entity using a toml document, 
+    /// Build toml is an extension action that will build an entity using a toml document,
     ///
     BuildToml(String),
 }
@@ -51,6 +61,18 @@ pub fn define() -> Action {
 ///
 pub fn expand(ident: impl Into<String>) -> Action {
     Action::Expand(ident.into())
+}
+
+/// Returns a build action,
+/// 
+pub fn build(ident: impl Into<String>) -> Action {
+    Action::Build(ident.into())
+}
+
+/// Returns a build root action,
+///
+pub fn build_root(ident: impl Into<String>) -> Action {
+    Action::BuildRoot(ident.into())
 }
 
 /// Returns an action that edits a toml document,

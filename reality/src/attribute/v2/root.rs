@@ -1,13 +1,14 @@
 use specs::join::MaybeJoin;
 use specs::ReadStorage;
-use toml_edit::table;
-use toml_edit::Document;
+// use toml_edit::table;
+// use toml_edit::Document;
 use toml_edit::Item;
-
 use crate::BlockProperties;
 use crate::state::Loader;
-
-use super::{Block, ExtensionTable, Tag, ValueProvider};
+use super::Tag;
+use super::ValueProvider;
+use super::ExtensionTable;
+use super::Block;
 
 /// Storage layout of root components,
 /// 
@@ -18,7 +19,7 @@ pub type RootStorageLayout<'a> = (
     MaybeJoin<&'a ReadStorage<'a, Tag>>,
 );
 
-/// Struct containing root entity data,
+/// Struct containing root entity component data,
 ///
 pub struct Root<'a> {
     /// Block this root belongs to,
@@ -50,34 +51,34 @@ impl<'a> Root<'a> {
         self.extensions
     }
 
-    /// Copies properties from this root to a document,
-    ///
-    pub fn copy_to(&self, document: &mut Document) {
-        let block_name = self.block.name().unwrap_or_default();
-        let block_symbol = self.block.symbol().unwrap_or_default();
-        let root_name = self.properties.name();
+    // Copies properties from this root to a document,
+    //
+    // pub fn copy_to(&self, document: &mut Document) {
+    //     let block_name = self.block.name().unwrap_or_default();
+    //     let block_symbol = self.block.symbol().unwrap_or_default();
+    //     let root_name = self.properties.name();
 
-        let mut _table = table();
-        _table.as_table_mut().map(|t| {
-            for (name, property) in self.properties.iter_properties() {
-                let rvalue = table();
+    //     let mut _table = table();
+    //     _table.as_table_mut().map(|t| {
+    //         for (name, property) in self.properties.iter_properties() {
+    //             let rvalue = table();
 
-                match property {
-                    crate::BlockProperty::Single(prop) => {}
-                    crate::BlockProperty::List(props) => {}
-                    _ => {}
-                }
+    //             match property {
+    //                 crate::BlockProperty::Single(prop) => {}
+    //                 crate::BlockProperty::List(props) => {}
+    //                 _ => {}
+    //             }
 
-                t[name] = rvalue;
-            }
-        });
+    //             t[name] = rvalue;
+    //         }
+    //     });
 
-        if let Some(Tag(tag)) = self.tag.as_ref() {
-            document[&block_name][&block_symbol][root_name][tag] = _table;
-        } else {
-            document[&block_name][&block_symbol][root_name] = _table;
-        }
-    }
+    //     if let Some(Tag(tag)) = self.tag.as_ref() {
+    //         document[&block_name][&block_symbol][root_name][tag] = _table;
+    //     } else {
+    //         document[&block_name][&block_symbol][root_name] = _table;
+    //     }
+    // }
 }
 
 impl<'a> core::ops::Index<&'a str> for Root<'a> {
