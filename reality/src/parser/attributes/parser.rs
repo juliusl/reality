@@ -63,12 +63,11 @@ impl AttributeParser {
                 Attributes::Error if lexer.slice().is_empty() || lexer.slice() == ":" || lexer.slice() == "`" || lexer.slice() == "+"=> {
                     break;
                 },
-                Attributes::Error => {
+                Attributes::Error if lexer.slice() == "." => {
                     let line = format!("{}{}", lexer.slice(), lexer.remainder());
                     event!(
-                        Level::WARN,
-                        "Could not parse type, checking custom attribute parsers {}",
-                        lexer.slice()
+                        Level::TRACE,
+                        "Checking for custom parser",
                     );
 
                     let mut elements_lexer = Elements::lexer(&line);
