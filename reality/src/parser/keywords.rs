@@ -136,14 +136,7 @@ fn on_add(lexer: &mut Lexer<Keywords>) {
 
 fn on_define(lexer: &mut Lexer<Keywords>) {
     let input = lexer.remainder();
-    // Syntax sugar for,
-    // From -
-    // add connection .empty
-    // define connection host .text example.com
-    // Sugar -
-    // add connection .empty
-    // :: host .text example.com
-    //
+
     let bump = if lexer.slice().starts_with(":") {
         let current_block_symbol = lexer.extras.current_block_symbol().to_string();
         let attr_parser = lexer.extras.parse_property();

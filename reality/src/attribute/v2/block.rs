@@ -7,7 +7,7 @@ use super::Attribute;
 
 /// Struct representing a .runmd block,
 /// 
-#[derive(Component)]
+#[derive(Component, Default)]
 #[storage(HashMapStorage)]
 pub struct Block {
     /// Internal toml document compiled from .runmd block,
@@ -29,6 +29,10 @@ impl Block {
     /// 
     pub fn symbol(&self) -> Option<String> {
         self.toml["symbol"].as_str().map(|s| s.to_string())
+    }
+
+    pub fn add_root(&mut self) {
+        
     }
 }
 
