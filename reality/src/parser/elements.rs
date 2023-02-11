@@ -23,8 +23,12 @@ use logos::{Lexer, Logos};
 ///
 #[derive(Logos, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Elements {
+    /// Escaped colon character
+    /// 
     #[token("\\:")]
     EscapedColon,
+    /// Inline operator
+    /// 
     #[token(":")]
     InlineOperator,
     /// Identifier string, this is either a name or symbol
