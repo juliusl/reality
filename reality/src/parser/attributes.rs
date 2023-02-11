@@ -105,12 +105,17 @@ pub enum Attributes {
     #[regex("[A-Za-z]+[A-Za-z-;._:/@#+=$0-9]*", parser::on_identifier)]
     Identifier = 0xF1,
 
+    #[token(" ")]
+    #[token("\t")]
+    #[token("\n")]
+    #[token("\r")]
+    Whitespace = 0xF2,
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.
     #[error]
     // We can also use this variant to define whitespace,
     // or any other matches we wish to skip.
-    #[regex(r"[ \t\n\f]+", logos::skip)]
+    #[regex(r"[\f]+", logos::skip)]
     Error = 0xFF,
 }
 

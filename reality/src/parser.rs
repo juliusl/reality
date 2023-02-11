@@ -576,6 +576,7 @@ impl AsMut<AttributeParser> for Parser {
     }
 }
 
+#[tracing_test::traced_test]
 #[test]
 fn test_parser() {
     use crate::Value;
@@ -584,9 +585,9 @@ fn test_parser() {
     ``` call host 
     <>
     add address .text localhost 
-    : ipv6 .enable 
+    : ipv6 .enable
     : path .text api/test 
-    :: name .text test_name
+    : name .text test_name
     ``` guest 
     + address .text localhost
     : ipv4 .enable
@@ -598,15 +599,19 @@ fn test_parser() {
     ``` 
 
     ```
-    + debug         .enable  
-    + test          .map    Everything after this is ignored when parsed 
+    + debug        .enable  
+    + test         .empty  Everything after this is ignored when parsed 
     : name         .text   Test map 
     : description  .text   This tests the .map type, which is an alias for .empty 
-    
-    <``` guest>
+    ``` guest
     : name .text cool guest host
     + address .text testhost
-    <```>
+    ```
+
+
+    ```
+    +  inline_person .int 99 : name .text John : age .int 99 : weight .float 3.14 : real .false
+    ```
     "#;
 
     // Tests the lexer logic
@@ -627,12 +632,12 @@ fn test_parser() {
     assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
     assert_eq!(lexer.next(), Some(Keywords::Extension));
     assert_eq!(lexer.next(), Some(Keywords::Add));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
+    assert_eq!(lexer.next(), Some(Keywords::Define), "slice -- {}, {}", lexer.slice(), lexer.remainder());
     assert_eq!(lexer.next(), Some(Keywords::Define));
     assert_eq!(lexer.next(), Some(Keywords::Define));
     assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
     assert_eq!(lexer.next(), Some(Keywords::Add));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
+    assert_eq!(lexer.next(), Some(Keywords::Define), "slice -- {}, {}", lexer.slice(), lexer.remainder());
     assert_eq!(lexer.next(), Some(Keywords::Define));
     assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
 
@@ -665,6 +670,20 @@ fn test_parser() {
     assert_eq!(lexer.next(), Some(Keywords::Define));
     assert_eq!(lexer.next(), Some(Keywords::Add));
     assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
+
+    /*
+    ```
+    +  inline_person .text John : age .int 99 : weight .float 3.14 : real .false
+    ```
+    */
+    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
+    assert_eq!(lexer.next(), Some(Keywords::Add));
+    assert_eq!(lexer.next(), Some(Keywords::Define));
+    assert_eq!(lexer.next(), Some(Keywords::Define));
+    assert_eq!(lexer.next(), Some(Keywords::Define));
+    assert_eq!(lexer.next(), Some(Keywords::Define));
+    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
+    
 
     // Tests parsing logic
     let mut parser = Parser::new().parse(content);
@@ -727,6 +746,12 @@ fn test_parser() {
             .iter_attributes()
             .collect::<Vec<_>>(),
     );
+
+    let inline_test = parser.root().map_transient("inline_person");
+    assert_eq!(inline_test.get("name").expect("should have name").text().unwrap().as_str(), "John");
+    assert_eq!(inline_test.get("age").expect("should have age").int().unwrap(), 99);
+    assert_eq!(inline_test.get("weight").expect("should have weight").float().unwrap(), 3.14);
+    assert_eq!(inline_test.get("real").expect("should have real").bool().unwrap(), false);
 }
 
 mod tests {
