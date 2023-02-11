@@ -4,6 +4,8 @@ use specs::VecStorage;
 use specs::Component;
 use crate::wire::Interner;
 
+use super::action::extensions::Build;
+use super::action::extensions::BuildRoot;
 use super::action::extensions::EditToml;
 use super::action::extensions::Expand;
 use super::action::extensions::BuildToml;
@@ -19,6 +21,12 @@ pub struct ExtensionTable {
     /// Hash map collection of expand actions,
     ///
     expands: HashMap<u64, Arc<dyn Expand>>,
+    /// Hash map collection of build actions,
+    /// 
+    build: HashMap<u64, Arc<dyn Build>>,
+    /// Hash map collection of build root actions,
+    /// 
+    build_root: HashMap<u64, Arc<dyn BuildRoot>>,
     /// Hash map collection of edit toml actions,
     /// 
     edit_toml: HashMap<u64, Arc<dyn EditToml>>,
@@ -47,6 +55,22 @@ impl ExtensionTable {
             .map(|e| e.clone())
     }
 
+    /// Returns a registered build operation,
+    ///
+    pub fn build(&self, ident: impl AsRef<str>) -> Option<Arc<dyn Build>> {
+        self.build
+            .get(&self.interner.ident(ident))
+            .map(|e| e.clone())
+    }
+
+    /// Returns a registered build root operation,
+    ///
+    pub fn build_root(&self, ident: impl AsRef<str>) -> Option<Arc<dyn BuildRoot>> {
+        self.build_root
+            .get(&self.interner.ident(ident))
+            .map(|e| e.clone())
+    }
+
     /// Returns a registered edit toml action,
     /// 
     pub fn edit_toml(&self, ident: impl AsRef<str>) -> Option<Arc<dyn EditToml>> {
@@ -70,6 +94,24 @@ impl ExtensionTable {
         let key = self.key(action.clone());
 
         self.expands.insert(key, action.clone());
+    }
+
+    /// Adds an build action to the extension table,
+    ///
+    pub fn add_build<A: Ident + Build>(&mut self, action: A) {
+        let action = Arc::new(action);
+        let key = self.key(action.clone());
+
+        self.build.insert(key, action.clone());
+    }
+
+    /// Adds an build root action to the extension table,
+    ///
+    pub fn add_build_root<A: Ident + BuildRoot>(&mut self, action: A) {
+        let action = Arc::new(action);
+        let key = self.key(action.clone());
+
+        self.build_root.insert(key, action.clone());
     }
 
     /// Adds an edit toml action to the extension table,
