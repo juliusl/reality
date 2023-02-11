@@ -1,9 +1,10 @@
 use std::collections::BTreeSet;
+use std::ops::Range;
 use std::str::FromStr;
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{Value, Attribute};
-use logos::Lexer;
+use logos::{Lexer, Span};
 use logos::Logos;
 use specs::{World, WorldExt, Entity, LazyUpdate};
 use tracing::{event, trace};
@@ -39,6 +40,8 @@ pub struct AttributeParser {
     custom_attributes: HashMap<String, CustomAttribute>,
     /// Reference to world being edited
     world: Option<Arc<World>>,
+    /// Last char count
+    last_parsed_char_count: usize,
 }
 
 impl AttributeParser {
@@ -54,44 +57,38 @@ impl AttributeParser {
 
         let mut lexer = Attributes::lexer_with_extras(content.as_ref(), self.clone());
 
+        let mut parsed_len = 0;
         while let Some(token) = lexer.next() {
             match token {
+                Attributes::Error if lexer.slice().is_empty() || lexer.slice() == ":" || lexer.slice() == "`" || lexer.slice() == "+"=> {
+                    break;
+                },
                 Attributes::Error => {
                     let line = format!("{}{}", lexer.slice(), lexer.remainder());
                     event!(
                         Level::WARN,
-                        "Could not parse type, checking custom attribute parsers",
+                        "Could not parse type, checking custom attribute parsers {}",
+                        lexer.slice()
                     );
 
                     let mut elements_lexer = Elements::lexer(&line);
                     match elements_lexer.next() {
                         Some(Elements::Identifier(custom_attr_type)) => {
                             let custom_attr_type = custom_attr_type.trim_start_matches(".").to_string();
-                            let mut input = elements_lexer.remainder().trim().to_string();
-
-                            let scanning = input.to_string();
-                            let mut comment_lexer = Elements::lexer(&scanning);
-
-                            while let Some(token) = &mut comment_lexer.next() {
-                                match token {
-                                    Elements::Comment(comment) => {
-                                        input = input.replace(&format!("<{comment}>"), "");
-                                    },
-                                    _ => {}
-                                }
-                            }
+                            let input = handle_input_extraction(&mut lexer);
                             
                             if lexer.extras.name().is_none() {
                                 lexer.extras.set_name(custom_attr_type.to_string());
-                                lexer.extras.set_value(Value::Symbol(input.to_string()));
+                                lexer.extras.set_value(Value::Symbol(input.value().trim_start_matches(&custom_attr_type).trim().to_string()));
                             }
                             
+                            parsed_len += lexer.slice().len();
                             match custom_attributes.get(&custom_attr_type) {
                                 Some(custom_attr) => {
                                     lexer.extras.attr_ident = Some(custom_attr_type);
                                     custom_attr.parse(
                                         &mut lexer.extras, 
-                                        input.to_string()
+                                        input.value()
                                     );
                                     lexer.extras.attr_ident.take();
                                 }
@@ -102,26 +99,32 @@ impl AttributeParser {
                                         Level::TRACE, 
                                         "Did not parse {custom_attr_type}, could not find custom attribute parser", 
                                     );
+                                    break;
                                 }
                             }
-                            lexer.bump(lexer.remainder().len());
                         },
+                        Some(Elements::InlineOperator) => {
+                            break;
+                        }
                         _ => {
                             event!(
                                 Level::ERROR,
-                                "Did not parse, unexpected element"
+                                "Did not parse, unexpected element {}",
+                                elements_lexer.slice()
                             );
+                            break;
                         }
                     }
                 }
                 _ => {
-                    event!(Level::TRACE, "Parsed {:?}", token);
+                    parsed_len += lexer.slice().len();
+                    event!(Level::TRACE, "Parsed {:?} {}, {}", token, lexer.slice(), lexer.slice().len());
                 }
             }
         }
 
         *self = lexer.extras;
-
+        self.last_parsed_char_count = parsed_len;
         self.parse_attribute();
         self
     }
@@ -371,6 +374,12 @@ impl AttributeParser {
             lazy_update.exec(|world| exec(&world));
         }
     }
+
+    /// Returns the length of the last parse,
+    /// 
+    pub fn last_parse_len(&self) -> usize {
+        self.last_parsed_char_count
+    }
 }
 
 pub fn on_identifier(lexer: &mut Lexer<Attributes>) {
@@ -390,24 +399,21 @@ pub fn on_comment_start(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_text_attr(lexer: &mut Lexer<Attributes>) {
-    let remaining = handle_comment(lexer);
+    let remaining = handle_input_extraction(lexer);
 
-    let text_buf = Value::TextBuffer(remaining);
+    let text_buf = Value::TextBuffer(remaining.value());
 
     lexer.extras.parse_value(text_buf);
-
-    lexer.bump(lexer.remainder().len());
 }
 
 pub fn on_bool_attr(lexer: &mut Lexer<Attributes>) {
-    let bool_attr = if let Some(value) = handle_comment(lexer).parse().ok() {
+    let bool_attr = if let Some(value) = handle_input_extraction(lexer).value().parse().ok() {
         Value::Bool(value)
     } else {
         Value::Bool(false)
     };
 
     lexer.extras.parse_value(bool_attr);
-    lexer.bump(lexer.remainder().len());
 }
 
 pub fn on_bool_enable(lexer: &mut Lexer<Attributes>) {
@@ -419,14 +425,13 @@ pub fn on_bool_disable(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_int_attr(lexer: &mut Lexer<Attributes>) {
-    let int_attr = if let Some(value) = handle_comment(lexer).parse::<i32>().ok() {
+    let int_attr = if let Some(value) = handle_input_extraction(lexer).value().parse::<i32>().ok() {
         Value::Int(value)
     } else {
         Value::Int(0)
     };
 
     lexer.extras.parse_value(int_attr);
-    lexer.bump(lexer.remainder().len());
 }
 
 pub fn on_int_pair_attr(lexer: &mut Lexer<Attributes>) {
@@ -438,7 +443,6 @@ pub fn on_int_pair_attr(lexer: &mut Lexer<Attributes>) {
     };
 
     lexer.extras.parse_value(int_pair);
-    lexer.bump(lexer.remainder().len());
 }
 
 pub fn on_int_range_attr(lexer: &mut Lexer<Attributes>) {
@@ -450,18 +454,16 @@ pub fn on_int_range_attr(lexer: &mut Lexer<Attributes>) {
     };
 
     lexer.extras.parse_value(int_range);
-    lexer.bump(lexer.remainder().len());
 }
 
 pub fn on_float_attr(lexer: &mut Lexer<Attributes>) {
-    let float = if let Some(value) = handle_comment(lexer).parse::<f32>().ok() {
+    let float = if let Some(value) = handle_input_extraction(lexer).value().parse::<f32>().ok() {
         Value::Float(value)
     } else {
         Value::Float(0.0)
     };
 
     lexer.extras.parse_value(float);
-    lexer.bump(lexer.remainder().len());
 }
 
 pub fn on_float_pair_attr(lexer: &mut Lexer<Attributes>) {
@@ -472,7 +474,6 @@ pub fn on_float_pair_attr(lexer: &mut Lexer<Attributes>) {
     };
 
     lexer.extras.parse_value(float_pair);
-    lexer.bump(lexer.remainder().len());
 }
 
 pub fn on_float_range_attr(lexer: &mut Lexer<Attributes>) {
@@ -484,26 +485,23 @@ pub fn on_float_range_attr(lexer: &mut Lexer<Attributes>) {
     };
 
     lexer.extras.parse_value(float_range);
-    lexer.bump(lexer.remainder().len());
 }
 
 pub fn on_binary_vec_attr(lexer: &mut Lexer<Attributes>) {
-    let binary = match base64::decode(handle_comment(lexer)) {
+    let binary = match base64::decode(handle_input_extraction(lexer).value()) {
         Ok(content) => Value::BinaryVector(content),
         Err(_) => Value::BinaryVector(vec![]),
     };
 
     lexer.extras.parse_value(binary);
-    lexer.bump(lexer.remainder().len());
 }
 
 pub fn on_symbol_attr(lexer: &mut Lexer<Attributes>) {
-    let remaining = handle_comment(lexer);
+    let remaining = handle_input_extraction(lexer);
 
-    let symbol_val = Value::Symbol(remaining);
+    let symbol_val = Value::Symbol(remaining.value());
 
     lexer.extras.parse_value(symbol_val);
-    lexer.bump(lexer.remainder().len());
 }
 
 pub fn on_empty_attr(lexer: &mut Lexer<Attributes>) {    
@@ -516,137 +514,219 @@ pub fn on_complex_attr(lexer: &mut Lexer<Attributes>) {
     lexer
         .extras
         .parse_value(Value::Complex(BTreeSet::from_iter(idents)));
-    lexer.bump(lexer.remainder().len());
 }
 
 pub fn from_comma_sep<T>(lexer: &mut Lexer<Attributes>) -> Vec<T>
 where
     T: FromStr,
 {
-    let input = handle_comment(lexer);
-    input
+    let input = handle_input_extraction(lexer);
+    input.value()
         .split(",")
         .filter_map(|i| i.trim().parse().ok())
         .collect()
 }
 
-pub fn handle_comment(lexer: &mut Lexer<Attributes>) -> String {
-    let mut input = lexer.remainder().trim().to_string();
+fn handle_input_extraction(lexer: &mut Lexer<Attributes>) -> ParserInputInfo {
+    let mut input = lexer.remainder().to_string();
 
     let scanning = input.to_string();
     let mut comment_lexer = Elements::lexer(&scanning);
 
+    let mut parser_input_info = ParserInputInfo::new(input.to_string());
     while let Some(token) = &mut comment_lexer.next() {
         match token {
             Elements::Comment(comment) => {
                 input = input.replace(&format!("<{comment}>"), "");
+                parser_input_info.add_comment(comment_lexer.span());
             },
+            Elements::InlineOperator | Elements::Error => {
+                parser_input_info.set_end_pos(comment_lexer.span().start);
+                lexer.bump(parser_input_info.end_pos);
+
+                return parser_input_info;
+            }
             _ => {}
         }
     }
 
-    input.trim().to_string()
+    lexer.bump(parser_input_info.end_pos);
+    parser_input_info
 }
 
-#[test]
-#[tracing_test::traced_test]
-fn test_attribute_parser() {
-    // Test parsing add
-    let parser = AttributeParser::default();
-    let mut lexer = Attributes::lexer_with_extras("name .text <coments can only be immediately after the attribute type> cool_name", parser);
-    assert_eq!(lexer.next(), Some(Attributes::Identifier));
-    assert_eq!(lexer.next(), Some(Attributes::Text));
-    lexer.extras.parse_attribute();
-
-    let attr = lexer.extras.next().expect("parses");
-    assert_eq!(attr.name, "name");
-    assert_eq!(attr.value, Value::TextBuffer("cool_name".to_string()));
-
-    // Test parsing define
-    let parser = AttributeParser::default();
-    let mut lexer = Attributes::lexer_with_extras("connection name .text cool_name", parser);
-    assert_eq!(lexer.next(), Some(Attributes::Identifier));
-    assert_eq!(lexer.next(), Some(Attributes::Identifier));
-    assert_eq!(lexer.next(), Some(Attributes::Text));
-    lexer.extras.parse_attribute();
-
-    let attr = lexer.extras.next().expect("parses");
-    assert_eq!(attr.name, "connection::name");
-    assert_eq!(attr.value, Value::Empty);
-    assert_eq!(
-        attr.transient.unwrap().1,
-        Value::TextBuffer("cool_name".to_string())
-    );
-
-    // Complex Attributes
-
-    // Test shortcut for defining an attribute without a name or value
-    let mut parser = AttributeParser::default();
-    let parser = parser.init(".shortcut cool shortcut");
-
-    let shortcut = parser.next();
-    assert_eq!(
-        shortcut, 
-        Some(Attribute::new(0, "shortcut", Value::Symbol("cool shortcut".to_string())))
-    );
-
-    // Test parsing .blob attribute
-    let mut parser = AttributeParser::default();
-    let parser = parser
-        .with_custom::<crate::parser::BlobDescriptor>()
-        .init("readme.md .blob sha256:testdigest");
-
-    parser.define("readme", Value::Symbol("readme".to_string()));
-    parser.define("extension", Value::Symbol("md".to_string()));
-
-    let mut parsed = vec![];
-    while let Some(attr) = parser.next() {
-        parsed.push(attr);
-    }
-    eprintln!("{:#?}", parsed);
-
-    AttributeParser::default()
-        .init("custom .custom-attr test custom attr input");
-    assert!(logs_contain(
-        "Could not parse type, checking custom attribute parsers"
-    ));
-
-    let mut parser = AttributeParser::default();
-    let parser = parser
-        .with_custom::<TestCustomAttr>()
-        .init("custom .custom-attr test custom attr input");
-    assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Empty)));
-    
-    let mut parser = AttributeParser::default();
-    let parser = parser
-        .with_custom::<TestCustomAttr>()
-        .init("custom <comment block> .custom-attr <comment block> test custom attr input <comment block>");
-    assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Empty)));
-
-    let mut parser = AttributeParser::default();
-    let parser = parser.with_custom::<TestCustomAttr>()
-        .init("custom <comment block> .symbol <comment block> test custom attr input <comment block>");
-    assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Symbol("test custom attr input".to_string()))));
-
-    
-    let mut parser = AttributeParser::default();
-    let parser = parser.with_custom::<TestCustomAttr>()
-        .init("custom <comment block> .int_pair <comment block 1> 1, <comment block2>5 <comment block>");
-
-    assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::IntPair(1, 5))));
-
+#[derive(Default, Clone)]
+struct ParserInputInfo {
+    original: String,
+    comments: Vec<Range<usize>>,
+    end_pos: usize,
 }
 
-struct TestCustomAttr();
-
-impl SpecialAttribute for TestCustomAttr {
-    fn ident() -> &'static str {
-        "custom-attr"
+impl ParserInputInfo {
+    fn new(original: String) -> Self {
+        let end_pos = original.len();
+        ParserInputInfo { original, end_pos, ..Default::default() }
     }
 
-    fn parse(parser: &mut AttributeParser, _: impl AsRef<str>) {
-        parser.set_value(Value::Empty);
+    fn add_comment(&mut self, span: Span) {
+        let start = if span.start > 0 {
+            span.start - 1
+        } else {
+            0
+        };
+
+        let end = if span.end > 0 {
+            span.end - 1
+        } else {
+            0
+        };
+
+        self.comments.push(start .. end);
     }
+
+    fn set_end_pos(&mut self, pos: usize) {
+        self.end_pos = pos;
+    }
+
+    fn value(&self) -> String {
+        if !self.comments.is_empty() {
+            use std::fmt::Write;
+    
+            let mut sb = String::new();
+
+            let mut start_pos = 0;
+            for comment in self.comments.iter() {
+                if let Ok(()) = write!(sb, "{}", &self.original[..self.end_pos][start_pos..comment.start]) {
+                    start_pos = comment.end + 1;
+                }
+            }
+    
+            write!(sb, "{}", &self.original[..self.end_pos][start_pos..]).ok();
+
+            sb.trim().to_string()
+        } else {
+            self.original[..self.end_pos].trim().to_string()
+        }
+    }
+}
+
+#[allow(unused_imports)]
+mod tests {
+    use logos::Logos;
+
+    use crate::{AttributeParser, Attributes, Value, Attribute, SpecialAttribute};
+
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_attribute_parser() {
+        // Test parsing add
+        let parser = AttributeParser::default();
+        let mut lexer = Attributes::lexer_with_extras("name .text <comments can only be immediately after the attribute type> cool_name", parser);
+        assert_eq!(lexer.next(), Some(Attributes::Identifier));
+        assert_eq!(lexer.next(), Some(Attributes::Whitespace));
+        assert_eq!(lexer.next(), Some(Attributes::Text));
+        lexer.extras.parse_attribute();
+    
+        let attr = lexer.extras.next().expect("parses");
+        assert_eq!(attr.name, "name");
+        assert_eq!(attr.value, Value::TextBuffer("cool_name".to_string()));
+    
+        // Test parsing define
+        let parser = AttributeParser::default();
+        let mut lexer = Attributes::lexer_with_extras("connection name .text cool_name", parser);
+        assert_eq!(lexer.next(), Some(Attributes::Identifier));
+        assert_eq!(lexer.next(), Some(Attributes::Whitespace));
+        assert_eq!(lexer.next(), Some(Attributes::Identifier));
+        assert_eq!(lexer.next(), Some(Attributes::Whitespace));
+        assert_eq!(lexer.next(), Some(Attributes::Text));
+        lexer.extras.parse_attribute();
+    
+        let attr = lexer.extras.next().expect("parses");
+        assert_eq!(attr.name, "connection::name");
+        assert_eq!(attr.value, Value::Empty);
+        assert_eq!(
+            Value::TextBuffer("cool_name".to_string()),
+            attr.transient.unwrap().1
+        );
+    
+        // Complex Attributes
+    
+        // Test shortcut for defining an attribute without a name or value
+        let mut parser = AttributeParser::default();
+        let parser = parser.init(".shortcut cool shortcut");
+    
+        let shortcut = parser.next();
+        assert_eq!(
+            shortcut, 
+            Some(Attribute::new(0, "shortcut", Value::Symbol("cool shortcut".to_string())))
+        );
+    
+        // Test parsing .blob attribute
+        let mut parser = AttributeParser::default();
+        let parser = parser
+            .with_custom::<crate::parser::BlobDescriptor>()
+            .init("readme.md .blob sha256:testdigest");
+    
+        parser.define("readme", Value::Symbol("readme".to_string()));
+        parser.define("extension", Value::Symbol("md".to_string()));
+    
+        let mut parsed = vec![];
+        while let Some(attr) = parser.next() {
+            parsed.push(attr);
+        }
+        eprintln!("{:#?}", parsed);
+    
+        AttributeParser::default()
+            .init("custom .custom-attr test custom attr input");
+        assert!(logs_contain(
+            "Could not parse type, checking custom attribute parsers"
+        ));
+    
+        let mut parser = AttributeParser::default();
+        let parser = parser
+            .with_custom::<TestCustomAttr>()
+            .init("custom .custom-attr test custom attr input");
+        assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Empty)));
+        
+        let mut parser = AttributeParser::default();
+        let parser = parser
+            .with_custom::<TestCustomAttr>()
+            .init("custom <comment block> .custom-attr <comment block> test custom attr input <comment block>");
+        assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Empty)));
+    
+        let mut parser = AttributeParser::default();
+        let parser = parser.with_custom::<TestCustomAttr>()
+            .init("custom <comment block> .symbol <comment block> test custom attr input <comment block>");
+        assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Symbol("test custom attr input".to_string()))));
+    
+        
+        let mut parser = AttributeParser::default();
+        let parser = parser.with_custom::<TestCustomAttr>()
+            .init("custom <comment block> .int_pair <comment block 1> 1, <comment block2>5 <comment block>");
+    
+        assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::IntPair(1, 5))));
+
+        
+        let mut parser = AttributeParser::default();
+        let parser = parser.with_custom::<TestCustomAttr>()
+            .init("custom <comment block> .int_pair <comment block 1> 1, <comment block2>5 <comment block> : test .int 5");
+    
+        assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::IntPair(1, 5))));
+    
+    }
+    
+    struct TestCustomAttr();
+    
+    impl SpecialAttribute for TestCustomAttr {
+        fn ident() -> &'static str {
+            "custom-attr"
+        }
+    
+        fn parse(parser: &mut AttributeParser, _: impl AsRef<str>) {
+            parser.set_value(Value::Empty);
+        }
+    }
+    
 }
 
 

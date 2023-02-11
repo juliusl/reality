@@ -23,9 +23,13 @@ use logos::{Lexer, Logos};
 ///
 #[derive(Logos, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Elements {
+    #[token("\\:")]
+    EscapedColon,
+    #[token(":")]
+    InlineOperator,
     /// Identifier string, this is either a name or symbol
     ///
-    #[regex("[./A-Za-z]+[A-Za-z-._:=/#0-9]*", on_identifier)]
+    #[regex("[./A-Za-z0-9]+[A-Za-z-._:=/#0-9]*", on_identifier)]
     Identifier(String),
     /// Comment,
     /// 

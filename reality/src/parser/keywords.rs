@@ -53,7 +53,7 @@ pub enum Keywords {
     Define = 0x0D,
 
     /// Extension keyword, allows for wire protocol to include user frames
-    /// 
+    ///
     #[token("<>", on_extension)]
     Extension = 0x0E,
 
@@ -124,51 +124,60 @@ fn on_block_delimitter(lexer: &mut Lexer<Keywords>) {
 
 fn on_add(lexer: &mut Lexer<Keywords>) {
     if let Some(next_line) = lexer.remainder().lines().next() {
-        lexer.extras.new_attribute().parse(next_line.trim());
+        let bump = {
+            lexer.extras.new_attribute().parse(next_line).last_parse_len()
+        };
 
-        lexer.bump(next_line.len());
+        let bump = bump;
+        lexer.bump(bump);
     }
 }
 
 fn on_define(lexer: &mut Lexer<Keywords>) {
-    if let Some(next_line) = lexer.remainder().lines().next() {
-        // Syntax sugar for,
-        // From -
-        // add connection .empty
-        // define connection host .text example.com
-        // Sugar -
-        // add connection .empty
-        // :: host .text example.com
-        //
-        if lexer.slice().starts_with(":") {
-            let current_block_symbol = lexer.extras.current_block_symbol().to_string();
-            let attr_parser = lexer.extras.parse_property();
+    let input = lexer.remainder();
+    // Syntax sugar for,
+    // From -
+    // add connection .empty
+    // define connection host .text example.com
+    // Sugar -
+    // add connection .empty
+    // :: host .text example.com
+    //
+    let bump = if lexer.slice().starts_with(":") {
+        let current_block_symbol = lexer.extras.current_block_symbol().to_string();
+        let attr_parser = lexer.extras.parse_property();
 
-            if attr_parser.name().is_none() {
-                if !current_block_symbol.is_empty() {
-                    attr_parser.set_name(current_block_symbol);
-                } else {
-                    // todo
-                    panic!("Invalid syntax,\n{}", lexer.remainder())
-                }
+        if attr_parser.name().is_none() {
+            if !current_block_symbol.is_empty() {
+                attr_parser.set_name(current_block_symbol);
+            } else {
+                // todo
+                panic!("Invalid syntax,\n{}", lexer.remainder())
             }
-
-            // Because this is a property, set the value to empty
-            attr_parser.set_value(Value::Empty);
-            attr_parser.parse(next_line.trim());
-        } else {
-            // In keyword form, the expectation is that name/symbol will be present
-            let attr_parser = lexer.extras.new_attribute();
-            attr_parser.parse(next_line.trim());
         }
 
-        lexer.bump(next_line.len());
-    }
+        // Because this is a property, set the value to empty
+        attr_parser.set_value(Value::Empty);
+        attr_parser.parse(input);
+        attr_parser.last_parse_len()
+    } else {
+        // In keyword form, the expectation is that name/symbol will be present
+        let attr_parser = lexer.extras.new_attribute();
+        attr_parser.parse(input);
+        attr_parser.last_parse_len()
+    };
+    
+    lexer.bump(bump);
 }
 
 fn on_extension(lexer: &mut Lexer<Keywords>) {
     if let Some(line) = lexer.remainder().lines().next() {
-        let last_id = lexer.extras.parser_top().and_then(|a| a.entity()).map(|e| e.id()).unwrap_or_default();
+        let last_id = lexer
+            .extras
+            .parser_top()
+            .and_then(|a| a.entity())
+            .map(|e| e.id())
+            .unwrap_or_default();
         let parser = lexer.extras.new_attribute();
         if last_id > 0 {
             parser.set_id(last_id);

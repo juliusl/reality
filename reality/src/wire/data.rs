@@ -122,6 +122,12 @@ impl From<Elements> for Data {
                     unreachable!("to_ref should always return a reference value")
                 }
             },
+            Elements::InlineOperator => {
+                panic!("inline operator is not encoded to frame")
+            }
+            Elements::EscapedColon => {
+                panic!("escaped colon is not encoded to frame")
+            }
             Elements::Comment(_) => {
                 panic!("comment element is not encoded to frame")
             }
