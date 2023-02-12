@@ -40,11 +40,22 @@ pub struct AttributeParser {
     custom_attributes: HashMap<String, CustomAttribute>,
     /// Reference to world being edited
     world: Option<Arc<World>>,
-    /// Last char count
+    /// Last char count,
     last_parsed_char_count: usize,
+    /// Default custom attribute,
+    /// 
+    default_custom_attribute: Option<CustomAttribute>,
 }
 
 impl AttributeParser {
+    /// Sets the default custom attribute,
+    /// 
+    /// If no custom attribute is found this will be called,
+    /// 
+    pub fn set_default_custom_attribute(&mut self, default: CustomAttribute) {
+        self.default_custom_attribute = Some(default);
+    }
+
     pub fn init(&mut self, content: impl AsRef<str>) -> &mut Self {
         self.parse(content);
         self
@@ -89,6 +100,13 @@ impl AttributeParser {
                                         &mut lexer.extras, 
                                         input.value()
                                     );
+                                    lexer.extras.attr_ident.take();
+                                }
+                                None if self.default_custom_attribute.is_some() => {
+                                    let custom_attr = self.default_custom_attribute.clone().expect("should exist, just checked");
+
+                                    lexer.extras.attr_ident = Some(custom_attr_type);
+                                    custom_attr.parse(&mut lexer.extras, input.value());
                                     lexer.extras.attr_ident.take();
                                 }
                                 None => {
