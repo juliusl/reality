@@ -52,6 +52,11 @@ pub struct Parser {
     /// When applied to the attribute parser it will be used to recall custom components in the current scope,
     /// 
     implicit_extension_symbol: Option<String>,
+    /// Default custom attribute, 
+    /// 
+    /// If set, will be included with each new attribute parser
+    /// 
+    default_custom_attribute: Option<CustomAttribute>,
 }
 
 /// Struct for stopping the parser after it parses a token, and to continue where it left off,
@@ -218,7 +223,14 @@ impl Parser {
             parser_stack: vec![],
             implicit_block_symbol: None,
             implicit_extension_symbol: None,
+            default_custom_attribute: None,
         }
+    }
+
+    /// Sets the default custom attribute,
+    /// 
+    pub fn set_default_custom_attribute(&mut self, custom: CustomAttribute) {
+        self.default_custom_attribute = Some(custom);
     }
 
     /// Sets the implicit symbol for the parser,
@@ -469,6 +481,10 @@ impl Parser {
                 custom_attr.ident()
             );
             attr_parser.add_custom(custom_attr);
+        }
+
+        if let Some(default_custom) = self.default_custom_attribute.as_ref() {
+            attr_parser.set_default_custom_attribute(default_custom.clone());
         }
 
         attr_parser.set_id(self.parsing.and_then(|p| Some(p.id())).unwrap_or(0));
