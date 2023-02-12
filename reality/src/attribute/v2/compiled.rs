@@ -42,4 +42,3 @@ impl<'a> AsRef<Entities<'a>> for Compiled<'a> {
         &self.entities
     }
 }
-

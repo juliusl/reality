@@ -1,38 +1,70 @@
-use specs::HashMapStorage;
+use std::sync::Arc;
+
+use crate::AttributeParser;
 use specs::Component;
-use toml_edit::Item;
+use specs::HashMapStorage;
 use toml_edit::Document;
-use super::ValueProvider;
+use toml_edit::Item;
+
 use super::Attribute;
+use super::ValueProvider;
 
 /// Struct representing a .runmd block,
-/// 
+///
 #[derive(Component, Default)]
 #[storage(HashMapStorage)]
 pub struct Block {
     /// Internal toml document compiled from .runmd block,
-    /// 
-    toml: Document,
-    /// Attributes parsed from the document,
-    /// 
-    attributes: Vec<Attribute>,
-}
+    ///
+    toml: Arc<Document>,
+    /// Root attributes,
+    ///
+    roots: Vec<Attribute>,
+} 
 
 impl Block {
+    /// Returns a new block from a toml document
+    ///
+    pub fn new(toml: Document) -> Self {
+        let toml = Arc::new(toml);
+
+        let mut block = Self {
+            toml,
+            roots: vec![],
+        };
+
+        block.toml["roots"].as_array_of_tables().map(|roots| {
+            // Parse attributes from root
+            for root in roots {
+                let ident = root["ident"].as_str();
+                let input = &root["value"].as_str().map(|s| {
+                    let mut parser = AttributeParser::default();
+                    let attr = parser.parse(s);
+                    attr.value().clone()
+                });
+
+                let attr = Attribute::new(
+                    ident.unwrap_or(""),
+                    input.clone().unwrap_or(crate::Value::Empty),
+                );
+
+                block.roots.push(attr);
+            }
+        });
+
+        block
+    }
+
     /// Returns the block name,
-    /// 
+    ///
     pub fn name(&self) -> Option<String> {
         self.toml["name"].as_str().map(|s| s.to_string())
     }
 
     /// Returns the block symbol,
-    /// 
+    ///
     pub fn symbol(&self) -> Option<String> {
         self.toml["symbol"].as_str().map(|s| s.to_string())
-    }
-
-    pub fn add_root(&mut self) {
-        
     }
 }
 
@@ -45,4 +77,43 @@ impl<'a> core::ops::Index<&'a str> for Block {
 }
 
 impl ValueProvider<'_> for Block {}
+
+#[allow(unused_imports)]
+mod tests {
+    use toml_edit::Document;
+
+    use crate::Value;
+
+    use super::Block;
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_block() {
+        let doc = r#"
+        name   = "test_block"
+        symbol = "test"
+
+        [[roots]]
+        ident   = "person"
+        value   = ".symbol John"
+
+        [[roots]]
+        ident   = "person"
+        value   = ".symbol Jacob"
+        "#;
+
+        let doc = doc.parse::<Document>()
+            .expect("should be able to parse");
+
+        let block = Block::new(doc);
+        assert_eq!("person", block.roots[0].ident);
+        assert_eq!(Value::Symbol("John".to_string()), block.roots[0].value);
+        
+        assert_eq!("person", block.roots[1].ident);
+        assert_eq!(Value::Symbol("Jacob".to_string()), block.roots[1].value);
+
+        assert_eq!(Some("test_block".to_string()), block.name());
+        assert_eq!(Some("test".to_string()), block.symbol());
+    }
+}
 
