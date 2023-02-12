@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::AttributeParser;
+use crate::Value;
 use specs::Component;
 use specs::HashMapStorage;
 use toml_edit::Document;
@@ -19,8 +20,16 @@ pub struct Block {
     toml: Arc<Document>,
     /// Root attributes,
     ///
-    roots: Vec<Attribute>,
-} 
+    attributes: Vec<Attribute>,
+}
+
+impl std::fmt::Debug for Block {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Block")
+            .field("attributes", &self.attributes)
+            .finish()
+    }
+}
 
 impl Block {
     /// Returns a new block from a toml document
@@ -30,10 +39,10 @@ impl Block {
 
         let mut block = Self {
             toml,
-            roots: vec![],
+            attributes: vec![],
         };
 
-        block.toml["roots"].as_array_of_tables().map(|roots| {
+        block.toml["attributes"].as_array_of_tables().map(|roots| {
             // Parse attributes from root
             for root in roots {
                 let ident = root["ident"].as_str();
@@ -48,11 +57,27 @@ impl Block {
                     input.clone().unwrap_or(crate::Value::Empty),
                 );
 
-                block.roots.push(attr);
+                block.attributes.push(attr);
             }
         });
 
         block
+    }
+
+    /// Returns an iterator over extensions this block requires,
+    /// 
+    pub fn requires(&self) -> impl Iterator<Item = &String> {
+        self.attributes.iter().flat_map(|a| a.requires())
+    }
+
+    /// Returns the last attribute,
+    ///
+    pub fn last_mut(&mut self) -> Option<&mut Attribute> {
+        self.attributes.last_mut()
+    }
+
+    pub fn add_root(&mut self, ident: impl Into<String>, value: impl Into<Value>) {
+        self.attributes.push(Attribute::new(ident, value));
     }
 
     /// Returns the block name,
@@ -102,18 +127,19 @@ mod tests {
         value   = ".symbol Jacob"
         "#;
 
-        let doc = doc.parse::<Document>()
-            .expect("should be able to parse");
+        let doc = doc.parse::<Document>().expect("should be able to parse");
 
         let block = Block::new(doc);
-        assert_eq!("person", block.roots[0].ident);
-        assert_eq!(Value::Symbol("John".to_string()), block.roots[0].value);
-        
-        assert_eq!("person", block.roots[1].ident);
-        assert_eq!(Value::Symbol("Jacob".to_string()), block.roots[1].value);
+        assert_eq!("person", block.attributes[0].ident);
+        assert_eq!(Value::Symbol("John".to_string()), block.attributes[0].value);
+
+        assert_eq!("person", block.attributes[1].ident);
+        assert_eq!(
+            Value::Symbol("Jacob".to_string()),
+            block.attributes[1].value
+        );
 
         assert_eq!(Some("test_block".to_string()), block.name());
         assert_eq!(Some("test".to_string()), block.symbol());
     }
 }
-

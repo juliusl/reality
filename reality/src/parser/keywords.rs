@@ -7,7 +7,7 @@ use crate::Parser;
 
 /// Parser keywords and symbols,
 ///
-#[derive(Logos, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Logos, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[logos(extras = Parser)]
 pub enum Keywords {
     /// Write a stable attribute
@@ -126,7 +126,12 @@ fn on_block_delimitter(lexer: &mut Lexer<Keywords>) {
 fn on_add(lexer: &mut Lexer<Keywords>) {
     if let Some(next_line) = lexer.remainder().lines().next() {
         let bump = {
-            lexer.extras.new_attribute().parse(next_line).last_parse_len()
+            lexer
+                .extras
+                .new_attribute()
+                .set_keyword(Keywords::Add)
+                .parse(next_line)
+                .last_parse_len()
         };
 
         let bump = bump;
@@ -152,42 +157,36 @@ fn on_define(lexer: &mut Lexer<Keywords>) {
 
         // Because this is a property, set the value to empty
         attr_parser.set_value(Value::Empty);
-        attr_parser.parse(input);
+        attr_parser.set_keyword(Keywords::Define).parse(input);
         attr_parser.last_parse_len()
     } else {
         // In keyword form, the expectation is that name/symbol will be present
         let attr_parser = lexer.extras.new_attribute();
-        attr_parser.parse(input);
+        attr_parser.set_keyword(Keywords::Define).parse(input);
         attr_parser.last_parse_len()
     };
-    
+
     lexer.bump(bump);
 }
 
 fn on_extension(lexer: &mut Lexer<Keywords>) {
     // Set a new extension symbol in the parser,
     if lexer.slice().len() > 2 {
-        let extension_symbol = lexer.slice()[1..lexer.slice().len()-1].to_string();
-        lexer.extras.implicit_extension_symbol = Some(extension_symbol);
+        let extension_prefix = lexer.slice()[1..lexer.slice().len() - 1].to_string();
+        lexer.extras.implicit_extension_namespace_prefix = Some(extension_prefix);
     }
+    
+    if let Some(next_line) = lexer.remainder().lines().next() {
+        let bump = {
+            let attr_parser = lexer.extras.parse_property();
+            attr_parser
+                .set_keyword(Keywords::Extension)
+                .parse(next_line)
+                .last_parse_len()
+        };
 
-    if let Some(line) = lexer.remainder().lines().next() {
-        let last_id = lexer
-            .extras
-            .parser_top()
-            .and_then(|a| a.entity())
-            .map(|e| e.id())
-            .unwrap_or_default();
-        let parser = lexer.extras.new_attribute();
-        if last_id > 0 {
-            parser.set_id(last_id);
-        }
-
-        // TODO -- Should this be seperate from the attribute parsers? But it might be redundant?
-        parser.parse(line);
-
-        let ext_entity = parser.world().unwrap().entities().create();
-        parser.define_child(ext_entity, "world_id", "<>");
+        let bump = bump;
+        lexer.bump(bump);
     }
 }
 
@@ -203,12 +202,26 @@ mod tests {
         let keyword = lexer.next().expect("should have a keyword");
         assert_eq!(Keywords::Extension, keyword);
         assert_eq!("<call>", lexer.slice());
-        assert_eq!("call", lexer.extras.implicit_extension_symbol.as_ref().unwrap().as_str());
+        assert_eq!(
+            "call",
+            lexer
+                .extras
+                .implicit_extension_namespace_prefix
+                .as_ref()
+                .unwrap()
+                .as_str()
+        );
 
         let keyword = lexer.next().expect("should have a keyword");
         assert_eq!(Keywords::Extension, keyword);
         assert_eq!("<>", lexer.slice());
-        assert_eq!("call", lexer.extras.implicit_extension_symbol.unwrap().as_str());
+        assert_eq!(
+            "call",
+            lexer
+                .extras
+                .implicit_extension_namespace_prefix
+                .unwrap()
+                .as_str()
+        );
     }
 }
-

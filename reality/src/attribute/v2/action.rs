@@ -15,7 +15,7 @@ pub mod extensions {
 
 /// Enumeration of attribute actions that apply during the transient phase of the attribute's lifecycle,
 ///
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub enum Action {
     /// This action will define a property value on the attribute's entity using the current state,
     ///

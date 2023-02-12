@@ -3,7 +3,7 @@ use std::ops::Range;
 use std::str::FromStr;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{Value, Attribute};
+use crate::{Value, Attribute, Keywords};
 use logos::{Lexer, Span};
 use logos::Logos;
 use specs::{World, WorldExt, Entity, LazyUpdate};
@@ -45,6 +45,18 @@ pub struct AttributeParser {
     /// Default custom attribute,
     /// 
     default_custom_attribute: Option<CustomAttribute>,
+    /// Keyword that preceeded this parser,
+    /// 
+    keyword: Option<Keywords>,
+    /// Implicit extension namespace prefix,
+    /// 
+    implicit_extension_namespace_prefix: Option<String>,
+    /// Implicit extension namespace,
+    /// 
+    implicit_extension_namespace: Option<String>,
+    /// Line count
+    /// 
+    line_count: usize,
 }
 
 impl AttributeParser {
@@ -56,6 +68,20 @@ impl AttributeParser {
         self.default_custom_attribute = Some(default);
     }
 
+    /// Sets the implicit extension prefix,
+    /// 
+    pub fn set_implicit_extension_prefix(&mut self, prefix: Option<String>) -> &mut Self {
+        self.implicit_extension_namespace_prefix = prefix;
+        self
+    }
+
+    /// Sets the current keyword,
+    /// 
+    pub fn set_keyword(&mut self, keyword: Keywords) -> &mut Self {
+        self.keyword = Some(keyword);
+        self
+    }
+
     pub fn init(&mut self, content: impl AsRef<str>) -> &mut Self {
         self.parse(content);
         self
@@ -64,6 +90,8 @@ impl AttributeParser {
     /// Parses content, updating internal state
     ///
     pub fn parse(&mut self, content: impl AsRef<str>) -> &mut Self {
+        self.line_count += 1;
+        
         let custom_attributes = self.custom_attributes.clone();
 
         let mut lexer = Attributes::lexer_with_extras(content.as_ref(), self.clone());
@@ -91,6 +119,13 @@ impl AttributeParser {
                                 lexer.extras.set_name(custom_attr_type.to_string());
                                 lexer.extras.set_value(Value::Symbol(input.value().trim_start_matches(&custom_attr_type).trim().to_string()));
                             }
+
+                            match lexer.extras.keyword {
+                                Some(Keywords::Add)  => {
+                                    lexer.extras.implicit_extension_namespace = Some(custom_attr_type.to_string());
+                                }
+                                _ => {}
+                            }
                             
                             parsed_len += lexer.slice().len();
                             match custom_attributes.get(&custom_attr_type) {
@@ -100,14 +135,19 @@ impl AttributeParser {
                                         &mut lexer.extras, 
                                         input.value()
                                     );
-                                    lexer.extras.attr_ident.take();
                                 }
                                 None if self.default_custom_attribute.is_some() => {
                                     let custom_attr = self.default_custom_attribute.clone().expect("should exist, just checked");
 
                                     lexer.extras.attr_ident = Some(custom_attr_type);
                                     custom_attr.parse(&mut lexer.extras, input.value());
-                                    lexer.extras.attr_ident.take();
+
+                                    match lexer.extras.keyword {
+                                        Some(Keywords::Extension) => {
+                                            lexer.extras.implicit_extension_namespace = lexer.extras.attr_ident.clone();
+                                        }
+                                        _ => {}
+                                    }
                                 }
                                 None => {
                                     // This might be intended, but in case it is not
@@ -243,6 +283,30 @@ impl AttributeParser {
     /// 
     pub fn attr_ident(&self) -> Option<&String> {
         self.attr_ident.as_ref()
+    }
+
+    /// Returns the current keyword,
+    /// 
+    pub fn keyword(&self) -> Option<&Keywords> {
+        self.keyword.as_ref()
+    }
+
+    /// Returns the current line count,
+    /// 
+    pub fn line_count(&self) -> usize {
+        self.line_count
+    }
+
+    /// Returns the current extension namespace,
+    /// 
+    pub fn extension_namespace(&self) -> Option<String> {
+        self.implicit_extension_namespace.as_ref().map(|s| {
+            if let Some(prefix) = self.implicit_extension_namespace_prefix.as_ref() {
+                format!("{prefix}.{s}")
+            } else {
+                s.to_string()
+            }
+        })
     }
 
     /// Returns the last attribute on the stack, 

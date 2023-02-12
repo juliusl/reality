@@ -25,3 +25,9 @@ pub use error::Error;
 mod tag;
 pub use tag::Tag;
 
+mod parser;
+pub use parser::Parser;
+
+mod compiler;
+pub use compiler::Compiler;
+

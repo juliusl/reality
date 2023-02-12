@@ -89,6 +89,12 @@ impl Block {
         &self.symbol
     }
 
+    /// Returns the block namespace
+    /// 
+    pub fn namespace(&self) -> String {
+        format!("{}.{}", self.name(), self.symbol())
+    }
+
     /// Returns the entity id for the block
     /// 
     pub fn entity(&self) -> u32 {
