@@ -51,7 +51,7 @@ pub struct Parser {
     /// 
     /// When applied to the attribute parser it will be used to recall custom components in the current scope,
     /// 
-    implicit_extension_symbol: Option<String>,
+    implicit_extension_namespace_prefix: Option<String>,
     /// Default custom attribute, 
     /// 
     /// If set, will be included with each new attribute parser
@@ -222,7 +222,7 @@ impl Parser {
             custom_attributes: vec![],
             parser_stack: vec![],
             implicit_block_symbol: None,
-            implicit_extension_symbol: None,
+            implicit_extension_namespace_prefix: None,
             default_custom_attribute: None,
         }
     }
@@ -472,6 +472,8 @@ impl Parser {
     pub fn new_attribute(&mut self) -> &mut AttributeParser {
         let mut attr_parser = AttributeParser::default();
 
+        self.implicit_extension_namespace_prefix.take();
+
         attr_parser.set_world(self.world.clone());
 
         for custom_attr in self.custom_attributes.iter().cloned() {
@@ -577,10 +579,11 @@ impl Parser {
     /// definitions.
     ///
     fn parse_property(&mut self) -> &mut AttributeParser {
+        let prefix = self.implicit_extension_namespace_prefix.clone();
         if !self.parser_stack.is_empty() {
             self.parser_top().expect(
                 "should return a parser since we check if the stack is empty before this line",
-            )
+            ).set_implicit_extension_prefix(prefix)
         } else {
             self.new_attribute()
         }

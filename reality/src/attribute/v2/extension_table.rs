@@ -63,13 +63,15 @@ impl ExtensionTable {
             .map(|e| e.clone())
     }
 
-    /// Adds an expand action to the extension table,
+    /// Adds an extend action to the extension table,
     ///
-    pub fn add_expand<A: Ident + Extend>(&mut self, action: A) {
+    pub fn add_extend<A: Ident + Extend>(&mut self, action: A) -> String {
         let action = Arc::new(action);
         let key = self.key(action.clone());
 
         self.extend.insert(key, action.clone());
+
+        action.ident()
     }
 
     /// Adds an build action to the extension table,

@@ -6,7 +6,7 @@ use super::{action, Action};
 
 /// V2 version of the Attribute struct,
 ///
-#[derive(Component, Clone)]
+#[derive(Component, Clone, Debug)]
 #[storage(VecStorage)]
 pub struct Attribute {
     /// Identifier string,
@@ -27,10 +27,27 @@ impl Attribute {
         Self { ident: ident.into(), value: value.into(), action_stack: vec![] }
     }
 
+    /// Returns an iterator over the extensions required by this attribute,
+    /// 
+    pub fn requires(&self) -> impl Iterator<Item = &String> {
+        self.action_stack().filter_map(|a| match a {
+            Action::Extend(ext)|
+            Action::Build(ext) |
+            Action::BuildRoot(ext) => Some(ext),
+            _ => None
+        })
+    }
+
     /// Returns an iterator over the action stack,
     /// 
     pub fn action_stack(&self) -> impl Iterator<Item = &Action> {
         self.action_stack.iter()
+    }
+
+    /// Pushes an action on the stack,
+    /// 
+    pub fn push(&mut self, action: Action) {
+        self.action_stack.push(action);
     }
 
     /// Returns self with a `with` action,
