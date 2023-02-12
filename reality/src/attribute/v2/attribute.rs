@@ -1,9 +1,13 @@
+use specs::{Component, VecStorage};
+
 use crate::Value;
 
 use super::{action, Action};
 
 /// V2 version of the Attribute struct,
 ///
+#[derive(Component, Clone)]
+#[storage(VecStorage)]
 pub struct Attribute {
     /// Identifier string,
     ///
@@ -17,6 +21,12 @@ pub struct Attribute {
 }
 
 impl Attribute {
+    /// Returns a new attribute,
+    /// 
+    pub fn new(ident: impl Into<String>, value: impl Into<Value>) -> Self {
+        Self { ident: ident.into(), value: value.into(), action_stack: vec![] }
+    }
+
     /// Returns an iterator over the action stack,
     /// 
     pub fn action_stack(&self) -> impl Iterator<Item = &Action> {

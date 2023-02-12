@@ -28,6 +28,55 @@ pub enum Value {
 }
 
 impl Value {
+    /// Returns the toml version of this value,
+    /// 
+    pub fn toml(&self) -> toml_edit::Item {
+        use toml_edit::value;
+        match self {
+            Value::Empty => {
+               value(".empty")
+            },
+            Value::Bool(b) => {
+                value(format!(".bool {b}"))
+            },
+            Value::TextBuffer(t) => {
+                value(format!(".text {t}"))
+            },
+            Value::Int(i) => {
+                value(format!(".int {i}"))
+            },
+            Value::IntPair(a, b) => {
+               value(format!(".int_pair {a}, {b}"))
+            },
+            Value::IntRange(a, b, c) => {
+                value(format!(".int_range {a}, {b}, {c}"))
+            },
+            Value::Float(f) => {
+                value(format!(".float {f}"))
+            },
+            Value::FloatPair(a, b) => {
+                value(format!(".float_pair {a}, {b}"))
+            },
+            Value::FloatRange(a, b, c) => {
+                value(format!(".float_range {a}, {b}, {c}"))
+            },
+            Value::BinaryVector(bin) => {
+                value(format!(".bin {}", base64::encode(bin)))
+            },
+            Value::Reference(r) => {
+                value(format!(".ref {r}"))
+            },
+            Value::Symbol(s) => {
+                value(format!(".symbol {s}"))
+            },
+            Value::Complex(c) => {
+               let c = c.iter().cloned().collect::<Vec<_>>();
+               let c = c.join(", ");
+               value(format!(".complex {c}"))
+            },
+        }
+    }
+
     /// Returns an empty tuple if value is an Empty type,
     /// 
     pub fn empty(&self) -> Option<()> {
