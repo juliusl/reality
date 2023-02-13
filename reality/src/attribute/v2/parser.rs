@@ -1,5 +1,5 @@
 use specs::{
-    Builder, Component, Entity, Join, ReadStorage, VecStorage, World, WorldExt, WriteStorage,
+    Builder, Join, ReadStorage, World, WorldExt, WriteStorage,
 };
 use tracing::trace;
 
@@ -7,8 +7,6 @@ use crate::parser::PropertyAttribute;
 use crate::{CustomAttribute, Keywords};
 
 use super::action;
-use super::Action;
-use super::Block;
 
 mod interop;
 pub use interop::Packet;
@@ -50,7 +48,7 @@ impl Parser {
                         _p.block_namespace = e.namespace();
 
                         if let Some(Keywords::Add) = _p.keyword.as_ref() {
-                            eprintln!("{:#?}", e);
+                            eprintln!("{:?}", e);
                             let ident = _p
                                 .tag()
                                 .map(|t| {
@@ -184,6 +182,7 @@ mod tests {
              + test .person Jacob
              <call>
              : moon-age .int 1000
+             <call2>
              : .dob 10/10/1000
 
              + test .person John
@@ -192,19 +191,6 @@ mod tests {
         "#,
             &mut compiler,
         );
-
-        /*
-        w/ moon-age example --
-
-        Would expect that the table
-
-        [[attributes]]
-        ident = person
-
-        ["test.call.person"]
-        moon-age = 1000
-        dob      = "10/10/1000"
-        */
 
         for b in compiler.blocks() {
             println!("{:#?}", b);

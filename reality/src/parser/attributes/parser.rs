@@ -152,6 +152,26 @@ impl AttributeParser {
                         Attributes::Comment => {}
                         _ => {}
                     }
+
+                    match token {
+                        Attributes::Empty
+                        | Attributes::Bool
+                        | Attributes::Int
+                        | Attributes::IntPair
+                        | Attributes::IntRange
+                        | Attributes::Float
+                        | Attributes::FloatPair
+                        | Attributes::FloatRange
+                        | Attributes::Symbol
+                        | Attributes::Complex
+                        | Attributes::Text
+                        | Attributes::BinaryVector
+                        | Attributes::Custom =>
+                        {
+                            break;
+                        }
+                        _ => {}
+                    }
                 }
             }
         }
@@ -701,15 +721,15 @@ fn handle_input_extraction(lexer: &mut Lexer<Attributes>) -> ParserInputInfo {
     let mut parser_input_info = ParserInputInfo::new(input.to_string());
     while let Some(token) = &mut comment_lexer.next() {
         match token {
-            Elements::Comment(comment) => {
-                input = input.replace(&format!("<{comment}>"), "");
-                parser_input_info.add_comment(comment_lexer.span());
-            }
-            Elements::InlineOperator | Elements::Error => {
+            Elements::NewLine | Elements::InlineOperator | Elements::Error => {
                 parser_input_info.set_end_pos(comment_lexer.span().start);
                 lexer.bump(parser_input_info.end_pos);
 
                 return parser_input_info;
+            }
+            Elements::Comment(comment) => {
+                input = input.replace(&format!("<{comment}>"), "");
+                parser_input_info.add_comment(comment_lexer.span());
             }
             _ => {}
         }
