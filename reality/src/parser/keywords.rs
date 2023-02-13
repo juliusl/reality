@@ -1,7 +1,4 @@
-use crate::Value;
-use logos::{Lexer, Logos};
-use specs::WorldExt;
-
+use logos::{Lexer, Logos, Filter};
 use crate::parser::Elements;
 use crate::Parser;
 
@@ -66,7 +63,7 @@ pub enum Keywords {
     NewLine = 0xF0,
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.
-    #[error]
+    #[error(logos::skip)]
     // We can also use this variant to define whitespace,
     // or any other matches we wish to skip.
     #[regex(r"[ \t\f]+", logos::skip)]
@@ -86,9 +83,16 @@ impl From<u8> for Keywords {
     }
 }
 
-fn on_comment(lexer: &mut Lexer<Keywords>) {
+fn on_comment(lexer: &mut Lexer<Keywords>) -> Filter<()> {
+    if !lexer.extras.enabled {
+        return Filter::Skip;
+    }
+    
     if let Some(next_line) = lexer.remainder().lines().next() {
         lexer.bump(next_line.len());
+        Filter::Emit(())
+    } else {
+        Filter::Skip
     }
 }
 
@@ -106,30 +110,38 @@ fn on_block_delimitter(lexer: &mut Lexer<Keywords>) {
             (Some(Elements::Identifier(name)), Some(Elements::Identifier(symbol))) => {
                 let current = lexer.extras.ensure_block(name, symbol);
                 lexer.extras.parsing = Some(current);
+                lexer.extras.enabled = true;
             }
             (Some(Elements::Identifier(symbol)), _) => {
                 lexer.extras.evaluate_stack();
                 let name = lexer.extras.current_block().name().to_string();
                 let current = lexer.extras.ensure_block(name, symbol);
                 lexer.extras.parsing = Some(current);
+                lexer.extras.enabled = true;
             }
             // Only enable this new behavior if implicit_block_symbol is enabled
             (None, None) if lexer.extras.implicit_block_symbol.is_some() => {
                 lexer.extras.evaluate_stack();
                 let current = lexer.extras.ensure_block("", "");
                 lexer.extras.parsing = Some(current);
+                lexer.extras.enabled = true;
             }
             _ => {
                 lexer.extras.evaluate_stack();
                 // If an ident is not set, then
                 lexer.extras.parsing = None;
+                lexer.extras.enabled = !lexer.extras.enabled;
             }
         }
         lexer.bump(next_line.len());
     }
 }
 
-fn on_add(lexer: &mut Lexer<Keywords>) {
+fn on_add(lexer: &mut Lexer<Keywords>) -> Filter<()> {
+    if !lexer.extras.enabled {
+        return Filter::Skip;
+    }
+
     if let Some(next_line) = lexer.remainder().lines().next() {
         let bump = {
             lexer
@@ -142,10 +154,17 @@ fn on_add(lexer: &mut Lexer<Keywords>) {
 
         let bump = bump;
         lexer.bump(bump);
+        Filter::Emit(())
+    } else {
+        Filter::Skip
     }
 }
 
-fn on_define(lexer: &mut Lexer<Keywords>) {
+fn on_define(lexer: &mut Lexer<Keywords>) -> Filter<()> {
+    if !lexer.extras.enabled {
+        return Filter::Skip;
+    }
+
     let input = lexer.remainder();
 
     let bump = if lexer.slice().starts_with(":") {
@@ -171,9 +190,15 @@ fn on_define(lexer: &mut Lexer<Keywords>) {
     };
 
     lexer.bump(bump);
+
+    Filter::Emit(())
 }
 
-fn on_extension(lexer: &mut Lexer<Keywords>) {
+fn on_extension(lexer: &mut Lexer<Keywords>) -> Filter<()> {
+    if !lexer.extras.enabled {
+        return Filter::Skip;
+    }
+
     // Set a new extension symbol in the parser,
     if lexer.slice().len() > 2 {
         let extension_prefix = lexer.slice()[1..lexer.slice().len() - 1].to_string();
@@ -191,6 +216,9 @@ fn on_extension(lexer: &mut Lexer<Keywords>) {
 
         let bump = bump;
         lexer.bump(bump);
+        Filter::Emit(())
+    } else {
+        Filter::Skip
     }
 }
 
@@ -202,7 +230,9 @@ mod tests {
 
     #[test]
     fn test_extension_keyword() {
-        let mut lexer = Keywords::lexer_with_extras("<call>\n<>\n+ test .symbol test", Parser::new());
+        let mut lexer = Keywords::lexer_with_extras("```\n<call>\n<>\n+ test .symbol tes\n```t", Parser::new());
+        lexer.next();       
+        lexer.next();
         let keyword = lexer.next().expect("should have a keyword");
         assert_eq!(Keywords::Extension, keyword);
         assert_eq!("<call>", lexer.slice());
@@ -216,6 +246,7 @@ mod tests {
                 .as_str()
         );
 
+        lexer.next();
         let keyword = lexer.next().expect("should have a keyword");
         assert_eq!(Keywords::Extension, keyword);
         assert_eq!("<>", lexer.slice());
@@ -229,6 +260,7 @@ mod tests {
                 .as_str()
         );
 
+        lexer.next();
         lexer.next().expect("should be one more keyword");
         assert!(
             lexer
