@@ -400,9 +400,6 @@ impl Parser {
         let mut line = 0;
         let mut col = 0;
         while let Some(token) = lexer.next() {
-            if !lexer.extras.enabled {
-                continue;
-            }
             match token {
                 Keywords::NewLine => {
                     event!(
@@ -686,7 +683,7 @@ mod tests {
 
     ``` call host 
     <>
-    add address .text localhost 
+    + address .text localhost 
     : ipv6 .enable
     : path .text api/test 
     : name .text test_name
@@ -697,7 +694,7 @@ mod tests {
     ```
 
     ``` test host 
-    add address .text localhost
+    + address .text localhost
     ``` 
 
     ```
@@ -724,8 +721,8 @@ mod tests {
         // Tests the lexer logic
         let parser = Parser::new();
         let mut lexer = Keywords::lexer_with_extras(TEST_CONTENT, parser);
-        let skip = lexer.source().find("```").unwrap();
-        lexer.bump(skip);
+        // let skip = lexer.source().find("```").unwrap();
+        // lexer.bump(skip);
         /*
          ``` call host
         add address .text localhost
@@ -737,6 +734,10 @@ mod tests {
         :: path .text api/test2
         ```
         */
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
         assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::Extension));
