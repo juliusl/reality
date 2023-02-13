@@ -9,7 +9,6 @@ use crate::Parser;
 pub enum Keywords {
     /// Write a stable attribute
     ///
-    #[token("add", on_add)]
     #[token("+", on_add)]
     Add = 0x0A,
 
@@ -44,9 +43,7 @@ pub enum Keywords {
     ///
     /// If `::` is used, the current attribute parser will be reused.
     ///
-    #[token("define", on_define)]
     #[token(":", on_define)]
-    #[token("::", on_define)]
     Define = 0x0D,
 
     /// Extension keyword, allows for wire protocol to include user frames
@@ -63,10 +60,10 @@ pub enum Keywords {
     NewLine = 0xF0,
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.
-    #[error(logos::skip)]
+    #[error]
     // We can also use this variant to define whitespace,
     // or any other matches we wish to skip.
-    #[regex(r"[ \t\f]+", logos::skip)]
+    #[regex(r"[ \t\fa-zA-Z.]+", logos::skip)]
     Error = 0xFF,
 }
 

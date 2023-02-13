@@ -359,17 +359,17 @@ fn test_encoder() {
 
     let content = r#"
     ``` call host 
-    add address .text localhost 
-    :: ipv6 .enable 
-    :: path .text api/test 
+    + address .text localhost 
+    : ipv6 .enable 
+    : path .text api/test 
     ``` guest 
     + address .text localhost
-    :: ipv4 .enable
-    :: path .text api/test2
+    : ipv4 .enable
+    : path .text api/test2
     ```
 
     ``` test host 
-    add address .text localhost
+    + address .text localhost
     ``` 
 
     ```
