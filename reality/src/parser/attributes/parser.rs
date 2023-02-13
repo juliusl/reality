@@ -105,8 +105,6 @@ impl AttributeParser {
     pub fn parse(&mut self, content: impl AsRef<str>) -> &mut Self {
         self.line_count += 1;
         
-        let custom_attributes = self.custom_attributes.clone();
-
         let mut lexer = Attributes::lexer_with_extras(content.as_ref(), self.clone());
 
         let mut parsed_len = 0;
@@ -115,78 +113,6 @@ impl AttributeParser {
                 Attributes::Error if lexer.slice().is_empty() || lexer.slice() == ":" || lexer.slice() == "`" || lexer.slice() == "+"=> {
                     break;
                 },
-                Attributes::Error if lexer.slice() == "." => {
-                    let line = format!("{}{}", lexer.slice(), lexer.remainder());
-                    event!(
-                        Level::TRACE,
-                        "Checking for custom attribute",
-                    );
-
-                    let mut elements_lexer = Elements::lexer(&line);
-                    match elements_lexer.next() {
-                        Some(Elements::Identifier(custom_attr_type)) => {
-                            let custom_attr_type = custom_attr_type.trim_start_matches(".").to_string();
-                            let input = handle_input_extraction(&mut lexer);
-                            
-                            if lexer.extras.name().is_none() {
-                                lexer.extras.set_name(custom_attr_type.to_string());
-                            }
-                            
-                            lexer.extras.set_value(Value::Symbol(input.value().trim_start_matches(&custom_attr_type).trim().to_string()));
-
-                            match lexer.extras.keyword {
-                                Some(Keywords::Add)  => {
-                                    lexer.extras.implicit_extension_namespace = Some(custom_attr_type.to_string());
-                                }
-                                _ => {}
-                            }
-                            
-                            parsed_len += lexer.slice().len();
-                            match custom_attributes.get(&custom_attr_type) {
-                                Some(custom_attr) => {
-                                    lexer.extras.attr_ident = Some(custom_attr_type);
-                                    custom_attr.parse(
-                                        &mut lexer.extras, 
-                                        input.value()
-                                    );
-                                }
-                                None if self.default_custom_attribute.is_some() => {
-                                    let custom_attr = self.default_custom_attribute.clone().expect("should exist, just checked");
-
-                                    lexer.extras.attr_ident = Some(custom_attr_type);
-                                    custom_attr.parse(&mut lexer.extras, input.value());
-
-                                    match lexer.extras.keyword {
-                                        Some(Keywords::Extension) => {
-                                            lexer.extras.implicit_extension_namespace = lexer.extras.attr_ident.clone();
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                                None => {
-                                    // This might be intended, but in case it is not
-                                    // this event here is to help figure out config issues
-                                    event!(
-                                        Level::TRACE, 
-                                        "Did not parse {custom_attr_type}, could not find custom attribute parser", 
-                                    );
-                                    break;
-                                }
-                            }
-                        },
-                        Some(Elements::InlineOperator) => {
-                            break;
-                        }
-                        _ => {
-                            event!(
-                                Level::ERROR,
-                                "Did not parse, unexpected element {}",
-                                elements_lexer.slice()
-                            );
-                            break;
-                        }
-                    }
-                }
                 _ => {
                     parsed_len += lexer.slice().len();
                     event!(Level::TRACE, "Parsed {:?} {}, {}", token, lexer.slice(), lexer.slice().len());
@@ -433,6 +359,7 @@ impl AttributeParser {
             (Some(name), Some(symbol), value, Some(edit)) => {
                 let name = self.attr_ident
                     .as_ref()
+                    .filter(|_| self.keyword().is_some())
                     .filter(|ident| *ident != &name)
                     .map(|suffix| format!("{name}.{suffix}.{}", value.symbol().unwrap()))
                     .unwrap_or(name);
@@ -444,6 +371,7 @@ impl AttributeParser {
             (Some(name), None, value, None) => {
                 let name = self.attr_ident
                     .as_ref()
+                    .filter(|_| self.keyword().is_some())
                     .filter(|ident| *ident != &name)
                     .map(|suffix| format!("{name}.{suffix}.{}", value.symbol().unwrap()))
                     .unwrap_or(name);
@@ -651,6 +579,57 @@ pub fn on_complex_attr(lexer: &mut Lexer<Attributes>) {
     lexer
         .extras
         .parse_value(Value::Complex(BTreeSet::from_iter(idents)));
+}
+
+pub fn on_custom_attr(lexer: &mut Lexer<Attributes>) {
+    let custom_attr_type = &lexer.slice()[1..].to_string();
+
+    let input = handle_input_extraction(lexer);
+                            
+    if lexer.extras.name().is_none() {
+        lexer.extras.set_name(custom_attr_type.to_string());
+    }
+    
+    lexer.extras.set_value(Value::Symbol(input.value().trim_start_matches(custom_attr_type).trim().to_string()));
+
+    match lexer.extras.keyword {
+        Some(Keywords::Add)  => {
+            lexer.extras.implicit_extension_namespace = Some(custom_attr_type.to_string());
+        }
+        _ => {}
+    }
+    
+    lexer.extras.attr_ident = Some(custom_attr_type.to_string());
+
+    trace!("Checking for custom attribute");
+    let custom_parser = lexer.extras.custom_attributes.get(custom_attr_type).cloned();
+    match custom_parser {
+        Some(custom_attr) => {
+            custom_attr.parse(
+                &mut lexer.extras, 
+                input.value()
+            );
+        }
+        None if lexer.extras.default_custom_attribute.is_some() => {
+            let custom_attr = lexer.extras.default_custom_attribute.clone().expect("should exist, just checked");
+
+            custom_attr.parse(&mut lexer.extras, input.value());
+            match lexer.extras.keyword {
+                Some(Keywords::Extension) => {
+                    lexer.extras.implicit_extension_namespace = lexer.extras.attr_ident.clone();
+                }
+                _ => {}
+            }
+        }
+        None => {
+            // This might be intended, but in case it is not
+            // this event here is to help figure out config issues
+            event!(
+                Level::TRACE, 
+                "Did not parse {custom_attr_type}, could not find custom attribute parser", 
+            );
+        }
+    }
 }
 
 pub fn from_comma_sep<T>(lexer: &mut Lexer<Attributes>) -> Vec<T>

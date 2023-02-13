@@ -154,7 +154,7 @@ fn on_define(lexer: &mut Lexer<Keywords>) {
                 panic!("Invalid syntax,\n{}", lexer.remainder())
             }
         }
-        
+
         attr_parser.set_keyword(Keywords::Define).parse(input);
         attr_parser.last_parse_len()
     } else {
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn test_extension_keyword() {
-        let mut lexer = Keywords::lexer_with_extras("<call>\n<>", Parser::new());
+        let mut lexer = Keywords::lexer_with_extras("<call>\n<>\n+ test .symbol test", Parser::new());
         let keyword = lexer.next().expect("should have a keyword");
         assert_eq!(Keywords::Extension, keyword);
         assert_eq!("<call>", lexer.slice());
@@ -206,7 +206,7 @@ mod tests {
                 .extras
                 .implicit_extension_namespace_prefix
                 .as_ref()
-                .unwrap()
+                .expect("should have a prefix")
                 .as_str()
         );
 
@@ -218,8 +218,18 @@ mod tests {
             lexer
                 .extras
                 .implicit_extension_namespace_prefix
-                .unwrap()
+                .as_ref()
+                .expect("should have a prefix")
                 .as_str()
+        );
+
+        lexer.next().expect("should be one more keyword");
+        assert!(
+            lexer
+                .extras
+                .implicit_extension_namespace_prefix
+                .as_ref()
+                .is_none()
         );
     }
 }

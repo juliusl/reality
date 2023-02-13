@@ -121,11 +121,11 @@ mod tests {
         name   = "test_block"
         symbol = "test"
 
-        [[roots]]
+        [[attributes]]
         ident   = "person"
         value   = ".symbol John"
 
-        [[roots]]
+        [[attributes]]
         ident   = "person"
         value   = ".symbol Jacob"
         "#;
