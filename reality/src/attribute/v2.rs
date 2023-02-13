@@ -28,6 +28,6 @@ pub use tag::Tag;
 mod parser;
 pub use parser::Parser;
 
-mod compiler;
-pub use compiler::Compiler;
+mod toml_transpiler;
+pub use toml_transpiler::TomlTranspiler;
 

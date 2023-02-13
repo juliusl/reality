@@ -1,19 +1,24 @@
 use std::collections::BTreeMap;
 
+use toml_edit::Document;
+
 use crate::Value;
 
 use super::Block;
 
-/// Struct for compiling interop data,
-///
+/// Struct for transpiling runmd interop into a TOML document,
+///  
 #[derive(Default)]
-pub struct Compiler {
+pub struct TomlTranspiler {
     /// Compiled blocks,
     ///
     blocks: BTreeMap<String, Block>,
+    /// Transpiler result
+    /// 
+    toml: Document
 }
 
-impl Compiler {
+impl TomlTranspiler {
     /// Returns the current block map,
     ///
     pub fn blocks(&self) -> &BTreeMap<String, Block> {
@@ -21,7 +26,7 @@ impl Compiler {
     }
 }
 
-impl super::parser::PacketHandler for Compiler {
+impl super::parser::PacketHandler for TomlTranspiler {
     fn on_packet(&mut self, packet: super::parser::Packet) -> Result<(), super::Error> {
         if !self.blocks.contains_key(&packet.block_namespace) {
             self.blocks
@@ -63,7 +68,8 @@ impl super::parser::PacketHandler for Compiler {
                     }
                     crate::Keywords::Comment
                     | crate::Keywords::Error
-                    | crate::Keywords::BlockDelimitter => {
+                    | crate::Keywords::BlockDelimitter
+                    | crate::Keywords::NewLine => {
                         unreachable!("These keywords would never emit packets")
                     }
                 },
