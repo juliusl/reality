@@ -387,9 +387,9 @@ impl AttributeParser {
                     .filter(|_| self.keyword().is_some())
                     .map(|suffix| {
                         if suffix != &name {
-                            format!("{name}.{suffix}.{}", value.symbol().unwrap())
+                            format!("{name}.{suffix}.{}", value.symbol().unwrap_or_default())
                         } else {
-                            format!("{name}.{}", value.symbol().unwrap())
+                            format!("{name}.{}", value.symbol().unwrap_or_default())
                         }
                     })
                     .unwrap_or(name);
@@ -405,9 +405,9 @@ impl AttributeParser {
                     .filter(|_| self.keyword().is_some())
                     .map(|suffix| {
                         if suffix != &name {
-                            format!("{name}.{suffix}.{}", value.symbol().unwrap())
+                            format!("{name}.{suffix}.{}", value.symbol().unwrap_or_default())
                         } else {
-                            format!("{name}.{}", value.symbol().unwrap())
+                            format!("{name}.{}", value.symbol().unwrap_or_default())
                         }
                     })
                     .unwrap_or(name);

@@ -63,6 +63,11 @@ pub struct Parser {
     /// If set, will be included with each new attribute parser
     ///
     default_property_attribute: Option<PropertyAttribute>,
+    /// True when the lexer is within block delimitter boundaries,
+    /// 
+    /// If false, keywords will skip
+    /// 
+    enabled: bool,
 }
 
 /// Struct for stopping the parser after it parses a token, and to continue where it left off,
@@ -231,6 +236,7 @@ impl Parser {
             implicit_extension_namespace_prefix: None,
             default_custom_attribute: None,
             default_property_attribute: None,
+            enabled: false,
         }
     }
 
@@ -394,6 +400,9 @@ impl Parser {
         let mut line = 0;
         let mut col = 0;
         while let Some(token) = lexer.next() {
+            if !lexer.extras.enabled {
+                continue;
+            }
             match token {
                 Keywords::NewLine => {
                     event!(
@@ -665,12 +674,16 @@ impl AsMut<AttributeParser> for Parser {
 }
 
 #[allow(unused_imports)]
+#[allow(dead_code)]
 mod tests {
     use logos::Logos;
 
     use crate::{Keywords, Parser, Value};
 
-    const content: &'static str = r#"
+    const TEST_CONTENT: &'static str = r#"
+    # Test 
+    This to test that the enabled disabled is working.
+
     ``` call host 
     <>
     add address .text localhost 
@@ -710,8 +723,9 @@ mod tests {
 
         // Tests the lexer logic
         let parser = Parser::new();
-        let mut lexer = Keywords::lexer_with_extras(content, parser);
-
+        let mut lexer = Keywords::lexer_with_extras(TEST_CONTENT, parser);
+        let skip = lexer.source().find("```").unwrap();
+        lexer.bump(skip);
         /*
          ``` call host
         add address .text localhost
@@ -723,7 +737,6 @@ mod tests {
         :: path .text api/test2
         ```
         */
-        assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
         assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::Extension));
@@ -816,7 +829,7 @@ mod tests {
     #[test]
     fn test_parse() {
         // Tests parsing logic
-        let mut parser = Parser::new().parse(content);
+        let mut parser = Parser::new().parse(TEST_CONTENT);
 
         let address = parser.get_block("call", "host").map_transient("address");
         assert_eq!(address.get("ipv6"), Some(&Value::Bool(true)));
