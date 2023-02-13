@@ -9,16 +9,13 @@ use super::Block;
 /// Struct for transpiling runmd interop into a TOML document,
 ///  
 #[derive(Default)]
-pub struct TomlTranspiler {
+pub struct BlockBuilder {
     /// Compiled blocks,
     ///
     blocks: BTreeMap<String, Block>,
-    /// Transpiler result
-    /// 
-    toml: Document
 }
 
-impl TomlTranspiler {
+impl BlockBuilder {
     /// Returns the current block map,
     ///
     pub fn blocks(&self) -> &BTreeMap<String, Block> {
@@ -26,7 +23,7 @@ impl TomlTranspiler {
     }
 }
 
-impl super::parser::PacketHandler for TomlTranspiler {
+impl super::parser::PacketHandler for BlockBuilder {
     fn on_packet(&mut self, packet: super::parser::Packet) -> Result<(), super::Error> {
         if !self.blocks.contains_key(&packet.block_namespace) {
             self.blocks
@@ -38,15 +35,15 @@ impl super::parser::PacketHandler for TomlTranspiler {
         let ext_ident = packet.qualified_ext_ident();
 
         if let Some(block) = self.blocks.get_mut(&packet.block_namespace) {
-            match packet.keyword {
+            match packet.keyword.as_ref() {
                 Some(keyword) => match keyword {
                     crate::Keywords::Add => {
                         block.add_attribute(ident, value);
 
-                        packet.name.filter(|n| n != &packet.ident).map(|s| {
+                        packet.tag().as_ref().map(|s| {
                             block
                                 .last_mut()
-                                .map(|b| *b = b.clone().with("tag", Value::Symbol(s)));
+                                .map(|b| *b = b.clone().with("tag", Value::Symbol(s.to_string())));
                         });
 
                         if !packet.actions.is_empty() {
@@ -63,14 +60,13 @@ impl super::parser::PacketHandler for TomlTranspiler {
                     }
                     crate::Keywords::Define | crate::Keywords::Extension => {
                         block.last_mut().map(|a| {
-                            *a = a.clone().with(ident, value).extend(ext_ident);
+                            *a = a.clone()
+                                .with(ident, value)
+                                .extend(ext_ident);
                         });
                     }
-                    crate::Keywords::Comment
-                    | crate::Keywords::Error
-                    | crate::Keywords::BlockDelimitter
-                    | crate::Keywords::NewLine => {
-                        unreachable!("These keywords would never emit packets")
+                    _ => {
+                        unreachable!("Only keywords that emit packets would reach this code")
                     }
                 },
                 _ => {}

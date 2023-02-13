@@ -143,7 +143,7 @@ impl Parser {
 mod tests {
     use tracing_test::traced_test;
 
-    use crate::v2::TomlTranspiler;
+    use crate::v2::BlockBuilder;
 
     use super::Parser;
 
@@ -151,7 +151,7 @@ mod tests {
     #[traced_test]
     fn test_parser() {
         let parser = Parser::new();
-        let mut compiler = TomlTranspiler::default();
+        let mut compiler = BlockBuilder::default();
         // let parser = parser.parse(
         //     r#"
         // # ``` test block
