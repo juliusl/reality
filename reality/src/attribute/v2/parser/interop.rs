@@ -12,9 +12,9 @@ pub struct Packet {
     /// Root name of the attribute unless it differs from ident, in which case it is the tag
     ///
     pub(crate) name: Option<String>,
-    /// Symbol ident of this packet,
+    /// Property ident of this packet,
     ///
-    pub(crate) symbol: Option<String>,
+    pub(crate) property: Option<String>,
     /// Custom attribute identifier,
     ///
     pub(crate) ident: String,
@@ -41,6 +41,12 @@ pub struct Packet {
 }
 
 impl Packet {
+    /// Designated tag,
+    /// 
+    pub fn tag(&self) -> Option<&String> {
+        self.name.as_ref().filter(|n| *n != &self.ident)
+    }
+
     /// Returns the qualified extension ident,
     /// 
     /// Used to link extension implementation,

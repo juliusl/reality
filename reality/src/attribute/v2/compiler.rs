@@ -36,7 +36,7 @@ impl super::parser::PacketHandler for Compiler {
             match packet.keyword {
                 Some(keyword) => match keyword {
                     crate::Keywords::Add => {
-                        block.add_root(ident, value);
+                        block.add_attribute(ident, value);
 
                         packet.name.filter(|n| n != &packet.ident).map(|s| {
                             block

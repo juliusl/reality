@@ -14,6 +14,7 @@ pub use attributes::Attributes;
 pub use attributes::BlobDescriptor;
 pub use attributes::CustomAttribute;
 pub use attributes::SpecialAttribute;
+pub use attributes::PropertyAttribute;
 
 mod keywords;
 pub use keywords::Keywords;
@@ -57,6 +58,11 @@ pub struct Parser {
     /// If set, will be included with each new attribute parser
     /// 
     default_custom_attribute: Option<CustomAttribute>,
+    /// Default property attribute,
+    /// 
+    /// If set, will be included with each new attribute parser
+    /// 
+    default_property_attribute: Option<PropertyAttribute>,
 }
 
 /// Struct for stopping the parser after it parses a token, and to continue where it left off,
@@ -224,6 +230,7 @@ impl Parser {
             implicit_block_symbol: None,
             implicit_extension_namespace_prefix: None,
             default_custom_attribute: None,
+            default_property_attribute: None,
         }
     }
 
@@ -231,6 +238,12 @@ impl Parser {
     /// 
     pub fn set_default_custom_attribute(&mut self, custom: CustomAttribute) {
         self.default_custom_attribute = Some(custom);
+    }
+
+    /// Sets the default property attribute,
+    /// 
+    pub fn set_default_property_attribute(&mut self, property: PropertyAttribute) {
+        self.default_property_attribute = Some(property);
     }
 
     /// Sets the implicit symbol for the parser,
@@ -406,7 +419,7 @@ impl Parser {
                     if let Some(top) = parser.parser_top() {
                         current_name = top.name().cloned();
                         current_entity = top.entity();
-                        current_symbol = top.symbol().cloned();
+                        current_symbol = top.property().cloned();
                         current_value = Some(top.value().clone());
                     }
                 }
@@ -487,6 +500,10 @@ impl Parser {
 
         if let Some(default_custom) = self.default_custom_attribute.as_ref() {
             attr_parser.set_default_custom_attribute(default_custom.clone());
+        }
+
+        if let Some(default_property) = self.default_property_attribute.as_ref() {
+            attr_parser.set_default_property_attribute(default_property.clone());
         }
 
         attr_parser.set_id(self.parsing.and_then(|p| Some(p.id())).unwrap_or(0));

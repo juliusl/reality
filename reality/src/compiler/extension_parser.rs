@@ -55,7 +55,7 @@ where
         if let (Some(entity), Some(ident)) =
             (parser.last_child_entity(), parser.attr_ident().cloned())
         {
-            if let Some(var_name) = parser.symbol() {
+            if let Some(var_name) = parser.property() {
                 let var_name = var_name.to_string();
                 parser.define_child(entity, ident, Value::Symbol(var_name.to_string()));
                 Some((entity, var_name))

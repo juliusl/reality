@@ -154,9 +154,7 @@ fn on_define(lexer: &mut Lexer<Keywords>) {
                 panic!("Invalid syntax,\n{}", lexer.remainder())
             }
         }
-
-        // Because this is a property, set the value to empty
-        attr_parser.set_value(Value::Empty);
+        
         attr_parser.set_keyword(Keywords::Define).parse(input);
         attr_parser.last_parse_len()
     } else {

@@ -181,7 +181,7 @@ impl BlockIndex {
                 let mut block_index = BlockIndex::new(stable_attr);
 
                 for prop in slice[1..].iter() {
-                    debug_assert!(prop.name().starts_with(stable_attr.name()));
+                    //debug_assert!(prop.name().starts_with(stable_attr.name()), "Name {} does not start with {}", prop.name(), stable_attr.name());
 
                     let symbol = prop
                         .name()

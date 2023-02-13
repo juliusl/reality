@@ -29,11 +29,11 @@ impl Attribute {
 
     /// Returns an iterator over the extensions required by this attribute,
     /// 
-    pub fn requires(&self) -> impl Iterator<Item = &String> {
+    pub fn requires(&self) -> impl Iterator<Item = &Action> {
         self.action_stack().filter_map(|a| match a {
-            Action::Extend(ext)|
-            Action::Build(ext) |
-            Action::BuildRoot(ext) => Some(ext),
+            Action::Extend(_)|
+            Action::Build(_) |
+            Action::BuildRoot(_) => Some(a),
             _ => None
         })
     }
