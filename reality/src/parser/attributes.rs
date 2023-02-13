@@ -61,10 +61,12 @@ pub enum Attributes {
     /// Int pair element parses remaining as 2 comma-delimmited i32's
     /// 
     #[token(".int_pair", parser::on_int_pair_attr)]
+    #[token(".int2", parser::on_int_range_attr)]
     IntPair = 0x03,
     /// Int range element parses remaining as 3 comma-delimitted i32's
     /// 
     #[token(".int_range", parser::on_int_range_attr)]
+    #[token(".int3", parser::on_int_range_attr)]
     IntRange = 0x04,
     /// Float element parses remaining as f32
     /// 
@@ -73,10 +75,12 @@ pub enum Attributes {
     /// Float pair element parses reamining as 2 comma delimitted f32's
     /// 
     #[token(".float_pair", parser::on_float_pair_attr)]
+    #[token(".float2", parser::on_float_pair_attr)]
     FloatPair = 0x06,
     /// Float range element parses remaining as 3 comma delimitted f32's
     /// 
     #[token(".float_range", parser::on_float_range_attr)]
+    #[token(".float3", parser::on_float_range_attr)]
     FloatRange = 0x07,
     /// Symbol is an attribute value that refers to an identifier,
     /// 
@@ -97,11 +101,14 @@ pub enum Attributes {
     #[token(".bin", parser::on_binary_vec_attr)]
     #[token(".base64", parser::on_binary_vec_attr)]
     BinaryVector = 0x0B,
-
+    /// Identifier string, that follows a strict format
+    ///
+    #[regex("[.][A-Za-z_-]+", parser::on_custom_attr)]
+    Custom = 0x0C,
     /// Bumps the parser until `>` is found
     /// 
     #[token("<", parser::on_comment_start)]
-    Comment = 0xF0,    
+    Comment = 0xF0,
     /// Identifier string, that follows a strict format
     ///
     #[regex("[A-Za-z]+[A-Za-z-;._:/@#+=$0-9]*", parser::on_identifier)]

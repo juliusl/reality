@@ -656,7 +656,7 @@ impl Frame {
                             .get(&key)
                             .map(|d| Value::Complex(d.clone()))
                     }
-                    Attributes::Identifier | Attributes::Error | Attributes::Comment | Attributes::Whitespace | Attributes::NewLine => {
+                    Attributes::Custom | Attributes::Identifier | Attributes::Error | Attributes::Comment | Attributes::Whitespace | Attributes::NewLine => {
                         panic!("frame does not have a value type")
                     }
                 }

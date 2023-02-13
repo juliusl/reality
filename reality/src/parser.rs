@@ -485,7 +485,9 @@ impl Parser {
     pub fn new_attribute(&mut self) -> &mut AttributeParser {
         let mut attr_parser = AttributeParser::default();
 
-        self.implicit_extension_namespace_prefix.take();
+        if self.parser_stack.len() > 0 {
+            self.implicit_extension_namespace_prefix.take();
+        }
 
         attr_parser.set_world(self.world.clone());
 
