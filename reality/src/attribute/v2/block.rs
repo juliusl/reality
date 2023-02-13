@@ -7,6 +7,7 @@ use specs::HashMapStorage;
 use toml_edit::Document;
 use toml_edit::Item;
 
+use super::Action;
 use super::Attribute;
 use super::ValueProvider;
 
@@ -66,7 +67,7 @@ impl Block {
 
     /// Returns an iterator over extensions this block requires,
     /// 
-    pub fn requires(&self) -> impl Iterator<Item = &String> {
+    pub fn requires(&self) -> impl Iterator<Item = &Action> {
         self.attributes.iter().flat_map(|a| a.requires())
     }
 
@@ -76,7 +77,9 @@ impl Block {
         self.attributes.last_mut()
     }
 
-    pub fn add_root(&mut self, ident: impl Into<String>, value: impl Into<Value>) {
+    /// Adds an attribute to the block,
+    /// 
+    pub fn add_attribute(&mut self, ident: impl Into<String>, value: impl Into<Value>) {
         self.attributes.push(Attribute::new(ident, value));
     }
 

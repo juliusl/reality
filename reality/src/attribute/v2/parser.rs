@@ -1,7 +1,9 @@
 use specs::{
     Builder, Component, Entity, Join, ReadStorage, VecStorage, World, WorldExt, WriteStorage,
 };
+use tracing::trace;
 
+use crate::parser::PropertyAttribute;
 use crate::{CustomAttribute, Keywords};
 
 use super::Action;
@@ -48,7 +50,10 @@ impl Parser {
                         _p.block_namespace = e.namespace();
                         
                         if let Some(Keywords::Add) = _p.keyword.as_ref() {
-                            let map = e.map_transient(&_p.ident);
+                            eprintln!("{:#?}", e);
+                            let ident = _p.tag().map(|t| format!("{t}.{}.{}", _p.ident, _p.input().symbol().unwrap())).unwrap_or(_p.ident.to_string());
+
+                            let map = e.map_transient(ident);
                             for (ident, value) in map.iter() {
                                 _p.actions.push(action::with(ident, value.clone()));
                             }
@@ -76,7 +81,7 @@ impl Parser {
         v1_parser.set_default_custom_attribute(CustomAttribute::new_with("", |parser, input| {
             if let Some(ident) = parser.attr_ident().cloned() {
                 let name = parser.name().cloned();
-                let symbol = parser.symbol().cloned();
+                let symbol = parser.property().cloned();
                 let entity = parser.entity().clone();
                 let keyword = parser.keyword().cloned();
                 let extension_namespace = parser.extension_namespace();
@@ -87,7 +92,7 @@ impl Parser {
                         .with(Packet {
                             name,
                             entity,
-                            symbol,
+                            property: symbol,
                             keyword,
                             ident,
                             input,
@@ -99,6 +104,17 @@ impl Parser {
                         .build();
                 });
             }
+        }));
+
+        v1_parser.set_default_property_attribute(PropertyAttribute(|parser, token|{
+            let name = parser.name().cloned();
+            let property = parser.property().cloned();
+            let entity = parser.entity().clone();
+            let keyword = parser.keyword().cloned();
+            let extension_namespace = parser.extension_namespace();
+            let line_count = parser.line_count();
+
+            trace!("{:?}, {:?}, {:?}, {:?}, {:?}, {}, {:?}, {:?}", name, property, entity, keyword, extension_namespace, line_count, token, parser.edit_value());
         }));
         v1_parser
     }
@@ -116,7 +132,7 @@ mod tests {
     #[traced_test]
     fn test_parser() {
         let parser = Parser::new();
-        let mut compiler = Compiler::default();
+        let mut  compiler = Compiler::default();
         // let parser = parser.parse(
         //     r#"
         // # ``` test block
@@ -136,12 +152,32 @@ mod tests {
         let _parser = parser.parse(
             r#"
             ``` b block 
+            : version .int 5
+
              + test .person Jacob
+             <call>
+             : moon-age .int 1000
              : .dob 10/10/1000
+
+             + test .person John
+             : .dob 10/11/1000
             ```
         "#,
             &mut compiler,
         );
+
+        /*
+        w/ moon-age example -- 
+
+        Would expect that the table 
+
+        [[attributes]]
+        ident = person
+
+        ["test.call.person"]
+        moon-age = 1000
+        dob      = "10/10/1000"
+        */
 
         for b in compiler.blocks() {
             println!("{:#?}", b);

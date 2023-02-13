@@ -6,6 +6,9 @@ mod custom;
 pub use custom::CustomAttribute;
 pub use custom::SpecialAttribute;
 
+mod property;
+pub use property::PropertyAttribute;
+
 mod cache;
 pub use cache::Cache;
 
@@ -106,9 +109,11 @@ pub enum Attributes {
 
     #[token(" ")]
     #[token("\t")]
+    Whitespace = 0xF2,
+
     #[token("\n")]
     #[token("\r")]
-    Whitespace = 0xF2,
+    NewLine = 0xF3,
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.
     #[error]
@@ -159,6 +164,7 @@ impl From<u8> for Attributes {
             0xF0 => Attributes::Comment,
             0xF1 => Attributes::Identifier,
             0xF2 => Attributes::Whitespace,
+            0xF3 => Attributes::NewLine,
             _ => Attributes::Error,
         }
     }
