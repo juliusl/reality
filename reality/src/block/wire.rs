@@ -351,7 +351,8 @@ impl WireObject for Block {
                 crate::parser::Keywords::BlockDelimitter
                 | crate::parser::Keywords::Comment
                 | crate::parser::Keywords::Extension
-                | crate::parser::Keywords::Error => {}
+                | crate::parser::Keywords::Error
+                | crate::parser::Keywords::NewLine => {}
             }
         }
 

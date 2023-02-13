@@ -13,8 +13,8 @@ pub use attributes::AttributeParser;
 pub use attributes::Attributes;
 pub use attributes::BlobDescriptor;
 pub use attributes::CustomAttribute;
-pub use attributes::SpecialAttribute;
 pub use attributes::PropertyAttribute;
+pub use attributes::SpecialAttribute;
 
 mod keywords;
 pub use keywords::Keywords;
@@ -47,21 +47,21 @@ pub struct Parser {
     ///
     implicit_block_symbol: Option<String>,
     /// Implicit extension symbol to use when an extension keyword is found,
-    /// 
+    ///
     /// Can either be set directly or when an identifier is declared inside of an extension keyword, i.e. `<extension>` would set this value to extension
-    /// 
+    ///
     /// When applied to the attribute parser it will be used to recall custom components in the current scope,
-    /// 
+    ///
     implicit_extension_namespace_prefix: Option<String>,
-    /// Default custom attribute, 
-    /// 
+    /// Default custom attribute,
+    ///
     /// If set, will be included with each new attribute parser
-    /// 
+    ///
     default_custom_attribute: Option<CustomAttribute>,
     /// Default property attribute,
-    /// 
+    ///
     /// If set, will be included with each new attribute parser
-    /// 
+    ///
     default_property_attribute: Option<PropertyAttribute>,
 }
 
@@ -134,7 +134,7 @@ impl ContinueParserToken {
 
                     Ok(next)
                 }
-                Err(mut parser) => { 
+                Err(mut parser) => {
                     if let Some(root) = root.take() {
                         if let Some(entity) = parser.parse_property().entity() {
                             parser
@@ -145,7 +145,7 @@ impl ContinueParserToken {
                     }
 
                     Err(parser)
-                },
+                }
             }
         } else {
             if let Some(root) = self.root.take() {
@@ -235,13 +235,13 @@ impl Parser {
     }
 
     /// Sets the default custom attribute,
-    /// 
+    ///
     pub fn set_default_custom_attribute(&mut self, custom: CustomAttribute) {
         self.default_custom_attribute = Some(custom);
     }
 
     /// Sets the default property attribute,
-    /// 
+    ///
     pub fn set_default_property_attribute(&mut self, property: PropertyAttribute) {
         self.default_property_attribute = Some(property);
     }
@@ -390,8 +390,48 @@ impl Parser {
     ///
     pub fn parse(self, content: impl AsRef<str>) -> Self {
         let mut lexer = Keywords::lexer_with_extras(content.as_ref(), self);
+
+        let mut line = 0;
+        let mut col = 0;
         while let Some(token) = lexer.next() {
-            event!(Level::TRACE, "Parsed token, {:?}", token);
+            match token {
+                Keywords::NewLine => {
+                    event!(
+                        Level::TRACE,
+                        "ln: {}, col: {}, Parsed token, {:?} {}",
+                        line,
+                        col,
+                        token,
+                        lexer.slice()
+                    );
+                    line += 1;
+                    col = 0;
+                }
+                _ if lexer.slice().contains("\n") => {
+                    col += lexer.slice().trim_end().len();
+                    event!(
+                        Level::TRACE,
+                        "ln: {}, col: {}, Parsed token, {:?} {}",
+                        line,
+                        col,
+                        token,
+                        lexer.slice()
+                    );
+                    line += 1;
+                    col = 0;
+                }
+                _ => {
+                    col += lexer.slice().trim_end().len();
+                    event!(
+                        Level::TRACE,
+                        "ln: {}, col: {}, Parsed token, {:?} {}",
+                        line,
+                        col,
+                        token,
+                        lexer.slice()
+                    );
+                }
+            }
         }
 
         lexer.extras
@@ -600,9 +640,11 @@ impl Parser {
     fn parse_property(&mut self) -> &mut AttributeParser {
         let prefix = self.implicit_extension_namespace_prefix.clone();
         if !self.parser_stack.is_empty() {
-            self.parser_top().expect(
-                "should return a parser since we check if the stack is empty before this line",
-            ).set_implicit_extension_prefix(prefix)
+            self.parser_top()
+                .expect(
+                    "should return a parser since we check if the stack is empty before this line",
+                )
+                .set_implicit_extension_prefix(prefix)
         } else {
             self.new_attribute()
         }
@@ -622,12 +664,13 @@ impl AsMut<AttributeParser> for Parser {
     }
 }
 
-#[tracing_test::traced_test]
-#[test]
-fn test_parser() {
-    use crate::Value;
+#[allow(unused_imports)]
+mod tests {
+    use logos::Logos;
 
-    let content = r#"
+    use crate::{Keywords, Parser, Value};
+
+    const content: &'static str = r#"
     ``` call host 
     <>
     add address .text localhost 
@@ -660,147 +703,216 @@ fn test_parser() {
     ```
     "#;
 
-    // Tests the lexer logic
-    let parser = Parser::new();
-    let mut lexer = Keywords::lexer_with_extras(content, parser);
+    #[tracing_test::traced_test]
+    #[test]
+    fn test_lexer() {
+        use crate::Value;
 
-    /*
-     ``` call host
-    add address .text localhost
-    :: ipv6 .enable
-    :: path .text api/test
-    ``` guest
-    + address .text localhost
-    :: ipv4 .enable
-    :: path .text api/test2
-    ```
-    */
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
-    assert_eq!(lexer.next(), Some(Keywords::Extension));
-    assert_eq!(lexer.next(), Some(Keywords::Add));
-    assert_eq!(lexer.next(), Some(Keywords::Define), "slice -- {}, {}", lexer.slice(), lexer.remainder());
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
-    assert_eq!(lexer.next(), Some(Keywords::Add));
-    assert_eq!(lexer.next(), Some(Keywords::Define), "slice -- {}, {}", lexer.slice(), lexer.remainder());
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
+        // Tests the lexer logic
+        let parser = Parser::new();
+        let mut lexer = Keywords::lexer_with_extras(content, parser);
 
-    /*
-    ``` test host
-    add address .text localhost
-    ```
-    */
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
-    assert_eq!(lexer.next(), Some(Keywords::Add));
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
+        /*
+         ``` call host
+        add address .text localhost
+        :: ipv6 .enable
+        :: path .text api/test
+        ``` guest
+        + address .text localhost
+        :: ipv4 .enable
+        :: path .text api/test2
+        ```
+        */
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::Extension));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::Add));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(
+            lexer.next(),
+            Some(Keywords::Define),
+            "slice -- {}, {}",
+            lexer.slice(),
+            lexer.remainder()
+        );
+        assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::Add));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(
+            lexer.next(),
+            Some(Keywords::Define),
+            "slice -- {}, {}",
+            lexer.slice(),
+            lexer.remainder()
+        );
+        assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
 
-    /*
-    ```
-    + debug .enable
-    + test          .map    Everything after this is ignored when parsed
-    :: name         .text   Test map
-    :: description  .text   This tests the .map type, which is an alias for .empty
-    ``` guest
-    :: name .text cool guest host
-    + address .text testhost
-    ```
-    */
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
-    assert_eq!(lexer.next(), Some(Keywords::Add));
-    assert_eq!(lexer.next(), Some(Keywords::Add));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::Add));
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
+        /*
+        ``` test host
+        add address .text localhost
+        ```
+        */
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::Add));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
 
-    /*
-    ```
-    +  inline_person .text John : age .int 99 : weight .float 3.14 : real .false
-    ```
-    */
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
-    assert_eq!(lexer.next(), Some(Keywords::Add));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
-    
+        /*
+        ```
+        + debug .enable
+        + test          .map    Everything after this is ignored when parsed
+        :: name         .text   Test map
+        :: description  .text   This tests the .map type, which is an alias for .empty
+        ``` guest
+        :: name .text cool guest host
+        + address .text testhost
+        ```
+        */
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::Add));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::Add));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::Add));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
 
-    // Tests parsing logic
-    let mut parser = Parser::new().parse(content);
+        /*
+        ```
+        +  inline_person .text John : age .int 99 : weight .float 3.14 : real .false
+        ```
+        */
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
+        assert_eq!(lexer.next(), Some(Keywords::Add));
+        assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
+    }
 
-    let address = parser.get_block("call", "host").map_transient("address");
-    assert_eq!(address.get("ipv6"), Some(&Value::Bool(true)));
-    assert_eq!(
-        address.get("path"),
-        Some(&Value::TextBuffer("api/test".to_string()))
-    );
-    assert_eq!(
-        address.get("name"),
-        Some(&Value::TextBuffer("test_name".to_string()))
-    );
+    #[tracing_test::traced_test]
+    #[test]
+    fn test_parse() {
+        // Tests parsing logic
+        let mut parser = Parser::new().parse(content);
 
-    let address = parser.get_block("call", "guest").map_transient("address");
-    assert_eq!(
-        address.get("ipv4"),
-        Some(&Value::Bool(true)),
-        "{:?}",
-        address
-    );
-    assert_eq!(
-        address.get("path"),
-        Some(&Value::TextBuffer("api/test2".to_string()))
-    );
+        let address = parser.get_block("call", "host").map_transient("address");
+        assert_eq!(address.get("ipv6"), Some(&Value::Bool(true)));
+        assert_eq!(
+            address.get("path"),
+            Some(&Value::TextBuffer("api/test".to_string()))
+        );
+        assert_eq!(
+            address.get("name"),
+            Some(&Value::TextBuffer("test_name".to_string()))
+        );
 
-    let guest = parser.get_block("call", "guest").map_stable();
-    assert_eq!(
-        guest.get("address"),
-        Some(&Value::TextBuffer("localhost".to_string()))
-    );
-    assert_eq!(
-        parser.root().map_stable().get("debug"),
-        Some(&Value::Bool(true))
-    );
+        let address = parser.get_block("call", "guest").map_transient("address");
+        assert_eq!(
+            address.get("ipv4"),
+            Some(&Value::Bool(true)),
+            "{:?}",
+            address
+        );
+        assert_eq!(
+            address.get("path"),
+            Some(&Value::TextBuffer("api/test2".to_string()))
+        );
 
-    // Tests .map alias
-    assert_eq!(
-        parser.root().map_transient("test").get("name"),
-        Some(&Value::TextBuffer("Test map".to_string())),
-        "{:#?}",
-        parser.root()
-    );
+        let guest = parser.get_block("call", "guest").map_stable();
+        assert_eq!(
+            guest.get("address"),
+            Some(&Value::TextBuffer("localhost".to_string()))
+        );
+        assert_eq!(
+            parser.root().map_stable().get("debug"),
+            Some(&Value::Bool(true))
+        );
 
-    let root_guest = parser.get_block("", "guest").map_stable();
-    assert_eq!(
-        root_guest.get("address"),
-        Some(&Value::TextBuffer("testhost".to_string()))
-    );
+        // Tests .map alias
+        assert_eq!(
+            parser.root().map_transient("test").get("name"),
+            Some(&Value::TextBuffer("Test map".to_string())),
+            "{:#?}",
+            parser.root()
+        );
 
-    let root_guest_control = parser.get_block("", "guest").map_control();
-    assert_eq!(
-        root_guest_control.get("name"),
-        Some(&Value::TextBuffer("cool guest host".to_string())),
-        "{:#?}\n{:#?}",
-        root_guest_control,
-        parser
-            .get_block("", "guest")
-            .iter_attributes()
-            .collect::<Vec<_>>(),
-    );
+        let root_guest = parser.get_block("", "guest").map_stable();
+        assert_eq!(
+            root_guest.get("address"),
+            Some(&Value::TextBuffer("testhost".to_string()))
+        );
 
-    let inline_test = parser.root().map_transient("inline_person");
-    assert_eq!(inline_test.get("name").expect("should have name").text().unwrap().as_str(), "John");
-    assert_eq!(inline_test.get("age").expect("should have age").int().unwrap(), 99);
-    assert_eq!(inline_test.get("weight").expect("should have weight").float().unwrap(), 3.14);
-    assert_eq!(inline_test.get("real").expect("should have real").bool().unwrap(), false);
-}
+        let root_guest_control = parser.get_block("", "guest").map_control();
+        assert_eq!(
+            root_guest_control.get("name"),
+            Some(&Value::TextBuffer("cool guest host".to_string())),
+            "{:#?}\n{:#?}",
+            root_guest_control,
+            parser
+                .get_block("", "guest")
+                .iter_attributes()
+                .collect::<Vec<_>>(),
+        );
 
-mod tests {
+        let inline_test = parser.root().map_transient("inline_person");
+        assert_eq!(
+            inline_test
+                .get("name")
+                .expect("should have name")
+                .text()
+                .unwrap()
+                .as_str(),
+            "John"
+        );
+        assert_eq!(
+            inline_test
+                .get("age")
+                .expect("should have age")
+                .int()
+                .unwrap(),
+            99
+        );
+        assert_eq!(
+            inline_test
+                .get("weight")
+                .expect("should have weight")
+                .float()
+                .unwrap(),
+            3.14
+        );
+        assert_eq!(
+            inline_test
+                .get("real")
+                .expect("should have real")
+                .bool()
+                .unwrap(),
+            false
+        );
+    }
+
     use specs::WorldExt;
 
     use crate::SpecialAttribute;
@@ -829,7 +941,7 @@ mod tests {
         use crate::Parser;
         use crate::Value;
 
-        let content = r#"
+        let _content = r#"
         ```
         <test inline comment>  : domain .symbol test
     
@@ -850,10 +962,9 @@ mod tests {
         let mut parser = Parser::new().with_special_attr::<TestChild>();
         parser.set_implicit_symbol("test");
 
-        let mut parser = parser.parse(content);
+        let mut parser = parser.parse(_content);
         parser.unset_implicit_symbol();
 
-        
         let max = parser.blocks.iter().max_by_key(|k| k.0.id());
         eprintln!("{:#?}", max);
 

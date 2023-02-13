@@ -6,9 +6,9 @@ use tracing::trace;
 use crate::parser::PropertyAttribute;
 use crate::{CustomAttribute, Keywords};
 
+use super::action;
 use super::Action;
 use super::Block;
-use super::action;
 
 mod interop;
 pub use interop::Packet;
@@ -48,10 +48,19 @@ impl Parser {
                 for mut _p in p.drain().join() {
                     if let Some(e) = _p.entity.and_then(|e| blocks.get(e)) {
                         _p.block_namespace = e.namespace();
-                        
+
                         if let Some(Keywords::Add) = _p.keyword.as_ref() {
                             eprintln!("{:#?}", e);
-                            let ident = _p.tag().map(|t| format!("{t}.{}.{}", _p.ident, _p.input().symbol().unwrap())).unwrap_or(_p.ident.to_string());
+                            let ident = _p
+                                .tag()
+                                .map(|t| {
+                                    format!("{t}.{}.{}", _p.ident, _p.input().symbol().unwrap())
+                                })
+                                .unwrap_or(format!(
+                                    "{}.{}",
+                                    _p.ident,
+                                    _p.input().symbol().unwrap()
+                                ));
 
                             let map = e.map_transient(ident);
                             for (ident, value) in map.iter() {
@@ -99,14 +108,14 @@ impl Parser {
                             block_namespace: ".".to_string(),
                             extension_namespace: extension_namespace.unwrap_or_default(),
                             line_count,
-                            actions: vec![]
+                            actions: vec![],
                         })
                         .build();
                 });
             }
         }));
 
-        v1_parser.set_default_property_attribute(PropertyAttribute(|parser, token|{
+        v1_parser.set_default_property_attribute(PropertyAttribute(|parser, token| {
             let name = parser.name().cloned();
             let property = parser.property().cloned();
             let entity = parser.entity().clone();
@@ -114,7 +123,17 @@ impl Parser {
             let extension_namespace = parser.extension_namespace();
             let line_count = parser.line_count();
 
-            trace!("{:?}, {:?}, {:?}, {:?}, {:?}, {}, {:?}, {:?}", name, property, entity, keyword, extension_namespace, line_count, token, parser.edit_value());
+            trace!(
+                "{:?}, {:?}, {:?}, {:?}, {:?}, {}, {:?}, {:?}",
+                name,
+                property,
+                entity,
+                keyword,
+                extension_namespace,
+                line_count,
+                token,
+                parser.edit_value()
+            );
         }));
         v1_parser
     }
@@ -124,7 +143,7 @@ impl Parser {
 mod tests {
     use tracing_test::traced_test;
 
-    use crate::v2::Compiler;
+    use crate::v2::TomlTranspiler;
 
     use super::Parser;
 
@@ -132,7 +151,7 @@ mod tests {
     #[traced_test]
     fn test_parser() {
         let parser = Parser::new();
-        let mut  compiler = Compiler::default();
+        let mut compiler = TomlTranspiler::default();
         // let parser = parser.parse(
         //     r#"
         // # ``` test block
@@ -144,7 +163,6 @@ mod tests {
         // # : test .dob 10/10/1000
         // # ```
 
-  
         // "#,
         //     &mut compiler,
         // );
@@ -153,6 +171,15 @@ mod tests {
             r#"
             ``` b block 
             : version .int 5
+            + .person Jacob
+            <call>
+            : moon-age .int 1001
+            : .dob 10/10/1000
+
+            + .person John
+            <call>
+            : moon-age .int 1003
+            : .dob 10/10/1000
 
              + test .person Jacob
              <call>
@@ -167,9 +194,9 @@ mod tests {
         );
 
         /*
-        w/ moon-age example -- 
+        w/ moon-age example --
 
-        Would expect that the table 
+        Would expect that the table
 
         [[attributes]]
         ident = person

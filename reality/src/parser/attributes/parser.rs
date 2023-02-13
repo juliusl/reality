@@ -3,18 +3,18 @@ use std::ops::Range;
 use std::str::FromStr;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{Value, Attribute, Keywords};
-use logos::{Lexer, Span};
+use crate::{Attribute, Keywords, Value};
 use logos::Logos;
-use specs::{World, WorldExt, Entity, LazyUpdate};
-use tracing::{event, trace};
+use logos::{Lexer, Span};
+use specs::{Entity, LazyUpdate, World, WorldExt};
 use tracing::Level;
+use tracing::{event, trace};
 
-use crate::SpecialAttribute;
 use crate::parser::Elements;
+use crate::SpecialAttribute;
 
-use super::{Attributes, PropertyAttribute};
 use super::CustomAttribute;
+use super::{Attributes, PropertyAttribute};
 
 /// Parser for parsing attributes
 ///
@@ -43,53 +43,53 @@ pub struct AttributeParser {
     /// Last char count,
     last_parsed_char_count: usize,
     /// Default custom attribute,
-    /// 
+    ///
     default_custom_attribute: Option<CustomAttribute>,
     /// Default property attribute,
-    /// 
+    ///
     default_property_attribute: Option<PropertyAttribute>,
     /// Keyword that preceeded this parser,
-    /// 
+    ///
     keyword: Option<Keywords>,
     /// Implicit extension namespace prefix,
-    /// 
+    ///
     implicit_extension_namespace_prefix: Option<String>,
     /// Implicit extension namespace,
-    /// 
+    ///
     /// If the previous attribute was a custom attribute or the current keyword is an extension, then this will be set to the current attr_ident
-    /// 
+    ///
     implicit_extension_namespace: Option<String>,
     /// Line count
-    /// 
+    ///
     line_count: usize,
 }
 
 impl AttributeParser {
     /// Sets the default custom attribute,
-    /// 
+    ///
     /// If no custom attribute is found this will be called,
-    /// 
+    ///
     pub fn set_default_custom_attribute(&mut self, default: CustomAttribute) {
         self.default_custom_attribute = Some(default);
     }
 
     /// Sets the default property attribute,
-    /// 
+    ///
     /// If a property attribute is found this will be called if set,
-    /// 
+    ///
     pub fn set_default_property_attribute(&mut self, default: PropertyAttribute) {
         self.default_property_attribute = Some(default);
     }
 
     /// Sets the implicit extension prefix,
-    /// 
+    ///
     pub fn set_implicit_extension_prefix(&mut self, prefix: Option<String>) -> &mut Self {
         self.implicit_extension_namespace_prefix = prefix;
         self
     }
 
     /// Sets the current keyword,
-    /// 
+    ///
     pub fn set_keyword(&mut self, keyword: Keywords) -> &mut Self {
         self.keyword = Some(keyword);
         self
@@ -104,38 +104,52 @@ impl AttributeParser {
     ///
     pub fn parse(&mut self, content: impl AsRef<str>) -> &mut Self {
         self.line_count += 1;
-        
+
         let mut lexer = Attributes::lexer_with_extras(content.as_ref(), self.clone());
 
         let mut parsed_len = 0;
         while let Some(token) = lexer.next() {
             match token {
-                Attributes::Error if lexer.slice().is_empty() || lexer.slice() == ":" || lexer.slice() == "`" || lexer.slice() == "+"=> {
+                Attributes::Error
+                    if lexer.slice().is_empty()
+                        || lexer.slice() == ":"
+                        || lexer.slice() == "`"
+                        || lexer.slice() == "+" =>
+                {
                     break;
-                },
+                }
                 _ => {
                     parsed_len += lexer.slice().len();
-                    event!(Level::TRACE, "Parsed {:?} {}, {}", token, lexer.slice(), lexer.slice().len());
+                    event!(
+                        Level::TRACE,
+                        "Parsed {:?} {}, {}",
+                        token,
+                        lexer.slice(),
+                        lexer.slice().len()
+                    );
 
                     match token {
-                        Attributes::Empty |
-                        Attributes::Bool |
-                        Attributes::Int |
-                        Attributes::IntPair |
-                        Attributes::IntRange |
-                        Attributes::Float |
-                        Attributes::FloatPair |
-                        Attributes::FloatRange |
-                        Attributes::Symbol |
-                        Attributes::Complex |
-                        Attributes::Text |
-                        Attributes::BinaryVector if self.default_property_attribute.is_some() => {
-                            let default_property = self.default_property_attribute.as_ref().expect("should exist, just checked");
+                        Attributes::Empty
+                        | Attributes::Bool
+                        | Attributes::Int
+                        | Attributes::IntPair
+                        | Attributes::IntRange
+                        | Attributes::Float
+                        | Attributes::FloatPair
+                        | Attributes::FloatRange
+                        | Attributes::Symbol
+                        | Attributes::Complex
+                        | Attributes::Text
+                        | Attributes::BinaryVector
+                            if self.default_property_attribute.is_some() =>
+                        {
+                            let default_property = self
+                                .default_property_attribute
+                                .as_ref()
+                                .expect("should exist, just checked");
                             default_property.on_property_attribute(&lexer.extras, token);
-                        },
-                        Attributes::Comment => {
-                            
-                        },
+                        }
+                        Attributes::Comment => {}
                         _ => {}
                     }
                 }
@@ -150,9 +164,9 @@ impl AttributeParser {
 
     /// Adds a custom attribute parser and returns self,
     ///
-    pub fn with_custom<C>(&mut self) -> &mut Self 
+    pub fn with_custom<C>(&mut self) -> &mut Self
     where
-        C: SpecialAttribute
+        C: SpecialAttribute,
     {
         self.add_custom(CustomAttribute::new::<C>());
         self
@@ -160,18 +174,22 @@ impl AttributeParser {
 
     /// Adds a custom attribute parser,
     ///
-    pub fn add_custom(&mut self, custom_attr: impl Into<CustomAttribute>)
-    {
+    pub fn add_custom(&mut self, custom_attr: impl Into<CustomAttribute>) {
         let custom_attr = custom_attr.into();
         trace!("Adding custom parser {}", custom_attr.ident());
-        self.custom_attributes.insert(custom_attr.ident(), custom_attr);
+        self.custom_attributes
+            .insert(custom_attr.ident(), custom_attr);
     }
 
-    /// Adds a custom attribute parser, 
-    /// 
+    /// Adds a custom attribute parser,
+    ///
     /// Returns a clone of the custom attribute added,
-    /// 
-    pub fn add_custom_with(&mut self, ident: impl AsRef<str>, parse: fn(&mut AttributeParser, String)) -> CustomAttribute {
+    ///
+    pub fn add_custom_with(
+        &mut self,
+        ident: impl AsRef<str>,
+        parse: fn(&mut AttributeParser, String),
+    ) -> CustomAttribute {
         let attr = CustomAttribute::new_with(ident, parse);
         self.add_custom(attr.clone());
         attr
@@ -218,55 +236,55 @@ impl AttributeParser {
     }
 
     /// Sets the current world being edited,
-    /// 
+    ///
     pub fn set_world(&mut self, world: Arc<World>) {
         self.world = Some(world);
     }
 
     /// Returns the name,
-    /// 
+    ///
     pub fn name(&self) -> Option<&String> {
         self.name.as_ref()
     }
 
     /// Returns the property symbol,
-    /// 
+    ///
     pub fn property(&self) -> Option<&String> {
         self.symbol.as_ref()
     }
 
     /// Returns the current value,
-    /// 
+    ///
     pub fn value(&self) -> &Value {
         &self.value
     }
 
     /// Returns the current edit value,
-    /// 
+    ///
     pub fn edit_value(&self) -> Option<&Value> {
         self.edit.as_ref()
     }
 
     /// Returns the current attr ident,
-    /// 
+    ///
     pub fn attr_ident(&self) -> Option<&String> {
         self.attr_ident.as_ref()
     }
 
     /// Returns the current keyword,
-    /// 
+    ///
     pub fn keyword(&self) -> Option<&Keywords> {
         self.keyword.as_ref()
     }
 
     /// Returns the current line count,
-    /// 
+    ///
     pub fn line_count(&self) -> usize {
         self.line_count
     }
 
     /// Returns the current extension namespace,
-    /// 
+    ///
     pub fn extension_namespace(&self) -> Option<String> {
         self.implicit_extension_namespace.as_ref().map(|s| {
             if let Some(prefix) = self.implicit_extension_namespace_prefix.as_ref() {
@@ -277,39 +295,40 @@ impl AttributeParser {
         })
     }
 
-    /// Returns the last attribute on the stack, 
-    /// 
+    /// Returns the last attribute on the stack,
+    ///
     pub fn peek(&self) -> Option<&Attribute> {
         self.properties.last()
     }
 
     /// Returns an immutable reference to world,
-    /// 
+    ///
     pub fn world(&self) -> Option<&Arc<World>> {
         self.world.as_ref()
     }
 
     /// Returns the entity that owns this parser,
-    /// 
+    ///
     pub fn entity(&self) -> Option<Entity> {
-        self.world().and_then(|w| Some(w.entities().entity(self.id)))
+        self.world()
+            .and_then(|w| Some(w.entities().entity(self.id)))
     }
 
     /// Returns the last child entity created by this parser,
-    /// 
+    ///
     pub fn last_child_entity(&self) -> Option<Entity> {
         match self.peek().and_then(|p| Some(p.id())) {
-            Some(ref child) if (*child != self.id)  => {
+            Some(ref child) if (*child != self.id) => {
                 self.world().and_then(|w| Some(w.entities().entity(*child)))
-            },
-            _ => None
+            }
+            _ => None,
         }
     }
 
     /// Defines a property for the current name,
-    /// 
+    ///
     /// Panics if a name is not set.
-    /// 
+    ///
     pub fn define(&mut self, symbol: impl AsRef<str>, value: impl Into<Value>) {
         self.set_symbol(symbol);
         self.set_edit(value.into());
@@ -318,9 +337,9 @@ impl AttributeParser {
     }
 
     /// Defines the current attribute,
-    /// 
+    ///
     /// Implements the `add` keyword
-    /// 
+    ///
     pub fn add(&mut self, name: impl AsRef<str>, value: impl Into<Value>) {
         self.set_name(name);
         self.set_value(value.into());
@@ -328,10 +347,15 @@ impl AttributeParser {
     }
 
     /// Pushes an attribute on to the property stack,
-    /// 
+    ///
     /// This method can be used directly when configuring a child entity.
-    /// 
-    pub fn define_child(&mut self, entity: Entity, symbol: impl AsRef<str>, value: impl Into<Value>) {
+    ///
+    pub fn define_child(
+        &mut self,
+        entity: Entity,
+        symbol: impl AsRef<str>,
+        value: impl Into<Value>,
+    ) {
         let id = self.id;
         self.set_id(entity.id());
         self.set_symbol(symbol);
@@ -357,11 +381,17 @@ impl AttributeParser {
 
         match (name, symbol, value, edit) {
             (Some(name), Some(symbol), value, Some(edit)) => {
-                let name = self.attr_ident
+                let name = self
+                    .attr_ident
                     .as_ref()
                     .filter(|_| self.keyword().is_some())
-                    .filter(|ident| *ident != &name)
-                    .map(|suffix| format!("{name}.{suffix}.{}", value.symbol().unwrap()))
+                    .map(|suffix| {
+                        if suffix != &name {
+                            format!("{name}.{suffix}.{}", value.symbol().unwrap())
+                        } else {
+                            format!("{name}.{}", value.symbol().unwrap())
+                        }
+                    })
                     .unwrap_or(name);
 
                 let mut attr = Attribute::new(self.id, format!("{name}::{symbol}"), value);
@@ -369,11 +399,17 @@ impl AttributeParser {
                 self.properties.push(attr);
             }
             (Some(name), None, value, None) => {
-                let name = self.attr_ident
+                let name = self
+                    .attr_ident
                     .as_ref()
                     .filter(|_| self.keyword().is_some())
-                    .filter(|ident| *ident != &name)
-                    .map(|suffix| format!("{name}.{suffix}.{}", value.symbol().unwrap()))
+                    .map(|suffix| {
+                        if suffix != &name {
+                            format!("{name}.{suffix}.{}", value.symbol().unwrap())
+                        } else {
+                            format!("{name}.{}", value.symbol().unwrap())
+                        }
+                    })
                     .unwrap_or(name);
 
                 let attr = Attribute::new(self.id, name, value);
@@ -414,13 +450,13 @@ impl AttributeParser {
     }
 
     /// Returns an iterator over special attributes installed on this parser,
-    /// 
-    pub fn iter_special_attributes(&self) -> impl Iterator<Item = (&String, &CustomAttribute)>{
+    ///
+    pub fn iter_special_attributes(&self) -> impl Iterator<Item = (&String, &CustomAttribute)> {
         self.custom_attributes.iter()
     }
 
     /// Lazily executes exec mut fn w/ world if the world is set,
-    /// 
+    ///
     pub fn lazy_exec_mut(&mut self, exec: impl FnOnce(&mut World) + 'static + Send + Sync) {
         if let Some(world) = self.world() {
             let lazy_update = world.read_resource::<LazyUpdate>();
@@ -430,7 +466,7 @@ impl AttributeParser {
     }
 
     /// Lazily execute exec fn w/ world if the world is set,
-    /// 
+    ///
     pub fn lazy_exec(&mut self, exec: impl FnOnce(&World) + 'static + Send + Sync) {
         if let Some(world) = self.world() {
             let lazy_update = world.read_resource::<LazyUpdate>();
@@ -441,7 +477,7 @@ impl AttributeParser {
     }
 
     /// Returns the length of the last parse,
-    /// 
+    ///
     pub fn last_parse_len(&self) -> usize {
         self.last_parsed_char_count
     }
@@ -453,13 +489,14 @@ pub fn on_identifier(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_comment_start(lexer: &mut Lexer<Attributes>) {
-    let end_pos = lexer.remainder()
+    let end_pos = lexer
+        .remainder()
         .lines()
         .take(1)
         .next()
         .and_then(|s| s.find(">"))
         .expect("Didn't find a closing `>`");
-    
+
     lexer.bump(end_pos + 1);
 }
 
@@ -569,7 +606,7 @@ pub fn on_symbol_attr(lexer: &mut Lexer<Attributes>) {
     lexer.extras.parse_value(symbol_val);
 }
 
-pub fn on_empty_attr(lexer: &mut Lexer<Attributes>) {    
+pub fn on_empty_attr(lexer: &mut Lexer<Attributes>) {
     lexer.extras.parse_value(Value::Empty);
     lexer.bump(lexer.remainder().len());
 }
@@ -585,33 +622,44 @@ pub fn on_custom_attr(lexer: &mut Lexer<Attributes>) {
     let custom_attr_type = &lexer.slice()[1..].to_string();
 
     let input = handle_input_extraction(lexer);
-                            
+
     if lexer.extras.name().is_none() {
         lexer.extras.set_name(custom_attr_type.to_string());
     }
-    
-    lexer.extras.set_value(Value::Symbol(input.value().trim_start_matches(custom_attr_type).trim().to_string()));
+
+    lexer.extras.set_value(Value::Symbol(
+        input
+            .value()
+            .trim_start_matches(custom_attr_type)
+            .trim()
+            .to_string(),
+    ));
 
     match lexer.extras.keyword {
-        Some(Keywords::Add)  => {
+        Some(Keywords::Add) => {
             lexer.extras.implicit_extension_namespace = Some(custom_attr_type.to_string());
         }
         _ => {}
     }
-    
+
     lexer.extras.attr_ident = Some(custom_attr_type.to_string());
 
     trace!("Checking for custom attribute");
-    let custom_parser = lexer.extras.custom_attributes.get(custom_attr_type).cloned();
+    let custom_parser = lexer
+        .extras
+        .custom_attributes
+        .get(custom_attr_type)
+        .cloned();
     match custom_parser {
         Some(custom_attr) => {
-            custom_attr.parse(
-                &mut lexer.extras, 
-                input.value()
-            );
+            custom_attr.parse(&mut lexer.extras, input.value());
         }
         None if lexer.extras.default_custom_attribute.is_some() => {
-            let custom_attr = lexer.extras.default_custom_attribute.clone().expect("should exist, just checked");
+            let custom_attr = lexer
+                .extras
+                .default_custom_attribute
+                .clone()
+                .expect("should exist, just checked");
 
             custom_attr.parse(&mut lexer.extras, input.value());
             match lexer.extras.keyword {
@@ -625,8 +673,8 @@ pub fn on_custom_attr(lexer: &mut Lexer<Attributes>) {
             // This might be intended, but in case it is not
             // this event here is to help figure out config issues
             event!(
-                Level::TRACE, 
-                "Did not parse {custom_attr_type}, could not find custom attribute parser", 
+                Level::TRACE,
+                "Did not parse {custom_attr_type}, could not find custom attribute parser",
             );
         }
     }
@@ -637,7 +685,8 @@ where
     T: FromStr,
 {
     let input = handle_input_extraction(lexer);
-    input.value()
+    input
+        .value()
         .split(",")
         .filter_map(|i| i.trim().parse().ok())
         .collect()
@@ -655,7 +704,7 @@ fn handle_input_extraction(lexer: &mut Lexer<Attributes>) -> ParserInputInfo {
             Elements::Comment(comment) => {
                 input = input.replace(&format!("<{comment}>"), "");
                 parser_input_info.add_comment(comment_lexer.span());
-            },
+            }
             Elements::InlineOperator | Elements::Error => {
                 parser_input_info.set_end_pos(comment_lexer.span().start);
                 lexer.bump(parser_input_info.end_pos);
@@ -680,23 +729,19 @@ struct ParserInputInfo {
 impl ParserInputInfo {
     fn new(original: String) -> Self {
         let end_pos = original.len();
-        ParserInputInfo { original, end_pos, ..Default::default() }
+        ParserInputInfo {
+            original,
+            end_pos,
+            ..Default::default()
+        }
     }
 
     fn add_comment(&mut self, span: Span) {
-        let start = if span.start > 0 {
-            span.start - 1
-        } else {
-            0
-        };
+        let start = if span.start > 0 { span.start - 1 } else { 0 };
 
-        let end = if span.end > 0 {
-            span.end - 1
-        } else {
-            0
-        };
+        let end = if span.end > 0 { span.end - 1 } else { 0 };
 
-        self.comments.push(start .. end);
+        self.comments.push(start..end);
     }
 
     fn set_end_pos(&mut self, pos: usize) {
@@ -706,16 +751,20 @@ impl ParserInputInfo {
     fn value(&self) -> String {
         if !self.comments.is_empty() {
             use std::fmt::Write;
-    
+
             let mut sb = String::new();
 
             let mut start_pos = 0;
             for comment in self.comments.iter() {
-                if let Ok(()) = write!(sb, "{}", &self.original[..self.end_pos][start_pos..comment.start]) {
+                if let Ok(()) = write!(
+                    sb,
+                    "{}",
+                    &self.original[..self.end_pos][start_pos..comment.start]
+                ) {
                     start_pos = comment.end + 1;
                 }
             }
-    
+
             write!(sb, "{}", &self.original[..self.end_pos][start_pos..]).ok();
 
             sb.trim().to_string()
@@ -727,24 +776,27 @@ impl ParserInputInfo {
 
 #[allow(unused_imports)]
 mod tests {
+    use crate::{Attribute, AttributeParser, Attributes, SpecialAttribute, Value};
     use logos::Logos;
-    use crate::{AttributeParser, Attributes, Value, Attribute, SpecialAttribute};
 
     #[test]
     #[tracing_test::traced_test]
     fn test_attribute_parser() {
         // Test parsing add
         let parser = AttributeParser::default();
-        let mut lexer = Attributes::lexer_with_extras("name .text <comments can only be immediately after the attribute type> cool_name", parser);
+        let mut lexer = Attributes::lexer_with_extras(
+            "name .text <comments can only be immediately after the attribute type> cool_name",
+            parser,
+        );
         assert_eq!(lexer.next(), Some(Attributes::Identifier));
         assert_eq!(lexer.next(), Some(Attributes::Whitespace));
         assert_eq!(lexer.next(), Some(Attributes::Text));
         lexer.extras.parse_attribute();
-    
+
         let attr = lexer.extras.next().expect("parses");
         assert_eq!(attr.name, "name");
         assert_eq!(attr.value, Value::TextBuffer("cool_name".to_string()));
-    
+
         // Test parsing define
         let parser = AttributeParser::default();
         let mut lexer = Attributes::lexer_with_extras("connection name .text cool_name", parser);
@@ -754,7 +806,7 @@ mod tests {
         assert_eq!(lexer.next(), Some(Attributes::Whitespace));
         assert_eq!(lexer.next(), Some(Attributes::Text));
         lexer.extras.parse_attribute();
-    
+
         let attr = lexer.extras.next().expect("parses");
         assert_eq!(attr.name, "connection::name");
         assert_eq!(attr.value, Value::Empty);
@@ -762,87 +814,103 @@ mod tests {
             Value::TextBuffer("cool_name".to_string()),
             attr.transient.unwrap().1
         );
-    
+
         // Complex Attributes
-    
+
         // Test shortcut for defining an attribute without a name or value
         let mut parser = AttributeParser::default();
         let parser = parser.init(".shortcut cool shortcut");
-    
+
         let shortcut = parser.next();
         assert_eq!(
-            shortcut, 
-            Some(Attribute::new(0, "shortcut", Value::Symbol("cool shortcut".to_string())))
+            shortcut,
+            Some(Attribute::new(
+                0,
+                "shortcut",
+                Value::Symbol("cool shortcut".to_string())
+            ))
         );
-    
+
         // Test parsing .blob attribute
         let mut parser = AttributeParser::default();
         let parser = parser
             .with_custom::<crate::parser::BlobDescriptor>()
             .init("readme.md .blob sha256:testdigest");
-    
+
         parser.define("readme", Value::Symbol("readme".to_string()));
         parser.define("extension", Value::Symbol("md".to_string()));
-    
+
         let mut parsed = vec![];
         while let Some(attr) = parser.next() {
             parsed.push(attr);
         }
         eprintln!("{:#?}", parsed);
-    
-        AttributeParser::default()
-            .init("custom .custom-attr test custom attr input");
-        assert!(logs_contain(
-            "Checking for custom attribute"
-        ));
-    
+
+        AttributeParser::default().init("custom .custom-attr test custom attr input");
+        assert!(logs_contain("Checking for custom attribute"));
+
         let mut parser = AttributeParser::default();
         let parser = parser
             .with_custom::<TestCustomAttr>()
             .init("custom .custom-attr test custom attr input");
-        assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Empty)));
-        
+        assert_eq!(
+            parser.next(),
+            Some(Attribute::new(0, "custom", Value::Empty))
+        );
+
         let mut parser = AttributeParser::default();
         let parser = parser
             .with_custom::<TestCustomAttr>()
             .init("custom <comment block> .custom-attr <comment block> test custom attr input <comment block>");
-        assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Empty)));
-    
+        assert_eq!(
+            parser.next(),
+            Some(Attribute::new(0, "custom", Value::Empty))
+        );
+
         let mut parser = AttributeParser::default();
-        let parser = parser.with_custom::<TestCustomAttr>()
-            .init("custom <comment block> .symbol <comment block> test custom attr input <comment block>");
-        assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::Symbol("test custom attr input".to_string()))));
-    
-        
+        let parser = parser.with_custom::<TestCustomAttr>().init(
+            "custom <comment block> .symbol <comment block> test custom attr input <comment block>",
+        );
+        assert_eq!(
+            parser.next(),
+            Some(Attribute::new(
+                0,
+                "custom",
+                Value::Symbol("test custom attr input".to_string())
+            ))
+        );
+
         let mut parser = AttributeParser::default();
         let parser = parser.with_custom::<TestCustomAttr>()
             .init("custom <comment block> .int_pair <comment block 1> 1, <comment block2>5 <comment block>");
-    
-        assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::IntPair(1, 5))));
 
-        
+        assert_eq!(
+            parser.next(),
+            Some(Attribute::new(0, "custom", Value::IntPair(1, 5)))
+        );
+
         let mut parser = AttributeParser::default();
         let parser = parser.with_custom::<TestCustomAttr>()
             .init("custom <comment block> .int_pair <comment block 1> 1, <comment block2>5 <comment block> : test .int 5");
-    
-        assert_eq!(parser.next(), Some(Attribute::new(0, "custom", Value::IntPair(1, 5))));
-    
+
+        assert_eq!(
+            parser.next(),
+            Some(Attribute::new(0, "custom", Value::IntPair(1, 5)))
+        );
     }
-    
+
     struct TestCustomAttr();
-    
+
     impl SpecialAttribute for TestCustomAttr {
         fn ident() -> &'static str {
             "custom-attr"
         }
-    
+
         fn parse(parser: &mut AttributeParser, _: impl AsRef<str>) {
             parser.set_value(Value::Empty);
         }
     }
-    
 }
-
 
 impl Into<Vec<Attribute>> for AttributeParser {
     fn into(mut self) -> Vec<Attribute> {
