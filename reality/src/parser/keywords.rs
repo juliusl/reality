@@ -48,7 +48,7 @@ pub enum Keywords {
 
     /// Extension keyword, allows for wire protocol to include user frames
     ///
-    #[regex(r"<[a-zA-Z]+>", on_extension)]
+    #[regex(r"<[a-zA-Z0-9]+>", on_extension)]
     #[token("<>", on_extension)]
     Extension = 0x0E,
 

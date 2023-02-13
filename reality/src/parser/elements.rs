@@ -39,12 +39,18 @@ pub enum Elements {
     /// 
     #[token("<", on_comment_start)]
     Comment(String),
+    /// New line,
+    /// 
+    #[token("\r")]
+    #[token("\n")]
+    #[token("\r\n")]
+    NewLine,
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.
     #[error]
     // We can also use this variant to define whitespace,
     // or any other matches we wish to skip.
-    #[regex(r"[ ,\t\n\f]+", logos::skip)]
+    #[regex(r"[ ,\t\f]+", logos::skip)]
     Error,
 }
 
