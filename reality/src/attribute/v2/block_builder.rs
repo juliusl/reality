@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use toml_edit::Document;
+use toml_edit::{Document, Table};
 
 use crate::Value;
 
@@ -40,10 +40,10 @@ impl super::parser::PacketHandler for BlockBuilder {
                     crate::Keywords::Add => {
                         block.add_attribute(ident, value);
 
-                        packet.tag().as_ref().map(|s| {
+                        packet.tag().as_ref().map(|tag| {
                             block
                                 .last_mut()
-                                .map(|b| *b = b.clone().with("tag", Value::Symbol(s.to_string())));
+                                .map(|b| b.set_tag(*tag));
                         });
 
                         if !packet.actions.is_empty() {
@@ -74,5 +74,48 @@ impl super::parser::PacketHandler for BlockBuilder {
         }
 
         Ok(())
+    }
+}
+
+mod tests{
+    use toml_edit::{Document, Table, value, table, ArrayOfTables, Item};
+
+    #[test]
+    fn test_dotted() {
+        // let mut doc = Document::new();
+        // // let mut table = Table::new();
+        // // table.set_dotted(true);
+
+        // doc["block"] = table();
+        // doc["block"]["op"] = table();
+        // doc["block"]["op"]["add"] = table();
+        // doc["block"]["op"]["add"]["float"]["lhs"] = value(0.0);
+        // doc["block"]["op"]["add"]["float"]["rhs"] = value(0.0);
+        // doc["block"]["op"]["add"]["float"]["sum"] = value(0.0);
+        // doc["block"]["op"]["add"]["float"].as_inline_table_mut().map(|t| t.set_dotted(true));
+
+        // doc["block"]["op"]["add"]["float"]["input"]["value"] = value("lhs");
+        // println!("{doc}");
+
+        // println!("{}", doc["block"]["op"]["add"]["float"]);
+
+
+        let example = r#"
+[op]
+add.lhs = 0
+add.rhs = 0
+add.sum = 0
+add.actions = [
+  { input = "lhs" },
+  { input = "rhs" },
+  { eval = "sum" }
+]
+        "#;
+
+        let mut example = example.parse::<Document>().unwrap();
+        println!("{}", example["op"]["add"]);
+        println!("{}", example["op"]["add"]["actions"]);
+
+        println!("{}", example);
     }
 }

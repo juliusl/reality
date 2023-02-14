@@ -116,6 +116,7 @@ impl AttributeParser {
                         || lexer.slice() == "`"
                         || lexer.slice() == "+" =>
                 {
+                    trace!("Error {}", lexer.slice());
                     break;
                 }
                 _ => {
@@ -149,7 +150,6 @@ impl AttributeParser {
                                 .expect("should exist, just checked");
                             default_property.on_property_attribute(&lexer.extras, token);
                         }
-                        Attributes::Comment => {}
                         _ => {}
                     }
 
@@ -166,12 +166,11 @@ impl AttributeParser {
                         | Attributes::Complex
                         | Attributes::Text
                         | Attributes::BinaryVector
-                        | Attributes::Custom =>
-                        {
-                            break;
-                        }
+                        | Attributes::NewLine
+                        | Attributes::Custom => break,
                         _ => {}
                     }
+                    
                 }
             }
         }
