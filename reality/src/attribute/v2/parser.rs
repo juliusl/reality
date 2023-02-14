@@ -167,26 +167,22 @@ mod tests {
 
         let _parser = parser.parse(
             r#"
-            ``` b block 
-            : version .int 5
-            + .person Jacob
-            <call>
-            : moon-age .int 1001
-            : .dob 10/10/1000
+            ``` b block
+             + int .op add
+             : lhs .int
+             : rhs .int
+             : sum .int
+             : .input lhs
+             : .input rhs
+             : .eval sum
 
-            + .person John
-            <call>
-            : moon-age .int 1003
-            : .dob 10/10/1000
-
-             + test .person Jacob
-             <call>
-             : moon-age .int 1000
-             <call2>
-             : .dob 10/10/1000
-
-             + test .person John
-             : .dob 10/11/1000
+             + float .op add
+             : lhs .float
+             : rhs .float
+             : sum .float
+             : .input lhs
+             : .input rhs
+             : .eval sum
             ```
         "#,
             &mut compiler,

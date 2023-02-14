@@ -131,6 +131,9 @@ impl From<Elements> for Data {
             Elements::Comment(_) => {
                 panic!("comment element is not encoded to frame")
             }
+            Elements::NewLine => {
+                panic!("newline element is not encoded to frame")
+            }
             Elements::Error => {
                 panic!("error is not encoded to frame")
             }

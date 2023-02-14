@@ -27,6 +27,12 @@ impl Attribute {
         Self { ident: ident.into(), value: value.into(), action_stack: vec![] }
     }
 
+    /// Prepends a tag to the identifier,
+    /// 
+    pub fn set_tag(&mut self, tag: impl Into<String>) {
+        self.ident = format!("{}.{}", tag.into(), self.ident);
+    }
+
     /// Returns an iterator over the extensions required by this attribute,
     /// 
     pub fn requires(&self) -> impl Iterator<Item = &Action> {

@@ -36,7 +36,8 @@ pub struct Packet {
     /// Returns the line count this was parsed at, relative to the extension namespace,
     /// 
     pub(crate) line_count: usize,
-
+    /// List of actions to apply w/ this packet,
+    /// 
     pub(crate) actions: Vec<Action>,
 }
 
