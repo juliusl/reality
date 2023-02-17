@@ -3,14 +3,12 @@ use crate::Value;
 
 mod extend;
 mod build;
-mod build_root;
 
 /// Types of extension actions that can be applied on built attributes,
 /// 
 pub mod extensions {
     pub use super::extend::Extend;
     pub use super::build::Build;
-    pub use super::build_root::BuildRoot;
 }
 
 /// Enumeration of attribute actions that apply during the transient phase of the attribute's lifecycle,
@@ -30,9 +28,6 @@ pub enum Action {
     /// Build is an extension action that will build an entity,
     ///
     Build(String),
-    /// Build root is an extension action that will build an entity from a root,
-    /// 
-    BuildRoot(String),
 }
 
 /// Returns an action that will apply a property,
@@ -57,11 +52,5 @@ pub fn extend(ident: impl Into<String>) -> Action {
 /// 
 pub fn build(ident: impl Into<String>) -> Action {
     Action::Build(ident.into())
-}
-
-/// Returns a build root action,
-///
-pub fn build_root(ident: impl Into<String>) -> Action {
-    Action::BuildRoot(ident.into())
 }
 
