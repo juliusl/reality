@@ -1,4 +1,5 @@
 use logos::{Lexer, Logos, Filter};
+use tracing::trace;
 use crate::parser::Elements;
 use crate::Parser;
 
@@ -198,8 +199,12 @@ fn on_extension(lexer: &mut Lexer<Keywords>) -> Filter<()> {
 
     // Set a new extension symbol in the parser,
     if lexer.slice().len() > 2 {
-        let extension_prefix = lexer.slice()[1..lexer.slice().len() - 1].to_string();
-        lexer.extras.implicit_extension_namespace_prefix = Some(extension_prefix);
+        let extension_namespace = lexer.slice()[1..lexer.slice().len() - 1].to_string();
+        lexer.extras.implicit_extension_namespace = Some(extension_namespace);
+    } else {
+        if let Some(last) = lexer.extras.implicit_extension_namespace.take() {
+            trace!("Clearing extension namespace: {last}");
+        }
     }
     
     if let Some(next_line) = lexer.remainder().lines().next() {
@@ -237,7 +242,7 @@ mod tests {
             "call",
             lexer
                 .extras
-                .implicit_extension_namespace_prefix
+                .implicit_extension_namespace
                 .as_ref()
                 .expect("should have a prefix")
                 .as_str()
@@ -251,7 +256,7 @@ mod tests {
             "call",
             lexer
                 .extras
-                .implicit_extension_namespace_prefix
+                .implicit_extension_namespace
                 .as_ref()
                 .expect("should have a prefix")
                 .as_str()
@@ -262,7 +267,7 @@ mod tests {
         assert!(
             lexer
                 .extras
-                .implicit_extension_namespace_prefix
+                .implicit_extension_namespace
                 .as_ref()
                 .is_none()
         );
