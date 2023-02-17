@@ -38,8 +38,7 @@ impl Attribute {
     pub fn requires(&self) -> impl Iterator<Item = &Action> {
         self.action_stack().filter_map(|a| match a {
             Action::Extend(_)|
-            Action::Build(_) |
-            Action::BuildRoot(_) => Some(a),
+            Action::Build(_) => Some(a),
             _ => None
         })
     }
@@ -81,13 +80,6 @@ impl Attribute {
     ///
     pub fn build(mut self, ident: impl Into<String>) -> Self {
         self.action_stack.push(action::build(ident));
-        self
-    }
-
-    /// Returns self with a `build_root` action,
-    ///
-    pub fn build_root(mut self, ident: impl Into<String>) -> Self {
-        self.action_stack.push(action::build_root(ident));
         self
     }
 }

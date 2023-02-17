@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use specs::{EntityBuilder, Entity};
+use specs::{EntityBuilder, Entity, world::LazyBuilder};
 
 use crate::v2::{Attribute, Error};
 
@@ -9,9 +9,9 @@ use crate::v2::{Attribute, Error};
 /// 
 pub trait Build
 where
-    Self: Send + Sync + 'static
+    Self: Send + Sync
 {
-    /// Builds an entity from an attribute,
+    /// Builds an entity w/ a lazy builder
     /// 
-    fn build(self: Arc<Self>, attribute: &Attribute, entity_builder: EntityBuilder) -> Result<Entity, Error>;
+    fn build(&self, lazy_builder: LazyBuilder) -> Result<Entity, Error>;
 }
