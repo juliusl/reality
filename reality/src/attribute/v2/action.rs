@@ -1,13 +1,11 @@
 
 use crate::Value;
 
-mod extend;
 mod build;
 
 /// Types of extension actions that can be applied on built attributes,
 /// 
 pub mod extensions {
-    pub use super::extend::Extend;
     pub use super::build::Build;
 }
 

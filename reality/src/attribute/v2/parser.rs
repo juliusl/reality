@@ -174,7 +174,7 @@ mod tests {
              : sum .int
              <> .input lhs : .type stdin
              <> .input rhs
-             <> .eval sum
+             <> .eval  sum
             ```
         "#,
             &mut compiler,

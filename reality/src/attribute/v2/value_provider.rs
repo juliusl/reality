@@ -42,9 +42,7 @@ where
         if let Some(i) = self[ident].as_value().and_then(map) {
             Ok(i)
         } else {
-            Err(Error {
-                toml_item: Some(self["src"].clone()),
-            })
+            Err(Error::default())
         }
     }
 }
