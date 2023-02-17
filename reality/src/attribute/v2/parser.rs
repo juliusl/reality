@@ -91,7 +91,7 @@ impl Parser {
                 let symbol = parser.property().cloned();
                 let entity = parser.entity().clone();
                 let keyword = parser.keyword().cloned();
-                let extension_namespace = parser.extension_namespace();
+                let namespace = parser.namespace();
                 let line_count = parser.line_count();
                 parser.lazy_exec_mut(move |w| {
                     w.register::<Packet>();
@@ -104,7 +104,7 @@ impl Parser {
                             ident,
                             input,
                             block_namespace: ".".to_string(),
-                            extension_namespace: extension_namespace.unwrap_or_default(),
+                            extension_namespace: namespace.unwrap_or_default(),
                             line_count,
                             actions: vec![],
                         })
@@ -118,7 +118,7 @@ impl Parser {
             let property = parser.property().cloned();
             let entity = parser.entity().clone();
             let keyword = parser.keyword().cloned();
-            let extension_namespace = parser.extension_namespace();
+            let extension_namespace = parser.namespace();
             let line_count = parser.line_count();
 
             trace!(
@@ -168,21 +168,13 @@ mod tests {
         let _parser = parser.parse(
             r#"
             ``` b block
-             + int .op add
+             + .op add
              : lhs .int
              : rhs .int
              : sum .int
-             : .input lhs
-             : .input rhs
-             : .eval sum
-
-             + float .op add
-             : lhs .float
-             : rhs .float
-             : sum .float
-             : .input lhs
-             : .input rhs
-             : .eval sum
+             <> .input lhs : .type stdin
+             <> .input rhs
+             <> .eval sum
             ```
         "#,
             &mut compiler,

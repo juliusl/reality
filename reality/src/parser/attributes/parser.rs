@@ -51,14 +51,14 @@ pub struct AttributeParser {
     /// Keyword that preceeded this parser,
     ///
     keyword: Option<Keywords>,
-    /// Implicit extension namespace prefix,
-    ///
-    implicit_extension_namespace_prefix: Option<String>,
-    /// Implicit extension namespace,
+    /// Root attribute namespace,
     ///
     /// If the previous attribute was a custom attribute or the current keyword is an extension, then this will be set to the current attr_ident
     ///
-    implicit_extension_namespace: Option<String>,
+    root_namespace: Option<String>,
+    /// Extension namespace,
+    ///
+    extension_namespace: Option<String>,
     /// Line count
     ///
     line_count: usize,
@@ -83,8 +83,13 @@ impl AttributeParser {
 
     /// Sets the implicit extension prefix,
     ///
-    pub fn set_implicit_extension_prefix(&mut self, prefix: Option<String>) -> &mut Self {
-        self.implicit_extension_namespace_prefix = prefix;
+    pub fn set_extension_namespace(&mut self, prefix: Option<String>) -> &mut Self {
+        self.extension_namespace = prefix;
+        self
+    }
+
+    pub fn set_root_namespace(&mut self, root_namespace: impl Into<String>) -> &mut Self {
+        self.root_namespace = Some(root_namespace.into());
         self
     }
 
@@ -170,7 +175,6 @@ impl AttributeParser {
                         | Attributes::Custom => break,
                         _ => {}
                     }
-                    
                 }
             }
         }
@@ -304,14 +308,20 @@ impl AttributeParser {
 
     /// Returns the current extension namespace,
     ///
-    pub fn extension_namespace(&self) -> Option<String> {
-        self.implicit_extension_namespace.as_ref().map(|s| {
-            if let Some(prefix) = self.implicit_extension_namespace_prefix.as_ref() {
-                format!("{prefix}.{s}")
+    pub fn namespace(&self) -> Option<String> {
+        self.root_namespace.as_ref().map(|root_namespace| {
+            if let Some(extension_namespace) = self.extension_namespace.as_ref() {
+                format!("{root_namespace}.{extension_namespace}")
             } else {
-                s.to_string()
+                root_namespace.to_string()
             }
         })
+    }
+
+    /// Returns the current extension namespace prefix,
+    ///
+    pub fn extension_namespace(&self) -> Option<String> {
+        self.extension_namespace.clone()
     }
 
     /// Returns the last attribute on the stack,
@@ -413,6 +423,11 @@ impl AttributeParser {
                     })
                     .unwrap_or(name);
 
+                let symbol = self
+                    .extension_namespace()
+                    .map(|p| format!("{p}.{symbol}"))
+                    .unwrap_or(symbol);
+
                 let mut attr = Attribute::new(self.id, format!("{name}::{symbol}"), value);
                 attr.edit_as(edit);
                 self.properties.push(attr);
@@ -456,11 +471,15 @@ impl AttributeParser {
         }
     }
 
-    /// Parses a symbol,
+    /// Parses an identifier,
     ///
     /// In this context, this is either a name or symbol.
     ///
-    fn parse_symbol(&mut self, symbol: String) {
+    fn parse_identifier(&mut self, symbol: String) {
+        if self.root_namespace.is_none() && self.keyword == Some(Keywords::Add) {
+            self.set_root_namespace(symbol.to_string());
+        }
+
         if self.name.is_none() {
             self.set_name(symbol)
         } else {
@@ -504,7 +523,7 @@ impl AttributeParser {
 
 pub fn on_identifier(lexer: &mut Lexer<Attributes>) {
     let slice = lexer.slice();
-    lexer.extras.parse_symbol(slice.to_string());
+    lexer.extras.parse_identifier(slice.to_string());
 }
 
 pub fn on_comment_start(lexer: &mut Lexer<Attributes>) {
@@ -656,7 +675,7 @@ pub fn on_custom_attr(lexer: &mut Lexer<Attributes>) {
 
     match lexer.extras.keyword {
         Some(Keywords::Add) => {
-            lexer.extras.implicit_extension_namespace = Some(custom_attr_type.to_string());
+            lexer.extras.root_namespace = Some(custom_attr_type.to_string());
         }
         _ => {}
     }
@@ -683,7 +702,7 @@ pub fn on_custom_attr(lexer: &mut Lexer<Attributes>) {
             custom_attr.parse(&mut lexer.extras, input.value());
             match lexer.extras.keyword {
                 Some(Keywords::Extension) => {
-                    lexer.extras.implicit_extension_namespace = lexer.extras.attr_ident.clone();
+                    lexer.extras.extension_namespace = lexer.extras.attr_ident.clone();
                 }
                 _ => {}
             }
