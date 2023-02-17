@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::attribute::v2::{Attribute, Error};
 
 use super::Action;
@@ -8,9 +6,9 @@ use super::Action;
 ///
 pub trait Extend
 where
-    Self: Send + Sync + 'static,
+    Self: Send + Sync,
 {
-    /// Extend the attribute w/ a stack of actions to apply,
-    ///
-    fn extend(self: Arc<Self>, attribute: &Attribute) -> Result<Vec<Action>, Error>;
+    /// Extends an attribute by returning a stack of actions to integrate,
+    /// 
+    fn extend(&self, attribute: &Attribute) -> Result<Vec<Action>, Error>;
 }
