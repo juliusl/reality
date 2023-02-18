@@ -28,18 +28,26 @@ impl Identifier {
 
     /// Joins the next part of the identifier,
     ///
-    /// Returns an error if the `next` ontains a `.`,
-    ///
+    /// If the next part contains a `.`, it will automatically be formatted w/ quotes
     pub fn join(&mut self, next: impl AsRef<str>) -> Result<&mut Self, Error> {
         let next = next.as_ref();
 
         if next.contains(".") && !next.starts_with(r#"""#) && !next.ends_with(r#"""#) {
-            return Err(Error::default());
+            write!(self.buf, r#"."{}""#, next)?;
+        } else {
+            write!(self.buf, ".{next}")?;
         }
 
-        write!(self.buf, ".{next}")?;
         self.len += 1;
         Ok(self)
+    }
+
+    /// Branches from the current identifier,
+    /// 
+    pub fn branch(&self, next: impl AsRef<str>) -> Result<Self, Error> {
+        let mut clone = self.clone();
+
+        clone.join(next).map(|c| c.to_owned())
     }
 
     /// Returns the value at positioned at `index`,
@@ -182,7 +190,7 @@ struct StringInterpolation {
 ///
 /// Example,
 ///
-/// Given an identifier, "blocks.test.object" and a pattern "blocks.{name}.{symbol}"
+/// Given an identifier, "blocks.test.object" and a pattern "blocks.(name).(symbol)"
 ///
 /// String interpolation would return a mapping such as,
 ///
@@ -197,7 +205,7 @@ enum StringInterpolationTokens {
     Match(String),
     /// Assign the value from the identifier,
     ///
-    #[regex("[{][a-zA-Z-0-9]+[}]", on_assignment)]
+    #[regex("[(][a-zA-Z-0-9]+[)]", on_assignment)]
     Assignment(String),
     #[error]
     #[regex("[.]", logos::skip)]
@@ -266,6 +274,13 @@ mod tests {
         assert_eq!("part1", root.pos(1).expect("should have a part"));
         assert_eq!("part2", root.pos(2).expect("should have a part"));
         root.pos(3).expect_err("should be an error");
+
+        let branch = root.branch("part3").expect("should be able to branch");
+        assert_eq!("part3", branch.pos(3).expect("should have a part"));
+        assert_eq!(2, root.len);
+
+        let branch = branch.branch("testing.branch").expect("should be able to branch");
+        assert_eq!(r#""testing.branch""#, branch.pos(4).expect("should have a part"));
     }
 
     /// Tests string interpolation w/ identifier
@@ -280,7 +295,7 @@ mod tests {
                 .expect("should parse");
 
         let map = ident
-            .interpolate("blocks.{name}.{symbol}.roots.{root}")
+            .interpolate("blocks.(name).(symbol).roots.(root)")
             .expect("should interpolate");
         assert_eq!("test", map["name"].as_str());
         assert_eq!(r#""https://test.test-symbol.com.""#, map["symbol"].as_str());
@@ -294,7 +309,7 @@ mod tests {
                 .expect("should parse");
 
         let map = ident
-            .interpolate("blocks.{name}.{symbol}.roots.{root}")
+            .interpolate("blocks.(name).(symbol).roots.(root)")
             .expect("should interpolate");
         assert_eq!("test", map["name"].as_str());
         assert_eq!(r#""https://test-symbolcom""#, map["symbol"].as_str());
@@ -308,7 +323,7 @@ mod tests {
                 .expect("should parse");
 
         let map = ident
-            .interpolate("blocks.{name}.{symbol}.roots.{root}")
+            .interpolate("blocks.(name).(symbol).roots.(root)")
             .expect("should interpolate");
         assert_eq!("test", map["name"].as_str());
         assert_eq!("some spaces in the ident", map["symbol"].as_str());
