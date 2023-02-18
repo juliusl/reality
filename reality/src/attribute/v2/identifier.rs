@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, fmt::Write, str::FromStr};
 
 use logos::{Lexer, Logos};
+use tracing::trace;
 
 use super::Error;
 
@@ -116,6 +117,8 @@ impl Identifier {
             self.buf.to_string()
         };
 
+        trace!("{buf} {:?}", sint);
+
         if let Some(buf) = parts(buf).ok() {
             for (part, token) in buf.iter().zip(sint.tokens) {
                 match token {
@@ -201,7 +204,7 @@ struct StringInterpolation {
 enum StringInterpolationTokens {
     /// Match this token,
     ///
-    #[regex("[.]?[a-zA-Z0-9]+[.]", on_match)]
+    #[regex("[.]?[a-zA-Z0-9]+[.]?", on_match)]
     Match(String),
     /// Assign the value from the identifier,
     ///
@@ -219,7 +222,13 @@ fn on_match(lex: &mut Lexer<StringInterpolationTokens>) -> String {
         0
     };
 
-    lex.slice()[start..lex.slice().len() - 1].to_string()
+    let end = if lex.slice().chars().last() == Some('.') {
+        lex.slice().len() - 1
+    } else {
+        lex.slice().len()
+    };
+
+    lex.slice()[start..end].to_string()
 }
 
 fn on_assignment(lex: &mut Lexer<StringInterpolationTokens>) -> String {
@@ -331,7 +340,10 @@ mod tests {
 
         assert_eq!(
             None,
-            ident.interpolate("blocks.{name}.{symbol}.notmatch.{root}")
+            ident.interpolate("blocks.(name).(symbol).notmatch.(root)")
         );
+
+        let map = ident.interpolate("blocks.test").expect("should interpolate");
+        assert!(map.is_empty());
     }
 }
