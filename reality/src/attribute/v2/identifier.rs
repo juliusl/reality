@@ -141,13 +141,29 @@ fn parts(buf: impl AsRef<str>) -> Result<Vec<String>, Error> {
     let mut parts = parts.peekable();
 
     while let Some(part) = parts.next() {
-        if part.starts_with(r#"""#) && parts.peek().filter(|p| p.ends_with(r#"""#)).is_some() {
-            let other = parts.next();
-            if let Some(other) = other {
-                coll.push(format!("{}.{}", part, other));
-            } else {
-                return Err(Error::default());
+        if part.starts_with(r#"""#) && !part.ends_with(r#"""#) {
+            let mut extracted = part.to_string();
+            loop {
+                let peek = parts.peek();
+                if peek.is_none() {
+                    return Err("quoted segment does not terminate".into());
+                }
+
+                let found_terminator = peek.filter(|p| p.ends_with(r#"""#)).is_some();
+
+                let other = parts.next();
+                if let Some(other) = other {
+                    write!(extracted, ".{}", other)?;
+                } else {
+                    return Err(Error::default());
+                }
+
+                if found_terminator {
+                    break;
+                }
             }
+
+            coll.push(extracted);
         } else {
             coll.push(part.to_string());
         }
@@ -207,26 +223,17 @@ impl FromStr for Identifier {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts = s.split(".");
-        let mut parts = parts.peekable();
+        let parts = parts(s)?;
+        let mut parts = parts.iter();
 
-        if let Some(Ok(mut root)) = parts.next().map(|r| Identifier::try_create_root(r)) {
-            while let Some(part) = parts.next() {
-                if part.starts_with(r#"""#) && parts.peek().filter(|p| p.contains(".")).is_some() {
-                    let other = parts.next();
-                    if let Some(other) = other.filter(|o| o.ends_with(r#"""#)) {
-                        root.join(format!("{}{}", part, other))?;
-                    } else {
-                        return Err(Error::default());
-                    }
-                } else {
-                    root.join(part)?;
-                }
+        if let Some(mut root) = parts.next().and_then(|p| Self::try_create_root(p).ok()) {
+            for p in parts {
+                root.join(p)?;
             }
 
             Ok(root)
         } else {
-            Err(Error::default())
+            Self::try_create_root("")
         }
     }
 }
@@ -268,7 +275,7 @@ mod tests {
         // Test case where quotes and a . repairs parts,
         //
         let ident: Identifier =
-            r#"blocks.test."https://test-symbol.com".roots.op.more.stuff.at.the.end"#
+            r#"blocks.test."https://test.test-symbol.com.".roots.op.more.stuff.at.the.end"#
                 .parse()
                 .expect("should parse");
 
@@ -276,11 +283,11 @@ mod tests {
             .interpolate("blocks.{name}.{symbol}.roots.{root}")
             .expect("should interpolate");
         assert_eq!("test", map["name"].as_str());
-        assert_eq!(r#""https://test-symbol.com""#, map["symbol"].as_str());
+        assert_eq!(r#""https://test.test-symbol.com.""#, map["symbol"].as_str());
         assert_eq!("op", map["root"].as_str());
 
         // Test case where quotes preserves the whole parts,
-        // 
+        //
         let ident: Identifier =
             r#"blocks.test."https://test-symbolcom".roots.op.more.stuff.at.the.end"#
                 .parse()
@@ -294,7 +301,7 @@ mod tests {
         assert_eq!("op", map["root"].as_str());
 
         // Test case where spaces in the ident
-        // 
+        //
         let ident: Identifier =
             r#"blocks.test.some spaces in the ident.roots.op.more.stuff.at.the.end"#
                 .parse()
