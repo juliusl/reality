@@ -1,8 +1,8 @@
 pub mod action;
 pub use action::Action;
 
-mod value_provider;
-pub use value_provider::ValueProvider;
+mod value_index;
+pub use value_index::ValueIndex;
 
 mod attribute;
 pub use attribute::Attribute;
@@ -19,8 +19,8 @@ pub use tag::Tag;
 mod parser;
 pub use parser::Parser;
 
-mod block_builder;
-pub use block_builder::BlockBuilder;
+mod block_list;
+pub use block_list::BlockList;
 
 mod identifier;
 pub use identifier::Identifier;

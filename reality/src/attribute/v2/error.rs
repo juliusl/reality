@@ -1,6 +1,5 @@
+use std::fmt::Display;
 use std::sync::Arc;
-
-use toml_edit::Item;
 
 /// Struct for build errors,
 ///
@@ -8,6 +7,12 @@ use toml_edit::Item;
 pub struct Error {
     error: Option<Arc<dyn std::error::Error>>,
     message: Option<String>,
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} {:?}", self.error, self.message)
+    }
 }
 
 impl From<std::io::Error> for Error {

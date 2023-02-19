@@ -1,12 +1,20 @@
-use specs::{Entity, LazyUpdate, World, WorldExt};
-use std::collections::{BTreeMap, HashMap};
+use specs::WorldExt;
+use specs::World;
+use specs::LazyUpdate;
+use specs::Entity;
+use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::Arc;
-use tracing::{event, Level};
-
+use tracing::Level;
+use tracing::event;
 use logos::Logos;
 
-use crate::compiler::{ExtensionCompileFunc, Root};
-use crate::{Block, BlockIndex, BlockProperties, Value};
+use crate::compiler::Root;
+use crate::compiler::ExtensionCompileFunc;
+use crate::Value;
+use crate::BlockProperties;
+use crate::BlockIndex;
+use crate::Block;
 
 mod attributes;
 pub use attributes::AttributeParser;
@@ -402,13 +410,13 @@ impl Parser {
         while let Some(token) = lexer.next() {
             match token {
                 Keywords::NewLine => {
+                    col += 1;
                     event!(
                         Level::TRACE,
-                        "ln: {}, col: {}, Parsed token, {:?} {}",
+                        "ln: {}, col: {}, Parsed token, {:?}",
                         line,
                         col,
                         token,
-                        lexer.slice()
                     );
                     line += 1;
                     col = 0;

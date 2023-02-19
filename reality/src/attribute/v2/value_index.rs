@@ -1,10 +1,11 @@
-use toml_edit::{Item, Document};
+use toml_edit::Document;
+use toml_edit::Item;
 
 use super::Error;
 
 /// Trait to extend toml item indexes,
 /// 
-pub trait ValueProvider<'a>
+pub trait ValueIndex<'a>
 where
     Self: core::ops::Index<&'a str, Output = Item>,
 {
@@ -47,14 +48,14 @@ where
     }
 }
 
-impl ValueProvider<'_> for Item {}
-impl ValueProvider<'_> for Document {}
+impl ValueIndex<'_> for Item {}
+impl ValueIndex<'_> for Document {}
 
 #[allow(unused_imports)]
 mod tests {
     use toml_edit::{Document, value};
 
-    use crate::v2::ValueProvider;
+    use crate::v2::ValueIndex;
 
     #[test]
     fn test_value_provider() {

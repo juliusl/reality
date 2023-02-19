@@ -1,4 +1,5 @@
-use crate::{Value, Attributes, AttributeParser};
+use crate::AttributeParser;
+use crate::Attributes;
 
 /// Wrapper struct over property attribute handler function,
 /// 
