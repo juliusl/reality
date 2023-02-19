@@ -1,19 +1,68 @@
-use std::{collections::BTreeMap, fmt::Write, str::FromStr};
-
-use logos::{Lexer, Logos};
+use std::str::FromStr;
+use std::fmt::Display;
+use std::fmt::Write;
+use std::collections::BTreeSet;
+use std::collections::BTreeMap;
+use logos::Logos;
+use logos::Lexer;
 use tracing::trace;
 
 use super::Error;
 
 /// Struct for a dot-seperated identifier,
 ///
-#[derive(Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Identifier {
+    /// Internal buffer,
+    /// 
     buf: String,
+    /// Set of tags to include w/ this identifier,
+    /// 
+    tags: BTreeSet<String>,
+    /// Number of segments,
+    /// 
     len: usize,
+    /// Reserved
+    _reserved: usize
 }
 
 impl Identifier {
+    /// Adds a tag to the identifier,
+    /// 
+    pub fn add_tag(&mut self, tag: impl Into<String>) {
+        self.tags.insert(tag.into());
+    }
+
+    /// Returns true if this identifier has a tag in the set,
+    /// 
+    pub fn contains_tag(&self, tag: impl AsRef<str>) -> bool {
+        self.tags.contains(tag.as_ref())
+    }
+
+    /// Returns true if this identifier contains all tags,
+    /// 
+    pub fn contains_tags(&self, tags: &BTreeSet<String>) -> bool {
+        self.tags.is_subset(tags)
+    }
+
+    /// Returns iterator over tags,
+    /// 
+    pub fn tags(&self) -> impl Iterator<Item = &String> {
+        self.tags.iter()
+    }
+
+    /// Returns the number of tags in this identifier,
+    /// 
+    pub fn tag_count(&self) -> usize {
+        self.tags.len()
+    }
+
+    /// Returns the current length of this identifier,
+    /// 
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
     /// Returns a new identifier w/ root,
     ///
     /// Returns an error if the root has any `.`'s
@@ -24,12 +73,13 @@ impl Identifier {
             return Err(Error::default());
         }
 
-        Ok(Self { buf: root, len: 0 })
+        Ok(Self { buf: root, len: 0, tags: BTreeSet::default(), _reserved: 0 })
     }
 
     /// Joins the next part of the identifier,
     ///
     /// If the next part contains a `.`, it will automatically be formatted w/ quotes
+    /// 
     pub fn join(&mut self, next: impl AsRef<str>) -> Result<&mut Self, Error> {
         let next = next.as_ref();
 
@@ -98,6 +148,9 @@ impl Identifier {
                         .find(&match_ident)
                         .map(|s| s + match_ident.len() + 1);
                 }
+                StringInterpolationTokens::OptionalSuffixAssignment(_) if tokens.remainder().len() > 0 => {
+                    panic!("Pattern error, optional suffix assignment can only be at the end")
+                }
                 _ => {
                     sint.tokens.push(token);
                 }
@@ -120,6 +173,17 @@ impl Identifier {
         trace!("{buf} {:?}", sint);
 
         if let Some(buf) = parts(buf).ok() {
+
+            if buf.len() < sint.tokens.len() && sint.tokens.last().filter(|t| {
+                if let StringInterpolationTokens::OptionalSuffixAssignment(_) = t {
+                    true
+                } else {
+                    false
+                }
+            }).is_none() {
+                return None;
+            }
+
             for (part, token) in buf.iter().zip(sint.tokens) {
                 match token {
                     StringInterpolationTokens::Match(matches) if matches != *part => {
@@ -128,7 +192,7 @@ impl Identifier {
                     StringInterpolationTokens::Match(matches) if matches == *part => {
                         continue;
                     }
-                    StringInterpolationTokens::Assignment(name) => {
+                    StringInterpolationTokens::Assignment(name) | StringInterpolationTokens::OptionalSuffixAssignment(name) => {
                         map.insert(name, part.to_string());
                     }
                     _ => {
@@ -141,6 +205,12 @@ impl Identifier {
         }
 
         Some(map)
+    }
+
+    /// Merges two identifiers into a new identifier,
+    /// 
+    pub fn merge(&self, other: &Identifier) -> Identifier {
+        todo!()
     }
 }
 
@@ -183,6 +253,24 @@ fn parts(buf: impl AsRef<str>) -> Result<Vec<String>, Error> {
     Ok(coll)
 }
 
+impl Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.buf)?;
+        if f.alternate() {
+            write!(f, "#")?;
+            let mut tags = self.tags.iter();
+            if let Some(tag) = tags.next() {
+                write!(f, "{tag}")?;
+            }
+            for t in tags {
+                write!(f, "|{t}")?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Default, Debug)]
 struct StringInterpolation {
     start: Option<usize>,
@@ -210,6 +298,10 @@ enum StringInterpolationTokens {
     ///
     #[regex("[(][a-zA-Z-0-9]+[)]", on_assignment)]
     Assignment(String),
+    /// Optionally assign a suffix,
+    /// 
+    #[regex("[(][?][a-zA-Z0-9]+[)]", on_optional_suffix_assignment)]
+    OptionalSuffixAssignment(String),
     #[error]
     #[regex("[.]", logos::skip)]
     Error,
@@ -233,6 +325,11 @@ fn on_match(lex: &mut Lexer<StringInterpolationTokens>) -> String {
 
 fn on_assignment(lex: &mut Lexer<StringInterpolationTokens>) -> String {
     let name = lex.slice()[1..lex.slice().len() - 1].to_string();
+    name
+}
+
+fn on_optional_suffix_assignment(lex: &mut Lexer<StringInterpolationTokens>) -> String {
+    let name = lex.slice()[2..lex.slice().len() - 1].to_string();
     name
 }
 
@@ -330,14 +427,13 @@ mod tests {
             r#"blocks.test.some spaces in the ident.roots.op.more.stuff.at.the.end"#
                 .parse()
                 .expect("should parse");
-
+            
         let map = ident
             .interpolate("blocks.(name).(symbol).roots.(root)")
             .expect("should interpolate");
         assert_eq!("test", map["name"].as_str());
         assert_eq!("some spaces in the ident", map["symbol"].as_str());
         assert_eq!("op", map["root"].as_str());
-
         assert_eq!(
             None,
             ident.interpolate("blocks.(name).(symbol).notmatch.(root)")
@@ -345,5 +441,36 @@ mod tests {
 
         let map = ident.interpolate("blocks.test").expect("should interpolate");
         assert!(map.is_empty());
+
+        let ident: Identifier = "test.optional".parse().expect("should parse");
+        let map = ident.interpolate("(a).(b).(?c)").expect("should interpolate");
+        assert_eq!("test", map["a"].as_str());
+        assert_eq!("optional", map["b"].as_str());
+
+        let map = ident.interpolate("(a).(?c)").expect("should interpolate");
+        assert_eq!("test", map["a"].as_str());
+        assert_eq!("optional", map["c"].as_str());
+
+        let root = Identifier::default();
+        assert_eq!(".test", root.branch("test").expect("should join").to_string().as_str());
+        assert_eq!(1, root.branch("test").expect("should join").len());
+        
+        let mut root = Identifier::default();
+        root.join("test").expect("should join");      
+        root.add_tag("test");
+        root.add_tag("v1");
+        assert_eq!(".test#test|v1", format!("{:#}", root).as_str());
+        assert_eq!("test,v1", root.tags().cloned().collect::<Vec<_>>().join(","));
+
+        let ident: Identifier = ".input".parse().expect("should parse");
+        assert_eq!("input", ident.pos(1).expect("should exist").as_str());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_optional_suffix_match_format() {
+        let ident: Identifier = "a.b.c".parse().expect("should parse");
+
+        ident.interpolate("(?shouldpanic).b.c");
     }
 }

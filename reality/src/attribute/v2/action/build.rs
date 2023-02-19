@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
-use specs::{EntityBuilder, Entity, world::LazyBuilder};
-
-use crate::v2::{Attribute, Error};
-
+use specs::world::LazyBuilder;
+use specs::Entity;
+use crate::v2::Error;
 
 /// Trait to build components for an entity,
 /// 

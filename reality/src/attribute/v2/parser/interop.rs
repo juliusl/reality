@@ -1,7 +1,13 @@
-use specs::{Component, Entity, VecStorage};
+use specs::VecStorage;
+use specs::Entity;
+use specs::Component;
 use tracing::trace;
 
-use crate::{v2::{Error, Action}, Keywords, Value};
+use crate::Keywords;
+use crate::Value;
+use crate::v2::Identifier;
+use crate::v2::Action;
+use crate::v2::Error;
 
 /// Struct to interop handling custom attributes between the v1 parser and the v2 parser,
 ///
@@ -18,12 +24,6 @@ pub struct Packet {
     /// Custom attribute identifier,
     ///
     pub(crate) ident: String,
-    /// Keyword that parsed this attribute,
-    ///
-    pub(crate) keyword: Option<Keywords>,
-    /// Entity that owns this attribute, likely a block,
-    ///
-    pub(crate) entity: Option<Entity>,
     /// Input (symbol) value intended for this attribute,
     ///
     pub(crate) input: String,
@@ -33,6 +33,15 @@ pub struct Packet {
     /// Extension namespace,
     ///
     pub(crate) extension_namespace: String,
+    /// Packet identifier,
+    /// 
+    pub(crate) identifier: Identifier,
+    /// Keyword that parsed this attribute,
+    ///
+    pub(crate) keyword: Option<Keywords>,
+    /// Entity that owns this attribute, likely a block,
+    ///
+    pub(crate) entity: Option<Entity>,
     /// Returns the line count this was parsed at, relative to the extension namespace,
     /// 
     pub(crate) line_count: usize,

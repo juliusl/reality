@@ -1,11 +1,16 @@
-use specs::{
-    Builder, Join, ReadStorage, World, WorldExt, WriteStorage,
-};
+use specs::WriteStorage;
+use specs::WorldExt;
+use specs::World;
+use specs::ReadStorage;
+use specs::Join;
+use specs::Builder;
 use tracing::trace;
 
 use crate::parser::PropertyAttribute;
-use crate::{CustomAttribute, Keywords};
+use crate::Keywords;
+use crate::CustomAttribute;
 
+use super::Identifier;
 use super::action;
 
 mod interop;
@@ -67,8 +72,8 @@ impl Parser {
                         }
                     }
 
-                    if let Err(_) = packet_handler.on_packet(_p) {
-                        todo!("error in parser");
+                    if let Err(err) = packet_handler.on_packet(_p) {
+                        panic!("Parsing error, {err}");
                     }
                 }
             },
@@ -93,6 +98,7 @@ impl Parser {
                 let keyword = parser.keyword().cloned();
                 let namespace = parser.namespace();
                 let line_count = parser.line_count();
+
                 parser.lazy_exec_mut(move |w| {
                     w.register::<Packet>();
                     w.create_entity()
@@ -103,6 +109,7 @@ impl Parser {
                             keyword,
                             ident,
                             input,
+                            identifier: Identifier::default(),
                             block_namespace: ".".to_string(),
                             extension_namespace: namespace.unwrap_or_default(),
                             line_count,
@@ -122,13 +129,13 @@ impl Parser {
             let line_count = parser.line_count();
 
             trace!(
-                "{:?}, {:?}, {:?}, {:?}, {:?}, {}, {:?}, {:?}",
+                "ln {} property -- {:?}, {:?}, {:?}, {:?}, {:?},  {:?}, {:?}",
+                line_count,
                 name,
                 property,
                 entity,
                 keyword,
                 extension_namespace,
-                line_count,
                 token,
                 parser.edit_value()
             );
@@ -140,16 +147,14 @@ impl Parser {
 #[allow(unused_imports)]
 mod tests {
     use tracing_test::traced_test;
-
-    use crate::v2::BlockBuilder;
-
+    use crate::v2::BlockList;
     use super::Parser;
 
     #[test]
     #[traced_test]
     fn test_parser() {
         let parser = Parser::new();
-        let mut compiler = BlockBuilder::default();
+        let mut compiler = BlockList::default();
         // let parser = parser.parse(
         //     r#"
         // # ``` test block
@@ -168,7 +173,9 @@ mod tests {
         let _parser = parser.parse(
             r#"
             ``` b block
-             + .op add
+            : test .true
+
+             + test:v1 .op add
              : lhs .int
              : rhs .int
              : sum .int

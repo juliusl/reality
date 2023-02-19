@@ -1,17 +1,18 @@
 use std::collections::BTreeMap;
-
+use super::Identifier;
 use super::Block;
+use super::action;
 
-/// Struct for transpiling runmd interop into a TOML document,
+/// Struct for mapping runmd blocks,
 ///  
 #[derive(Default)]
-pub struct BlockBuilder {
-    /// Compiled blocks,
+pub struct BlockList {
+    /// List of blocks,
     ///
     blocks: BTreeMap<String, Block>,
 }
 
-impl BlockBuilder {
+impl BlockList {
     /// Returns the current block map,
     ///
     pub fn blocks(&self) -> &BTreeMap<String, Block> {
@@ -19,7 +20,7 @@ impl BlockBuilder {
     }
 }
 
-impl super::parser::PacketHandler for BlockBuilder {
+impl super::parser::PacketHandler for BlockList {
     fn on_packet(&mut self, packet: super::parser::Packet) -> Result<(), super::Error> {
         if !self.blocks.contains_key(&packet.block_namespace) {
             self.blocks
@@ -34,12 +35,18 @@ impl super::parser::PacketHandler for BlockBuilder {
             match packet.keyword.as_ref() {
                 Some(keyword) => match keyword {
                     crate::Keywords::Add => {
+                        let mut ident: Identifier = ident.parse()?;
+
+                        if let Some(symbol) = value.symbol() {
+                            ident.join(symbol)?;
+                        }
+
                         block.add_attribute(ident, value);
 
                         packet.tag().as_ref().map(|tag| {
                             block
                                 .last_mut()
-                                .map(|b| b.set_tag(*tag));
+                                .map(|b| b.set_tags(*tag));
                         });
 
                         if !packet.actions.is_empty() {
@@ -55,11 +62,12 @@ impl super::parser::PacketHandler for BlockBuilder {
                         }
                     }
                     crate::Keywords::Define | crate::Keywords::Extension => {
-                        block.last_mut().map(|a| {
+                        if let None = block.last_mut().map(|a| {
                             *a = a.clone()
-                                .with(ident, value)
-                                .extend(ext_ident);
-                        });
+                                .extend(&ext_ident, value.clone());
+                        }) {
+                            block.initialize_with(action::with(ext_ident, value));
+                        }
                     }
                     _ => {
                         unreachable!("Only keywords that emit packets would reach this code")
