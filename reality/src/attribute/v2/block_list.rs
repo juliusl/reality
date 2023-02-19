@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
-use super::Identifier;
+use crate::Error;
+use crate::Identifier;
+
 use super::Block;
 use super::action;
 
@@ -21,7 +23,7 @@ impl BlockList {
 }
 
 impl super::parser::PacketHandler for BlockList {
-    fn on_packet(&mut self, packet: super::parser::Packet) -> Result<(), super::Error> {
+    fn on_packet(&mut self, packet: super::parser::Packet) -> Result<(), Error> {
         if !self.blocks.contains_key(&packet.block_namespace) {
             self.blocks
                 .insert(packet.block_namespace.to_string(), Block::default());

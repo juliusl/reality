@@ -1,64 +1,64 @@
-use std::str::FromStr;
+use logos::Lexer;
+use logos::Logos;
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::fmt::Write;
-use std::collections::BTreeSet;
-use std::collections::BTreeMap;
-use logos::Logos;
-use logos::Lexer;
+use std::str::FromStr;
 use tracing::trace;
 
-use super::Error;
+use crate::Error;
 
 /// Struct for a dot-seperated identifier,
 ///
 #[derive(Default, Debug, Clone)]
 pub struct Identifier {
     /// Internal buffer,
-    /// 
+    ///
     buf: String,
     /// Set of tags to include w/ this identifier,
-    /// 
+    ///
     tags: BTreeSet<String>,
     /// Number of segments,
-    /// 
+    ///
     len: usize,
     /// Reserved
-    _reserved: usize
+    _reserved: usize,
 }
 
 impl Identifier {
     /// Adds a tag to the identifier,
-    /// 
+    ///
     pub fn add_tag(&mut self, tag: impl Into<String>) {
         self.tags.insert(tag.into());
     }
 
     /// Returns true if this identifier has a tag in the set,
-    /// 
+    ///
     pub fn contains_tag(&self, tag: impl AsRef<str>) -> bool {
         self.tags.contains(tag.as_ref())
     }
 
     /// Returns true if this identifier contains all tags,
-    /// 
+    ///
     pub fn contains_tags(&self, tags: &BTreeSet<String>) -> bool {
         self.tags.is_subset(tags)
     }
 
     /// Returns iterator over tags,
-    /// 
+    ///
     pub fn tags(&self) -> impl Iterator<Item = &String> {
         self.tags.iter()
     }
 
     /// Returns the number of tags in this identifier,
-    /// 
+    ///
     pub fn tag_count(&self) -> usize {
         self.tags.len()
     }
 
     /// Returns the current length of this identifier,
-    /// 
+    ///
     pub fn len(&self) -> usize {
         self.len
     }
@@ -69,17 +69,24 @@ impl Identifier {
     ///
     pub fn try_create_root(root: impl Into<String>) -> Result<Self, Error> {
         let root = root.into();
-        if root.contains(".") {
-            return Err(Error::default());
-        }
+        let root = if root.contains(".") && !root.starts_with(r#"""#) && !root.ends_with(r#"""#) {
+            format!(r#""{}""#, root)
+        } else {
+            format!("{root}")
+        };
 
-        Ok(Self { buf: root, len: 0, tags: BTreeSet::default(), _reserved: 0 })
+        Ok(Self {
+            buf: root,
+            len: 0,
+            tags: BTreeSet::default(),
+            _reserved: 0,
+        })
     }
 
     /// Joins the next part of the identifier,
     ///
     /// If the next part contains a `.`, it will automatically be formatted w/ quotes
-    /// 
+    ///
     pub fn join(&mut self, next: impl AsRef<str>) -> Result<&mut Self, Error> {
         let next = next.as_ref();
 
@@ -94,7 +101,7 @@ impl Identifier {
     }
 
     /// Branches from the current identifier,
-    /// 
+    ///
     pub fn branch(&self, next: impl AsRef<str>) -> Result<Self, Error> {
         let mut clone = self.clone();
 
@@ -142,13 +149,18 @@ impl Identifier {
 
         while let Some(token) = tokens.next() {
             match token {
-                StringInterpolationTokens::Match(match_ident) if sint.start.is_none() => {
+                StringInterpolationTokens::Match(match_ident)
+                | StringInterpolationTokens::EscapedMatch(match_ident)
+                    if sint.start.is_none() =>
+                {
                     sint.start = self
                         .buf
                         .find(&match_ident)
                         .map(|s| s + match_ident.len() + 1);
                 }
-                StringInterpolationTokens::OptionalSuffixAssignment(_) if tokens.remainder().len() > 0 => {
+                StringInterpolationTokens::OptionalSuffixAssignment(_)
+                    if tokens.remainder().len() > 0 =>
+                {
                     panic!("Pattern error, optional suffix assignment can only be at the end")
                 }
                 _ => {
@@ -160,8 +172,9 @@ impl Identifier {
         let mut map = BTreeMap::<String, String>::default();
         let buf = if let Some(start) = sint.start {
             let (_, rest) = self.buf.split_at(start);
-
+            trace!("rest: {rest}");
             if let Some(ident) = rest.parse::<Identifier>().ok() {
+                trace!("ident: {ident}");
                 ident.buf.to_string()
             } else {
                 return None;
@@ -170,29 +183,41 @@ impl Identifier {
             self.buf.to_string()
         };
 
-        trace!("{buf} {:?}", sint);
+        trace!("buf: {buf} sint: {:?}", sint);
 
         if let Some(buf) = parts(buf).ok() {
-
-            if buf.len() < sint.tokens.len() && sint.tokens.last().filter(|t| {
-                if let StringInterpolationTokens::OptionalSuffixAssignment(_) = t {
-                    true
-                } else {
-                    false
-                }
-            }).is_none() {
+            if buf.len() < sint.tokens.len()
+                && sint
+                    .tokens
+                    .last()
+                    .filter(|t| {
+                        if let StringInterpolationTokens::OptionalSuffixAssignment(_) = t {
+                            true
+                        } else {
+                            false
+                        }
+                    })
+                    .is_none()
+            {
                 return None;
             }
 
             for (part, token) in buf.iter().zip(sint.tokens) {
                 match token {
-                    StringInterpolationTokens::Match(matches) if matches != *part => {
+                    StringInterpolationTokens::Match(matches)
+                    | StringInterpolationTokens::EscapedMatch(matches)
+                        if matches != *part =>
+                    {
                         return None;
                     }
-                    StringInterpolationTokens::Match(matches) if matches == *part => {
+                    StringInterpolationTokens::Match(matches)
+                    | StringInterpolationTokens::EscapedMatch(matches)
+                        if matches == *part =>
+                    {
                         continue;
                     }
-                    StringInterpolationTokens::Assignment(name) | StringInterpolationTokens::OptionalSuffixAssignment(name) => {
+                    StringInterpolationTokens::Assignment(name)
+                    | StringInterpolationTokens::OptionalSuffixAssignment(name) => {
                         map.insert(name, part.to_string());
                     }
                     _ => {
@@ -208,7 +233,7 @@ impl Identifier {
     }
 
     /// Merges two identifiers into a new identifier,
-    /// 
+    ///
     pub fn merge(&self, other: &Identifier) -> Identifier {
         todo!()
     }
@@ -256,15 +281,16 @@ fn parts(buf: impl AsRef<str>) -> Result<Vec<String>, Error> {
 impl Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.buf)?;
-        if f.alternate() {
-            write!(f, "#")?;
+        if f.alternate() && self.tag_count() > 0 {
+            write!(f, r#".""#)?;
             let mut tags = self.tags.iter();
             if let Some(tag) = tags.next() {
                 write!(f, "{tag}")?;
             }
             for t in tags {
-                write!(f, "|{t}")?;
+                write!(f, ":{t}")?;
             }
+            write!(f, r#"""#)?;
         }
 
         Ok(())
@@ -290,6 +316,10 @@ struct StringInterpolation {
 ///
 #[derive(Logos, Debug)]
 enum StringInterpolationTokens {
+    /// Match this token, escaped w/ quotes,
+    ///
+    #[regex(r#"[.]?["][^"]*["][.]?"#, on_match)]
+    EscapedMatch(String),
     /// Match this token,
     ///
     #[regex("[.]?[a-zA-Z0-9]+[.]?", on_match)]
@@ -299,7 +329,7 @@ enum StringInterpolationTokens {
     #[regex("[(][a-zA-Z-0-9]+[)]", on_assignment)]
     Assignment(String),
     /// Optionally assign a suffix,
-    /// 
+    ///
     #[regex("[(][?][a-zA-Z0-9]+[)]", on_optional_suffix_assignment)]
     OptionalSuffixAssignment(String),
     #[error]
@@ -355,6 +385,7 @@ impl FromStr for Identifier {
 #[allow(unused_imports)]
 mod tests {
     use logos::{Lexer, Logos};
+    use tracing_test::traced_test;
 
     use super::{Identifier, StringInterpolationTokens};
 
@@ -375,7 +406,9 @@ mod tests {
         let root = Identifier::try_create_root("").expect("should be able to create root");
         assert_eq!("", root.root());
 
-        let root: Identifier = "test.part1.part2".parse().expect("should be able to parse");
+        let mut root: Identifier = "test.part1.part2".parse().expect("should be able to parse");
+        root.add_tag("test");
+        root.add_tag("v1");
         assert_eq!("test", root.pos(0).expect("should have a part"));
         assert_eq!("part1", root.pos(1).expect("should have a part"));
         assert_eq!("part2", root.pos(2).expect("should have a part"));
@@ -384,14 +417,21 @@ mod tests {
         let branch = root.branch("part3").expect("should be able to branch");
         assert_eq!("part3", branch.pos(3).expect("should have a part"));
         assert_eq!(2, root.len);
+        assert_eq!(r#"test.part1.part2.part3."test:v1""#, format!("{:#}", branch));
 
-        let branch = branch.branch("testing.branch").expect("should be able to branch");
-        assert_eq!(r#""testing.branch""#, branch.pos(4).expect("should have a part"));
+        let branch = branch
+            .branch("testing.branch")
+            .expect("should be able to branch");
+        assert_eq!(
+            r#""testing.branch""#,
+            branch.pos(4).expect("should have a part")
+        );
     }
 
     /// Tests string interpolation w/ identifier
     ///
     #[test]
+    #[traced_test]
     fn test_string_interpolate() {
         // Test case where quotes and a . repairs parts,
         //
@@ -399,6 +439,20 @@ mod tests {
             r#"blocks.test."https://test.test-symbol.com.".roots.op.more.stuff.at.the.end"#
                 .parse()
                 .expect("should parse");
+
+        // Test escaped quotes case
+        let map = ident
+            .interpolate(r#""https://test.test-symbol.com.".(a).(b)"#)
+            .expect("should interpolate");
+        assert_eq!("roots", map["a"].as_str());
+        assert_eq!("op", map["b"].as_str());
+
+        // Test middle escaped quotes case
+        let map = ident
+            .interpolate(r#"test."https://test.test-symbol.com.".(a).(b)"#)
+            .expect("should interpolate");
+        assert_eq!("roots", map["a"].as_str());
+        assert_eq!("op", map["b"].as_str());
 
         let map = ident
             .interpolate("blocks.(name).(symbol).roots.(root)")
@@ -427,7 +481,7 @@ mod tests {
             r#"blocks.test.some spaces in the ident.roots.op.more.stuff.at.the.end"#
                 .parse()
                 .expect("should parse");
-            
+
         let map = ident
             .interpolate("blocks.(name).(symbol).roots.(root)")
             .expect("should interpolate");
@@ -439,11 +493,15 @@ mod tests {
             ident.interpolate("blocks.(name).(symbol).notmatch.(root)")
         );
 
-        let map = ident.interpolate("blocks.test").expect("should interpolate");
+        let map = ident
+            .interpolate("blocks.test")
+            .expect("should interpolate");
         assert!(map.is_empty());
 
         let ident: Identifier = "test.optional".parse().expect("should parse");
-        let map = ident.interpolate("(a).(b).(?c)").expect("should interpolate");
+        let map = ident
+            .interpolate("(a).(b).(?c)")
+            .expect("should interpolate");
         assert_eq!("test", map["a"].as_str());
         assert_eq!("optional", map["b"].as_str());
 
@@ -452,15 +510,24 @@ mod tests {
         assert_eq!("optional", map["c"].as_str());
 
         let root = Identifier::default();
-        assert_eq!(".test", root.branch("test").expect("should join").to_string().as_str());
+        assert_eq!(
+            ".test",
+            root.branch("test")
+                .expect("should join")
+                .to_string()
+                .as_str()
+        );
         assert_eq!(1, root.branch("test").expect("should join").len());
-        
+
         let mut root = Identifier::default();
-        root.join("test").expect("should join");      
+        root.join("test").expect("should join");
         root.add_tag("test");
         root.add_tag("v1");
-        assert_eq!(".test#test|v1", format!("{:#}", root).as_str());
-        assert_eq!("test,v1", root.tags().cloned().collect::<Vec<_>>().join(","));
+        assert_eq!(r#".test."test:v1""#, format!("{:#}", root).as_str());
+        assert_eq!(
+            "test,v1",
+            root.tags().cloned().collect::<Vec<_>>().join(",")
+        );
 
         let ident: Identifier = ".input".parse().expect("should parse");
         assert_eq!("input", ident.pos(1).expect("should exist").as_str());
