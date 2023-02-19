@@ -3,11 +3,11 @@ use specs::Entity;
 use specs::Component;
 use tracing::trace;
 
+use crate::Error;
+use crate::Identifier;
 use crate::Keywords;
 use crate::Value;
-use crate::v2::Identifier;
 use crate::v2::Action;
-use crate::v2::Error;
 
 /// Struct to interop handling custom attributes between the v1 parser and the v2 parser,
 ///

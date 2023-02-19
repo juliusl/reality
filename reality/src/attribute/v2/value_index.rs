@@ -1,7 +1,7 @@
 use toml_edit::Document;
 use toml_edit::Item;
 
-use super::Error;
+use crate::Error;
 
 /// Trait to extend toml item indexes,
 /// 

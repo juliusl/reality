@@ -1,13 +1,13 @@
 use super::Action;
 use super::Attribute;
-use super::Identifier;
+use crate::Identifier;
 use crate::Value;
 use specs::Component;
 use specs::HashMapStorage;
 
 /// Struct representing a .runmd block,
 ///
-#[derive(Component, Default)]
+#[derive(Component, Clone, Default)]
 #[storage(HashMapStorage)]
 pub struct Block {
     /// Identifier,
@@ -66,6 +66,12 @@ impl Block {
         self.attributes.push(Attribute::new(ident, value));
     }
 
+    /// Returns an iterator over attributes,
+    /// 
+    pub fn attributes(&self) -> impl Iterator<Item = &Attribute> {
+        self.attributes.iter()
+    }
+
     /// Returns the block family name,
     ///
     pub fn family(&self) -> String {
@@ -80,5 +86,17 @@ impl Block {
         } else {
             self.ident.pos(1).ok()
         }
+    }
+
+    /// Returns the ident for this block,
+    /// 
+    pub fn ident(&self) -> &Identifier {
+        &self.ident
+    }
+
+    /// Finalizes this block,
+    /// 
+    pub fn finalize(&mut self) {
+        self.ident.add_tag("block");
     }
 }

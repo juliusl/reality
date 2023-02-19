@@ -2,8 +2,8 @@ use specs::VecStorage;
 use specs::Component;
 
 use crate::Elements;
+use crate::Identifier;
 use crate::Value;
-use super::Identifier;
 use super::Action;
 use super::action;
 

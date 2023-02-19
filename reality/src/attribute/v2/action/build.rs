@@ -1,6 +1,7 @@
 use specs::world::LazyBuilder;
 use specs::Entity;
-use crate::v2::Error;
+
+use crate::Error;
 
 /// Trait to build components for an entity,
 /// 

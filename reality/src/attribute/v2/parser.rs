@@ -6,11 +6,10 @@ use specs::Join;
 use specs::Builder;
 use tracing::trace;
 
+use crate::Identifier;
 use crate::parser::PropertyAttribute;
 use crate::Keywords;
 use crate::CustomAttribute;
-
-use super::Identifier;
 use super::action;
 
 mod interop;
@@ -190,6 +189,11 @@ mod tests {
         for b in compiler.blocks() {
             println!("{:#?}", b);
             println!("{} {:?}", b.0, b.1.requires().collect::<Vec<_>>());
+
+            let mut b = b.1.clone();
+            b.finalize();
+            println!("{:#}", b.ident());
+            println!("{:#}", b.attributes().next().unwrap().ident);
         }
     }
 }

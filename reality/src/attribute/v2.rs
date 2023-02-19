@@ -10,9 +10,6 @@ pub use attribute::Attribute;
 mod block;
 pub use block::Block;
 
-mod error;
-pub use error::Error;
-
 mod tag;
 pub use tag::Tag;
 
@@ -21,6 +18,3 @@ pub use parser::Parser;
 
 mod block_list;
 pub use block_list::BlockList;
-
-mod identifier;
-pub use identifier::Identifier;
