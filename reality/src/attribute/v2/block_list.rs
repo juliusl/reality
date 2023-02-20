@@ -83,45 +83,76 @@ impl super::parser::PacketHandler for BlockList {
     }
 }
 
+#[allow(unused_imports)]
 mod tests{
-    use toml_edit::{Document, Table, value, table, ArrayOfTables, Item};
+    use toml_edit::{Document, Table, value, table, ArrayOfTables, Item, visit::Visit};
+
+    use crate::Identifier;
 
     #[test]
-    fn test_dotted() {
-        // let mut doc = Document::new();
-        // // let mut table = Table::new();
-        // // table.set_dotted(true);
-
-        // doc["block"] = table();
-        // doc["block"]["op"] = table();
-        // doc["block"]["op"]["add"] = table();
-        // doc["block"]["op"]["add"]["float"]["lhs"] = value(0.0);
-        // doc["block"]["op"]["add"]["float"]["rhs"] = value(0.0);
-        // doc["block"]["op"]["add"]["float"]["sum"] = value(0.0);
-        // doc["block"]["op"]["add"]["float"].as_inline_table_mut().map(|t| t.set_dotted(true));
-
-        // doc["block"]["op"]["add"]["float"]["input"]["value"] = value("lhs");
-        // println!("{doc}");
-
-        // println!("{}", doc["block"]["op"]["add"]["float"]);
-
-
+    fn visitor_prototype() {
         let example = r#"
-[op]
-add.lhs = 0
-add.rhs = 0
-add.sum = 0
-add.actions = [
-  { input = "lhs" },
-  { input = "rhs" },
-  { eval = "sum" }
-]
+[a.test."block"]
+_e = true
+
+[[a.test."block".attributes]]
+[a.test."block".attributes.op.add]
+_e = true
+
+[[a.test."block".attributes.op.add.extensions]]
+[a.test."block".attributes.op.add.extensions.input.lhs]
+_e = true
+
+[[a.test."block".attributes.op.add.extensions]]
+[a.test."block".attributes.op.add.extensions.input.rhs]
+_e = true
+
+[[a.test."block".attributes.op.add.extensions]]
+[a.test."block".attributes.op.add.extensions.eval.sum]
+_e = true
         "#;
 
         let mut example = example.parse::<Document>().unwrap();
-        println!("{}", example["op"]["add"]);
-        println!("{}", example["op"]["add"]["actions"]);
+        // println!("{}", example["a"]["test"]["block"]);
+        // println!("{}", example["a"]["test"]["block"]["op"]["add"]["extensions"].as_array_of_tables().unwrap());
+        
+        let mut test = Test::default();
+        test.visit_document(&example);
 
+        example["a"]["test"]["block"]["attributes"][0]["op"]["add"]["extensions"].as_array_of_tables().unwrap();
+
+        for id in test.stack {
+            println!("{:#}", id)
+        }
+
+        example.fmt();
         println!("{}", example);
+    }
+
+    #[derive(Default)]
+    struct Test {
+        current: Identifier,
+        stack: Vec<Identifier>,
+    }
+
+    impl<'doc> Visit<'doc> for Test {
+        fn visit_table(&mut self, node: &'doc Table) {
+            for (key, item) in node.iter() {
+                if item.is_table() || item.is_array_of_tables() {
+                    if self.current.join(key).is_ok() {
+                        if item.get("_e").and_then(|e| e.as_bool()) == Some(true) {
+                            if let Ok(next) = self.current.commit() {
+                                self.stack.push(next);
+                            }
+                        }
+    
+                        self.visit_item(item);
+                        if let Ok(next) = self.current.truncate(1) {
+                            self.current = next;
+                        }
+                    }
+                }
+            }
+        }
     }
 }

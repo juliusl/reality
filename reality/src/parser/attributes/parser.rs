@@ -3,7 +3,7 @@ use std::ops::Range;
 use std::str::FromStr;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{Attribute, Keywords, Value};
+use crate::{Attribute, Keywords, Value, Identifier};
 use logos::Logos;
 use logos::{Lexer, Span};
 use specs::{Entity, LazyUpdate, World, WorldExt};
@@ -59,6 +59,12 @@ pub struct AttributeParser {
     /// Extension namespace,
     ///
     extension_namespace: Option<String>,
+    /// Implicit identifier to use as the base identifier,
+    /// 
+    implicit_identifier: Option<Identifier>,
+    /// The current identifier being built,
+    /// 
+    current_identifier: Identifier,
     /// Line count
     ///
     line_count: usize,
@@ -93,6 +99,23 @@ impl AttributeParser {
         self
     }
 
+    /// Sets the implicit identifier,
+    /// 
+    pub fn set_implicit_identifier(&mut self, ident: Option<&Identifier>) -> &mut Self {
+        if let Some(replaced) = self.implicit_identifier.take() {
+            trace!("Replacing implicit identifier {:#}", replaced);
+        }
+
+        self.implicit_identifier = ident.cloned();
+        self
+    }
+
+    /// Returns the current identifier,
+    /// 
+    pub fn current_identifier(&self) -> &Identifier {
+        &self.current_identifier
+    }
+
     /// Sets the current keyword,
     ///
     pub fn set_keyword(&mut self, keyword: Keywords) -> &mut Self {
@@ -100,6 +123,8 @@ impl AttributeParser {
         self
     }
 
+    /// Initializes self w/ content,
+    /// 
     pub fn init(&mut self, content: impl AsRef<str>) -> &mut Self {
         self.parse(content);
         self
@@ -109,6 +134,13 @@ impl AttributeParser {
     ///
     pub fn parse(&mut self, content: impl AsRef<str>) -> &mut Self {
         self.line_count += 1;
+
+        // Reset the current identifier
+        if let Some(implicit) = self.implicit_identifier.as_ref() {
+            self.current_identifier = implicit.clone();
+        } else {
+            self.current_identifier = Identifier::default();
+        }
 
         let mut lexer = Attributes::lexer_with_extras(content.as_ref(), self.clone());
 
@@ -153,7 +185,7 @@ impl AttributeParser {
                                 .default_property_attribute
                                 .as_ref()
                                 .expect("should exist, just checked");
-                            default_property.on_property_attribute(&lexer.extras, token);
+                            default_property.on_property_attribute(&mut lexer.extras);
                         }
                         _ => {}
                     }
@@ -237,6 +269,8 @@ impl AttributeParser {
     /// Sets the current name value
     ///
     pub fn set_name(&mut self, name: impl AsRef<str>) {
+        self.current_identifier.add_tag(name.as_ref());
+
         self.name = Some(name.as_ref().to_string());
     }
 
@@ -677,9 +711,22 @@ pub fn on_custom_attr(lexer: &mut Lexer<Attributes>) {
         Some(Keywords::Add) => {
             lexer.extras.root_namespace = Some(custom_attr_type.to_string());
         }
-        _ => {}
+        Some(Keywords::Extension) => {
+            if let Some(implicit_identifier) = lexer.extras.implicit_identifier.as_mut() {
+                implicit_identifier.join(custom_attr_type).ok();
+            } else {
+                lexer.extras.set_implicit_identifier(Identifier::default().join(custom_attr_type).ok().as_deref());
+            }
+
+            if !input.value().is_empty() {
+                lexer.extras.implicit_identifier.as_mut().map(|i| i.join(input.value()).ok());
+            }
+        }
+        _ => {
+        }
     }
 
+    lexer.extras.current_identifier.join(custom_attr_type).ok();
     lexer.extras.attr_ident = Some(custom_attr_type.to_string());
 
     trace!("Checking for custom attribute");

@@ -1,7 +1,6 @@
 use logos::{Lexer, Logos, Filter};
-use tracing::trace;
 use crate::parser::Elements;
-use crate::Parser;
+use crate::{Parser, Identifier};
 
 /// Parser keywords and symbols,
 ///
@@ -200,11 +199,9 @@ fn on_extension(lexer: &mut Lexer<Keywords>) -> Filter<()> {
     // Set a new extension symbol in the parser,
     if lexer.slice().len() > 2 {
         let extension_namespace = lexer.slice()[1..lexer.slice().len() - 1].to_string();
-        lexer.extras.implicit_extension_namespace = Some(extension_namespace);
+        lexer.extras.parse_property().set_implicit_identifier(Identifier::try_create_root(extension_namespace).ok().as_ref());
     } else {
-        if let Some(last) = lexer.extras.implicit_extension_namespace.take() {
-            trace!("Clearing extension namespace: {last}");
-        }
+        lexer.extras.parse_property().set_implicit_identifier(None);
     }
     
     if let Some(next_line) = lexer.remainder().lines().next() {
@@ -221,55 +218,5 @@ fn on_extension(lexer: &mut Lexer<Keywords>) -> Filter<()> {
         Filter::Emit(())
     } else {
         Filter::Skip
-    }
-}
-
-#[allow(unused_imports)]
-mod tests {
-    use logos::Logos;
-
-    use crate::{Keywords, Parser};
-
-    #[test]
-    fn test_extension_keyword() {
-        let mut lexer = Keywords::lexer_with_extras("```\n<call>\n<>\n+ test .symbol tes\n```t", Parser::new());
-        lexer.next();       
-        lexer.next();
-        let keyword = lexer.next().expect("should have a keyword");
-        assert_eq!(Keywords::Extension, keyword);
-        assert_eq!("<call>", lexer.slice());
-        assert_eq!(
-            "call",
-            lexer
-                .extras
-                .implicit_extension_namespace
-                .as_ref()
-                .expect("should have a prefix")
-                .as_str()
-        );
-
-        lexer.next();
-        let keyword = lexer.next().expect("should have a keyword");
-        assert_eq!(Keywords::Extension, keyword);
-        assert_eq!("<>", lexer.slice());
-        assert_eq!(
-            "call",
-            lexer
-                .extras
-                .implicit_extension_namespace
-                .as_ref()
-                .expect("should have a prefix")
-                .as_str()
-        );
-
-        lexer.next();
-        lexer.next().expect("should be one more keyword");
-        assert!(
-            lexer
-                .extras
-                .implicit_extension_namespace
-                .as_ref()
-                .is_none()
-        );
     }
 }
