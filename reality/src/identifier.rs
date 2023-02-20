@@ -57,7 +57,15 @@ impl Identifier {
         self.tags.len()
     }
 
+    /// Clears current set of tags on this identifier,
+    ///
+    pub fn clear_tags(&mut self) {
+        self.tags.clear();
+    }
+
     /// Returns the current length of this identifier,
+    ///
+    /// Note: the length excludes the root of the identifier
     ///
     pub fn len(&self) -> usize {
         self.len
@@ -90,7 +98,7 @@ impl Identifier {
     pub fn join(&mut self, next: impl AsRef<str>) -> Result<&mut Self, Error> {
         let next = next.as_ref();
 
-        if next.contains(".") && !next.starts_with(r#"""#) && !next.ends_with(r#"""#) {
+        if Self::should_escape_with_quotes(next) && !next.starts_with(r#"""#) && !next.ends_with(r#"""#) {
             write!(self.buf, r#"."{}""#, next)?;
         } else {
             write!(self.buf, ".{next}")?;
@@ -126,6 +134,32 @@ impl Identifier {
     ///
     pub fn root(&self) -> String {
         self.pos(0).ok().unwrap_or_default()
+    }
+
+    /// Clones current identifier, consumes tags, and parses a new identifier,
+    ///
+    pub fn commit(&self) -> Result<Identifier, Error> {
+        let c = self.clone();
+
+        format!("{:#}", c).parse()
+    }
+
+    /// Truncates the identifier by count,
+    ///
+    pub fn truncate(&self, count: usize) -> Result<Identifier, Error> {
+        if let Some(newlen) = self.len.checked_sub(count) {
+            let parts = parts(&self.buf)?
+                .iter()
+                .take(newlen + 1)
+                .cloned()
+                .collect::<Vec<_>>();
+
+            let mut next = parts.join(".").parse::<Identifier>()?;
+            next.tags = self.tags.clone();
+            Ok(next)
+        } else {
+            Err("truncating overflow".into())
+        }
     }
 
     /// Interpolates a pattern expression into a map with user-assigned keys,
@@ -232,10 +266,11 @@ impl Identifier {
         Some(map)
     }
 
-    /// Merges two identifiers into a new identifier,
-    ///
-    pub fn merge(&self, other: &Identifier) -> Identifier {
-        todo!()
+
+    /// Returns true if the input string should be escaped w/ quotes,
+    /// 
+    fn should_escape_with_quotes(s: &str) -> bool {
+        s.contains(".") || s.contains(" ") || s.contains("\t")
     }
 }
 
@@ -417,7 +452,13 @@ mod tests {
         let branch = root.branch("part3").expect("should be able to branch");
         assert_eq!("part3", branch.pos(3).expect("should have a part"));
         assert_eq!(2, root.len);
-        assert_eq!(r#"test.part1.part2.part3."test:v1""#, format!("{:#}", branch));
+        assert_eq!(
+            r#"test.part1.part2.part3."test:v1""#,
+            format!("{:#}", branch)
+        );
+
+        let truncated = branch.truncate(2).expect("should truncate");
+        assert_eq!(r#"test.part1."test:v1""#, format!("{:#}", truncated));
 
         let branch = branch
             .branch("testing.branch")
@@ -486,7 +527,7 @@ mod tests {
             .interpolate("blocks.(name).(symbol).roots.(root)")
             .expect("should interpolate");
         assert_eq!("test", map["name"].as_str());
-        assert_eq!("some spaces in the ident", map["symbol"].as_str());
+        assert_eq!(r#""some spaces in the ident""#, map["symbol"].as_str());
         assert_eq!("op", map["root"].as_str());
         assert_eq!(
             None,
@@ -529,8 +570,14 @@ mod tests {
             root.tags().cloned().collect::<Vec<_>>().join(",")
         );
 
+        let comitted = root.commit().expect("should be able to commit");
+        assert_eq!(r#".test."test:v1""#, format!("{comitted}").as_str());
+
         let ident: Identifier = ".input".parse().expect("should parse");
         assert_eq!("input", ident.pos(1).expect("should exist").as_str());
+
+        let ident = ident.branch(" .").expect("should join");
+        assert_eq!(r#".input." .""#, format!("{ident}").as_str());
     }
 
     #[test]
@@ -539,5 +586,13 @@ mod tests {
         let ident: Identifier = "a.b.c".parse().expect("should parse");
 
         ident.interpolate("(?shouldpanic).b.c");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_truncation_overflow_err() {
+        let ident: Identifier = "a.b.c".parse().expect("should parse");
+
+        ident.truncate(3).expect("should error");
     }
 }

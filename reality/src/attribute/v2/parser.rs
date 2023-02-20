@@ -97,6 +97,9 @@ impl Parser {
                 let keyword = parser.keyword().cloned();
                 let namespace = parser.namespace();
                 let line_count = parser.line_count();
+                let identifier = parser.current_identifier().clone();
+
+                trace!("OnCustomAttr Packet -- {:#} {:?}", identifier, ident);
 
                 parser.lazy_exec_mut(move |w| {
                     w.register::<Packet>();
@@ -108,7 +111,7 @@ impl Parser {
                             keyword,
                             ident,
                             input,
-                            identifier: Identifier::default(),
+                            identifier,
                             block_namespace: ".".to_string(),
                             extension_namespace: namespace.unwrap_or_default(),
                             line_count,
@@ -119,25 +122,35 @@ impl Parser {
             }
         }));
 
-        v1_parser.set_default_property_attribute(PropertyAttribute(|parser, token| {
+        v1_parser.set_default_property_attribute(PropertyAttribute(|parser| {
             let name = parser.name().cloned();
-            let property = parser.property().cloned();
+            let property = parser.property().cloned().unwrap_or_default();
             let entity = parser.entity().clone();
             let keyword = parser.keyword().cloned();
-            let extension_namespace = parser.namespace();
+            let extension_namespace = parser.namespace().unwrap_or_default();
             let line_count = parser.line_count();
+            let value = parser.edit_value().cloned().unwrap_or_default();
 
-            trace!(
-                "ln {} property -- {:?}, {:?}, {:?}, {:?}, {:?},  {:?}, {:?}",
-                line_count,
-                name,
-                property,
-                entity,
-                keyword,
-                extension_namespace,
-                token,
-                parser.edit_value()
-            );
+            trace!("OnProperty Packet -- {:#}", parser.current_identifier());
+
+            parser.lazy_exec_mut(move |w| {
+                w.register::<Packet>();
+                w.create_entity()
+                    .with(Packet {
+                        name,
+                        entity,
+                        property: Some(property.clone()),
+                        keyword,
+                        ident: "".to_string(),
+                        input: "".to_string(),
+                        identifier: Identifier::default(),
+                        block_namespace: ".".to_string(),
+                        extension_namespace,
+                        line_count,
+                        actions: vec![action::with(property, value)],
+                    })
+                    .build();
+            });
         }));
         v1_parser
     }
@@ -179,7 +192,7 @@ mod tests {
              : rhs .int
              : sum .int
              <> .input lhs : .type stdin
-             <> .input rhs
+             <test> .input rhs
              <> .eval  sum
             ```
         "#,

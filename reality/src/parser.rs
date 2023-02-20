@@ -1,20 +1,21 @@
-use specs::WorldExt;
-use specs::World;
-use specs::LazyUpdate;
-use specs::Entity;
-use std::collections::HashMap;
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use tracing::Level;
-use tracing::event;
 use logos::Logos;
+use specs::Entity;
+use specs::LazyUpdate;
+use specs::World;
+use specs::WorldExt;
+use tracing::trace;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tracing::event;
+use tracing::Level;
 
-use crate::compiler::Root;
 use crate::compiler::ExtensionCompileFunc;
-use crate::Value;
-use crate::BlockProperties;
-use crate::BlockIndex;
+use crate::compiler::Root;
 use crate::Block;
+use crate::BlockIndex;
+use crate::BlockProperties;
+use crate::Value;
 
 mod attributes;
 pub use attributes::AttributeParser;
@@ -54,13 +55,6 @@ pub struct Parser {
     /// Using the value of this field as the symbol.
     ///
     implicit_block_symbol: Option<String>,
-    /// Implicit extension symbol to use when an extension keyword is found,
-    ///
-    /// Can either be set directly or when an identifier is declared inside of an extension keyword, i.e. `<extension>` would set this value to extension
-    ///
-    /// When applied to the attribute parser it will be used to recall custom components in the current scope,
-    ///
-    implicit_extension_namespace: Option<String>,
     /// Default custom attribute,
     ///
     /// If set, will be included with each new attribute parser
@@ -72,9 +66,9 @@ pub struct Parser {
     ///
     default_property_attribute: Option<PropertyAttribute>,
     /// True when the lexer is within block delimitter boundaries,
-    /// 
+    ///
     /// If false, keywords will skip
-    /// 
+    ///
     enabled: bool,
 }
 
@@ -241,7 +235,6 @@ impl Parser {
             custom_attributes: vec![],
             parser_stack: vec![],
             implicit_block_symbol: None,
-            implicit_extension_namespace: None,
             default_custom_attribute: None,
             default_property_attribute: None,
             enabled: false,
@@ -539,15 +532,10 @@ impl Parser {
     pub fn new_attribute(&mut self) -> &mut AttributeParser {
         let mut attr_parser = AttributeParser::default();
 
-        if self.parser_stack.len() > 0 {
-            self.implicit_extension_namespace.take();
-        }
-
         attr_parser.set_world(self.world.clone());
 
         for custom_attr in self.custom_attributes.iter().cloned() {
-            event!(
-                Level::TRACE,
+            trace!(
                 "Adding custom attr parser, {}",
                 custom_attr.ident()
             );
@@ -652,13 +640,10 @@ impl Parser {
     /// definitions.
     ///
     fn parse_property(&mut self) -> &mut AttributeParser {
-        let extension_namespace = self.implicit_extension_namespace.clone();
         if !self.parser_stack.is_empty() {
-            self.parser_top()
-                .expect(
-                    "should return a parser since we check if the stack is empty before this line",
-                )
-                .set_extension_namespace(extension_namespace)
+            self.parser_top().expect(
+                "should return a parser since we check if the stack is empty before this line",
+            )
         } else {
             self.new_attribute()
         }
@@ -667,7 +652,8 @@ impl Parser {
     /// Returns the current attribute parser,
     ///
     fn parser_top(&mut self) -> Option<&mut AttributeParser> {
-        self.parser_stack.last_mut()
+        self.parser_stack
+            .last_mut()
     }
 }
 

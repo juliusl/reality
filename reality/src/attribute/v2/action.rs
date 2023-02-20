@@ -13,11 +13,11 @@ pub mod extensions {
 ///
 #[derive(Clone, Debug)]
 pub enum Action {
-    /// This action will define a property value on the attribute's entity,
-    ///
+    /// Applies a value to the current namespace,
+    /// 
     With(String, Value),
-    /// Extend is an extension action that will expand into a vector of actions when applied,
-    ///
+    /// Extends the current namespace,
+    /// 
     Extend(String, Value),
 }
 
