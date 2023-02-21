@@ -261,6 +261,7 @@ mod tests {
 <> .input lhs : .type stdin
 : count .int 1
 : test .env /host
+: rust_log .env reality=trace
 <test> .input rhs
 <> debug .eval diff
 
@@ -280,7 +281,7 @@ mod tests {
 
         std::fs::create_dir_all(".test").expect("should be able to create test dir");
         std::fs::write(".test/.runmd", runmd).expect("should be able to write");
-        std::fs::write(".test/block.runmd", runmd).expect("should be able to write");
+        std::fs::write(".test/test.runmd", runmd).expect("should be able to write");
 
         let parser = Parser::new();
         let _parser = parser.parse_file(".test/.runmd", &mut compiler);
@@ -289,20 +290,20 @@ mod tests {
         }
 
         let parser = Parser::new();
-        let _parser = parser.parse_file(".test/block.runmd", &mut compiler);
+        let _parser = parser.parse_file(".test/test.runmd", &mut compiler);
         for (_, b) in compiler.blocks() {
             println!("{}", b);
         }
 
         let mut world_compiler = WorldBuilder::new();
         let parser = Parser::new();
-        let _parser = parser.parse_file(".test/block.runmd", &mut world_compiler);
+        let _parser = parser.parse_file(".test/test.runmd", &mut world_compiler);
 
         let world = world_compiler.as_mut();
         world.maintain();
         world.exec(|(identities, properties): (ReadStorage<Identifier>, ReadStorage<BlockProperties>)| {
             for (ident, properties) in (&identities, &properties).join() {
-                trace!("\n\t{:#}\n\t{:?}", ident, properties);
+                trace!("\n\n{:#}\n{:#?}\n", ident, properties);
             }
         });
     }
