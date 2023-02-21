@@ -58,9 +58,9 @@ impl Attribute {
 
     /// Returns an iterator over the extensions required by this attribute,
     ///
-    pub fn requires(&self) -> impl Iterator<Item = &Action> {
+    pub fn extensions(&self) -> impl Iterator<Item = &Action> {
         self.action_stack().filter_map(|a| match a {
-            Action::Extend(_, _) => Some(a),
+            Action::Extend(_) => Some(a),
             _ => None,
         })
     }
@@ -86,8 +86,8 @@ impl Attribute {
 
     /// Returns self with an `expand` action,
     ///
-    pub fn extend(mut self, ident: impl Into<String>, value: impl Into<Value>) -> Self {
-        self.action_stack.push(action::extend(ident, value));
+    pub fn extend(mut self, ident: &Identifier) -> Self {
+        self.action_stack.push(action::extend(ident));
         self
     }
 }

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use super::Action;
 use super::Attribute;
 use crate::Identifier;
@@ -7,7 +9,7 @@ use specs::HashMapStorage;
 
 /// Struct representing a .runmd block,
 ///
-#[derive(Component, Clone, Default)]
+#[derive(Component, Clone, Debug, Default)]
 #[storage(HashMapStorage)]
 pub struct Block {
     /// Identifier,
@@ -21,14 +23,6 @@ pub struct Block {
     /// Block attributes,
     ///
     attributes: Vec<Attribute>,
-}
-
-impl std::fmt::Debug for Block {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Block")
-            .field("attributes", &self.attributes)
-            .finish()
-    }
 }
 
 impl Block {
@@ -45,7 +39,7 @@ impl Block {
     /// Returns an iterator over extensions this block requires,
     ///
     pub fn requires(&self) -> impl Iterator<Item = &Action> {
-        self.attributes.iter().flat_map(|a| a.requires())
+        self.attributes.iter().flat_map(|a| a.extensions())
     }
 
     /// Returns the last attribute,
@@ -70,6 +64,12 @@ impl Block {
     /// 
     pub fn attributes(&self) -> impl Iterator<Item = &Attribute> {
         self.attributes.iter()
+    }
+
+    /// Returns the attribute count,
+    /// 
+    pub fn attribute_count(&self) -> usize {
+        self.attributes.len()
     }
 
     /// Returns the block family name,
@@ -98,5 +98,41 @@ impl Block {
     /// 
     pub fn finalize(&mut self) {
         self.ident.add_tag("block");
+    }
+}
+
+impl Display for Block {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, r#"[{}]"#, self.ident())?;
+        writeln!(f, "_e = true")?;
+        writeln!(f)?;
+
+        for a in self.attributes() {
+            writeln!(f, r#"[[{}.attributes]]"#, self.ident())?;
+            writeln!(f, r#"[{}.attributes{:#}]"#, self.ident(), a.ident)?;
+            writeln!(f, "_e = true")?;
+            writeln!(f)?;
+
+            for e in a.action_stack() {
+                match e {
+                    Action::Extend(i) => {
+                        writeln!(f, r#"[[{}.attributes{:#}.extensions]]"#, self.ident(), a.ident)?;
+                        let i = i.to_string();
+                        if i.starts_with(".") {
+                            writeln!(f, r#"[{}.attributes{:#}.extensions{:#}]"#, self.ident(), a.ident, i)?;
+                            writeln!(f, "_e = true")?;
+                        } else {
+                            writeln!(f, r#"[{}.attributes{:#}.extensions.{:#}]"#, self.ident(), a.ident, i)?;
+                            writeln!(f, "_e = true")?;
+                        }
+                        writeln!(f)?;
+                    },
+                    _ => {}
+                }
+            }
+            writeln!(f)?;
+        }
+
+        Ok(())
     }
 }

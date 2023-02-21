@@ -144,7 +144,7 @@ fn on_add(lexer: &mut Lexer<Keywords>) -> Filter<()> {
             lexer
                 .extras
                 .new_attribute()
-                .set_keyword(Keywords::Add)
+                .with_keyword(Keywords::Add)
                 .parse(next_line)
                 .last_parse_len()
         };
@@ -177,12 +177,12 @@ fn on_define(lexer: &mut Lexer<Keywords>) -> Filter<()> {
             }
         }
 
-        attr_parser.set_keyword(Keywords::Define).parse(input);
+        attr_parser.with_keyword(Keywords::Define).parse(input);
         attr_parser.last_parse_len()
     } else {
         // In keyword form, the expectation is that name/symbol will be present
         let attr_parser = lexer.extras.new_attribute();
-        attr_parser.set_keyword(Keywords::Define).parse(input);
+        attr_parser.with_keyword(Keywords::Define).parse(input);
         attr_parser.last_parse_len()
     };
 
@@ -199,16 +199,16 @@ fn on_extension(lexer: &mut Lexer<Keywords>) -> Filter<()> {
     // Set a new extension symbol in the parser,
     if lexer.slice().len() > 2 {
         let extension_namespace = lexer.slice()[1..lexer.slice().len() - 1].to_string();
-        lexer.extras.parse_property().set_implicit_identifier(Identifier::try_create_root(extension_namespace).ok().as_ref());
+        lexer.extras.parse_property().with_implicit_identifier(Identifier::try_create_root(extension_namespace).ok().as_ref());
     } else {
-        lexer.extras.parse_property().set_implicit_identifier(None);
+        lexer.extras.parse_property().with_implicit_identifier(None);
     }
     
     if let Some(next_line) = lexer.remainder().lines().next() {
         let bump = {
             let attr_parser = lexer.extras.parse_property();
             attr_parser
-                .set_keyword(Keywords::Extension)
+                .with_keyword(Keywords::Extension)
                 .parse(next_line)
                 .last_parse_len()
         };

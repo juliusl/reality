@@ -1,8 +1,12 @@
-use crate::{Attribute, Value};
+use crate::Value;
+use crate::Attribute;
+use crate::Identifier;
 use std::collections::BTreeMap;
-use specs::{Entity, Component};
+use specs::Component;
+use specs::Entity;
 use specs::storage::DefaultVecStorage;
-use serde::{Serialize, Deserialize};
+use serde::Deserialize;
+use serde::Serialize;
 
 mod block_index;
 pub use block_index::BlockIndex;
@@ -31,6 +35,9 @@ pub struct Block {
     name: String, 
     /// Secondary identifier - user/runtime assigned 
     symbol: String, 
+    /// Identifier representation,
+    #[serde(skip)]
+    identifier: Identifier,
     /// Block state - current state of the block 
     attributes: Vec<Attribute>,
 }
@@ -45,10 +52,28 @@ impl Block {
     /// Creates a new empty block
     ///
     pub fn new(entity: Entity, name: impl Into<String>, symbol: impl Into<String>) -> Self {
+        let name = name.into();
+        let symbol = symbol.into();
+        let mut ident = Identifier::default();
+        if !name.is_empty() {
+            if let Ok(root) = Identifier::try_create_root(&name) {
+                ident = root;
+            }
+
+            if !symbol.is_empty() {
+                if let Err(err) = ident.join(&symbol) {
+                    tracing::error!("Could not join {symbol} to block ident, {err}");
+                }
+            }
+        }
+
+        ident.add_tag("block");
+
         Self {
             entity: entity.id(),
-            name: name.into(),
-            symbol: symbol.into(),
+            name,
+            symbol,
+            identifier: ident.commit().expect("should be able to commit identifier"),
             attributes: vec![],
         }
     }
@@ -59,6 +84,12 @@ impl Block {
     /// 
     pub fn index(&self) -> Vec<BlockIndex> {
         BlockIndex::index(self)
+    }
+
+    /// Returns the current identifier,
+    /// 
+    pub fn identifier(&self) -> &Identifier {
+        &self.identifier
     }
 
     /// Returns true if the entity is 0, 

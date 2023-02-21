@@ -1,5 +1,7 @@
 use logos::Lexer;
 use logos::Logos;
+use specs::Component;
+use specs::VecStorage;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::Display;
@@ -10,8 +12,9 @@ use tracing::trace;
 use crate::Error;
 
 /// Struct for a dot-seperated identifier,
-///
-#[derive(Default, Debug, Clone)]
+/// 
+#[derive(Component, Default, Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
+#[storage(VecStorage)]
 pub struct Identifier {
     /// Internal buffer,
     ///
@@ -43,6 +46,12 @@ impl Identifier {
     ///
     pub fn contains_tags(&self, tags: &BTreeSet<String>) -> bool {
         self.tags.is_subset(tags)
+    }
+
+    /// Removes a tag,
+    /// 
+    pub fn remove_tag(&mut self, tag: impl AsRef<str>) {
+        self.tags.remove(tag.as_ref());
     }
 
     /// Returns iterator over tags,

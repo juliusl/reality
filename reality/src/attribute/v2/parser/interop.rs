@@ -1,13 +1,14 @@
-use specs::VecStorage;
-use specs::Entity;
 use specs::Component;
+use specs::VecStorage;
 use tracing::trace;
 
+use crate::Value;
+use crate::v2::action;
+use crate::v2::Action;
+use crate::AttributeParser;
 use crate::Error;
 use crate::Identifier;
 use crate::Keywords;
-use crate::Value;
-use crate::v2::Action;
 
 /// Struct to interop handling custom attributes between the v1 parser and the v2 parser,
 ///
@@ -15,82 +16,87 @@ use crate::v2::Action;
 #[derive(Clone, Component, Debug)]
 #[storage(VecStorage)]
 pub struct Packet {
-    /// Root name of the attribute unless it differs from ident, in which case it is the tag
+    /// Block identifier this packet is intended for,
     ///
-    pub(crate) name: Option<String>,
-    /// Property ident of this packet,
-    ///
-    pub(crate) property: Option<String>,
-    /// Custom attribute identifier,
-    ///
-    pub(crate) ident: String,
-    /// Input (symbol) value intended for this attribute,
-    ///
-    pub(crate) input: String,
-    /// Block namespace,
-    ///
-    pub(crate) block_namespace: String,
-    /// Extension namespace,
-    ///
-    pub(crate) extension_namespace: String,
+    pub(crate) block_identifier: Identifier,
     /// Packet identifier,
-    /// 
+    ///
     pub(crate) identifier: Identifier,
     /// Keyword that parsed this attribute,
     ///
-    pub(crate) keyword: Option<Keywords>,
-    /// Entity that owns this attribute, likely a block,
-    ///
-    pub(crate) entity: Option<Entity>,
-    /// Returns the line count this was parsed at, relative to the extension namespace,
-    /// 
-    pub(crate) line_count: usize,
+    pub(crate) keyword: Keywords,
     /// List of actions to apply w/ this packet,
-    /// 
+    ///
     pub(crate) actions: Vec<Action>,
 }
 
 impl Packet {
-    /// Designated tag,
+    /// Returns true if this is an add packet,
     /// 
-    pub fn tag(&self) -> Option<&String> {
-        self.name.as_ref().filter(|n| *n != &self.ident)
+    pub fn is_add(&self) -> bool {
+        self.keyword == Keywords::Add
     }
 
-    /// Returns the qualified extension ident,
+    /// Returns true if this is an extension packet,
     /// 
-    /// Used to link extension implementation,
-    /// 
-    pub fn qualified_ext_ident(&self) -> String {
-        format!(
-            "{}.{}",self.extension_namespace, self.ident
-        )
+    pub fn is_extension(&self) -> bool {
+        self.keyword == Keywords::Extension
     }
 
-    /// Returns the table ident that stores data related to this packet,
+    /// Returns true if this is a define packet,
     /// 
-    pub fn table_ident(&self) -> String {
-        match self.name.as_ref() {
-            Some(tag) if tag != &self.ident => {
-                format!("{}.{}.{}.{}", self.block_namespace, tag, self.extension_namespace, self.ident)
-            }
-            _ => {
-                format!("{}.{}.{}", self.block_namespace, self.extension_namespace, self.ident)
-            }
+    pub fn is_define(&self) -> bool {
+        self.keyword == Keywords::Define
+    }
+
+    /// Merges packet, if merge conditions are not met,
+    /// returns the packet as an Err(Packet)
+    /// 
+    pub fn merge_packet(&mut self, mut other: Packet) -> Result<(), MergeRejectedReason> {
+        if other.is_extension() {
+            Err(MergeRejectedReason::NewExtension(other))
+        } else if other.is_add() {
+            Err(MergeRejectedReason::NewRoot(other))
+        } else if self.block_identifier != other.block_identifier {
+            Err(MergeRejectedReason::DifferentBlockNamespace(other))
+        } else if self.identifier != other.identifier {
+            Err(MergeRejectedReason::UnrelatedPacket(other))
+        } else {
+            debug_assert_eq!(self.identifier, other.identifier, "Packet should have been rejected before this point");
+            debug_assert!(other.is_define(), "Only define packets should be able to reach this point");
+
+            trace!("Merging packets, {:?}", other.actions);
+
+            self.actions.append(&mut other.actions);
+            
+            Ok(())
         }
     }
+}
 
-    /// Returns input as a value,
+/// Enumeration of merge errors,
+/// 
+pub enum MergeRejectedReason {
+    /// If the packet has a different block namespace, it cannot be merged,
     /// 
-    pub fn input(&self) -> Value {
-        Value::Symbol(
-            self
-                .input
-                .trim_start_matches(&self.ident)
-                .trim()
-                .to_string(),
-        )
-    }
+    DifferentBlockNamespace(Packet),
+    /// If the packet is a new root, it cannot be merged
+    /// 
+    NewRoot(Packet),
+    /// If the packet being merged is a new extension, it cannot be merged
+    /// 
+    NewExtension(Packet),
+    /// If the packet's identifiers do not match, it cannot be merged
+    /// 
+    UnrelatedPacket(Packet),
+}
+
+/// Implement to try and extract a packet,
+///
+pub trait MakePacket {
+    /// Tries to return a packet,
+    ///
+    fn try_make_packet(&self) -> Result<Packet, Error>;
 }
 
 /// Trait to handle packets parsed by a v1 parser,
@@ -107,5 +113,68 @@ impl PacketHandler for () {
     fn on_packet(&mut self, p: Packet) -> Result<(), Error> {
         trace!("{:?}", p);
         Ok(())
+    }
+}
+
+impl MakePacket for AttributeParser {
+    fn try_make_packet(&self) -> Result<Packet, Error> {
+        let block_identifier = self.block_identifier();
+        let identifier = self.current_identifier();
+        self.attr_ident().map(|a| trace!("Custom attr {a}"));
+        match self.keyword().unwrap_or(&Keywords::Error) {
+            Keywords::Add => {
+                let mut packet = Packet {
+                    block_identifier: block_identifier.clone(),
+                    identifier: identifier.clone(),
+                    keyword: Keywords::Add,
+                    actions: vec![
+                        action::with(format!("{}", self.attr_ident().cloned().unwrap_or_default()), self.value().clone())
+                    ],
+                };
+
+                if let Some(name) = self.value().symbol() {
+                    packet.identifier.join(name)?;
+                }
+
+                Ok(packet)
+            },
+            Keywords::Define => {
+                let mut packet = Packet {
+                    block_identifier: block_identifier.clone(),
+                    identifier: identifier.clone(),
+                    keyword: Keywords::Define,
+                    actions: vec![],
+                };
+
+               if let (Some(attr_ident), Some(property), Some(value)) = (self.attr_ident(), self.property(), self.edit_value()) {
+                    // Key-Value pattern
+                    packet.actions.push(action::with(format!("{attr_ident}"), Value::Symbol(property.clone())));
+                    packet.actions.push(action::with(format!("{property}"), value.clone()));
+                } else if let (Some(property), Some(value)) = (self.property(), self.edit_value()) {
+                    // Property pattern
+                    packet.actions.push(action::with(property, value.clone()));
+                } else if let (Some(attr_ident), Some(value)) = (self.attr_ident(), self.value().symbol()) {
+                    // Custom Attribute pattern
+                    packet.actions.push(action::with(attr_ident, Value::Symbol(value)));
+                }
+
+                Ok(packet)
+            }
+            Keywords::Extension => {
+                let mut packet = Packet {
+                    block_identifier: block_identifier.clone(),
+                    identifier: identifier.clone(),
+                    keyword: Keywords::Extension,
+                    actions: vec![],
+                };
+
+                if let Some(input) = self.edit_value().and_then(|v| v.symbol()) {
+                    packet.identifier.join(input)?;
+                }
+
+                Ok(packet)
+            },
+            _ => Err("Could not make packet".into()),
+        }
     }
 }
