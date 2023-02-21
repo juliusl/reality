@@ -172,8 +172,7 @@ fn on_define(lexer: &mut Lexer<Keywords>) -> Filter<()> {
             if !current_block_symbol.is_empty() {
                 attr_parser.set_name(current_block_symbol);
             } else {
-                // todo
-                panic!("Invalid syntax,\n{}", lexer.remainder())
+                attr_parser.set_name("");
             }
         }
 

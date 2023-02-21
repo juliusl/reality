@@ -10,9 +10,6 @@ pub use attribute::Attribute;
 mod block;
 pub use block::Block;
 
-mod tag;
-pub use tag::Tag;
-
 mod parser;
 pub use parser::Parser;
 

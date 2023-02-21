@@ -36,3 +36,8 @@ pub use identifier::Identifier;
 
 mod error;
 pub use error::Error;
+
+mod metadata;
+pub use metadata::Metadata;
+pub use metadata::Position;
+pub use metadata::Source;
