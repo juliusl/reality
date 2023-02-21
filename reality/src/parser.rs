@@ -10,6 +10,7 @@ use std::sync::Arc;
 use tracing::event;
 use tracing::Level;
 
+use crate::Metadata;
 use crate::compiler::ExtensionCompileFunc;
 use crate::compiler::Root;
 use crate::Block;
@@ -70,6 +71,9 @@ pub struct Parser {
     /// If false, keywords will skip
     ///
     enabled: bool,
+    /// Metadata including runmd source and current cursor position,
+    /// 
+    pub metadata: Metadata,
 }
 
 /// Struct for stopping the parser after it parses a token, and to continue where it left off,
@@ -238,6 +242,7 @@ impl Parser {
             default_custom_attribute: None,
             default_property_attribute: None,
             enabled: false,
+            metadata: Default::default(),
         }
     }
 
@@ -251,6 +256,12 @@ impl Parser {
     ///
     pub fn set_default_property_attribute(&mut self, property: PropertyAttribute) {
         self.default_property_attribute = Some(property);
+    }
+
+    /// Sets the current metadata,
+    /// 
+    pub fn set_metadata(&mut self, metadata: Metadata) {
+        self.metadata = metadata;
     }
 
     /// Sets the implicit symbol for the parser,
@@ -398,42 +409,35 @@ impl Parser {
     pub fn parse(self, content: impl AsRef<str>) -> Self {
         let mut lexer = Keywords::lexer_with_extras(content.as_ref(), self);
 
-        let mut line = 0;
-        let mut col = 0;
         while let Some(token) = lexer.next() {
             match token {
                 Keywords::NewLine => {
-                    col += 1;
+                    lexer.extras.metadata.move_col(1);
                     event!(
                         Level::TRACE,
-                        "ln: {}, col: {}, Parsed token, {:?}",
-                        line,
-                        col,
+                        "{} Parsed token, {:?}",
+                        lexer.extras.metadata,
                         token,
                     );
-                    line += 1;
-                    col = 0;
+                    lexer.extras.metadata.new_line();
                 }
                 _ if lexer.slice().contains("\n") => {
-                    col += lexer.slice().trim_end().len();
+                    lexer.extras.metadata.move_col(lexer.slice().trim_end().len());
                     event!(
                         Level::TRACE,
-                        "ln: {}, col: {}, Parsed token, {:?} {}",
-                        line,
-                        col,
+                        "{} Parsed token, {:?} {}",
+                        lexer.extras.metadata,
                         token,
                         lexer.slice()
                     );
-                    line += 1;
-                    col = 0;
+                    lexer.extras.metadata.new_line();
                 }
                 _ => {
-                    col += lexer.slice().trim_end().len();
+                    lexer.extras.metadata.move_col(lexer.slice().trim_end().len());
                     event!(
                         Level::TRACE,
-                        "ln: {}, col: {}, Parsed token, {:?} {}",
-                        line,
-                        col,
+                        "{} Parsed token, {:?} {}",
+                        lexer.extras.metadata,
                         token,
                         lexer.slice()
                     );

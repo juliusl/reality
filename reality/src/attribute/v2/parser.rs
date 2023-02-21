@@ -1,23 +1,26 @@
-use std::sync::Arc;
 use specs::Builder;
 use specs::Join;
 use specs::World;
 use specs::WorldExt;
 use specs::Write;
 use specs::WriteStorage;
+use std::path::Path;
+use std::sync::Arc;
 use tracing::trace;
 
 use self::interop::MakePacket;
-use crate::Identifier;
 use crate::parser::PropertyAttribute;
 use crate::CustomAttribute;
 use crate::Error;
+use crate::Identifier;
+use crate::Metadata;
+use crate::Source;
 
 mod interop;
 pub use interop::Packet;
 pub use interop::PacketHandler;
 
-/// V2 block parser implementation,
+/// V2 runmd parser,
 ///
 #[derive(Default)]
 pub struct Parser {
@@ -30,10 +33,12 @@ pub struct Parser {
     ///
     packet_cache: Option<Packet>,
     /// Current root identifier,
-    /// 
+    ///
+    /// If set, will be used as the parent identifier for incoming define packets
+    ///
     root_identifier: Option<Arc<Identifier>>,
     /// Current block identifier,
-    /// 
+    ///
     block_identifier: Identifier,
 }
 
@@ -50,10 +55,41 @@ impl Parser {
         }
     }
 
+    /// Parses a file,
+    ///
+    pub fn parse_file(
+        mut self,
+        path: impl AsRef<Path>,
+        packet_handler: &mut impl PacketHandler,
+    ) -> Result<Self, Error> {
+        if let Some(v1_parser) = self.v1_parser.as_mut() {
+            let path = path.as_ref().canonicalize()?;
+
+            let content = std::fs::read_to_string(&path)?;
+
+            if let Some(family_name) = path
+                .file_name()
+                .and_then(|f| f.to_str())
+                .and_then(|f| f.split_once("."))
+                .map(|(prefix, _)| prefix)
+                .filter(|p| !p.is_empty())
+            {
+                trace!("Setting implicit family name {family_name}");
+                v1_parser.set_implicit_symbol(family_name);
+            }
+
+            v1_parser.set_metadata(Metadata::new(Source::file(path)));
+
+            self.parse(content, packet_handler)
+        } else {
+            Err("Unitialized parser".into())
+        }
+    }
+
     /// Parses content and routes interop packets,
     ///
     /// Returns self w/ a v1_parser and updated World if successful,
-    /// 
+    ///
     pub fn parse(
         mut self,
         content: impl Into<String>,
@@ -64,12 +100,12 @@ impl Parser {
             let parser = parser.parse(content.into());
             let mut world = parser.commit();
             world.maintain();
-            
+
             // Ensure an empty parser is added
             world.insert(Self::default());
             world.exec(|(mut p, mut parser): (WriteStorage<Packet>, Write<Self>)| {
                 for mut _p in p.drain().join() {
-                    parser.route_packet(_p, packet_handler)?; 
+                    parser.route_packet(_p, packet_handler)?;
                 }
 
                 parser.route_cache(packet_handler)?;
@@ -78,7 +114,10 @@ impl Parser {
 
             // Ensure existing parser is removed
             if let Some(existing) = world.remove::<Self>() {
-                debug_assert!(existing.packet_cache.is_none(), "Packet cache should be empty");
+                debug_assert!(
+                    existing.packet_cache.is_none(),
+                    "Packet cache should be empty"
+                );
             }
 
             // Update v1_parser
@@ -109,7 +148,7 @@ impl Parser {
         }
 
         if let Some(root_id) = self.root_identifier.as_ref().filter(|_| !incoming.is_add()) {
-            incoming.identifier.set_root(root_id.clone());
+            incoming.identifier.set_parent(root_id.clone());
         }
 
         if let Some(cached) = self.packet_cache.as_mut() {
@@ -195,49 +234,57 @@ mod tests {
     #[test]
     #[traced_test]
     fn test_parser() {
-        let parser = Parser::new();
         let mut compiler = BlockList::default();
-        let _parser = parser.parse(
-            r#"
-            ``` b block
-            : test .true
+        let runmd = r#"
+``` b
+: test .true
 
-            + test:v1 .op add
-            : lhs .int
-            : rhs .int
-            : sum .int
-            <> .input lhs : .type stdin
-            <test> .input rhs
-            <> .eval  sum
-            ```
++ test:v1 .op add
+: lhs .int
+: rhs .int
+: sum .int
+<> .input lhs : .type stdin
+<test> .input rhs
+<> .eval  sum
+```
 
-            ``` a block
-            + test:v2 .op sub
-            : lhs .int
-            : rhs .int
-            : diff .int
-            <> .input lhs : .type stdin
-            : count .int 1
-            : test .env /host
-            <test> .input rhs
-            <> debug .eval diff
+``` a
++ test:v2 .op sub
+: lhs .int
+: rhs .int
+: diff .int
+<> .input lhs : .type stdin
+: count .int 1
+: test .env /host
+<test> .input rhs
+<> debug .eval diff
 
-            + .op mult
-            : lhs .int
-            : rhs .int
-            : prod .int
-            <> .input lhs
-            <> .input rhs
-            <> .eval prod
-            ```
++ .op mult
+: lhs .int
+: rhs .int
+: prod .int
+<> .input lhs
+<> .input rhs
+<> .eval prod
+```
 
-            ``` block
-            : root_test .true
-            ```
-        "#,
-            &mut compiler,
-        );
+```
+: root_test .true
+```
+"#;
 
+        std::fs::create_dir_all(".test").expect("should be able to create test dir");
+        std::fs::write(".test/.runmd", runmd).expect("should be able to write");
+        std::fs::write(".test/block.runmd", runmd).expect("should be able to write");
+
+        let parser = Parser::new();
+        let _parser = parser.parse_file(".test/.runmd", &mut compiler);
+        for (_, b) in compiler.blocks() {
+            println!("{}", b);
+        }
+
+        let parser = Parser::new();
+        let _parser = parser.parse_file(".test/block.runmd", &mut compiler);
         for (_, b) in compiler.blocks() {
             println!("{}", b);
         }

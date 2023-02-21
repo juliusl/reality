@@ -26,8 +26,8 @@ pub struct Identifier {
     /// Number of segments,
     ///
     len: usize,
-    /// Root identifier,
-    root: Option<Arc<Identifier>>,
+    /// Parent identifier,
+    parent: Option<Arc<Identifier>>,
 }
 
 impl Identifier {
@@ -73,10 +73,10 @@ impl Identifier {
         self.tags.clear();
     }
 
-    /// Sets the root identifier,
+    /// Sets the parent identifier,
     /// 
-    pub fn set_root(&mut self, identifier: Arc<Identifier>) {
-        self.root = Some(identifier);
+    pub fn set_parent(&mut self, identifier: Arc<Identifier>) {
+        self.parent = Some(identifier);
     }
 
     /// Returns the current length of this identifier,
@@ -103,7 +103,7 @@ impl Identifier {
             buf: root,
             len: 0,
             tags: BTreeSet::default(),
-            root: Default::default(),
+            parent: Default::default(),
         })
     }
 
@@ -331,7 +331,7 @@ fn parts(buf: impl AsRef<str>) -> Result<Vec<String>, Error> {
 
 impl Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(root) = self.root.as_ref().filter(|_| f.alternate()) {
+        if let Some(root) = self.parent.as_ref().filter(|_| f.alternate()) {
             write!(f, "{:#}", root)?;
 
             if !self.buf.starts_with(".") && !self.buf.is_empty() {

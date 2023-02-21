@@ -20,7 +20,6 @@ mod block_object;
 pub use block_object::BlockObject;
 
 pub mod wire;
-
 /// Data structure parsed from .runmd, 
 /// 
 /// Stores stable and transient attributes. Can be encoded into 
@@ -55,14 +54,15 @@ impl Block {
         let name = name.into();
         let symbol = symbol.into();
         let mut ident = Identifier::default();
-        if !name.is_empty() {
-            if let Ok(root) = Identifier::try_create(&name) {
+        // trace!("Creating new block name: {name} symbol: {symbol}");
+        if !symbol.is_empty() {
+            if let Ok(root) = Identifier::try_create(&symbol) {
                 ident = root;
             }
 
-            if !symbol.is_empty() {
-                if let Err(err) = ident.join(&symbol) {
-                    tracing::error!("Could not join {symbol} to block ident, {err}");
+            if !name.is_empty() {
+                if let Err(err) = ident.join(&name) {
+                    tracing::error!("Could not join {name} to block ident, {err}");
                 }
             }
         }
