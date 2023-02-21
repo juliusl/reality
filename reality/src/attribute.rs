@@ -4,8 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::Value;
 
-pub mod v2;
-
 /// Struct for containing a name/value pair in either a stable or transient state,
 ///
 /// # Background
