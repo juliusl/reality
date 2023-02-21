@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::fmt::Write;
 use std::str::FromStr;
+use std::sync::Arc;
 use tracing::trace;
 
 use crate::Error;
@@ -25,8 +26,8 @@ pub struct Identifier {
     /// Number of segments,
     ///
     len: usize,
-    /// Reserved
-    _reserved: usize,
+    /// Root identifier,
+    root: Option<Arc<Identifier>>,
 }
 
 impl Identifier {
@@ -72,6 +73,12 @@ impl Identifier {
         self.tags.clear();
     }
 
+    /// Sets the root identifier,
+    /// 
+    pub fn set_root(&mut self, identifier: Arc<Identifier>) {
+        self.root = Some(identifier);
+    }
+
     /// Returns the current length of this identifier,
     ///
     /// Note: the length excludes the root of the identifier
@@ -84,7 +91,7 @@ impl Identifier {
     ///
     /// Returns an error if the root has any `.`'s
     ///
-    pub fn try_create_root(root: impl Into<String>) -> Result<Self, Error> {
+    pub fn try_create(root: impl Into<String>) -> Result<Self, Error> {
         let root = root.into();
         let root = if root.contains(".") && !root.starts_with(r#"""#) && !root.ends_with(r#"""#) {
             format!(r#""{}""#, root)
@@ -96,7 +103,7 @@ impl Identifier {
             buf: root,
             len: 0,
             tags: BTreeSet::default(),
-            _reserved: 0,
+            root: Default::default(),
         })
     }
 
@@ -324,6 +331,14 @@ fn parts(buf: impl AsRef<str>) -> Result<Vec<String>, Error> {
 
 impl Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(root) = self.root.as_ref().filter(|_| f.alternate()) {
+            write!(f, "{:#}", root)?;
+
+            if !self.buf.starts_with(".") && !self.buf.is_empty() {
+                write!(f, ".")?;
+            }
+        }
+
         write!(f, "{}", self.buf)?;
         if f.alternate() && self.tag_count() > 0 {
             write!(f, r#".""#)?;
@@ -414,14 +429,14 @@ impl FromStr for Identifier {
         let parts = parts(s)?;
         let mut parts = parts.iter();
 
-        if let Some(mut root) = parts.next().and_then(|p| Self::try_create_root(p).ok()) {
+        if let Some(mut root) = parts.next().and_then(|p| Self::try_create(p).ok()) {
             for p in parts {
                 root.join(p)?;
             }
 
             Ok(root)
         } else {
-            Self::try_create_root("")
+            Self::try_create("")
         }
     }
 }
@@ -435,7 +450,7 @@ mod tests {
 
     #[test]
     fn test_identifier() {
-        let mut root = Identifier::try_create_root("test").expect("should be a root");
+        let mut root = Identifier::try_create("test").expect("should be a root");
 
         root.join("part1")
             .expect("should be part1")
@@ -447,7 +462,7 @@ mod tests {
         assert_eq!("part2", root.pos(2).expect("should have a part"));
         root.pos(3).expect_err("should be an error");
 
-        let root = Identifier::try_create_root("").expect("should be able to create root");
+        let root = Identifier::try_create("").expect("should be able to create root");
         assert_eq!("", root.root());
 
         let mut root: Identifier = "test.part1.part2".parse().expect("should be able to parse");
