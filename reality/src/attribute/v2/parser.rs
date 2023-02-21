@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use specs::Builder;
 use specs::Join;
 use specs::World;
@@ -7,6 +8,7 @@ use specs::WriteStorage;
 use tracing::trace;
 
 use self::interop::MakePacket;
+use crate::Identifier;
 use crate::parser::PropertyAttribute;
 use crate::CustomAttribute;
 use crate::Error;
@@ -27,6 +29,12 @@ pub struct Parser {
     /// Caches a packet,
     ///
     packet_cache: Option<Packet>,
+    /// Current root identifier,
+    /// 
+    root_identifier: Option<Arc<Identifier>>,
+    /// Current block identifier,
+    /// 
+    block_identifier: Identifier,
 }
 
 impl Parser {
@@ -37,6 +45,8 @@ impl Parser {
         Parser {
             v1_parser,
             packet_cache: None,
+            root_identifier: None,
+            block_identifier: Default::default(),
         }
     }
 
@@ -63,13 +73,12 @@ impl Parser {
                 }
 
                 parser.route_cache(packet_handler)?;
-
                 Ok::<(), Error>(())
             })?;
 
             // Ensure existing parser is removed
             if let Some(existing) = world.remove::<Self>() {
-                debug_assert!(existing.packet_cache.is_none(), "Packet cache shoudl be empty");
+                debug_assert!(existing.packet_cache.is_none(), "Packet cache should be empty");
             }
 
             // Update v1_parser
@@ -90,9 +99,19 @@ impl Parser {
     ///
     fn route_packet(
         &mut self,
-        incoming: Packet,
+        mut incoming: Packet,
         dest: &mut impl PacketHandler,
     ) -> Result<(), Error> {
+        // Keep track of current block_identifier
+        if self.block_identifier != incoming.block_identifier {
+            self.block_identifier = incoming.block_identifier.clone();
+            self.root_identifier.take();
+        }
+
+        if let Some(root_id) = self.root_identifier.as_ref().filter(|_| !incoming.is_add()) {
+            incoming.identifier.set_root(root_id.clone());
+        }
+
         if let Some(cached) = self.packet_cache.as_mut() {
             // Merge errors signal that the cache should be routed,
             // The rejected packet will be re-routed
@@ -117,6 +136,10 @@ impl Parser {
             self.packet_cache = Some(incoming);
             Ok(())
         } else {
+            if incoming.is_add() {
+                self.root_identifier = Some(Arc::new(incoming.identifier.clone()));
+            }
+
             dest.on_packet(incoming)
         }
     }
@@ -206,6 +229,10 @@ mod tests {
             <> .input lhs
             <> .input rhs
             <> .eval prod
+            ```
+
+            ``` block
+            : root_test .true
             ```
         "#,
             &mut compiler,

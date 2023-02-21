@@ -52,6 +52,8 @@ impl Packet {
     /// Merges packet, if merge conditions are not met,
     /// returns the packet as an Err(Packet)
     /// 
+    /// A packet is merged if it is a defined packet w/ the same block identifier and identifier
+    /// 
     pub fn merge_packet(&mut self, mut other: Packet) -> Result<(), MergeRejectedReason> {
         if other.is_extension() {
             Err(MergeRejectedReason::NewExtension(other))

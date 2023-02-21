@@ -56,7 +56,7 @@ impl Block {
         let symbol = symbol.into();
         let mut ident = Identifier::default();
         if !name.is_empty() {
-            if let Ok(root) = Identifier::try_create_root(&name) {
+            if let Ok(root) = Identifier::try_create(&name) {
                 ident = root;
             }
 
