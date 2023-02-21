@@ -20,6 +20,9 @@ mod interop;
 pub use interop::Packet;
 pub use interop::PacketHandler;
 
+mod world_builder;
+pub use world_builder::WorldBuilder;
+
 /// V2 runmd parser,
 ///
 #[derive(Default)]
@@ -228,7 +231,9 @@ impl Parser {
 #[allow(unused_imports)]
 mod tests {
     use super::Parser;
-    use crate::v2::BlockList;
+    use crate::{v2::{BlockList, parser::WorldBuilder}, Identifier, BlockProperties};
+    use specs::{ReadStorage, Join, WorldExt};
+    use tracing::trace;
     use tracing_test::traced_test;
 
     #[test]
@@ -288,5 +293,17 @@ mod tests {
         for (_, b) in compiler.blocks() {
             println!("{}", b);
         }
+
+        let mut world_compiler = WorldBuilder::new();
+        let parser = Parser::new();
+        let _parser = parser.parse_file(".test/block.runmd", &mut world_compiler);
+
+        let world = world_compiler.as_mut();
+        world.maintain();
+        world.exec(|(identities, properties): (ReadStorage<Identifier>, ReadStorage<BlockProperties>)| {
+            for (ident, properties) in (&identities, &properties).join() {
+                trace!("\n\t{:#}\n\t{:?}", ident, properties);
+            }
+        });
     }
 }

@@ -2,14 +2,6 @@
 use crate::Identifier;
 use crate::Value;
 
-mod build;
-
-/// Types of extension actions that can be applied on built attributes,
-/// 
-pub mod extensions {
-    pub use super::build::Build;
-}
-
 /// Enumeration of attribute actions that apply during the transient phase of the attribute's lifecycle,
 ///
 #[derive(Clone, Debug)]
