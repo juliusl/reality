@@ -108,21 +108,21 @@ impl Display for Block {
         writeln!(f)?;
 
         for a in self.attributes() {
-            writeln!(f, r#"[[{}.attributes]]"#, self.ident())?;
-            writeln!(f, r#"[{}.attributes{:#}]"#, self.ident(), a.ident)?;
+            writeln!(f, r#"[[{}]]"#, self.ident())?;
+            writeln!(f, r#"[{}{:#}]"#, self.ident(), a.ident)?;
             writeln!(f, "_e = true")?;
             writeln!(f)?;
 
             for e in a.action_stack() {
                 match e {
                     Action::Extend(i) => {
-                        writeln!(f, r#"[[{}.attributes{:#}.extensions]]"#, self.ident(), a.ident)?;
+                        writeln!(f, r#"[[{}{:#}]]"#, self.ident(), a.ident)?;
                         let i = i.to_string();
                         if i.starts_with(".") {
-                            writeln!(f, r#"[{}.attributes{:#}.extensions{:#}]"#, self.ident(), a.ident, i)?;
+                            writeln!(f, r#"[{}{:#}{:#}]"#, self.ident(), a.ident, i)?;
                             writeln!(f, "_e = true")?;
                         } else {
-                            writeln!(f, r#"[{}.attributes{:#}.extensions.{:#}]"#, self.ident(), a.ident, i)?;
+                            writeln!(f, r#"[{}{:#}{:#}]"#, self.ident(), a.ident, i)?;
                             writeln!(f, "_e = true")?;
                         }
                         writeln!(f)?;
