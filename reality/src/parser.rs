@@ -551,6 +551,7 @@ impl Parser {
         }
 
         attr_parser.set_id(self.parsing.and_then(|p| Some(p.id())).unwrap_or(0));
+        attr_parser.set_block_identifier(self.current_block().identifier());
         self.parser_stack.push(attr_parser.clone());
         self.parser_stack.last_mut().expect("just added")
     }

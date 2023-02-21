@@ -1,4 +1,5 @@
 
+use crate::Identifier;
 use crate::Value;
 
 mod build;
@@ -18,7 +19,7 @@ pub enum Action {
     With(String, Value),
     /// Extends the current namespace,
     /// 
-    Extend(String, Value),
+    Extend(Identifier),
 }
 
 /// Returns an action that will apply a property,
@@ -29,6 +30,6 @@ pub fn with(name: impl Into<String>, value: impl Into<Value>) -> Action {
 
 /// Returns an extend action,
 ///
-pub fn extend(ident: impl Into<String>, value: impl Into<Value>) -> Action {
-    Action::Extend(ident.into(), value.into())
+pub fn extend(ident: &Identifier) -> Action {
+    Action::Extend(ident.clone())
 }

@@ -1,16 +1,15 @@
-use specs::WriteStorage;
-use specs::WorldExt;
-use specs::World;
-use specs::ReadStorage;
-use specs::Join;
 use specs::Builder;
+use specs::Join;
+use specs::World;
+use specs::WorldExt;
+use specs::Write;
+use specs::WriteStorage;
 use tracing::trace;
 
-use crate::Identifier;
+use self::interop::MakePacket;
 use crate::parser::PropertyAttribute;
-use crate::Keywords;
 use crate::CustomAttribute;
-use super::action;
+use crate::Error;
 
 mod interop;
 pub use interop::Packet;
@@ -18,68 +17,122 @@ pub use interop::PacketHandler;
 
 /// V2 block parser implementation,
 ///
+#[derive(Default)]
 pub struct Parser {
     /// V1 Parser,
     ///
     /// The V1 parser will not
     ///
-    v1_parser: crate::Parser,
+    v1_parser: Option<crate::Parser>,
+    /// Caches a packet,
+    ///
+    packet_cache: Option<Packet>,
 }
 
 impl Parser {
     /// Returns a new parser,
     ///
     pub fn new() -> Self {
-        let v1_parser = Self::new_v1_parser(None);
-        Parser { v1_parser }
+        let v1_parser = Some(Self::new_v1_parser(None));
+        Parser {
+            v1_parser,
+            packet_cache: None,
+        }
     }
 
-    /// Parses content and emits interop packets,
+    /// Parses content and routes interop packets,
     ///
+    /// Returns self w/ a v1_parser and updated World if successful,
+    /// 
     pub fn parse(
         mut self,
         content: impl Into<String>,
         packet_handler: &mut impl PacketHandler,
-    ) -> Self {
-        let parser = self.v1_parser.parse(content.into());
-
-        let mut world = parser.commit();
-        world.maintain();
-        world.exec(
-            |(mut p, blocks): (WriteStorage<Packet>, ReadStorage<crate::Block>)| {
+    ) -> Result<Self, Error> {
+        if let Some(parser) = self.v1_parser.take() {
+            // V1 Parser will emit packets
+            let parser = parser.parse(content.into());
+            let mut world = parser.commit();
+            world.maintain();
+            
+            // Ensure an empty parser is added
+            world.insert(Self::default());
+            world.exec(|(mut p, mut parser): (WriteStorage<Packet>, Write<Self>)| {
                 for mut _p in p.drain().join() {
-                    if let Some(e) = _p.entity.and_then(|e| blocks.get(e)) {
-                        _p.block_namespace = e.namespace();
+                    parser.route_packet(_p, packet_handler)?; 
+                }
 
-                        if let Some(Keywords::Add) = _p.keyword.as_ref() {
-                            eprintln!("{:?}", e);
-                            let ident = _p
-                                .tag()
-                                .map(|t| {
-                                    format!("{t}.{}.{}", _p.ident, _p.input().symbol().unwrap())
-                                })
-                                .unwrap_or(format!(
-                                    "{}.{}",
-                                    _p.ident,
-                                    _p.input().symbol().unwrap()
-                                ));
+                parser.route_cache(packet_handler)?;
 
-                            let map = e.map_transient(ident);
-                            for (ident, value) in map.iter() {
-                                _p.actions.push(action::with(ident, value.clone()));
-                            }
-                        }
+                Ok::<(), Error>(())
+            })?;
+
+            // Ensure existing parser is removed
+            if let Some(existing) = world.remove::<Self>() {
+                debug_assert!(existing.packet_cache.is_none(), "Packet cache shoudl be empty");
+            }
+
+            // Update v1_parser
+            self.v1_parser = Some(Self::new_v1_parser(Some(world)));
+            Ok(self)
+        } else {
+            Err("Trying to parse w/ an unintialized parser".into())
+        }
+    }
+
+    /// Routes an incoming packet,
+    ///
+    /// If the packet is an extension packet, it will be cached so that subsequent packets can be merged if applicable,
+    ///
+    /// Otherwise, the packet is routed to the destination packet handler.
+    ///
+    /// When a packet cannot be merged, the cache is cleared and routed to the destination handler.
+    ///
+    fn route_packet(
+        &mut self,
+        incoming: Packet,
+        dest: &mut impl PacketHandler,
+    ) -> Result<(), Error> {
+        if let Some(cached) = self.packet_cache.as_mut() {
+            // Merge errors signal that the cache should be routed,
+            // The rejected packet will be re-routed
+            if let Err(err) = cached.merge_packet(incoming) {
+                match err {
+                    interop::MergeRejectedReason::DifferentBlockNamespace(next)
+                    | interop::MergeRejectedReason::NewRoot(next)
+                    | interop::MergeRejectedReason::NewExtension(next) => {
+                        self.route_cache(dest)?;
+                        self.route_packet(next, dest)?;
                     }
-
-                    if let Err(err) = packet_handler.on_packet(_p) {
-                        panic!("Parsing error, {err}");
+                    interop::MergeRejectedReason::UnrelatedPacket(unrelated) => {
+                        unreachable!("If a packet is rejected for this reason it indicates a packet creation error, {:?}", unrelated)
                     }
                 }
-            },
-        );
+            }
 
-        self.v1_parser = Self::new_v1_parser(Some(world));
-        self
+            Ok(())
+        } else if incoming.is_extension() {
+            trace!("Packet cache is being updated, {:#}", incoming.identifier);
+            // Hold on to incoming extension packets
+            self.packet_cache = Some(incoming);
+            Ok(())
+        } else {
+            dest.on_packet(incoming)
+        }
+    }
+
+    /// Clears and routes the cached packet to the destination packet handler,
+    ///
+    fn route_cache(&mut self, dest: &mut impl PacketHandler) -> Result<(), Error> {
+        if let Some(last) = self.packet_cache.take() {
+            trace!(
+                "Cached packet is being routed to dest, {:#}",
+                last.identifier
+            );
+            dest.on_packet(last)?;
+        }
+
+        Ok(())
     }
 
     /// Returns a new v1 parser that will emit interop packets on custom attributes,
@@ -89,68 +142,22 @@ impl Parser {
             .map(|w| crate::Parser::new_with(w))
             .unwrap_or(crate::Parser::new());
 
-        v1_parser.set_default_custom_attribute(CustomAttribute::new_with("", |parser, input| {
-            if let Some(ident) = parser.attr_ident().cloned() {
-                let name = parser.name().cloned();
-                let symbol = parser.property().cloned();
-                let entity = parser.entity().clone();
-                let keyword = parser.keyword().cloned();
-                let namespace = parser.namespace();
-                let line_count = parser.line_count();
-                let identifier = parser.current_identifier().clone();
-
-                trace!("OnCustomAttr Packet -- {:#} {:?}", identifier, ident);
-
+        v1_parser.set_default_custom_attribute(CustomAttribute::new_with("", |parser, _| {
+            if let Ok(packet) = parser.try_make_packet() {
                 parser.lazy_exec_mut(move |w| {
                     w.register::<Packet>();
-                    w.create_entity()
-                        .with(Packet {
-                            name,
-                            entity,
-                            property: symbol,
-                            keyword,
-                            ident,
-                            input,
-                            identifier,
-                            block_namespace: ".".to_string(),
-                            extension_namespace: namespace.unwrap_or_default(),
-                            line_count,
-                            actions: vec![],
-                        })
-                        .build();
+                    w.create_entity().with(packet).build();
                 });
             }
         }));
 
         v1_parser.set_default_property_attribute(PropertyAttribute(|parser| {
-            let name = parser.name().cloned();
-            let property = parser.property().cloned().unwrap_or_default();
-            let entity = parser.entity().clone();
-            let keyword = parser.keyword().cloned();
-            let extension_namespace = parser.namespace().unwrap_or_default();
-            let line_count = parser.line_count();
-            let value = parser.edit_value().cloned().unwrap_or_default();
-
-            trace!("OnProperty Packet -- {:#}", parser.current_identifier());
-
-            parser.lazy_exec_mut(move |w| {
-                w.register::<Packet>();
-                w.create_entity()
-                    .with(Packet {
-                        name,
-                        entity,
-                        property: Some(property.clone()),
-                        keyword,
-                        ident: "".to_string(),
-                        input: "".to_string(),
-                        identifier: Identifier::default(),
-                        block_namespace: ".".to_string(),
-                        extension_namespace,
-                        line_count,
-                        actions: vec![action::with(property, value)],
-                    })
-                    .build();
-            });
+            if let Ok(packet) = parser.try_make_packet() {
+                parser.lazy_exec_mut(move |w| {
+                    w.register::<Packet>();
+                    w.create_entity().with(packet).build();
+                });
+            }
         }));
         v1_parser
     }
@@ -158,55 +165,54 @@ impl Parser {
 
 #[allow(unused_imports)]
 mod tests {
-    use tracing_test::traced_test;
-    use crate::v2::BlockList;
     use super::Parser;
+    use crate::v2::BlockList;
+    use tracing_test::traced_test;
 
     #[test]
     #[traced_test]
     fn test_parser() {
         let parser = Parser::new();
         let mut compiler = BlockList::default();
-        // let parser = parser.parse(
-        //     r#"
-        // # ``` test block
-        // # + test  .person         John
-        // # :       .dob            10/10/1000
-        // # :       .location       USA
-
-        // # + .person John
-        // # : test .dob 10/10/1000
-        // # ```
-
-        // "#,
-        //     &mut compiler,
-        // );
-
         let _parser = parser.parse(
             r#"
             ``` b block
             : test .true
 
-             + test:v1 .op add
-             : lhs .int
-             : rhs .int
-             : sum .int
-             <> .input lhs : .type stdin
-             <test> .input rhs
-             <> .eval  sum
+            + test:v1 .op add
+            : lhs .int
+            : rhs .int
+            : sum .int
+            <> .input lhs : .type stdin
+            <test> .input rhs
+            <> .eval  sum
+            ```
+
+            ``` a block
+            + test:v2 .op sub
+            : lhs .int
+            : rhs .int
+            : diff .int
+            <> .input lhs : .type stdin
+            : count .int 1
+            : test .env /host
+            <test> .input rhs
+            <> debug .eval diff
+
+            + .op mult
+            : lhs .int
+            : rhs .int
+            : prod .int
+            <> .input lhs
+            <> .input rhs
+            <> .eval prod
             ```
         "#,
             &mut compiler,
         );
 
-        for b in compiler.blocks() {
-            println!("{:#?}", b);
-            println!("{} {:?}", b.0, b.1.requires().collect::<Vec<_>>());
-
-            let mut b = b.1.clone();
-            b.finalize();
-            println!("{:#}", b.ident());
-            println!("{:#}", b.attributes().next().unwrap().ident);
+        for (_, b) in compiler.blocks() {
+            println!("{}", b);
         }
     }
 }

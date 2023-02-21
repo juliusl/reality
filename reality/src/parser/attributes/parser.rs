@@ -51,14 +51,9 @@ pub struct AttributeParser {
     /// Keyword that preceeded this parser,
     ///
     keyword: Option<Keywords>,
-    /// Root attribute namespace,
-    ///
-    /// If the previous attribute was a custom attribute or the current keyword is an extension, then this will be set to the current attr_ident
-    ///
-    root_namespace: Option<String>,
-    /// Extension namespace,
-    ///
-    extension_namespace: Option<String>,
+    /// Current block identifier,
+    /// 
+    block_identifier: Identifier,
     /// Implicit identifier to use as the base identifier,
     /// 
     implicit_identifier: Option<Identifier>,
@@ -68,6 +63,9 @@ pub struct AttributeParser {
     /// Line count
     ///
     line_count: usize,
+    /// Whenever parse identifier is called this is updated,
+    /// 
+    parsed_idents: Vec<String>,
 }
 
 impl AttributeParser {
@@ -87,21 +85,15 @@ impl AttributeParser {
         self.default_property_attribute = Some(default);
     }
 
-    /// Sets the implicit extension prefix,
-    ///
-    pub fn set_extension_namespace(&mut self, prefix: Option<String>) -> &mut Self {
-        self.extension_namespace = prefix;
-        self
-    }
-
-    pub fn set_root_namespace(&mut self, root_namespace: impl Into<String>) -> &mut Self {
-        self.root_namespace = Some(root_namespace.into());
-        self
-    }
-
-    /// Sets the implicit identifier,
+    /// Sets the current block identifierm
     /// 
-    pub fn set_implicit_identifier(&mut self, ident: Option<&Identifier>) -> &mut Self {
+    pub fn set_block_identifier(&mut self, ident: &Identifier) {
+        self.block_identifier = ident.clone();
+    }
+
+    /// Sets the implicit identifier, chainable
+    /// 
+    pub fn with_implicit_identifier(&mut self, ident: Option<&Identifier>) -> &mut Self {
         if let Some(replaced) = self.implicit_identifier.take() {
             trace!("Replacing implicit identifier {:#}", replaced);
         }
@@ -116,9 +108,15 @@ impl AttributeParser {
         &self.current_identifier
     }
 
-    /// Sets the current keyword,
+    /// Returns the current block identifier,
+    /// 
+    pub fn block_identifier(&self) -> &Identifier {
+        &self.block_identifier
+    }
+
+    /// Sets the current keyword, chainbable,
     ///
-    pub fn set_keyword(&mut self, keyword: Keywords) -> &mut Self {
+    pub fn with_keyword(&mut self, keyword: Keywords) -> &mut Self {
         self.keyword = Some(keyword);
         self
     }
@@ -134,6 +132,8 @@ impl AttributeParser {
     ///
     pub fn parse(&mut self, content: impl AsRef<str>) -> &mut Self {
         self.line_count += 1;
+
+        self.parsed_idents.clear();
 
         // Reset the current identifier
         if let Some(implicit) = self.implicit_identifier.as_ref() {
@@ -269,8 +269,6 @@ impl AttributeParser {
     /// Sets the current name value
     ///
     pub fn set_name(&mut self, name: impl AsRef<str>) {
-        self.current_identifier.add_tag(name.as_ref());
-
         self.name = Some(name.as_ref().to_string());
     }
 
@@ -338,24 +336,6 @@ impl AttributeParser {
     ///
     pub fn line_count(&self) -> usize {
         self.line_count
-    }
-
-    /// Returns the current extension namespace,
-    ///
-    pub fn namespace(&self) -> Option<String> {
-        self.root_namespace.as_ref().map(|root_namespace| {
-            if let Some(extension_namespace) = self.extension_namespace.as_ref() {
-                format!("{root_namespace}.{extension_namespace}")
-            } else {
-                root_namespace.to_string()
-            }
-        })
-    }
-
-    /// Returns the current extension namespace prefix,
-    ///
-    pub fn extension_namespace(&self) -> Option<String> {
-        self.extension_namespace.clone()
     }
 
     /// Returns the last attribute on the stack,
@@ -457,10 +437,10 @@ impl AttributeParser {
                     })
                     .unwrap_or(name);
 
-                let symbol = self
-                    .extension_namespace()
-                    .map(|p| format!("{p}.{symbol}"))
-                    .unwrap_or(symbol);
+                // let symbol = self
+                //     .extension_namespace()
+                //     .map(|p| format!("{p}.{symbol}"))
+                //     .unwrap_or(symbol);
 
                 let mut attr = Attribute::new(self.id, format!("{name}::{symbol}"), value);
                 attr.edit_as(edit);
@@ -510,9 +490,7 @@ impl AttributeParser {
     /// In this context, this is either a name or symbol.
     ///
     fn parse_identifier(&mut self, symbol: String) {
-        if self.root_namespace.is_none() && self.keyword == Some(Keywords::Add) {
-            self.set_root_namespace(symbol.to_string());
-        }
+        self.parsed_idents.push(symbol.clone());
 
         if self.name.is_none() {
             self.set_name(symbol)
@@ -707,26 +685,39 @@ pub fn on_custom_attr(lexer: &mut Lexer<Attributes>) {
             .to_string(),
     ));
 
+    lexer.extras.set_edit(Value::Symbol(input.value()));
+
     match lexer.extras.keyword {
         Some(Keywords::Add) => {
-            lexer.extras.root_namespace = Some(custom_attr_type.to_string());
+            lexer.extras.current_identifier.join(custom_attr_type).ok();
+
+            for tag in lexer.extras.parsed_idents.drain(..) {
+                lexer.extras.current_identifier.add_tag(tag);
+            }
         }
         Some(Keywords::Extension) => {
             if let Some(implicit_identifier) = lexer.extras.implicit_identifier.as_mut() {
                 implicit_identifier.join(custom_attr_type).ok();
             } else {
-                lexer.extras.set_implicit_identifier(Identifier::default().join(custom_attr_type).ok().as_deref());
+                lexer.extras.with_implicit_identifier(Identifier::default().join(custom_attr_type).ok().as_deref());
             }
 
             if !input.value().is_empty() {
                 lexer.extras.implicit_identifier.as_mut().map(|i| i.join(input.value()).ok());
             }
+
+            for tag in lexer.extras.parsed_idents.drain(..) {
+                trace!("setting tag {tag}");
+                lexer.extras.implicit_identifier.as_mut().map(|i| i.add_tag(&tag));
+                lexer.extras.current_identifier.add_tag(tag);
+            }
+
+            lexer.extras.current_identifier.join(custom_attr_type).ok();
         }
         _ => {
         }
     }
 
-    lexer.extras.current_identifier.join(custom_attr_type).ok();
     lexer.extras.attr_ident = Some(custom_attr_type.to_string());
 
     trace!("Checking for custom attribute");
@@ -749,7 +740,7 @@ pub fn on_custom_attr(lexer: &mut Lexer<Attributes>) {
             custom_attr.parse(&mut lexer.extras, input.value());
             match lexer.extras.keyword {
                 Some(Keywords::Extension) => {
-                    lexer.extras.extension_namespace = lexer.extras.attr_ident.clone();
+                    // lexer.extras.extension_namespace = lexer.extras.attr_ident.clone();
                 }
                 _ => {}
             }
@@ -763,6 +754,8 @@ pub fn on_custom_attr(lexer: &mut Lexer<Attributes>) {
             );
         }
     }
+
+    lexer.extras.attr_ident.take();
 }
 
 pub fn from_comma_sep<T>(lexer: &mut Lexer<Attributes>) -> Vec<T>
