@@ -6,8 +6,11 @@ use crate::{v2::Build, Identifier, BlockProperties};
 
 use super::PacketHandler;
 
-
+/// Struct to build a world from interop packets,
+/// 
 pub struct WorldBuilder {
+    /// World being built,
+    /// 
     world: World,
 }
 

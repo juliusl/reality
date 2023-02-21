@@ -1,5 +1,5 @@
-mod loader;
-pub use loader::Loader;
+mod load;
+pub use load::Load;
 
 mod provider;
 pub use provider::Provider;
@@ -15,7 +15,7 @@ mod tests {
 
     use crate::state::iter_state;
 
-    use super::{Loader, Provider};
+    use super::{Load, Provider};
 
     #[derive(Component, PartialEq, Debug)]
     #[storage(VecStorage)]
@@ -72,7 +72,7 @@ mod tests {
         pos: Option<&'a Pos>,
     }
 
-    impl<'a> Loader for Object<'a> {
+    impl<'a> Load for Object<'a> {
         type Layout = GravityData<'a>;
 
         fn load((weight, pos): <Self::Layout as Join>::Type) -> Self {

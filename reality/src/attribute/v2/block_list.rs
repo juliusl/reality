@@ -101,7 +101,7 @@ impl super::parser::PacketHandler for BlockList {
                 _ => {}
             }
         }
-               Ok(())
+        Ok(())
     }
 }
 

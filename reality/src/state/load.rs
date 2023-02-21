@@ -3,7 +3,7 @@ use specs::{Join, Entities, Entity};
 
 /// Trait to implement in order to load state for a specific entity,
 /// 
-pub trait Loader 
+pub trait Load 
 where
     Self: Sized
 {
