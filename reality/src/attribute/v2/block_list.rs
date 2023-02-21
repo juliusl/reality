@@ -77,26 +77,25 @@ impl super::parser::PacketHandler for BlockList {
                 Packet {
                     keyword: Keywords::Extension,
                     identifier,
-                    actions,
                     ..
                 } => {
                     block.last_mut().map(|l| {
                         *l = l.clone().extend(&identifier);
                     });
 
-                    let identifier = identifier.commit()?;
+                    // let identifier = identifier.commit()?;
 
-                    for a in actions {
-                        match a {
-                            action::Action::With(name, value) => {
-                                let ident = identifier.branch(name)?;
-                                block.last_mut().map(|l| {
-                                    *l = l.clone().with(ident.to_string(), value);
-                                });
-                            }
-                            _ => {}
-                        }
-                    }
+                    // for a in actions {
+                    //     match a {
+                    //         action::Action::With(name, value) => {
+                    //             let ident = identifier.branch(name)?;
+                    //             block.last_mut().map(|l| {
+                    //                 *l = l.clone().with(ident.to_string(), value);
+                    //             });
+                    //         }
+                    //         _ => {}
+                    //     }
+                    // }
                 }
                 _ => {}
             }
