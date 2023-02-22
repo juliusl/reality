@@ -14,11 +14,17 @@ use crate::v2::Build;
 use crate::v2::BlockList;
 use crate::v2::Block;
 use crate::v2::Attribute;
-use super::PacketHandler;
+use super::Visitor;
+use super::parser::Packet;
+use super::parser::PacketHandler;
+
+mod compiled;
+pub use compiled::Compiled;
+pub use compiled::Object;
 
 /// Struct to build a world from interop packets,
 ///
-pub struct WorldBuilder {
+pub struct Compiler {
     /// World being built,
     ///
     world: World,
@@ -28,9 +34,12 @@ pub struct WorldBuilder {
     /// Build log,
     /// 
     build_log: BuildLog,
+    /// Builds,
+    /// 
+    builds: Vec<Entity>,
 }
 
-impl WorldBuilder {
+impl Compiler {
     /// Returns a new world builder,
     ///
     pub fn new() -> Self {
@@ -40,10 +49,11 @@ impl WorldBuilder {
         world.register::<Block>();
         world.register::<Attribute>();
         world.register::<BuildLog>();
-        WorldBuilder {
+        Compiler {
             world,
             block_list: BlockList::default(),
             build_log: BuildLog::default(),
+            builds: vec![],
         }
     }
 
@@ -56,24 +66,58 @@ impl WorldBuilder {
         build.build(lzb)
     }
 
-    /// Updates the world builder,
-    ///
-    pub fn update(&self) -> Result<specs::Entity, crate::Error> {
-        let lzb = self.world.fetch::<LazyUpdate>();
-        let lzb = lzb.deref().create_entity(&self.world.entities());
+    /// Compiles parsed block list and consumes internal state, inserting components into world storage,
+    /// 
+    /// Returns the entity of the build,
+    /// 
+    /// Compiler can be re-used w/o removing previous built components,
+    /// 
+    pub fn compile(&mut self) -> Result<specs::Entity, crate::Error> {
+        let build = {
+            let lzb = self.world.fetch::<LazyUpdate>();
+            let lzb = lzb.deref().create_entity(&self.world.entities());
+    
+            self.build(lzb)?
+        };
 
-        self.build(lzb)
+        // Clear internal state,
+        self.build_log.index.clear();
+        self.block_list = BlockList::default();
+        self.world.maintain();
+        self.builds.push(build);
+
+        Ok(build)
     }
 
-    /// Returns the current build log,
+    /// Returns the build log for an existing build,
     /// 
     pub fn build_log(&self, build: Entity) -> BuildLog {
         self.world.read_component::<BuildLog>().get(build).cloned().unwrap_or(self.build_log.clone())
     }
+
+    /// Returns compiled runmd data,
+    /// 
+    pub fn compiled(&self) -> Compiled {
+        self.world.system_data::<Compiled>()
+    }
+
+    /// Visits the last build,
+    /// 
+    pub fn visit_last_build(&self, visitor: impl Visitor) {
+        if let Some(last) = self.builds.last() {
+            self.visit_build(*last, visitor);
+        }
+    }
+
+    /// Visits a build,
+    /// 
+    pub fn visit_build(&self, build: Entity, visitor: impl Visitor) {
+        todo!()
+    }
 }
 
-impl PacketHandler for WorldBuilder {
-    fn on_packet(&mut self, packet: super::Packet) -> Result<(), crate::Error> {
+impl PacketHandler for Compiler {
+    fn on_packet(&mut self, packet: Packet) -> Result<(), crate::Error> {
         self.block_list.on_packet(packet.clone())?;
 
         if let Some(built) = self.lazy_build(&packet).ok() {
@@ -85,19 +129,19 @@ impl PacketHandler for WorldBuilder {
     }
 }
 
-impl AsRef<World> for WorldBuilder {
+impl AsRef<World> for Compiler {
     fn as_ref(&self) -> &World {
         &self.world
     }
 }
 
-impl AsMut<World> for WorldBuilder {
+impl AsMut<World> for Compiler {
     fn as_mut(&mut self) -> &mut World {
         &mut self.world
     }
 }
 
-impl Build for WorldBuilder {
+impl Build for Compiler {
     fn build(
         &self,
         lazy_builder: specs::world::LazyBuilder,

@@ -9,10 +9,16 @@ pub use block::Block;
 
 mod parser;
 pub use parser::Parser;
-pub use parser::WorldBuilder;
+
+mod compiler;
+pub use compiler::Compiler;
+pub use compiler::Object;
 
 mod block_list;
 pub use block_list::BlockList;
 
 mod build;
 pub use build::Build;
+
+mod visitor;
+pub use visitor::Visitor;

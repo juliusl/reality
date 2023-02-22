@@ -13,7 +13,6 @@ use crate::Metadata;
 use crate::Block;
 use crate::BlockIndex;
 use crate::BlockProperties;
-use crate::Value;
 
 mod attributes;
 pub use attributes::AttributeParser;

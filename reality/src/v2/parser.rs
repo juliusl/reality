@@ -20,9 +20,6 @@ mod interop;
 pub use interop::Packet;
 pub use interop::PacketHandler;
 
-mod world_builder;
-pub use world_builder::WorldBuilder;
-
 /// V2 runmd parser,
 ///
 #[derive(Default)]
@@ -234,8 +231,8 @@ impl Parser {
 mod tests {
     use super::Parser;
     use crate::{
-        v2::{parser::WorldBuilder, BlockList},
-        BlockProperties, Identifier,
+        v2::{Compiler, BlockList, compiler::Compiled, Object},
+        BlockProperties, Identifier, state::Provider,
     };
     use specs::{Join, ReadStorage, WorldExt};
     use tracing::trace;
@@ -286,27 +283,35 @@ mod tests {
         std::fs::create_dir_all(".test").expect("should be able to create test dir");
         std::fs::write(".test/test.runmd", runmd).expect("should be able to write");
 
-        let mut world_compiler = WorldBuilder::new();
+        let mut compiler = Compiler::new();
         let parser = Parser::new();
-        let _parser = parser.parse_file(".test/test.runmd", &mut world_compiler);
-        let build = world_compiler
-            .update()
+        let _parser = parser.parse_file(".test/test.runmd", &mut compiler);
+        let build = compiler
+            .compile()
             .expect("should be able to build self");
 
-        let world = world_compiler.as_mut();
-        world.maintain();
-        world.exec(
-            |(identities, properties): (ReadStorage<Identifier>, ReadStorage<BlockProperties>)| {
-                for (ident, properties) in (&identities, &properties).join() {
-                    trace!("\n\n{:#}\n{:#?}\n", ident, properties);
+        {
+            let world = compiler.as_mut();
+            world.exec(
+                |(identities, properties): (ReadStorage<Identifier>, ReadStorage<BlockProperties>)| {
+                    for (ident, properties) in (&identities, &properties).join() {
+                        trace!("\n\n{:#}\n{:#?}\n", ident, properties);
+                    }
+                },
+            );
+        }
+
+        let log = compiler.build_log(build);
+        for (_, e) in log.index() {
+            // trace!("\n\n\t{:#}\n\t{:?}", i, e);
+
+            if let Some(obj) = compiler.compiled().state::<Object>(*e) {
+                if obj.is_root() {
+                    obj.as_attribute().map(|a| {
+                        trace!("attr {:#}", a.ident);
+                    });
                 }
-            },
-        );
-
-        let log = world_compiler.build_log(build);
-
-        for (i, e) in log.index() {
-            trace!("\n\n\t{:#}\n\t{:?}", i, e);
+            }
         }
     }
 }
