@@ -9,11 +9,12 @@ use specs::Component;
 use specs::Builder;
 use tracing::trace;
 use crate::Identifier;
-use crate::BlockProperties;
+use crate::state::Provider;
 use crate::v2::Build;
 use crate::v2::BlockList;
 use crate::v2::Block;
 use crate::v2::Root;
+use super::Properties;
 use super::Visitor;
 use super::parser::Packet;
 use super::parser::PacketHandler;
@@ -45,7 +46,7 @@ impl Compiler {
     pub fn new() -> Self {
         let mut world = World::new();
         world.register::<Identifier>();
-        world.register::<BlockProperties>();
+        world.register::<Properties>();
         world.register::<Block>();
         world.register::<Root>();
         world.register::<BuildLog>();
@@ -103,7 +104,7 @@ impl Compiler {
 
     /// Visits the last build,
     /// 
-    pub fn visit_last_build(&self, visitor: impl Visitor) {
+    pub fn visit_last_build(&self, visitor: &mut impl Visitor) {
         if let Some(last) = self.builds.last() {
             self.visit_build(*last, visitor);
         }
@@ -111,8 +112,27 @@ impl Compiler {
 
     /// Visits a build,
     /// 
-    pub fn visit_build(&self, _build: Entity, _visitor: impl Visitor) {
-        todo!()
+    pub fn visit_build(&self, build: Entity, visitor: &mut impl Visitor) {
+        if let Some(build_log) = self.compiled().find_build(build) {
+            for (ident, entity) in build_log.index().iter() {
+                if let Some(obj) = self.compiled().state::<Object>(*entity) {
+                    trace!("Visiting {:#}", ident);
+                    if obj.is_extension() {
+                        visitor.visit_extension(obj.ident());
+                        visitor.visit_properties(obj.properties());
+                    } else {
+                        obj.as_block().map(|b| { 
+                            visitor.visit_block(b);
+                            visitor.visit_properties(obj.properties());
+                        });
+                        obj.as_root().map(|b| { 
+                            visitor.visit_root(b);
+                            visitor.visit_properties(obj.properties());
+                        });
+                    }
+                }
+            }
+        }
     }
 }
 

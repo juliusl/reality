@@ -1,7 +1,7 @@
 use super::Action;
+use super::Properties;
 use super::Root;
 use super::Build;
-use crate::BlockProperties;
 use crate::Identifier;
 use crate::Value;
 use specs::Builder;
@@ -144,7 +144,7 @@ impl Build for Block {
         &self,
         lazy_builder: specs::world::LazyBuilder,
     ) -> Result<specs::Entity, crate::Error> {
-        let mut properties = BlockProperties::new(self.ident.to_string());
+        let mut properties = Properties::new(self.ident.to_string());
 
         for a in self.initialize.iter() {
             if let Action::With(name, value) = a {

@@ -1,55 +1,61 @@
 use crate::Value;
+use std::sync::Arc;
 use std::fmt::Display;
+
+use super::Properties;
 
 /// Enumeration of property types
 ///
-#[derive(Debug, Hash, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum BlockProperty {
-    /// Property is a single value
+#[derive(Default, Debug, Hash, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Property {
+    /// Property is a single value,
+    /// 
     Single(Value),
-    /// Property is a list of values
+    /// Property is a list of values,
+    /// 
     List(Vec<Value>),
-    /// Reverse property that indicates this property name is required
-    Required(Option<Value>),
-    /// Reverse property that indiciates this property name is required
-    Optional(Option<Value>),
-    /// Indicates that this block property is currently empty
+    /// Property is a read-only reference to block properties,
+    /// 
+    Properties(Arc<Properties>),
+    /// Indicates that this block property is currently empty,
+    /// 
+    #[default]
     Empty,
 }
 
-impl BlockProperty {
+impl Property {
     /// Returns true if the property is a bool value and true
     ///
     pub fn is_enabled(&self) -> bool {
         match self {
-            BlockProperty::Single(Value::Bool(enabled)) => *enabled,
+            Property::Single(Value::Bool(enabled)) => *enabled,
             _ => false,
         }
     }
 
     /// Returns a string if the property is a single text buffer
     ///
-    pub fn text(&self) -> Option<&String> {
+    pub fn as_text(&self) -> Option<&String> {
         match self {
-            BlockProperty::Single(Value::TextBuffer(text)) => Some(text),
+            Property::Single(Value::TextBuffer(text)) => Some(text),
             _ => None,
         }
     }
 
     /// Returns a string if the property is a single symbol
     ///
-    pub fn symbol(&self) -> Option<&String> {
+    pub fn as_symbol(&self) -> Option<&String> {
         match self {
-            BlockProperty::Single(Value::Symbol(symbol)) => Some(symbol),
+            Property::Single(Value::Symbol(symbol)) => Some(symbol),
             _ => None,
         }
     }
 
     /// Returns an integer if the property is an int,
     ///
-    pub fn int(&self) -> Option<i32> {
+    pub fn as_int(&self) -> Option<i32> {
         match self {
-            BlockProperty::Single(Value::Int(i)) => Some(*i),
+            Property::Single(Value::Int(i)) => Some(*i),
             _ => None,
         }
     }
@@ -57,10 +63,10 @@ impl BlockProperty {
     /// Returns a vector of strings if the property is a single text buffer,
     /// or if the property is a list of values, filters all text buffers
     ///
-    pub fn text_vec(&self) -> Option<Vec<String>> {
+    pub fn as_text_vec(&self) -> Option<Vec<String>> {
         match self {
-            BlockProperty::Single(Value::TextBuffer(text)) => Some(vec![text.to_string()]),
-            BlockProperty::List(values) => Some(
+            Property::Single(Value::TextBuffer(text)) => Some(vec![text.to_string()]),
+            Property::List(values) => Some(
                 values
                     .iter()
                     .filter_map(Value::text)
@@ -73,10 +79,10 @@ impl BlockProperty {
     /// Returns a vector of strings if the property is a single symbol,
     /// or if the property is a list of values, filters all symbols
     ///
-    pub fn symbol_vec(&self) -> Option<Vec<String>> {
+    pub fn as_symbol_vec(&self) -> Option<Vec<String>> {
         match self {
-            BlockProperty::Single(Value::Symbol(text)) => Some(vec![text.to_string()]),
-            BlockProperty::List(values) => Some(
+            Property::Single(Value::Symbol(text)) => Some(vec![text.to_string()]),
+            Property::List(values) => Some(
                 values
                     .iter()
                     .filter_map(Value::symbol)
@@ -89,10 +95,10 @@ impl BlockProperty {
     /// Returns a vector of integers if the property is a single int,
     /// or if the property is a list of values, filters all ints
     ///
-    pub fn int_vec(&self) -> Option<Vec<i32>> {
+    pub fn as_int_vec(&self) -> Option<Vec<i32>> {
         match self {
-            BlockProperty::Single(Value::Int(int)) => Some(vec![*int]),
-            BlockProperty::List(values) => Some(
+            Property::Single(Value::Int(int)) => Some(vec![*int]),
+            Property::List(values) => Some(
                 values
                     .iter()
                     .filter_map(Value::int)
@@ -105,16 +111,40 @@ impl BlockProperty {
     /// Returns a vector of integers if the property is a single int,
     /// or if the property is a list of values, filters all ints
     ///
-    pub fn float_vec(&self) -> Option<Vec<f32>> {
+    pub fn as_float_vec(&self) -> Option<Vec<f32>> {
         match self {
-            BlockProperty::Single(Value::Float(float)) => Some(vec![*float]),
-            BlockProperty::List(values) => Some(
+            Property::Single(Value::Float(float)) => Some(vec![*float]),
+            Property::List(values) => Some(
                 values
                     .iter()
                     .filter_map(Value::float)
                     .collect::<Vec<_>>(),
             ),
             _ => None,
+        }
+    }
+
+    /// Returns a vector of values,
+    /// 
+    pub fn as_value_vec(&self) -> Option<&Vec<Value>> {
+        match self {
+            Property::List(list) => {
+                Some(list)
+            },
+            _ => {
+                None
+            }
+        }
+    }
+
+    /// Returns as properties,
+    /// 
+    pub fn as_properties(&self) -> Option<Arc<Properties>> {
+        match self {
+            Property::Properties(properties) => Some(properties.clone()),
+            _ => {
+                None
+            }
         }
     }
 
@@ -127,45 +157,33 @@ impl BlockProperty {
         on_empty: impl Fn() -> Option<Value>,
     ) {
         match self {
-            BlockProperty::Single(single) => on_single(single),
-            BlockProperty::List(list) => on_list(list.as_mut()),
-            BlockProperty::Empty => match on_empty() {
-                Some(value) => *self = BlockProperty::Single(value),
+            Property::Single(single) => on_single(single),
+            Property::List(list) => on_list(list.as_mut()),
+            Property::Properties(_) => {
+                // read-only
+                return;
+            }
+            Property::Empty => match on_empty() {
+                Some(value) => *self = Property::Single(value),
                 None => {}
             },
-            BlockProperty::Optional(default_value) | BlockProperty::Required(default_value) => {
-                match on_empty() {
-                    Some(value) => *self = BlockProperty::Single(value),
-                    None => match default_value {
-                        Some(value) => *self = BlockProperty::Single(value.clone()),
-                        None => {}
-                    },
-                }
-            }
         }
     }
 }
 
-impl Default for BlockProperty {
-    fn default() -> Self {
-        BlockProperty::Empty
-    }
-}
-
-impl Display for BlockProperty {
+impl Display for Property {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BlockProperty::Single(single) => display_value(f, single),
-            BlockProperty::List(list) => {
+            Property::Single(single) => display_value(f, single),
+            Property::List(list) => {
                 for val in list {
                     display_value(f, val)?;
                     write!(f, ", ")?;
                 }
                 Ok(())
             }
-            BlockProperty::Required(_) => write!(f, "required, value is not set"),
-            BlockProperty::Optional(_) => write!(f, "optional, value is not set"),
-            BlockProperty::Empty => write!(f, "empty value"),
+            Property::Properties(_) =>  write!(f, "properties - todo display"),
+            Property::Empty => write!(f, "empty value"),
         }
     }
 }

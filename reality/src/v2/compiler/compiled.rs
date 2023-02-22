@@ -1,9 +1,9 @@
 use super::BuildLog;
 use crate::state::Load;
 use crate::state::Provider;
+use crate::v2::Properties;
 use crate::v2::Root;
 use crate::v2::Block;
-use crate::BlockProperties;
 use crate::Identifier;
 use specs::join::MaybeJoin;
 use specs::prelude::*;
@@ -22,7 +22,7 @@ pub struct Compiled<'a> {
     identifier: ReadStorage<'a, Identifier>,
     /// Properties storage,
     ///
-    properties: ReadStorage<'a, BlockProperties>,
+    properties: ReadStorage<'a, Properties>,
     /// Block storage,
     ///
     blocks: ReadStorage<'a, Block>,
@@ -31,7 +31,15 @@ pub struct Compiled<'a> {
     roots: ReadStorage<'a, Root>,
     /// Build log storage,
     ///
-    _build_logs: ReadStorage<'a, BuildLog>,
+    build_logs: ReadStorage<'a, BuildLog>,
+}
+
+impl<'a> Compiled<'a> {
+    /// Finds a build log,
+    /// 
+    pub fn find_build(&self, build: Entity) -> Option<&BuildLog> {
+        self.build_logs.get(build)
+    }
 }
 
 /// Compiled object struct,
@@ -42,7 +50,7 @@ pub struct ObjectData<'a> {
     identifier: &'a Identifier,
     /// Block properties,
     /// 
-    properties: &'a BlockProperties,
+    properties: &'a Properties,
     /// Compiled source block,
     /// 
     block: Option<&'a Block>,
@@ -80,7 +88,7 @@ impl<'a> Object<'a> {
 
     /// Returns the properties associated w/ this object,
     /// 
-    pub fn properties(&self) -> &BlockProperties {
+    pub fn properties(&self) -> &Properties {
         match self {
             Object::Block(d) |
             Object::Root(d) |
@@ -138,7 +146,7 @@ impl<'a> Object<'a> {
 ///
 pub type ObjectFormat<'a> = (
     &'a ReadStorage<'a, Identifier>,
-    &'a ReadStorage<'a, BlockProperties>,
+    &'a ReadStorage<'a, Properties>,
     MaybeJoin<&'a ReadStorage<'a, Block>>,
     MaybeJoin<&'a ReadStorage<'a, Root>>,
 );

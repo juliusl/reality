@@ -1,13 +1,22 @@
-use std::io::{Read, Seek, Write};
-
-use crate::{Attribute, Value};
-use specs::{shred::ResourceId, Component, WorldExt};
-use tracing::{event, Level};
-
-use crate::{
-    wire::{Encoder, Frame, FrameIndex, Interner, Protocol, WireObject},
-    Block, BlockProperties, Keywords,
-};
+use std::io::Write;
+use std::io::Seek;
+use std::io::Read;
+use specs::Component;
+use specs::WorldExt;
+use specs::shred::ResourceId;
+use tracing::Level;
+use tracing::event;
+use crate::Value;
+use crate::Attribute;
+use crate::Keywords;
+use crate::Block;
+use crate::BlockProperties;
+use crate::wire::WireObject;
+use crate::wire::Protocol;
+use crate::wire::Interner;
+use crate::wire::FrameIndex;
+use crate::wire::Frame;
+use crate::wire::Encoder;
 
 impl WireObject for BlockProperties {
     fn encode<BlobImpl>(&self, _: &specs::World, encoder: &mut Encoder<BlobImpl>)
@@ -65,9 +74,6 @@ impl WireObject for BlockProperties {
                         }
                         encoder.frames.push(frame);
                     }
-                }
-                crate::BlockProperty::Properties(_) => {
-                    todo!()
                 }
                 crate::BlockProperty::Required(value) => {
                     let mut frame = Frame::define(

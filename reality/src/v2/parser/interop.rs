@@ -3,11 +3,11 @@ use specs::Component;
 use specs::VecStorage;
 use tracing::trace;
 
+use crate::v2::Properties;
 use crate::v2::action;
 use crate::v2::Action;
 use crate::v2::Build;
 use crate::AttributeParser;
-use crate::BlockProperties;
 use crate::Error;
 use crate::Identifier;
 use crate::Keywords;
@@ -206,15 +206,15 @@ impl Build for Packet {
     fn build(&self, lazy_builder: specs::world::LazyBuilder) -> Result<specs::Entity, Error> {
         match self.keyword {
             Keywords::Extension => {
-                let mut properties = BlockProperties::new(self.identifier.to_string());
+                let mut properties = Properties::new(self.identifier.to_string());
                 for a in self.actions.iter() {
                     if let Action::With(name, value) = a {
                         properties.add(name, value.clone());
                     }
                 }
                 
-                let ident = self.block_identifier.merge(&self.identifier)?;
-                Ok(lazy_builder.with(properties).with(ident).build())
+                // let ident = self.block_identifier.merge(&self.identifier)?;
+                Ok(lazy_builder.with(properties).with(self.identifier.commit()?).build())
             }
             _ => Err("not implemented".into()),
         }
