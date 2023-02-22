@@ -22,3 +22,7 @@ pub use build::Build;
 
 mod visitor;
 pub use visitor::Visitor;
+
+mod properties;
+pub use properties::Properties;
+pub use properties::Property;

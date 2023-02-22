@@ -2,10 +2,10 @@ use specs::Builder;
 use specs::Component;
 use specs::VecStorage;
 
+use super::Properties;
 use super::action;
 use super::Action;
 use super::Build;
-use crate::BlockProperties;
 use crate::Elements;
 use crate::Identifier;
 use crate::Value;
@@ -100,7 +100,7 @@ impl Build for Root {
         &self,
         lazy_builder: specs::world::LazyBuilder,
     ) -> Result<specs::Entity, crate::Error> {
-        let mut properties = BlockProperties::new(self.ident.to_string());
+        let mut properties = Properties::new(self.ident.to_string());
 
         for a in self.action_stack.iter() {
             if let Action::With(name, value) = a {

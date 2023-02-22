@@ -242,7 +242,7 @@ mod tests {
     use tracing_test::traced_test;
 
     #[test]
-    #[traced_test]
+    //#[traced_test]
     fn test_parser() {
         let runmd = r#"
 ``` b
@@ -289,7 +289,7 @@ mod tests {
         let mut compiler = Compiler::new();
         let parser = Parser::new();
         let _parser = parser.parse_file(".test/test.runmd", &mut compiler);
-        let build = compiler
+        let _ = compiler
             .compile()
             .expect("should be able to build self");
 
@@ -304,19 +304,6 @@ mod tests {
             );
         }
 
-        let log = compiler.build_log(build);
-        for (_, e) in log.index() {
-            // trace!("\n\n\t{:#}\n\t{:?}", i, e);
-
-            if let Some(obj) = compiler.compiled().state::<Object>(*e) {
-                obj.as_root().map(|a| {
-                    trace!("\n\nroot {:#}\n{:#?}", a.ident, obj.properties());
-                });
-
-                obj.as_block().map(|b| {
-                    trace!("\n\nblock {:#}\n{:#?}", b.ident(), obj.properties());
-                });
-            }
-        }
+        compiler.visit_last_build(&mut ());
     }
 }
