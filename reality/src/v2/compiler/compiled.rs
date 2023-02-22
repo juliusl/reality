@@ -31,7 +31,7 @@ pub struct Compiled<'a> {
     roots: ReadStorage<'a, Root>,
     /// Build log storage,
     ///
-    build_logs: ReadStorage<'a, BuildLog>,
+    _build_logs: ReadStorage<'a, BuildLog>,
 }
 
 /// Compiled object struct,
