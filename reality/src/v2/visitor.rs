@@ -1,6 +1,6 @@
 use crate::{BlockProperties, Identifier};
 
-use super::{Block, Attribute};
+use super::{Block, Root};
 
 /// Visitor trait for visiting compiled runmd data,
 /// 
@@ -9,9 +9,9 @@ pub trait Visitor {
     /// 
     fn visit_block(&mut self, block: &Block);
 
-    /// Visits an attribute root,
+    /// Visits a root,
     /// 
-    fn visit_root(&mut self, root: &Attribute);
+    fn visit_root(&mut self, root: &Root);
 
     /// Visits a root extension,
     /// 

@@ -1,5 +1,5 @@
 use super::Action;
-use super::Attribute;
+use super::Root;
 use super::Build;
 use crate::BlockProperties;
 use crate::Identifier;
@@ -22,9 +22,9 @@ pub struct Block {
     /// Initialization actions,
     ///
     initialize: Vec<Action>,
-    /// Block attributes,
+    /// Block roots,
     ///
-    attributes: Vec<Attribute>,
+    roots: Vec<Root>,
 }
 
 impl Block {
@@ -34,20 +34,20 @@ impl Block {
         Self {
             ident,
             initialize: vec![],
-            attributes: vec![],
+            roots: vec![],
         }
     }
 
     /// Returns an iterator over extensions this block requires,
     ///
     pub fn requires(&self) -> impl Iterator<Item = &Identifier> {
-        self.attributes.iter().flat_map(|a| a.extensions())
+        self.roots.iter().flat_map(|a| a.extensions())
     }
 
-    /// Returns the last attribute,
+    /// Returns a mutable reference to the last root,
     ///
-    pub fn last_mut(&mut self) -> Option<&mut Attribute> {
-        self.attributes.last_mut()
+    pub fn last_mut(&mut self) -> Option<&mut Root> {
+        self.roots.last_mut()
     }
 
     /// Pushs an initialization action for this block,
@@ -59,19 +59,19 @@ impl Block {
     /// Adds an attribute to the block,
     ///
     pub fn add_attribute(&mut self, ident: Identifier, value: impl Into<Value>) {
-        self.attributes.push(Attribute::new(ident, value));
+        self.roots.push(Root::new(ident, value));
     }
 
-    /// Returns an iterator over attributes,
+    /// Returns an iterator over roots,
     ///
-    pub fn attributes(&self) -> impl Iterator<Item = &Attribute> {
-        self.attributes.iter()
+    pub fn roots(&self) -> impl Iterator<Item = &Root> {
+        self.roots.iter()
     }
 
-    /// Returns the attribute count,
+    /// Returns the root count,
     ///
-    pub fn attribute_count(&self) -> usize {
-        self.attributes.len()
+    pub fn root_count(&self) -> usize {
+        self.roots.len()
     }
 
     /// Returns the block family name,
@@ -109,7 +109,7 @@ impl Display for Block {
         writeln!(f, "_e = true")?;
         writeln!(f)?;
 
-        for a in self.attributes() {
+        for a in self.roots() {
             writeln!(f, r#"[[{}]]"#, self.ident())?;
             writeln!(f, r#"[{}{:#}]"#, self.ident(), a.ident)?;
             writeln!(f, "_e = true")?;

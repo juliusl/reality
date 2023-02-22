@@ -14,11 +14,11 @@ use crate::Value;
 ///
 #[derive(Component, Clone, Debug)]
 #[storage(VecStorage)]
-pub struct Attribute {
+pub struct Root {
     /// Identifier,
     ///
     pub ident: Identifier,
-    /// Value of this attribute,
+    /// Value of this root,
     ///
     pub value: Value,
     /// Stack of actions that will be applied to this attribute during it's transient phase,
@@ -26,7 +26,7 @@ pub struct Attribute {
     action_stack: Vec<Action>,
 }
 
-impl Attribute {
+impl Root {
     /// Returns a new attribute,
     ///
     pub fn new(ident: Identifier, value: impl Into<Value>) -> Self {
@@ -95,7 +95,7 @@ impl Attribute {
     }
 }
 
-impl Build for Attribute {
+impl Build for Root {
     fn build(
         &self,
         lazy_builder: specs::world::LazyBuilder,
