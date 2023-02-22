@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet}, sync::Arc,
 };
 
 use crate::Value;
@@ -50,6 +50,9 @@ impl BlockProperties {
                 BlockProperty::List(values) => {
                     values.push(value.into());
                 }
+                BlockProperty::Properties(_) => {
+                    return;
+                }
                 BlockProperty::Empty | BlockProperty::Required(_) | BlockProperty::Optional(_) => {
                     *existing = BlockProperty::Single(value.into());
                 }
@@ -61,6 +64,13 @@ impl BlockProperties {
                 );
             }
         }
+    }
+
+    /// Add's a readonly block properties reference,
+    /// 
+    pub fn add_readonly_properties(&mut self, properties: &BlockProperties) {
+        let properties = Arc::new(properties.clone());
+        self.map.insert(properties.name().clone(), BlockProperty::Properties(properties));
     }
 
     /// Removes a property,
@@ -85,24 +95,28 @@ impl BlockProperties {
 
     /// Sets a required flag on the property name
     ///
+    #[deprecated]
     pub fn require(&self, property: impl AsRef<str>) -> Self {
         self.with(property, BlockProperty::Required(None))
     }
 
     /// Sets a optional flag on the property name
     ///
+    #[deprecated]
     pub fn optional(&self, property: impl AsRef<str>) -> Self {
         self.with(property, BlockProperty::Optional(None))
     }
 
     /// Sets a required flag on the property name with a default value,
     ///
+    #[deprecated]
     pub fn require_with(&self, property: impl AsRef<str>, default_value: Value) -> Self {
         self.with(property, BlockProperty::Required(Some(default_value)))
     }
 
     /// Sets a optional flag on the property name with a default value,
     ///
+    #[deprecated]
     pub fn optional_with(&self, property: impl AsRef<str>, default_value: Value) -> Self {
         self.with(property, BlockProperty::Optional(Some(default_value)))
     }
@@ -153,6 +167,7 @@ impl BlockProperties {
 
     /// Gets query parameters found in this collection
     ///
+    #[deprecated]
     fn query_parameters(&self) -> impl Iterator<Item = (&String, &BlockProperty)> {
         self.map.iter().filter(|(_, prop)| match prop {
             BlockProperty::Required(_) | BlockProperty::Optional(_) => true,
@@ -176,7 +191,7 @@ impl BlockProperties {
     ///
     pub fn take(&mut self, name: impl AsRef<str>) -> Option<BlockProperty> {
         self.map.get_mut(name.as_ref()).and_then(|b| match b {
-            BlockProperty::Single(_) | BlockProperty::List(_) => {
+            BlockProperty::Single(_) | BlockProperty::List(_) | BlockProperty::Properties(_) => {
                 let taken = Some(b.clone());
                 *b = BlockProperty::Empty;
                 taken

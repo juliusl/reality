@@ -176,9 +176,12 @@ impl Parser {
             Ok(())
         } else {
             if incoming.is_add() {
+                let block = Arc::new(incoming.block_identifier.clone());
+                incoming.identifier.set_parent(block.clone());
                 let mut next_root = incoming.identifier.clone();
-                next_root.set_parent(Arc::new(incoming.block_identifier.clone()));
+                next_root.set_parent(block);
                 self.root_identifier = Some(Arc::new(next_root));
+
             }
 
             dest.on_packet(incoming)
@@ -307,11 +310,11 @@ mod tests {
 
             if let Some(obj) = compiler.compiled().state::<Object>(*e) {
                 obj.as_root().map(|a| {
-                    trace!("attr {:#}", a.ident);
+                    trace!("\n\nroot {:#}\n{:#?}", a.ident, obj.properties());
                 });
 
                 obj.as_block().map(|b| {
-                    trace!("block {:#}", b.ident());
+                    trace!("\n\nblock {:#}\n{:#?}", b.ident(), obj.properties());
                 });
             }
         }

@@ -66,6 +66,9 @@ impl WireObject for BlockProperties {
                         encoder.frames.push(frame);
                     }
                 }
+                crate::BlockProperty::Properties(_) => {
+                    todo!()
+                }
                 crate::BlockProperty::Required(value) => {
                     let mut frame = Frame::define(
                         &properties_name,

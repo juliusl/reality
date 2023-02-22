@@ -1,5 +1,5 @@
-use crate::Value;
-use std::fmt::Display;
+use crate::{Value, BlockProperties};
+use std::{fmt::Display, sync::Arc};
 
 /// Enumeration of property types
 ///
@@ -9,9 +9,13 @@ pub enum BlockProperty {
     Single(Value),
     /// Property is a list of values
     List(Vec<Value>),
+    /// Property is a read-only reference to block properties,
+    Properties(Arc<BlockProperties>),
     /// Reverse property that indicates this property name is required
+    #[deprecated]
     Required(Option<Value>),
     /// Reverse property that indiciates this property name is required
+    #[deprecated]
     Optional(Option<Value>),
     /// Indicates that this block property is currently empty
     Empty,
@@ -129,6 +133,10 @@ impl BlockProperty {
         match self {
             BlockProperty::Single(single) => on_single(single),
             BlockProperty::List(list) => on_list(list.as_mut()),
+            BlockProperty::Properties(_) => {
+                // read-only
+                return;
+            }
             BlockProperty::Empty => match on_empty() {
                 Some(value) => *self = BlockProperty::Single(value),
                 None => {}
@@ -163,6 +171,7 @@ impl Display for BlockProperty {
                 }
                 Ok(())
             }
+            BlockProperty::Properties(_) =>  write!(f, "properties - todo display"),
             BlockProperty::Required(_) => write!(f, "required, value is not set"),
             BlockProperty::Optional(_) => write!(f, "optional, value is not set"),
             BlockProperty::Empty => write!(f, "empty value"),
@@ -178,11 +187,11 @@ pub fn display_value(f: &mut std::fmt::Formatter<'_>, value: &Value) -> std::fmt
         Value::Bool(b) => write!(f, "{b}"),
         Value::TextBuffer(t) => write!(f, "{t}"),
         Value::Int(i) => write!(f, "{i}"),
-        Value::IntPair(i1, i2) => write!(f, "({i1}, {i2})"),
-        Value::IntRange(i1, i2, i3) => write!(f, "({i1}, {i2}, {i3})"),
+        Value::IntPair(i1, i2) => write!(f, "[{i1}, {i2}]"),
+        Value::IntRange(i1, i2, i3) => write!(f, "[{i1}, {i2}, {i3}]"),
         Value::Float(f1) => write!(f, "{f1}"),
-        Value::FloatPair(f1, f2) => write!(f, "({f1}, {f2})"),
-        Value::FloatRange(f1, f2, f3) => write!(f, "({f1}, {f2}, {f3})"),
+        Value::FloatPair(f1, f2) => write!(f, "[{f1}, {f2}]"),
+        Value::FloatRange(f1, f2, f3) => write!(f, "[{f1}, {f2}, {f3}]"),
         Value::BinaryVector(bin) => write!(f, "binary-vector omitted, len: {}", bin.len()),
         Value::Reference(r) => write!(f, "ref:{r}"),
         Value::Symbol(s) => write!(f, "{s}"),

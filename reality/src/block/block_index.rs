@@ -75,6 +75,7 @@ impl BlockIndex {
                 Some(property) => match property {
                     BlockProperty::Single(_) => Some(property.clone()),
                     BlockProperty::List(_) => Some(property.clone()),
+                    BlockProperty::Properties(_) => Some(property.clone()),
                     BlockProperty::Required(_) => panic!("Missing required property {}", name.as_ref()),
                     BlockProperty::Optional(_) => None,
                     BlockProperty::Empty => None,

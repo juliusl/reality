@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::ops::Deref;
 use specs::WorldExt;
 use specs::World;
@@ -111,7 +111,7 @@ impl Compiler {
 
     /// Visits a build,
     /// 
-    pub fn visit_build(&self, build: Entity, visitor: impl Visitor) {
+    pub fn visit_build(&self, _build: Entity, _visitor: impl Visitor) {
         todo!()
     }
 }
@@ -166,11 +166,13 @@ impl Build for Compiler {
 #[derive(Component, Clone, Default)]
 #[storage(HashMapStorage)]
 pub struct BuildLog {
-    index: HashMap<Identifier, Entity>,
+    index: BTreeMap<Identifier, Entity>,
 }
 
 impl BuildLog {
-    pub fn index(&self) -> &HashMap<Identifier, Entity> {
+    /// Returns a reference to the build log's index,
+    /// 
+    pub fn index(&self) -> &BTreeMap<Identifier, Entity> {
         &self.index
     }
 }
