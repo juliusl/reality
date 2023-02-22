@@ -40,7 +40,7 @@ impl Block {
 
     /// Returns an iterator over extensions this block requires,
     ///
-    pub fn requires(&self) -> impl Iterator<Item = &Action> {
+    pub fn requires(&self) -> impl Iterator<Item = &Identifier> {
         self.attributes.iter().flat_map(|a| a.extensions())
     }
 

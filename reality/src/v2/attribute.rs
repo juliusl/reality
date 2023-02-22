@@ -61,9 +61,9 @@ impl Attribute {
 
     /// Returns an iterator over the extensions required by this attribute,
     ///
-    pub fn extensions(&self) -> impl Iterator<Item = &Action> {
+    pub fn extensions(&self) -> impl Iterator<Item = &Identifier> {
         self.action_stack().filter_map(|a| match a {
-            Action::Extend(_) => Some(a),
+            Action::Extend(ident) => Some(ident),
             _ => None,
         })
     }

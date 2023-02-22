@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use specs::Builder;
 use specs::Component;
 use specs::VecStorage;
