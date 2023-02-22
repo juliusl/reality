@@ -19,8 +19,6 @@ pub mod wire;
 pub mod store;
 pub mod state;
 
-pub mod compiler;
-
 mod interpreter;
 pub use interpreter::Interpreter;
 

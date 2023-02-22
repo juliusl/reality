@@ -179,7 +179,9 @@ impl Parser {
             Ok(())
         } else {
             if incoming.is_add() {
-                self.root_identifier = Some(Arc::new(incoming.identifier.clone()));
+                let mut next_root = incoming.identifier.clone();
+                next_root.set_parent(Arc::new(incoming.block_identifier.clone()));
+                self.root_identifier = Some(Arc::new(next_root));
             }
 
             dest.on_packet(incoming)
@@ -231,15 +233,17 @@ impl Parser {
 #[allow(unused_imports)]
 mod tests {
     use super::Parser;
-    use crate::{v2::{BlockList, parser::WorldBuilder}, Identifier, BlockProperties};
-    use specs::{ReadStorage, Join, WorldExt};
+    use crate::{
+        v2::{parser::WorldBuilder, BlockList},
+        BlockProperties, Identifier,
+    };
+    use specs::{Join, ReadStorage, WorldExt};
     use tracing::trace;
     use tracing_test::traced_test;
 
     #[test]
     #[traced_test]
     fn test_parser() {
-        let mut compiler = BlockList::default();
         let runmd = r#"
 ``` b
 : test .true
@@ -280,31 +284,29 @@ mod tests {
 "#;
 
         std::fs::create_dir_all(".test").expect("should be able to create test dir");
-        std::fs::write(".test/.runmd", runmd).expect("should be able to write");
         std::fs::write(".test/test.runmd", runmd).expect("should be able to write");
-
-        let parser = Parser::new();
-        let _parser = parser.parse_file(".test/.runmd", &mut compiler);
-        for (_, b) in compiler.blocks() {
-            println!("{}", b);
-        }
-
-        let parser = Parser::new();
-        let _parser = parser.parse_file(".test/test.runmd", &mut compiler);
-        for (_, b) in compiler.blocks() {
-            println!("{}", b);
-        }
 
         let mut world_compiler = WorldBuilder::new();
         let parser = Parser::new();
         let _parser = parser.parse_file(".test/test.runmd", &mut world_compiler);
+        let build = world_compiler
+            .update()
+            .expect("should be able to build self");
 
         let world = world_compiler.as_mut();
         world.maintain();
-        world.exec(|(identities, properties): (ReadStorage<Identifier>, ReadStorage<BlockProperties>)| {
-            for (ident, properties) in (&identities, &properties).join() {
-                trace!("\n\n{:#}\n{:#?}\n", ident, properties);
-            }
-        });
+        world.exec(
+            |(identities, properties): (ReadStorage<Identifier>, ReadStorage<BlockProperties>)| {
+                for (ident, properties) in (&identities, &properties).join() {
+                    trace!("\n\n{:#}\n{:#?}\n", ident, properties);
+                }
+            },
+        );
+
+        let log = world_compiler.build_log(build);
+
+        for (i, e) in log.index() {
+            trace!("\n\n\t{:#}\n\t{:?}", i, e);
+        }
     }
 }

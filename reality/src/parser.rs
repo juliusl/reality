@@ -1,6 +1,5 @@
 use logos::Logos;
 use specs::Entity;
-use specs::LazyUpdate;
 use specs::World;
 use specs::WorldExt;
 use tracing::trace;
@@ -11,8 +10,6 @@ use tracing::event;
 use tracing::Level;
 
 use crate::Metadata;
-use crate::compiler::ExtensionCompileFunc;
-use crate::compiler::Root;
 use crate::Block;
 use crate::BlockIndex;
 use crate::BlockProperties;
@@ -74,108 +71,6 @@ pub struct Parser {
     /// Metadata including runmd source and current cursor position,
     /// 
     pub metadata: Metadata,
-}
-
-/// Struct for stopping the parser after it parses a token, and to continue where it left off,
-///
-pub struct ContinueParserToken {
-    parser: Parser,
-    keyword: Keywords,
-    remaining: Option<String>,
-    current_line: LineInfo,
-    root: Option<Root>,
-}
-
-pub struct LineInfo {
-    pub name: Option<String>,
-    pub entity: Option<Entity>,
-    pub symbol: Option<String>,
-    pub value: Option<Value>,
-}
-
-impl ContinueParserToken {
-    /// Returns the current keyword,
-    ///
-    pub fn keyword(&self) -> &Keywords {
-        &self.keyword
-    }
-
-    pub fn line_info(&self) -> &LineInfo {
-        &self.current_line
-    }
-
-    /// Returns a mutable reference to parser,
-    ///
-    pub fn parser_mut(&mut self) -> &mut Parser {
-        &mut self.parser
-    }
-
-    pub fn parser(&self) -> &Parser {
-        &self.parser
-    }
-
-    pub fn add_compile(&mut self, compile: ExtensionCompileFunc) {
-        if let Some(root) = self.root.as_mut() {
-            root.add_extension_compile(compile);
-        }
-    }
-
-    /// Parses next keyword,
-    ///
-    pub fn parse_next(mut self) -> Result<ContinueParserToken, Parser> {
-        if let Some(remaining) = self.remaining.take() {
-            let mut root = self.root.take();
-
-            let parser: Parser = self.into();
-
-            match parser.parse_once(remaining) {
-                Ok(mut next) if next.root.is_none() => {
-                    next.root = root;
-                    Ok(next)
-                }
-                Ok(mut next) => {
-                    if let Some(root) = root.take() {
-                        if let Some(entity) = next.parser.parse_property().entity() {
-                            next.parser
-                                .world()
-                                .read_resource::<LazyUpdate>()
-                                .insert(entity, root)
-                        }
-                    }
-
-                    Ok(next)
-                }
-                Err(mut parser) => {
-                    if let Some(root) = root.take() {
-                        if let Some(entity) = parser.parse_property().entity() {
-                            parser
-                                .world()
-                                .read_resource::<LazyUpdate>()
-                                .insert(entity, root)
-                        }
-                    }
-
-                    Err(parser)
-                }
-            }
-        } else {
-            if let Some(root) = self.root.take() {
-                if let Some(entity) = self.parser.parse_property().entity() {
-                    self.parser
-                        .world()
-                        .read_resource::<LazyUpdate>()
-                        .insert(entity, root)
-                }
-            }
-            Err(self.into())
-        }
-    }
-}
-
-impl<'a> Into<Parser> for ContinueParserToken {
-    fn into(self) -> Parser {
-        self.parser
-    }
 }
 
 impl AsRef<World> for Parser {
@@ -446,70 +341,6 @@ impl Parser {
         }
 
         lexer.extras
-    }
-
-    /// Parses .runmd content, updating internal state once, and returns a continuation token,
-    ///
-    /// If parsing is complete, returns the parser in an Error,
-    ///
-    pub fn parse_once<'a>(self, content: impl AsRef<str>) -> Result<ContinueParserToken, Parser> {
-        let mut lexer = Keywords::lexer_with_extras(content.as_ref(), self);
-        if let Some(token) = lexer.next() {
-            let remaining = lexer.remainder();
-
-            let mut parser = lexer.extras;
-
-            let mut current_name = None::<String>;
-            let mut current_symbol = None::<String>;
-            let mut current_entity = None::<Entity>;
-            let mut current_value = None::<Value>;
-            let mut current_root = None::<Root>;
-
-            match token {
-                Keywords::Extension => {
-                    if let Some(top) = parser.parser_top() {
-                        current_name = top.name().cloned();
-                        current_entity = top.entity();
-                        current_symbol = top.property().cloned();
-                        current_value = Some(top.value().clone());
-                    }
-                }
-                Keywords::Add | Keywords::Define => {
-                    if let Some(top) = parser.parser_top() {
-                        current_name = top.name().cloned();
-                        if let Some(name) = current_name.as_ref() {
-                            if let Keywords::Add = token {
-                                current_root = Some(Root::new(name));
-                            }
-                        }
-                        if let Some(attr) = top.peek() {
-                            if let Some((symbol, value)) = attr.transient() {
-                                current_symbol = Some(symbol.to_string());
-                                current_value = Some(value.clone());
-                            }
-
-                            current_entity = Some(top.world().unwrap().entities().entity(attr.id));
-                        }
-                    }
-                }
-                _ => {}
-            }
-
-            Ok(ContinueParserToken {
-                parser,
-                keyword: token,
-                remaining: Some(remaining.to_string()),
-                current_line: LineInfo {
-                    name: current_name.clone(),
-                    entity: current_entity.clone(),
-                    symbol: current_symbol.clone(),
-                    value: current_value.clone(),
-                },
-                root: current_root,
-            })
-        } else {
-            Err(lexer.extras)
-        }
     }
 
     /// Gets a block from the parser

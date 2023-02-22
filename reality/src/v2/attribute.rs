@@ -1,11 +1,14 @@
-use specs::VecStorage;
+use specs::Builder;
 use specs::Component;
+use specs::VecStorage;
 
+use super::action;
+use super::Action;
+use super::Build;
+use crate::BlockProperties;
 use crate::Elements;
 use crate::Identifier;
 use crate::Value;
-use super::Action;
-use super::action;
 
 /// V2 version of the Attribute struct,
 ///
@@ -35,7 +38,7 @@ impl Attribute {
     }
 
     /// Includes a tag w/ the identifier,
-    /// 
+    ///
     pub fn set_tags(&mut self, tags: impl AsRef<str>) {
         use logos::Logos;
 
@@ -48,7 +51,7 @@ impl Attribute {
                         self.ident.add_tag(t);
                     }
                     return;
-                },
+                }
                 _ => {
                     continue;
                 }
@@ -89,5 +92,26 @@ impl Attribute {
     pub fn extend(mut self, ident: &Identifier) -> Self {
         self.action_stack.push(action::extend(ident));
         self
+    }
+}
+
+impl Build for Attribute {
+    fn build(
+        &self,
+        lazy_builder: specs::world::LazyBuilder,
+    ) -> Result<specs::Entity, crate::Error> {
+        let mut properties = BlockProperties::new(self.ident.to_string());
+
+        for a in self.action_stack.iter() {
+            if let Action::With(name, value) = a {
+                properties.add(name, value.clone());
+            }
+        }
+
+        Ok(lazy_builder
+            .with(properties)
+            .with(self.clone())
+            .with(self.ident.commit()?)
+            .build())
     }
 }

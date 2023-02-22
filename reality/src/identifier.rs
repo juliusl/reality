@@ -160,6 +160,17 @@ impl Identifier {
         format!("{:#}", c).parse()
     }
 
+    /// Returns a merged identifier,
+    /// 
+    /// The current identifier will be set as the parent of the other identifier (after the other identifier is committed).
+    /// The result is the committed merged identifier.
+    /// 
+    pub fn merge(&self, other: &Identifier) -> Result<Identifier, Error> {
+        let mut merged = other.commit()?;
+        merged.set_parent(Arc::new(self.commit()?));
+        merged.commit()
+    }
+
     /// Truncates the identifier by count,
     ///
     pub fn truncate(&self, count: usize) -> Result<Identifier, Error> {
@@ -618,5 +629,15 @@ mod tests {
         let ident: Identifier = "a.b.c".parse().expect("should parse");
 
         ident.truncate(3).expect("should error");
+    }
+
+    #[test]
+    fn test_merge() {
+        let a = "main.id".parse::<Identifier>().expect("should parse");
+        let b = "other.id".parse::<Identifier>().expect("should parse");
+
+        let ab = a.merge(&b).expect("should merge");
+
+        assert_eq!("main.id.other.id", ab.to_string().as_str());
     }
 }
