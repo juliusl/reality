@@ -58,7 +58,7 @@ impl super::parser::PacketHandler for BlockList {
                     keyword: Keywords::Define,
                     mut actions,
                     ..
-                } if !actions.is_empty() && block.attribute_count() == 0 => {
+                } if !actions.is_empty() && block.root_count() == 0 => {
                     for a in actions.drain(..) {
                         block.initialize_with(a);
                     }
@@ -67,7 +67,7 @@ impl super::parser::PacketHandler for BlockList {
                     keyword: Keywords::Define,
                     mut actions,
                     ..
-                } if !actions.is_empty() && block.attribute_count() > 0 => {
+                } if !actions.is_empty() && block.root_count() > 0 => {
                     block.last_mut().map(|l| {
                         for a in actions.drain(..) {
                             l.push(a);

@@ -13,7 +13,7 @@ use crate::BlockProperties;
 use crate::v2::Build;
 use crate::v2::BlockList;
 use crate::v2::Block;
-use crate::v2::Attribute;
+use crate::v2::Root;
 use super::Visitor;
 use super::parser::Packet;
 use super::parser::PacketHandler;
@@ -47,7 +47,7 @@ impl Compiler {
         world.register::<Identifier>();
         world.register::<BlockProperties>();
         world.register::<Block>();
-        world.register::<Attribute>();
+        world.register::<Root>();
         world.register::<BuildLog>();
         Compiler {
             world,
@@ -151,7 +151,7 @@ impl Build for Compiler {
             let e = self.lazy_build(block)?;
             log.index.insert(ident.commit()?, e);
 
-            for a in block.attributes() {
+            for a in block.roots() {
                 let e = self.lazy_build(a)?;
                 log.index.insert(a.ident.commit()?, e);
             }

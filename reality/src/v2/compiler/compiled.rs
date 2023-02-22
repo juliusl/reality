@@ -1,7 +1,7 @@
 use super::BuildLog;
 use crate::state::Load;
 use crate::state::Provider;
-use crate::v2::Attribute;
+use crate::v2::Root;
 use crate::v2::Block;
 use crate::BlockProperties;
 use crate::Identifier;
@@ -26,9 +26,9 @@ pub struct Compiled<'a> {
     /// Block storage,
     ///
     blocks: ReadStorage<'a, Block>,
-    /// Attribute storage,
+    /// Root storage,
     ///
-    attributes: ReadStorage<'a, Attribute>,
+    roots: ReadStorage<'a, Root>,
     /// Build log storage,
     ///
     build_logs: ReadStorage<'a, BuildLog>,
@@ -46,9 +46,9 @@ pub struct ObjectData<'a> {
     /// Compiled source block,
     /// 
     block: Option<&'a Block>,
-    /// Compiled root attribute,
+    /// Compiled root,
     /// 
-    attribute: Option<&'a Attribute>,
+    root: Option<&'a Root>,
 }
 
 /// Enumeration of compiled object hierarchy,
@@ -57,7 +57,7 @@ pub struct ObjectData<'a> {
 /// 
 /// Block
 ///      |
-///      ---> Root (Attribute)
+///      ---> Root
 ///              |
 ///              ----> Extensions
 /// 
@@ -115,11 +115,11 @@ impl<'a> Object<'a> {
         }
     }
 
-    /// Returns this object as an attribute,
+    /// Returns this object as a root attribute,
     /// 
-    pub fn as_attribute(&self) -> Option<&Attribute> {
+    pub fn as_root(&self) -> Option<&Root> {
         match self {
-            Object::Root(d) => d.attribute,
+            Object::Root(d) => d.root,
             _ => None,
         }
     }
@@ -140,23 +140,23 @@ pub type ObjectFormat<'a> = (
     &'a ReadStorage<'a, Identifier>,
     &'a ReadStorage<'a, BlockProperties>,
     MaybeJoin<&'a ReadStorage<'a, Block>>,
-    MaybeJoin<&'a ReadStorage<'a, Attribute>>,
+    MaybeJoin<&'a ReadStorage<'a, Root>>,
 );
 
 impl<'a> Load for Object<'a> {
     type Layout = ObjectFormat<'a>;
 
-    fn load((identifier, properties, block, attribute): <Self::Layout as Join>::Type) -> Self {
+    fn load((identifier, properties, block, root): <Self::Layout as Join>::Type) -> Self {
         let object_data = ObjectData {
             identifier,
             properties,
             block,
-            attribute,
+            root,
         };
 
         if block.is_some() {
             Object::<'a>::Block(object_data)
-        } else if attribute.is_some() {
+        } else if root.is_some() {
             Object::<'a>::Root(object_data)
         } else {
             Object::<'a>::Extension(object_data)
@@ -170,7 +170,7 @@ impl<'a> Provider<'a, ObjectFormat<'a>> for Compiled<'a> {
             &self.identifier,
             &self.properties,
             self.blocks.maybe(),
-            self.attributes.maybe(),
+            self.roots.maybe(),
         )
     }
 }

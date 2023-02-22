@@ -306,11 +306,13 @@ mod tests {
             // trace!("\n\n\t{:#}\n\t{:?}", i, e);
 
             if let Some(obj) = compiler.compiled().state::<Object>(*e) {
-                if obj.is_root() {
-                    obj.as_attribute().map(|a| {
-                        trace!("attr {:#}", a.ident);
-                    });
-                }
+                obj.as_root().map(|a| {
+                    trace!("attr {:#}", a.ident);
+                });
+
+                obj.as_block().map(|b| {
+                    trace!("block {:#}", b.ident());
+                });
             }
         }
     }
