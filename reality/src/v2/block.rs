@@ -1,11 +1,13 @@
-use std::fmt::Display;
-
 use super::Action;
 use super::Attribute;
+use super::Build;
+use crate::BlockProperties;
 use crate::Identifier;
 use crate::Value;
+use specs::Builder;
 use specs::Component;
 use specs::HashMapStorage;
+use std::fmt::Display;
 
 /// Struct representing a .runmd block,
 ///
@@ -13,12 +15,12 @@ use specs::HashMapStorage;
 #[storage(HashMapStorage)]
 pub struct Block {
     /// Identifier,
-    /// 
+    ///
     /// The root segment, pos(0) of the identifier is the family name, pos(1) is the name of the block,
     ///
     ident: Identifier,
     /// Initialization actions,
-    /// 
+    ///
     initialize: Vec<Action>,
     /// Block attributes,
     ///
@@ -49,7 +51,7 @@ impl Block {
     }
 
     /// Pushs an initialization action for this block,
-    /// 
+    ///
     pub fn initialize_with(&mut self, action: Action) {
         self.initialize.push(action);
     }
@@ -61,13 +63,13 @@ impl Block {
     }
 
     /// Returns an iterator over attributes,
-    /// 
+    ///
     pub fn attributes(&self) -> impl Iterator<Item = &Attribute> {
         self.attributes.iter()
     }
 
     /// Returns the attribute count,
-    /// 
+    ///
     pub fn attribute_count(&self) -> usize {
         self.attributes.len()
     }
@@ -89,13 +91,13 @@ impl Block {
     }
 
     /// Returns the ident for this block,
-    /// 
+    ///
     pub fn ident(&self) -> &Identifier {
         &self.ident
     }
 
     /// Finalizes this block,
-    /// 
+    ///
     pub fn finalize(&mut self) {
         self.ident.add_tag("block");
     }
@@ -126,7 +128,7 @@ impl Display for Block {
                             writeln!(f, "_e = true")?;
                         }
                         writeln!(f)?;
-                    },
+                    }
                     _ => {}
                 }
             }
@@ -134,5 +136,26 @@ impl Display for Block {
         }
 
         Ok(())
+    }
+}
+
+impl Build for Block {
+    fn build(
+        &self,
+        lazy_builder: specs::world::LazyBuilder,
+    ) -> Result<specs::Entity, crate::Error> {
+        let mut properties = BlockProperties::new(self.ident.to_string());
+
+        for a in self.initialize.iter() {
+            if let Action::With(name, value) = a {
+                properties.add(name, value.clone());
+            }
+        }
+
+        Ok(lazy_builder
+            .with(properties)
+            .with(self.ident.commit()?)
+            .with(self.clone())
+            .build())
     }
 }

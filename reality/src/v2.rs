@@ -9,6 +9,7 @@ pub use block::Block;
 
 mod parser;
 pub use parser::Parser;
+pub use parser::WorldBuilder;
 
 mod block_list;
 pub use block_list::BlockList;

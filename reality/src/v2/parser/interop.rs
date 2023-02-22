@@ -214,11 +214,8 @@ impl Build for Packet {
                         properties.add(name, value.clone());
                     }
                 }
-
-                let mut ident = self.identifier.commit()?;
-                ident.set_parent(Arc::new(self.block_identifier.clone()));
-                let ident = ident.commit()?;
-
+                
+                let ident = self.block_identifier.merge(&self.identifier)?;
                 Ok(lazy_builder.with(properties).with(ident).build())
             }
             _ => Err("not implemented".into()),
