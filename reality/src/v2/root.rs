@@ -100,7 +100,7 @@ impl Build for Root {
         &self,
         lazy_builder: specs::world::LazyBuilder,
     ) -> Result<specs::Entity, crate::Error> {
-        let mut properties = Properties::new(self.ident.commit()?);
+        let mut properties = Properties::new(self.ident.clone());
 
         for a in self.action_stack.iter() {
             if let Action::With(name, value) = a {
@@ -111,7 +111,7 @@ impl Build for Root {
         Ok(lazy_builder
             .with(properties)
             .with(self.clone())
-            .with(self.ident.commit()?)
+            .with(self.ident.clone())
             .build())
     }
 }

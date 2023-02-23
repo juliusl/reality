@@ -144,7 +144,7 @@ impl Build for Block {
         &self,
         lazy_builder: specs::world::LazyBuilder,
     ) -> Result<specs::Entity, crate::Error> {
-        let mut properties = Properties::new(self.ident.commit()?);
+        let mut properties = Properties::new(self.ident.clone());
 
         for a in self.initialize.iter() {
             if let Action::With(name, value) = a {
@@ -154,7 +154,7 @@ impl Build for Block {
 
         Ok(lazy_builder
             .with(properties)
-            .with(self.ident.commit()?)
+            .with(self.ident.clone())
             .with(self.clone())
             .build())
     }

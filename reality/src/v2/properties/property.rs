@@ -230,3 +230,27 @@ impl<'a> Index<usize> for Property {
         }
     }
 }
+
+impl From<Arc<Properties>> for Property {
+    fn from(value: Arc<Properties>) -> Self {
+        Property::Properties(value)
+    }
+}
+
+impl From<Value> for Property {
+    fn from(value: Value) -> Self {
+        Property::Single(value)
+    }
+}
+
+impl From<Vec<Value>> for Property {
+    fn from(value: Vec<Value>) -> Self {
+        Property::List(value)
+    }
+}
+
+/// Returns a property from a value,
+/// 
+pub fn property_value(value: impl Into<Value>) -> Property {
+    Property::Single(value.into())
+}
