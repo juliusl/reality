@@ -206,15 +206,14 @@ impl Build for Packet {
     fn build(&self, lazy_builder: specs::world::LazyBuilder) -> Result<specs::Entity, Error> {
         match self.keyword {
             Keywords::Extension => {
-                let mut properties = Properties::new(self.identifier.commit()?);
+                let mut properties = Properties::new(self.identifier.clone());
                 for a in self.actions.iter() {
                     if let Action::With(name, value) = a {
                         properties.add(name, value.clone());
                     }
                 }
                 
-                // let ident = self.block_identifier.merge(&self.identifier)?;
-                Ok(lazy_builder.with(properties).with(self.identifier.commit()?).build())
+                Ok(lazy_builder.with(properties).with(self.identifier.clone()).build())
             }
             _ => Err("not implemented".into()),
         }

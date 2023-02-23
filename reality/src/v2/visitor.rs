@@ -174,6 +174,6 @@ pub trait Visitor {
 
 impl Visitor for () {
     fn visit_identifier(&mut self, identifier: &Identifier) {
-        println!("{:#}", identifier);
+        println!("{:#?}", identifier);
     }
 }

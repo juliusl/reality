@@ -1,4 +1,5 @@
 use std::ops::Index;
+use std::ops::IndexMut;
 use std::sync::Arc;
 use std::collections::BTreeMap;
 use specs::VecStorage;
@@ -8,6 +9,7 @@ use crate::Value;
 
 mod property;
 pub use property::Property;
+pub use property::property_value;
 
 /// Component for a map of property attributes
 ///
@@ -83,6 +85,12 @@ impl Properties {
         self.map.insert(name.as_ref().to_string(), property);
     }
 
+    /// Returns true if this map contains a property w/ name,
+    /// 
+    pub fn contains(&mut self, name: impl AsRef<str>) -> bool {
+        self.map.contains_key(name.as_ref())
+    }
+
     /// Returns a clone of self w/ property
     ///
     pub fn with(&self, name: impl AsRef<str>, property: Property) -> Self {
@@ -137,9 +145,19 @@ impl<'a> Index<&'a str> for Properties {
     }
 }
 
+impl<'a> IndexMut<&'a str> for Properties {
+    fn index_mut(&mut self, index: &'a str) -> &mut Self::Output {
+        if !self.contains(index) {
+            self.add(index, Value::Empty);
+        }
+
+        self.property_mut(index).expect("should exist just added")
+    }
+}
+
 #[allow(unused_imports)]
 mod tests {
-    use crate::Identifier;
+    use crate::{Identifier, v2::{Property, properties::property::property_value}, Value};
     use super::Properties;
 
     #[test]
@@ -155,5 +173,8 @@ mod tests {
         _inner.add("test-symbol-a", "test-symbol-a");
         properties.add_readonly_properties(&_inner);
         assert_eq!("test-symbol-a", properties["testa"]["test-symbol-a"].as_symbol().unwrap());
+
+        properties["test-mut"] = property_value("test-mut-value");
+        assert_eq!("test-mut-value", properties["test-mut"].as_symbol().unwrap());
     }
 }

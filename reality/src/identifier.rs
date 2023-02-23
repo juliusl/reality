@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::fmt::Write;
+use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 use tracing::trace;
@@ -77,6 +78,12 @@ impl Identifier {
     /// 
     pub fn set_parent(&mut self, identifier: Arc<Identifier>) {
         self.parent = Some(identifier);
+    }
+
+    /// Returns the current parent identifier,
+    /// 
+    pub fn parent(&self) -> Option<Arc<Identifier>> {
+        self.parent.clone()
     }
 
     /// Returns the current length of this identifier,
@@ -299,6 +306,20 @@ impl Identifier {
     fn should_escape_with_quotes(s: &str) -> bool {
         s.contains(".") || s.contains(" ") || s.contains("\t")
     }
+
+    /// Returns immediate ancestors of this identifier,
+    /// 
+    pub fn ancestors(&self) -> Vec<Identifier> {
+        let mut start = self.clone();
+        let mut parts = vec![];
+
+        while let Some(parent) = start.parent() {
+            parts.push(parent.deref().clone());
+            start = parent.deref().clone();
+        }
+
+        parts
+    }
 }
 
 /// Tries to seperate buf into parts,
@@ -454,6 +475,8 @@ impl FromStr for Identifier {
 
 #[allow(unused_imports)]
 mod tests {
+    use std::sync::Arc;
+
     use logos::{Lexer, Logos};
     use tracing_test::traced_test;
 
@@ -613,6 +636,15 @@ mod tests {
 
         let ident = ident.branch(" .").expect("should join");
         assert_eq!(r#".input." .""#, format!("{ident}").as_str());
+    }
+
+    #[test]
+    fn test_ancestors() {
+        let ident = "test.a".parse::<Identifier>().unwrap();
+        let mut ident_a = "b.c".parse::<Identifier>().unwrap();
+        ident_a.set_parent(Arc::new(ident.clone()));
+
+        assert_eq!(ident, ident_a.ancestors()[0]);
     }
 
     #[test]
