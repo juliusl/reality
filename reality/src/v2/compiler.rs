@@ -108,9 +108,14 @@ impl Compiler {
 
     /// Visits the last build,
     /// 
-    pub fn visit_last_build(&self, visitor: &mut impl Visitor) {
+    /// Returns the entity of the last build that was visited,
+    /// 
+    pub fn visit_last_build(&self, visitor: &mut impl Visitor) -> Option<Entity>{
         if let Some(last) = self.builds.last() {
             self.visit_build(*last, visitor);
+            Some(*last)
+        } else {
+            None
         }
     }
 

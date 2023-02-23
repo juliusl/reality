@@ -234,10 +234,11 @@ impl Parser {
 mod tests {
     use super::Parser;
     use crate::{
-        v2::{Compiler, BlockList, compiler::Compiled, Object},
+        v2::{Compiler, BlockList, compiler::Compiled, Object, toml::DocumentBuilder},
         BlockProperties, Identifier, state::Provider,
     };
     use specs::{Join, ReadStorage, WorldExt};
+    use toml_edit::Document;
     use tracing::trace;
     use tracing_test::traced_test;
 
@@ -255,6 +256,14 @@ mod tests {
 <> .input lhs : .type stdin
 <test> .input rhs
 <> .eval  sum
+
++ .op add
+: lhs .float
+: rhs .float
+: sum .float
+<> .input lhs : .type stdin
+<> .input rhs : .type stdin
+<> .eval  sum
 ```
 
 ``` a
@@ -266,6 +275,8 @@ mod tests {
 : count .int 1
 : test .env /host
 : rust_log .env reality=trace
+: first  .arg hello
+: second .arg world
 <test> .input rhs
 <> debug .eval diff
 
@@ -293,6 +304,10 @@ mod tests {
             .compile()
             .expect("should be able to build self");
 
-        compiler.visit_last_build(&mut ());
+        let mut doc_builder = DocumentBuilder::new();
+        compiler.visit_last_build(&mut doc_builder);
+
+        let doc: Document = doc_builder.into();
+        println!("{:#}", doc);
     }
 }

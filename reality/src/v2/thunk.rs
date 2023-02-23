@@ -12,7 +12,7 @@ use super::Properties;
 /// 
 /// Before the thunk is called, it will be cloned
 /// 
-#[derive(Default, Component)]
+#[derive(Default, Component, Clone)]
 #[storage(VecStorage)]
 pub struct Thunk<T: Send + Sync + 'static>(T);
 
