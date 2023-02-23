@@ -320,6 +320,12 @@ impl Identifier {
 
         parts
     }
+
+    /// Return identifier parts,
+    /// 
+    pub fn parts(&self) -> Result<Vec<String>, Error> {
+        parts(&self.buf)
+    }
 }
 
 /// Tries to seperate buf into parts,
