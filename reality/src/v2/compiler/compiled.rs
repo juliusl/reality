@@ -5,6 +5,8 @@ use crate::v2::Properties;
 use crate::v2::Root;
 use crate::v2::Block;
 use crate::Identifier;
+use crate::v2::ThunkBuild;
+use crate::v2::ThunkCall;
 use specs::join::MaybeJoin;
 use specs::prelude::*;
 use specs::ReadStorage;
@@ -29,6 +31,12 @@ pub struct Compiled<'a> {
     /// Root storage,
     ///
     roots: ReadStorage<'a, Root>,
+    /// Thunk call storage,
+    /// 
+    thunk_calls: ReadStorage<'a, ThunkCall>,
+    /// Thunk build storage,
+    /// 
+    thunk_builds: ReadStorage<'a, ThunkBuild>,
     /// Build log storage,
     ///
     build_logs: ReadStorage<'a, BuildLog>,
@@ -57,6 +65,12 @@ pub struct ObjectData<'a> {
     /// Compiled root,
     /// 
     root: Option<&'a Root>,
+    /// Thunk'ed call fn,
+    /// 
+    call: Option<&'a ThunkCall>,
+    /// Thunk'ed build fn,
+    /// 
+    build: Option<&'a ThunkBuild>,
 }
 
 /// Enumeration of compiled object hierarchy,
@@ -140,6 +154,26 @@ impl<'a> Object<'a> {
             _ => None,
         }
     }
+
+    /// Returns the thunk call if one exists,
+    /// 
+    pub fn as_call(&self) -> Option<&ThunkCall> {
+        match self {
+            Object::Block(d) |
+            Object::Root(d) |
+            Object::Extension(d) => d.call,
+        }
+    }
+
+    /// Returns the thunk build if one exists,
+    /// 
+    pub fn as_build(&self) -> Option<&ThunkBuild> {
+        match self {
+            Object::Block(d) |
+            Object::Root(d) |
+            Object::Extension(d) => d.build,
+        }
+    }
 }
 
 /// Object data format,
@@ -149,17 +183,21 @@ pub type ObjectFormat<'a> = (
     &'a ReadStorage<'a, Properties>,
     MaybeJoin<&'a ReadStorage<'a, Block>>,
     MaybeJoin<&'a ReadStorage<'a, Root>>,
+    MaybeJoin<&'a ReadStorage<'a, ThunkCall>>,
+    MaybeJoin<&'a ReadStorage<'a, ThunkBuild>>,
 );
 
 impl<'a> Load for Object<'a> {
     type Layout = ObjectFormat<'a>;
 
-    fn load((identifier, properties, block, root): <Self::Layout as Join>::Type) -> Self {
+    fn load((identifier, properties, block, root, call, build): <Self::Layout as Join>::Type) -> Self {
         let object_data = ObjectData {
             identifier,
             properties,
             block,
             root,
+            call,
+            build,
         };
 
         if block.is_some() {
@@ -179,6 +217,8 @@ impl<'a> Provider<'a, ObjectFormat<'a>> for Compiled<'a> {
             &self.properties,
             self.blocks.maybe(),
             self.roots.maybe(),
+            self.thunk_calls.maybe(),
+            self.thunk_builds.maybe(),
         )
     }
 }

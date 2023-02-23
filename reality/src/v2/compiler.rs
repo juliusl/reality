@@ -15,6 +15,8 @@ use crate::v2::BlockList;
 use crate::v2::Block;
 use crate::v2::Root;
 use super::Properties;
+use super::ThunkBuild;
+use super::ThunkCall;
 use super::Visitor;
 use super::parser::Packet;
 use super::parser::PacketHandler;
@@ -50,6 +52,8 @@ impl Compiler {
         world.register::<Block>();
         world.register::<Root>();
         world.register::<BuildLog>();
+        world.register::<ThunkBuild>();
+        world.register::<ThunkCall>();
         Compiler {
             world,
             block_list: BlockList::default(),
@@ -117,19 +121,7 @@ impl Compiler {
             for (ident, entity) in build_log.index().iter() {
                 if let Some(obj) = self.compiled().state::<Object>(*entity) {
                     trace!("Visiting {:#}", ident);
-                    if obj.is_extension() {
-                        visitor.visit_extension(obj.ident());
-                        visitor.visit_properties(obj.properties());
-                    } else {
-                        obj.as_block().map(|b| { 
-                            visitor.visit_block(b);
-                            visitor.visit_properties(obj.properties());
-                        });
-                        obj.as_root().map(|b| { 
-                            visitor.visit_root(b);
-                            visitor.visit_properties(obj.properties());
-                        });
-                    }
+                    visitor.visit_object(&obj);
                 }
             }
         }

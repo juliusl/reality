@@ -9,6 +9,16 @@ pub struct Error {
     message: Option<String>,
 }
 
+impl std::error::Error for Error {
+
+}
+
+impl serde::de::Error for Error {
+    fn custom<T>(msg:T) -> Self where T:Display {
+        Self { error: None, message: Some(format!("{msg}")) }
+    }
+}
+
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?} {:?}", self.error, self.message)
@@ -38,4 +48,3 @@ impl From<&'static str> for Error {
         Self { error: None, message: Some(value.to_string()) }
     }
 }
-

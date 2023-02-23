@@ -17,12 +17,22 @@ pub use compiler::Object;
 mod block_list;
 pub use block_list::BlockList;
 
-mod build;
-pub use build::Build;
-
 mod visitor;
 pub use visitor::Visitor;
 
 mod properties;
 pub use properties::Properties;
 pub use properties::Property;
+
+mod thunk;
+pub use thunk::Thunk;
+pub use thunk::ThunkBuild;
+pub use thunk::ThunkCall;
+pub use thunk::thunk_build;
+pub use thunk::thunk_call;
+
+mod call;
+pub use call::Call;
+
+mod build;
+pub use build::Build;

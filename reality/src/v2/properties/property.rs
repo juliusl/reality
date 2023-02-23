@@ -1,4 +1,5 @@
 use crate::Value;
+use std::ops::Index;
 use std::sync::Arc;
 use std::fmt::Display;
 
@@ -205,5 +206,27 @@ pub fn display_value(f: &mut std::fmt::Formatter<'_>, value: &Value) -> std::fmt
         Value::Reference(r) => write!(f, "ref:{r}"),
         Value::Symbol(s) => write!(f, "{s}"),
         Value::Complex(c) => write!(f, "{:?}", c),
+    }
+}
+
+impl<'a> Index<&'a str> for Property {
+    type Output = Property;
+
+    fn index(&self, index: &'a str) -> &Self::Output {
+        match self {
+            Property::Properties(props) => props.property(index).unwrap_or(&Property::Empty),
+            _ => &Property::Empty
+        }
+    }
+}
+
+impl<'a> Index<usize> for Property {
+    type Output = Value;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match self {
+            Property::List(values) => values.get(index).unwrap_or(&Value::Empty),
+            _ => &Value::Empty
+        }
     }
 }

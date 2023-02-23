@@ -206,7 +206,7 @@ impl Build for Packet {
     fn build(&self, lazy_builder: specs::world::LazyBuilder) -> Result<specs::Entity, Error> {
         match self.keyword {
             Keywords::Extension => {
-                let mut properties = Properties::new(self.identifier.to_string());
+                let mut properties = Properties::new(self.identifier.commit()?);
                 for a in self.actions.iter() {
                     if let Action::With(name, value) = a {
                         properties.add(name, value.clone());
