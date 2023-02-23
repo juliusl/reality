@@ -144,7 +144,7 @@ impl Build for Block {
         &self,
         lazy_builder: specs::world::LazyBuilder,
     ) -> Result<specs::Entity, crate::Error> {
-        let mut properties = Properties::new(self.ident.to_string());
+        let mut properties = Properties::new(self.ident.commit()?);
 
         for a in self.initialize.iter() {
             if let Action::With(name, value) = a {

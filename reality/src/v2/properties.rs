@@ -1,7 +1,9 @@
+use std::ops::Index;
 use std::sync::Arc;
 use std::collections::BTreeMap;
 use specs::VecStorage;
 use specs::Component;
+use crate::Identifier;
 use crate::Value;
 
 mod property;
@@ -12,8 +14,8 @@ pub use property::Property;
 #[derive(Component, Hash, Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[storage(VecStorage)]
 pub struct Properties {
-    /// Name of this map of properties,
-    name: String,
+    /// Identifier of owner,
+    owner: Identifier,
     /// Map of properties
     map: BTreeMap<String, Property>,
 }
@@ -21,17 +23,17 @@ pub struct Properties {
 impl Properties {
     /// Creates a new set of properties w/ name
     ///
-    pub fn new(name: impl Into<String>) -> Self {
+    pub fn new(owner: Identifier) -> Self {
         Self {
-            name: name.into(),
+            owner,
             map: BTreeMap::default(),
         }
     }
 
     /// Returns the name of the root attribute that owns these properties,
     /// 
-    pub fn name(&self) -> &String {
-        &self.name
+    pub fn owner(&self) -> &Identifier {
+        &self.owner
     }
 
     /// Adds a new property value to the collection,
@@ -65,7 +67,8 @@ impl Properties {
     /// 
     pub fn add_readonly_properties(&mut self, properties: &Properties) {
         let properties = Arc::new(properties.clone());
-        self.map.insert(properties.name().clone(), Property::Properties(properties));
+        
+        self.map.insert(format!("{:#}", properties.owner()), Property::Properties(properties));
     }
 
     /// Removes a property,
@@ -123,5 +126,34 @@ impl Properties {
     /// 
     pub fn iter_properties_mut(&mut self) -> impl Iterator<Item = (&String, &mut Property)> {
         self.map.iter_mut().map(|(name, property)| (name, property))
+    }
+}
+
+impl<'a> Index<&'a str> for Properties {
+    type Output = Property;
+
+    fn index(&self, index: &'a str) -> &Self::Output {
+        self.property(index).unwrap_or(&Property::Empty)
+    }
+}
+
+#[allow(unused_imports)]
+mod tests {
+    use crate::Identifier;
+    use super::Properties;
+
+    #[test]
+    fn test_properties_indexer() {
+        let mut properties = Properties::new(Identifier::default());
+        properties.add("test", "test-symbol");
+        assert_eq!("test-symbol", properties["test"].as_symbol().unwrap());
+
+        properties.add("test", "test-symbol-2");
+        assert_eq!("test-symbol-2", &properties["test"][1].symbol().unwrap_or_default());
+
+        let mut _inner = Properties::new("testa".parse().expect("should parse"));
+        _inner.add("test-symbol-a", "test-symbol-a");
+        properties.add_readonly_properties(&_inner);
+        assert_eq!("test-symbol-a", properties["testa"]["test-symbol-a"].as_symbol().unwrap());
     }
 }

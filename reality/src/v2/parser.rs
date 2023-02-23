@@ -293,17 +293,6 @@ mod tests {
             .compile()
             .expect("should be able to build self");
 
-        {
-            let world = compiler.as_mut();
-            world.exec(
-                |(identities, properties): (ReadStorage<Identifier>, ReadStorage<BlockProperties>)| {
-                    for (ident, properties) in (&identities, &properties).join() {
-                        trace!("\n\n{:#}\n{:#?}\n", ident, properties);
-                    }
-                },
-            );
-        }
-
         compiler.visit_last_build(&mut ());
     }
 }
