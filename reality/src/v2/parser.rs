@@ -410,6 +410,10 @@ mod tests {
         let test_root = doc.deserialize::<TestRoot>(&test_root).expect("should deserialize");
         println!("{:?}", test_root);
 
+        let test_root = "test.a.block.op.sub.test:v2.input.lhs".parse::<Identifier>().unwrap();
+        let test_root = doc.deserialize_keys::<TestEnv>(&test_root, "env").expect("should deserialize");
+        println!("{:?}", test_root);
+
         runtime.shutdown_background();
     }
 
@@ -433,5 +437,12 @@ mod tests {
         lhs: i64,
         rhs: i64,
         sum: i64
+    }
+
+    #[allow(dead_code)]
+    #[derive(Deserialize, Debug)]
+    struct TestEnv {
+        test: String,
+        rust_log: String 
     }
 }

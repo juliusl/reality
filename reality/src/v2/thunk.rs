@@ -14,6 +14,7 @@ pub use build::Build;
 
 mod update;
 pub use update::Update;
+pub use update::AutoUpdateComponent;
 
 /// Wrapper struct Component for storing a reference to a dyn Trait reference to be called later,
 /// 

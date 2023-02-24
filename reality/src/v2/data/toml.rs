@@ -1,22 +1,20 @@
 use std::ops::Index;
 use std::sync::Arc;
 
-use crate::Error;
-use crate::Identifier;
+use crate::v2::thunk::AutoUpdateComponent;
 use crate::v2::thunk::Update;
 use crate::v2::Visitor;
+use crate::Error;
+use crate::Identifier;
 use crate::Value;
 use serde::Deserialize;
 use specs::Component;
 use specs::HashMapStorage;
-use specs::WorldExt;
 use toml_edit::table;
 use toml_edit::value;
 use toml_edit::Array;
 use toml_edit::Document;
 use toml_edit::Item;
-use tracing::debug;
-use tracing::error;
 
 /// Struct for building a TOML-document from V2 compiler build,
 ///
@@ -205,26 +203,13 @@ impl Update for DocumentBuilder {
         lazy_update: &specs::LazyUpdate,
     ) -> Result<(), crate::Error> {
         let properties: TomlProperties = self.into();
-
-        lazy_update.exec_mut(move |w| {
-            w.register::<TomlProperties>();
-            match w.write_component().insert(updating, properties) {
-                Ok(last) => {
-                    last.map(|_| debug!("replacing toml properties for, {:?}", updating));
-                }
-                Err(err) => {
-                    error!("error inserting properties, {err}")
-                }
-            }
-        });
-
-        Ok(())
+        properties.update(updating, lazy_update)
     }
 }
 
 /// Component for properties as a toml document,
 ///
-#[derive(Component, Clone)]
+#[derive(Debug, Component, Clone)]
 #[storage(HashMapStorage)]
 pub struct TomlProperties {
     /// Read-only TOML doc,
@@ -234,11 +219,91 @@ pub struct TomlProperties {
 
 impl TomlProperties {
     /// Deserializes properties into T,
+    ///
+    pub fn deserialize<T: for<'de> Deserialize<'de>>(
+        &self,
+        ident: &Identifier,
+    ) -> Result<T, Error> {
+        if let Some(result) = self["properties"][ident.commit()?.to_string()]
+            .as_table()
+            .map(|t| toml::from_str::<T>(&format!("{}", t)))
+        {
+            result.map_err(|e| format!("Could no deserialize, {e}").into())
+        } else {
+            Err(format!("Properties did not exist for {:#}", ident).into())
+        }
+    }
+
+    /// Deserialize a map created by a key-array from properties,
+    ///
+    /// Each key in the key array is the key of a value in the properties table, each value is moved
+    /// to a new table. The new table will the be deserialized to T.
+    ///
+    /// # Example
+    /// ```norun
+    ///  + .host
+    /// : RUST_LOG  .env reality=trace
+    /// : HOST      .env test.io
+    ///
+    /// # For types that aren't strings
+    /// : env       .symbol TIMEOUT
+    /// : TIMEOUT   .int    100
+    /// ```
     /// 
-    pub fn deserialize<T: for<'de> Deserialize<'de>>(&self, ident: &Identifier) -> Result<T, Error> {
-        if let Some(result) = self["properties"][ident.commit()?.to_string()].as_table().map(|t| {
-             toml::from_str::<T>(&format!("{}", t))
-        }) {
+    /// will derive,
+    /// ```norun
+    /// [properties."host"]
+    /// env      = [ "RUST_LOG", "HOST" ]
+    /// RUST_LOG = "reality=trace",
+    /// HOST     = "test.io"
+    /// TIMEOUT  = 100
+    /// ```
+    /// when creating a TomlProperties component.
+    ///
+    /// Another way to interpret this output would be as a map struct,
+    ///
+    /// Examples (TODO),
+    /// 
+    /// ```norun
+    /// js/json
+    /// {
+    ///     "RUST_LOG": "reality=trace",
+    ///     "HOST": "test.io",
+    ///     "TIMEOUT": 100
+    /// }
+    /// ```
+    /// 
+    /// ```norun
+    /// #[derive(Default, Serialize, Deserialize)]
+    /// struct HostEnv {
+    ///     #[serde(rename = "RUST_LOG", default_t = String::from("reality=trace"))]
+    ///     rust_log: String,
+    ///     #[serde(rename = "HOST", default_t = String::from("test.io"))]
+    ///     host: String,
+    ///     #[serde(rename = "TIMEOUT", default_t = 100)]
+    ///     timeout: i64,
+    /// }
+    ///```
+    /// 
+    pub fn deserialize_keys<T: for<'de> Deserialize<'de>>(
+        &self,
+        ident: &Identifier,
+        key_arr: impl AsRef<str>,
+    ) -> Result<T, Error> {
+        if let Some(result) = self["properties"][ident.commit()?.to_string()]
+            .as_table()
+            .map(|t| {
+                let mut table = toml_edit::Table::new();
+
+                t[key_arr.as_ref()].as_array().map(|keys| {
+                    for k in keys.iter().filter_map(|k| k.as_str()) {
+                        table[k] = t[k].clone();
+                    }
+                });
+
+                toml::from_str::<T>(&format!("{}", table))
+            })
+        {
             result.map_err(|e| format!("Could no deserialize, {e}").into())
         } else {
             Err(format!("Properties did not exist for {:#}", ident).into())
@@ -254,48 +319,4 @@ impl<'a> Index<&'a str> for TomlProperties {
     }
 }
 
-/*
-It's possible to define a simple type w/ in a table --
-
-+ .host
-: RUST_LOG  .env reality=trace
-: HOST      .env azurecr.io
-
-# For types that aren't strings
-: env       .symbol TIMEOUT
-: TIMEOUT   .int    100
-
-will derive,
-
-[properties."host"]
-env      = [ "RUST_LOG", "HOST" ]
-RUST_LOG = "reality=trace",
-HOST     = "azurecr.io"
-TIMEOUT  = 100
-
-when creating a TomlProperties component.
-
-Another way to interpret this output would be as a map struct,
-
-Examples,
-
-js/json
-{
-    "RUST_LOG": "reality=trace",
-    "HOST": "azurecr.io",
-    "TIMEOUT": 100
-}
-
-rs
-#[derive(Default, Serialize, Deserialize)]
-struct HostEnv {
-    #[serde(rename = "RUST_LOG", default_t = String::from("reality=trace"))]
-    rust_log: String,
-    #[serde(rename = "HOST", default_t = String::from("azurecr.io"))]
-    host: String,
-    #[serde(rename = "TIMEOUT", default_t = 100)]
-    timeout: i64,
-}
-
-So in theory, it should be pretty simple to transpile parsed runmd into other languages.
- */
+impl AutoUpdateComponent for TomlProperties {}

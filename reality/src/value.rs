@@ -243,6 +243,12 @@ impl From<usize> for Value {
     }
 }
 
+impl From<f64> for Value {
+    fn from(value: f64) -> Self {
+        Value::Float(value as f32)
+    }
+}
+
 impl Eq for Value {}
 
 impl Ord for Value {
@@ -277,8 +283,12 @@ impl Display for Value {
             _ => {}
         }
 
-        let r = self.to_ref();
-        write!(f, "::{:?}", r)
+        if f.alternate() {
+            let r = self.to_ref();
+            write!(f, "::{:?}", r)?;
+        }
+
+        Ok(())
     }
 }
 

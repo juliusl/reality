@@ -4,9 +4,6 @@ use std::sync::Arc;
 use std::collections::BTreeMap;
 use specs::VecStorage;
 use specs::Component;
-use specs::WorldExt;
-use tracing::debug;
-use tracing::error;
 use crate::Identifier;
 use crate::Value;
 
@@ -15,7 +12,7 @@ pub use property::Property;
 pub use property::property_value;
 
 use super::Visitor;
-use super::thunk::Update;
+use super::thunk::AutoUpdateComponent;
 
 /// Component for a map of property attributes
 ///
@@ -167,26 +164,12 @@ impl Visitor for Properties {
     }
 }
 
-impl Update for Properties {
-    fn update(&self, updating: specs::Entity, lazy_update: &specs::LazyUpdate) -> Result<(), crate::Error> {
-        let next = self.clone();
-        lazy_update.exec_mut(move |w| {
-            w.register::<Properties>();
-            match w.write_component::<Properties>().insert(updating, next) {
-                Ok(last) => {
-                    last.map(|l| debug!("properties.{:#} replaced", l.owner()));
-                },
-                Err(err) => error!("Error inserting propertis, {err}"),
-            }
-        });
+impl AutoUpdateComponent for Properties {}
 
-        Ok(())
-    }
-}
 
 #[allow(unused_imports)]
 mod tests {
-    use crate::{Identifier, v2::{Property, properties::property::property_value}, Value};
+    use crate::{Identifier, v2::{Property, properties::property::property_value, thunk_update}, Value};
     use super::Properties;
 
     #[test]
