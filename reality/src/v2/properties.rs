@@ -11,6 +11,8 @@ mod property;
 pub use property::Property;
 pub use property::property_value;
 
+use super::Visitor;
+
 /// Component for a map of property attributes
 ///
 #[derive(Component, Hash, Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -152,6 +154,12 @@ impl<'a> IndexMut<&'a str> for Properties {
         }
 
         self.property_mut(index).expect("should exist just added")
+    }
+}
+
+impl Visitor for Properties {
+    fn visit_properties(&mut self, properties: &Properties) {
+        self.add_readonly_properties(properties);
     }
 }
 
