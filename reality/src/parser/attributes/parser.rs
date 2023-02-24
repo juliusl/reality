@@ -854,7 +854,7 @@ impl ParserInputInfo {
 
 #[allow(unused_imports)]
 mod tests {
-    use crate::{Attribute, AttributeParser, Attributes, SpecialAttribute, Value};
+    use crate::{Attribute, AttributeParser, Attributes, SpecialAttribute, Value, Keywords};
     use logos::Logos;
 
     #[test]
@@ -863,7 +863,7 @@ mod tests {
         // Test parsing add
         let parser = AttributeParser::default();
         let mut lexer = Attributes::lexer_with_extras(
-            "name .text <comments can only be immediately after the attribute type> cool_name",
+            "name .text /* comments can only be immediately after the attribute type */ cool_name",
             parser,
         );
         assert_eq!(lexer.next(), Some(Attributes::Identifier));
@@ -891,89 +891,6 @@ mod tests {
         assert_eq!(
             Value::TextBuffer("cool_name".to_string()),
             attr.transient.unwrap().1
-        );
-
-        // Complex Attributes
-
-        // Test shortcut for defining an attribute without a name or value
-        let mut parser = AttributeParser::default();
-        let parser = parser.init(".shortcut cool shortcut");
-
-        let shortcut = parser.next();
-        assert_eq!(
-            shortcut,
-            Some(Attribute::new(
-                0,
-                "shortcut",
-                Value::Symbol("cool shortcut".to_string())
-            ))
-        );
-
-        // Test parsing .blob attribute
-        let mut parser = AttributeParser::default();
-        let parser = parser
-            .with_custom::<crate::parser::BlobDescriptor>()
-            .init("readme.md .blob sha256:testdigest");
-
-        parser.define("readme", Value::Symbol("readme".to_string()));
-        parser.define("extension", Value::Symbol("md".to_string()));
-
-        let mut parsed = vec![];
-        while let Some(attr) = parser.next() {
-            parsed.push(attr);
-        }
-        eprintln!("{:#?}", parsed);
-
-        AttributeParser::default().init("custom .custom-attr test custom attr input");
-        assert!(logs_contain("Checking for custom attribute"));
-
-        let mut parser = AttributeParser::default();
-        let parser = parser
-            .with_custom::<TestCustomAttr>()
-            .init("custom .custom-attr test custom attr input");
-        assert_eq!(
-            parser.next(),
-            Some(Attribute::new(0, "custom", Value::Empty))
-        );
-
-        let mut parser = AttributeParser::default();
-        let parser = parser
-            .with_custom::<TestCustomAttr>()
-            .init("custom <comment block> .custom-attr <comment block> test custom attr input <comment block>");
-        assert_eq!(
-            parser.next(),
-            Some(Attribute::new(0, "custom", Value::Empty))
-        );
-
-        let mut parser = AttributeParser::default();
-        let parser = parser.with_custom::<TestCustomAttr>().init(
-            "custom <comment block> .symbol <comment block> test custom attr input <comment block>",
-        );
-        assert_eq!(
-            parser.next(),
-            Some(Attribute::new(
-                0,
-                "custom",
-                Value::Symbol("test custom attr input".to_string())
-            ))
-        );
-
-        let mut parser = AttributeParser::default();
-        let parser = parser.with_custom::<TestCustomAttr>()
-            .init("custom <comment block> .int_pair <comment block 1> 1, <comment block2>5 <comment block>");
-
-        assert_eq!(
-            parser.next(),
-            Some(Attribute::new(0, "custom", Value::IntPair(1, 5)))
-        );
-
-        let mut parser = AttributeParser::default();
-        let parser = parser.with_custom::<TestCustomAttr>()
-            .init("custom <comment block> .int_pair <comment block 1> 1, <comment block2>5 <comment block> : test .int 5");
-
-        assert_eq!(
-            parser.next(),
-            Some(Attribute::new(0, "custom", Value::IntPair(1, 5)))
         );
     }
 

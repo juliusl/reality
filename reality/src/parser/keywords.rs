@@ -36,7 +36,7 @@ pub enum Keywords {
     #[token("``` runmd", on_comment)]
     #[token("```md", on_comment)]
     #[token("```runmd", on_comment)]
-    #[token("<", on_inline_comment)]
+    #[token("/*", on_inline_comment)]
     Comment = 0x0C,
 
     /// Writes a transient attribute
@@ -95,7 +95,7 @@ fn on_comment(lexer: &mut Lexer<Keywords>) -> Filter<()> {
 
 fn on_inline_comment(lexer: &mut Lexer<Keywords>) {
     if let Some(next_line) = lexer.remainder().lines().next() {
-        lexer.bump(next_line.find(">").unwrap_or(next_line.len()));
+        lexer.bump(next_line.find("*/").unwrap_or(next_line.len()));
     }
 }
 

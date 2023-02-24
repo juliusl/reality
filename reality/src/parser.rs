@@ -17,7 +17,6 @@ use crate::BlockProperties;
 mod attributes;
 pub use attributes::AttributeParser;
 pub use attributes::Attributes;
-pub use attributes::BlobDescriptor;
 pub use attributes::CustomAttribute;
 pub use attributes::PropertyAttribute;
 pub use attributes::SpecialAttribute;
@@ -580,8 +579,11 @@ mod tests {
             lexer.slice(),
             lexer.remainder()
         );
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
         assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::Add));
@@ -593,15 +595,17 @@ mod tests {
             lexer.slice(),
             lexer.remainder()
         );
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
 
         /*
         ``` test host
         add address .text localhost
         ```
         */
-        assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
         assert_eq!(lexer.next(), Some(Keywords::NewLine));
@@ -629,10 +633,13 @@ mod tests {
         assert_eq!(lexer.next(), Some(Keywords::Add));
         assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
         assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::Add));
         assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
@@ -652,6 +659,7 @@ mod tests {
         assert_eq!(lexer.next(), Some(Keywords::Define));
         assert_eq!(lexer.next(), Some(Keywords::Define));
         assert_eq!(lexer.next(), Some(Keywords::Define));
+        assert_eq!(lexer.next(), Some(Keywords::NewLine));
         assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
     }
 

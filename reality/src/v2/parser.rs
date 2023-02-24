@@ -241,6 +241,7 @@ mod tests {
         BlockProperties, Error, Identifier,
     };
     use async_trait::async_trait;
+    use serde::Deserialize;
     use specs::{Join, ReadStorage, WorldExt};
     use toml_edit::Document;
     use tracing::trace;
@@ -293,8 +294,21 @@ mod tests {
 <> .eval prod
 ```
 
+``` host
+: RUST_LOG  .env reality=trace
+: HOST      .env test.io 
+
++ .host
+: RUST_LOG  .env reality=trace
+: HOST      .env test.io 
+```
+
 ```
 : root_test .true
+
++ .host
+: RUST_LOG  .env reality=trace
+: HOST      .env test.io 
 ```
 "#;
 
@@ -392,6 +406,10 @@ mod tests {
             }
         }
 
+        let test_root = "test.b.block.op.add.test:v1".parse::<Identifier>().unwrap();
+        let test_root = doc.deserialize::<TestRoot>(&test_root).expect("should deserialize");
+        println!("{:?}", test_root);
+
         runtime.shutdown_background();
     }
 
@@ -407,5 +425,13 @@ mod tests {
 
             Ok(result)
         }
+    }
+
+    #[allow(dead_code)]
+    #[derive(Deserialize, Debug)]
+    struct TestRoot {
+        lhs: i64,
+        rhs: i64,
+        sum: i64
     }
 }
