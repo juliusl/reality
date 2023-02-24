@@ -1,25 +1,28 @@
-use std::collections::BTreeMap;
-use std::ops::Deref;
-use specs::WorldExt;
-use specs::World;
-use specs::LazyUpdate;
-use specs::HashMapStorage;
-use specs::Entity;
-use specs::Component;
-use specs::Builder;
-use tracing::trace;
-use crate::Identifier;
-use crate::state::Provider;
-use crate::v2::Build;
-use crate::v2::BlockList;
-use crate::v2::Block;
-use crate::v2::Root;
+use super::parser::Packet;
+use super::parser::PacketHandler;
+use super::thunk::ThunkUpdate;
+use super::thunk::Update;
 use super::Properties;
 use super::ThunkBuild;
 use super::ThunkCall;
 use super::Visitor;
-use super::parser::Packet;
-use super::parser::PacketHandler;
+use crate::v2::Block;
+use crate::v2::BlockList;
+use crate::v2::Build;
+use crate::v2::Root;
+use crate::Error;
+use crate::Identifier;
+use specs::Builder;
+use specs::Component;
+use specs::Entity;
+use specs::HashMapStorage;
+use specs::LazyUpdate;
+use specs::World;
+use specs::WorldExt;
+use std::collections::BTreeMap;
+use std::ops::Deref;
+use tracing::error;
+use tracing::trace;
 
 mod compiled;
 pub use compiled::Compiled;
@@ -35,10 +38,10 @@ pub struct Compiler {
     ///
     block_list: BlockList,
     /// Build log,
-    /// 
+    ///
     build_log: BuildLog,
     /// Builds,
-    /// 
+    ///
     builds: Vec<Entity>,
 }
 
@@ -54,6 +57,8 @@ impl Compiler {
         world.register::<BuildLog>();
         world.register::<ThunkBuild>();
         world.register::<ThunkCall>();
+        world.register::<ThunkUpdate>();
+        world.insert(None::<tokio::runtime::Handle>);
         Compiler {
             world,
             block_list: BlockList::default(),
@@ -72,16 +77,16 @@ impl Compiler {
     }
 
     /// Compiles parsed block list and consumes internal state, inserting components into world storage,
-    /// 
+    ///
     /// Returns the entity of the build,
-    /// 
+    ///
     /// Compiler can be re-used w/o removing previous built components,
-    /// 
+    ///
     pub fn compile(&mut self) -> Result<specs::Entity, crate::Error> {
         let build = {
             let lzb = self.world.fetch::<LazyUpdate>();
             let lzb = lzb.deref().create_entity(&self.world.entities());
-    
+
             self.build(lzb)?
         };
 
@@ -94,28 +99,72 @@ impl Compiler {
         Ok(build)
     }
 
-    /// Returns the build log for an existing build,
-    /// 
-    pub fn build_log(&self, build: Entity) -> BuildLog {
-        self.world.read_component::<BuildLog>().get(build).cloned().unwrap_or(self.build_log.clone())
-    }
-
     /// Returns compiled runmd data,
-    /// 
+    ///
     pub fn compiled(&self) -> Compiled {
         self.world.system_data::<Compiled>()
     }
 
+    /// Returns the entity of the last build,
+    ///
+    pub fn last_build(&self) -> Option<&Entity> {
+        self.builds.last()
+    }
+
+    /// Returns a clone of the last build log,
+    ///
+    pub fn last_build_log(&self) -> Option<BuildLog> {
+        if let Some(last) = self.last_build() {
+            let compiled = self.compiled();
+            compiled.find_build(*last).cloned()
+        } else {
+            None
+        }
+    }
+
     /// Visits the last build,
-    /// 
+    ///
     /// Returns the entity of the last build that was visited,
-    /// 
-    pub fn visit_last_build(&self, visitor: &mut impl Visitor) -> Option<Entity>{
+    ///
+    pub fn visit_last_build(&self, visitor: &mut impl Visitor) -> Option<Entity> {
         if let Some(last) = self.builds.last() {
             self.compiled().visit_build(*last, visitor);
             Some(*last)
         } else {
             None
+        }
+    }
+
+    /// Updates the last build, if successful returns the entity of the last build,
+    ///
+    pub fn update_last_build<C: Visitor + Update>(&mut self, updater: &mut C) -> Option<Entity> {
+        self.visit_last_build(updater)
+            .and_then(|l| match self.compiled().update(l, updater) {
+                Ok(_) => Some(l),
+                Err(err) => {
+                    error!("Could not update, {err}");
+                    None
+                }
+            })
+            .map(|l| {
+                self.as_mut().maintain();
+                l
+            })
+    }
+
+    /// Visits and updates an object,
+    ///
+    /// Returns an error if the object no longer exists,
+    ///
+    pub fn update_object<C: Visitor + Update>(
+        &mut self,
+        obj_entity: Entity,
+        updater: &mut C,
+    ) -> Result<(), crate::Error> {
+        if self.compiled().visit_object(obj_entity, updater).is_some() {
+            self.compiled().update(obj_entity, updater)
+        } else {
+            Err("Object did not exist".into())
         }
     }
 }
@@ -126,7 +175,9 @@ impl PacketHandler for Compiler {
 
         if let Some(built) = self.lazy_build(&packet).ok() {
             trace!("Built packet, {:?}", built);
-            self.build_log.index.insert(packet.identifier.commit()?, built);
+            self.build_log
+                .index
+                .insert(packet.identifier.commit()?, built);
         }
 
         Ok(())
@@ -166,7 +217,7 @@ impl Build for Compiler {
 }
 
 /// Log of built entities,
-/// 
+///
 #[derive(Component, Clone, Default)]
 #[storage(HashMapStorage)]
 pub struct BuildLog {
@@ -175,8 +226,36 @@ pub struct BuildLog {
 
 impl BuildLog {
     /// Returns a reference to the build log's index,
-    /// 
+    ///
     pub fn index(&self) -> &BTreeMap<Identifier, Entity> {
         &self.index
+    }
+
+    /// Searches for an object by identifier,
+    ///
+    pub fn get(&self, identifier: &Identifier) -> Result<Entity, Error> {
+        let search = identifier.commit()?;
+
+        self.index()
+            .get(&search)
+            .map(|e| Ok(e))
+            .unwrap_or(Err(
+                format!("Could not find object w/ {:#}", identifier).into()
+            )).copied()
+    }
+
+    /// Queries the index w/ a string interpolation pattern,
+    /// 
+    /// Returns the original identifier, interpolation result, and the found entity w/ for each successful interpolation,
+    /// 
+    pub fn search(&self, pat: impl Into<String>) -> impl Iterator<Item = (&Identifier, BTreeMap<String, String>, &Entity)> {
+        let pat = pat.into();
+        self.index().iter().filter_map(move |(ident, entity)| {
+            if let Some(map) = ident.interpolate(&pat) {
+                Some((ident, map, entity))
+            } else {
+                None
+            }
+        })
     }
 }

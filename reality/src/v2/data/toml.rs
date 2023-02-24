@@ -1,14 +1,19 @@
+use std::ops::Index;
 use std::sync::Arc;
 
+use crate::v2::thunk::Update;
 use crate::v2::Visitor;
 use crate::Value;
 use specs::Component;
 use specs::HashMapStorage;
+use specs::WorldExt;
 use toml_edit::table;
 use toml_edit::value;
 use toml_edit::Array;
 use toml_edit::Document;
 use toml_edit::Item;
+use tracing::debug;
+use tracing::error;
 
 /// Struct for building a TOML-document from V2 compiler build,
 ///
@@ -154,11 +159,35 @@ impl Into<Document> for DocumentBuilder {
     }
 }
 
-impl Into<TomlProperties> for DocumentBuilder {
+impl Into<TomlProperties> for &DocumentBuilder {
     fn into(self) -> TomlProperties {
         TomlProperties {
-            doc: Arc::new(self.into()),
+            doc: Arc::new(self.doc.clone()),
         }
+    }
+}
+
+impl Update for DocumentBuilder {
+    fn update(
+        &self,
+        updating: specs::Entity,
+        lazy_update: &specs::LazyUpdate,
+    ) -> Result<(), crate::Error> {
+        let properties: TomlProperties = self.into();
+
+        lazy_update.exec_mut(move |w| {
+            w.register::<TomlProperties>();
+            match w.write_component().insert(updating, properties) {
+                Ok(last) => {
+                    last.map(|_| debug!("replacing toml properties for, {:?}", updating));
+                }
+                Err(err) => {
+                    error!("error inserting properties, {err}")
+                }
+            }
+        });
+
+        Ok(())
     }
 }
 
@@ -168,4 +197,12 @@ impl Into<TomlProperties> for DocumentBuilder {
 #[storage(HashMapStorage)]
 pub struct TomlProperties {
     pub doc: Arc<Document>,
+}
+
+impl<'a> Index<&'a str> for TomlProperties {
+    type Output = toml_edit::Item;
+
+    fn index(&self, index: &'a str) -> &Self::Output {
+        &self.doc[index]
+    }
 }

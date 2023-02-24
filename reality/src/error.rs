@@ -5,7 +5,7 @@ use std::sync::Arc;
 ///
 #[derive(Debug, Default)]
 pub struct Error {
-    error: Option<Arc<dyn std::error::Error>>,
+    error: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
     message: Option<String>,
 }
 
