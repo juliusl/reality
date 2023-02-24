@@ -234,7 +234,7 @@ impl Parser {
 mod tests {
     use super::Parser;
     use crate::{
-        v2::{Compiler, BlockList, compiler::Compiled, Object, toml::DocumentBuilder},
+        v2::{Compiler, BlockList, compiler::Compiled, Object, toml::DocumentBuilder, Properties},
         BlockProperties, Identifier, state::Provider,
     };
     use specs::{Join, ReadStorage, WorldExt};
@@ -305,9 +305,15 @@ mod tests {
             .expect("should be able to build self");
 
         let mut doc_builder = DocumentBuilder::new();
+        let mut build_properties = Properties::new(Identifier::default());
         compiler.visit_last_build(&mut doc_builder);
+        compiler.visit_last_build(&mut build_properties);
 
         let doc: Document = doc_builder.into();
         println!("{:#}", doc);
+
+        for (name, _) in build_properties.iter_properties() {
+            println!("{name}");
+        }
     }
 }
