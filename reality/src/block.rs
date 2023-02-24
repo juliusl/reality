@@ -67,6 +67,8 @@ impl Block {
             }
         }
 
+        ident.add_tag("block");
+
         Self {
             entity: entity.id(),
             name,

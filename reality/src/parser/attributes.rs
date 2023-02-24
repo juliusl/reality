@@ -9,12 +9,6 @@ pub use custom::SpecialAttribute;
 mod property;
 pub use property::PropertyAttribute;
 
-mod cache;
-pub use cache::Cache;
-
-mod blob;
-pub use blob::BlobDescriptor;
-
 mod parser;
 pub use parser::AttributeParser;
 

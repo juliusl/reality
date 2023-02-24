@@ -37,7 +37,7 @@ pub enum Elements {
     Identifier(String),
     /// Comment,
     /// 
-    #[token("<", on_comment_start)]
+    #[token("/*", on_comment_start)]
     Comment(String),
     /// New line,
     /// 
@@ -82,12 +82,12 @@ fn on_comment_start(lexer: &mut Lexer<Elements>) -> Option<String> {
         .lines()
         .take(1)
         .next()
-        .and_then(|s| s.find(">"))
-        .expect("Didn't find a closing `>`");
+        .and_then(|s| s.find("*/"))
+        .expect("Didn't find a closing `*/`");
     
     let result = &lexer.remainder()[..end_pos];
     
-    lexer.bump(end_pos + 1);
+    lexer.bump(end_pos + 2);
 
     Some(result.to_string())
 }
@@ -101,11 +101,11 @@ fn test_elements() {
         Elements::Identifier(".Custom".to_string())
     );
 
-    let test_str = "test, one, two, three <test one two three>";
+    let test_str = "test, one, two, three /* test one two three */";
     let mut lexer = Elements::lexer(test_str);
     assert_eq!(lexer.next(), Elements::ident("test"));
     assert_eq!(lexer.next(), Elements::ident("one"));
     assert_eq!(lexer.next(), Elements::ident("two"));
     assert_eq!(lexer.next(), Elements::ident("three"));
-    assert_eq!(lexer.next(), Some(Elements::Comment("test one two three".to_string())));
+    assert_eq!(lexer.next(), Some(Elements::Comment(" test one two three ".to_string())));
 }

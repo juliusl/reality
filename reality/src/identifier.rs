@@ -14,7 +14,7 @@ use tracing::trace;
 use crate::Error;
 
 /// Struct for a dot-seperated identifier,
-/// 
+///
 #[derive(Component, Default, Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
 #[storage(VecStorage)]
 pub struct Identifier {
@@ -51,7 +51,7 @@ impl Identifier {
     }
 
     /// Removes a tag,
-    /// 
+    ///
     pub fn remove_tag(&mut self, tag: impl AsRef<str>) {
         self.tags.remove(tag.as_ref());
     }
@@ -75,13 +75,13 @@ impl Identifier {
     }
 
     /// Sets the parent identifier,
-    /// 
+    ///
     pub fn set_parent(&mut self, identifier: Arc<Identifier>) {
         self.parent = Some(identifier);
     }
 
     /// Returns the current parent identifier,
-    /// 
+    ///
     pub fn parent(&self) -> Option<Arc<Identifier>> {
         self.parent.clone()
     }
@@ -121,7 +121,10 @@ impl Identifier {
     pub fn join(&mut self, next: impl AsRef<str>) -> Result<&mut Self, Error> {
         let next = next.as_ref();
 
-        if Self::should_escape_with_quotes(next) && !next.starts_with(r#"""#) && !next.ends_with(r#"""#) {
+        if Self::should_escape_with_quotes(next)
+            && !next.starts_with(r#"""#)
+            && !next.ends_with(r#"""#)
+        {
             write!(self.buf, r#"."{}""#, next)?;
         } else {
             write!(self.buf, ".{next}")?;
@@ -168,10 +171,10 @@ impl Identifier {
     }
 
     /// Returns a merged identifier,
-    /// 
+    ///
     /// The current identifier will be set as the parent of the other identifier (after the other identifier is committed).
     /// The result is the committed merged identifier.
-    /// 
+    ///
     pub fn merge(&self, other: &Identifier) -> Result<Identifier, Error> {
         let mut merged = other.commit()?;
         merged.set_parent(Arc::new(self.commit()?));
@@ -225,6 +228,10 @@ impl Identifier {
                         .buf
                         .find(&match_ident)
                         .map(|s| s + match_ident.len() + 1);
+
+                    if sint.start.is_none() {
+                        return None;
+                    }
                 }
                 StringInterpolationTokens::OptionalSuffixAssignment(_)
                     if tokens.remainder().len() > 0 =>
@@ -300,15 +307,14 @@ impl Identifier {
         Some(map)
     }
 
-
     /// Returns true if the input string should be escaped w/ quotes,
-    /// 
+    ///
     fn should_escape_with_quotes(s: &str) -> bool {
         s.contains(".") || s.contains(" ") || s.contains("\t")
     }
 
     /// Returns immediate ancestors of this identifier,
-    /// 
+    ///
     pub fn ancestors(&self) -> Vec<Identifier> {
         let mut start = self.clone();
         let mut parts = vec![];
@@ -322,7 +328,7 @@ impl Identifier {
     }
 
     /// Return identifier parts,
-    /// 
+    ///
     pub fn parts(&self) -> Result<Vec<String>, Error> {
         parts(&self.buf)
     }
