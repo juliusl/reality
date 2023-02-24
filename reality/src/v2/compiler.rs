@@ -112,23 +112,10 @@ impl Compiler {
     /// 
     pub fn visit_last_build(&self, visitor: &mut impl Visitor) -> Option<Entity>{
         if let Some(last) = self.builds.last() {
-            self.visit_build(*last, visitor);
+            self.compiled().visit_build(*last, visitor);
             Some(*last)
         } else {
             None
-        }
-    }
-
-    /// Visits a build,
-    /// 
-    pub fn visit_build(&self, build: Entity, visitor: &mut impl Visitor) {
-        if let Some(build_log) = self.compiled().find_build(build) {
-            for (ident, entity) in build_log.index().iter() {
-                if let Some(obj) = self.compiled().state::<Object>(*entity) {
-                    trace!("Visiting {:#}", ident);
-                    visitor.visit_object(&obj);
-                }
-            }
         }
     }
 }

@@ -7,10 +7,12 @@ use crate::v2::Block;
 use crate::Identifier;
 use crate::v2::ThunkBuild;
 use crate::v2::ThunkCall;
+use crate::v2::Visitor;
 use specs::join::MaybeJoin;
 use specs::prelude::*;
 use specs::ReadStorage;
 use specs::SystemData;
+use tracing::trace;
 
 /// Compiled runmd data,
 ///
@@ -47,6 +49,19 @@ impl<'a> Compiled<'a> {
     /// 
     pub fn find_build(&self, build: Entity) -> Option<&BuildLog> {
         self.build_logs.get(build)
+    }
+
+    /// Visits a build,
+    /// 
+    pub fn visit_build(&self, build: Entity, visitor: &mut impl Visitor) {
+        if let Some(build_log) = self.find_build(build) {
+            for (ident, entity) in build_log.index().iter() {
+                if let Some(obj) = self.state::<Object>(*entity) {
+                    trace!("Visiting {:#}", ident);
+                    visitor.visit_object(&obj);
+                }
+            }
+        }
     }
 }
 
