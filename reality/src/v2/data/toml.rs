@@ -140,7 +140,7 @@ impl Into<toml_edit::Item> for Value {
                 arr.push(f3 as f64);
                 value(arr)
             }
-            Value::BinaryVector(b) => value(base64::encode(b)),
+            Value::BinaryVector(b) => value(base64::encode(b)), // TODO -- this will need to be changed at some point into a table
             Value::Reference(r) => value(r as i64),
             Value::Symbol(s) => value(s),
             Value::Complex(_) => unimplemented!("not implemented"),
@@ -154,18 +154,18 @@ impl Into<Document> for DocumentBuilder {
     }
 }
 
-impl Into<DocumentComponent> for DocumentBuilder {
-    fn into(self) -> DocumentComponent {
-        DocumentComponent {
+impl Into<TomlProperties> for DocumentBuilder {
+    fn into(self) -> TomlProperties {
+        TomlProperties {
             doc: Arc::new(self.into()),
         }
     }
 }
 
-/// Struct for component impl of toml document,
+/// Component for properties as a toml document,
 ///
 #[derive(Component, Clone)]
 #[storage(HashMapStorage)]
-pub struct DocumentComponent {
+pub struct TomlProperties {
     pub doc: Arc<Document>,
 }
