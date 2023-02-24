@@ -4,6 +4,9 @@ use std::sync::Arc;
 use std::collections::BTreeMap;
 use specs::VecStorage;
 use specs::Component;
+use specs::WorldExt;
+use tracing::debug;
+use tracing::error;
 use crate::Identifier;
 use crate::Value;
 
@@ -12,6 +15,7 @@ pub use property::Property;
 pub use property::property_value;
 
 use super::Visitor;
+use super::thunk::Update;
 
 /// Component for a map of property attributes
 ///
@@ -160,6 +164,23 @@ impl<'a> IndexMut<&'a str> for Properties {
 impl Visitor for Properties {
     fn visit_properties(&mut self, properties: &Properties) {
         self.add_readonly_properties(properties);
+    }
+}
+
+impl Update for Properties {
+    fn update(&self, updating: specs::Entity, lazy_update: &specs::LazyUpdate) -> Result<(), crate::Error> {
+        let next = self.clone();
+        lazy_update.exec_mut(move |w| {
+            w.register::<Properties>();
+            match w.write_component::<Properties>().insert(updating, next) {
+                Ok(last) => {
+                    last.map(|l| debug!("properties.{:#} replaced", l.owner()));
+                },
+                Err(err) => error!("Error inserting propertis, {err}"),
+            }
+        });
+
+        Ok(())
     }
 }
 

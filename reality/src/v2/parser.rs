@@ -181,7 +181,6 @@ impl Parser {
                 let mut next_root = incoming.identifier.clone();
                 next_root.set_parent(block);
                 self.root_identifier = Some(Arc::new(next_root));
-
             }
 
             dest.on_packet(incoming)
@@ -234,17 +233,22 @@ impl Parser {
 mod tests {
     use super::Parser;
     use crate::{
-        v2::{Compiler, BlockList, compiler::Compiled, Object, toml::DocumentBuilder, Properties},
-        BlockProperties, Identifier, state::Provider,
+        state::Provider,
+        v2::{
+            compiler::Compiled, data::toml::TomlProperties, property_value, thunk::Update,
+            thunk_call, toml::DocumentBuilder, BlockList, Call, Compiler, Object, Properties,
+        },
+        BlockProperties, Error, Identifier,
     };
+    use async_trait::async_trait;
     use specs::{Join, ReadStorage, WorldExt};
     use toml_edit::Document;
     use tracing::trace;
     use tracing_test::traced_test;
 
-    #[test]
-    //#[traced_test]
-    fn test_parser() {
+    #[tokio::test]
+    #[traced_test]
+    async fn test_parser() {
         let runmd = r#"
 ``` b
 : test .true
@@ -300,20 +304,108 @@ mod tests {
         let mut compiler = Compiler::new();
         let parser = Parser::new();
         let _parser = parser.parse_file(".test/test.runmd", &mut compiler);
-        let _ = compiler
-            .compile()
-            .expect("should be able to build self");
+        let _ = compiler.compile().expect("should be able to build self");
 
         let mut doc_builder = DocumentBuilder::new();
         let mut build_properties = Properties::new(Identifier::default());
-        compiler.visit_last_build(&mut doc_builder);
-        compiler.visit_last_build(&mut build_properties);
+        compiler.update_last_build(&mut doc_builder).map(|l| {
+            if let Some(toml) = compiler.as_ref().read_component::<TomlProperties>().get(l) {
+                println!("{}", toml.doc);
 
-        let doc: Document = doc_builder.into();
-        println!("{:#}", doc);
+                toml["properties"].as_table().map(|t| {
+                    for (k, _) in t.iter() {
+                        println!("properties - {k}");
+                    }
+                });
 
-        for (name, _) in build_properties.iter_properties() {
-            println!("{name}");
+                toml["block"].as_table().map(|t| {
+                    for (k, _) in t.iter() {
+                        println!("block - {k}");
+                    }
+                });
+
+                toml["root"].as_table().map(|t| {
+                    for (k, _) in t.iter() {
+                        println!("root - {k}");
+                    }
+                });
+            }
+        });
+
+        compiler.update_last_build(&mut build_properties).map(|l| {
+            if let Some(prop) = compiler.as_ref().read_component::<Properties>().get(l) {
+                println!("{:#?}", prop);
+            }
+        });
+
+        compiler.last_build_log().map(|b| {
+            for (_, e) in b.index() {
+                compiler
+                    .compiled()
+                    .state::<Object>(*e)
+                    .map(|o| {
+                        let mut properties = o.properties().clone();
+                        properties["testing_update"] = property_value(true);
+                        properties
+                    })
+                    .map(|update| {
+                        compiler.compiled().update(*e, &update).ok();
+                    });
+            }
+
+            b.search("input.(var)")
+                .for_each(|(ident, interpolated, entity)| {
+                    trace!("Installing thunk for input extension -- {:#}", ident);
+                    if let Some(var) = interpolated.get("var").cloned() {
+                        compiler
+                            .as_ref()
+                            .write_component()
+                            .insert(*entity, thunk_call(TestInput(var)))
+                            .ok();
+                    }
+                })
+        });
+        compiler.as_mut().maintain();
+
+        let mut test = DocumentBuilder::new();
+        compiler.visit_last_build(&mut test);
+
+        let doc: TomlProperties = (&test).into();
+        println!("{}", doc.doc);
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        compiler.as_mut().insert(Some(runtime.handle().clone()));
+
+        if let Some(b) = compiler.last_build() {
+            let mut joinset = compiler
+                .compiled()
+                .batch_call_matches(*b, "input.(var)")
+                .expect("should return a set");
+
+            while let Some(Ok(result)) = joinset.join_next().await {
+                if let Ok((ident, interpolated, prop)) = result {
+                    if let Some(var) = interpolated.get("var").cloned() {
+                        trace!("{:#} -- {:?}", ident, prop);
+                        assert_eq!(Some(100), prop[&var].as_int());
+                    }
+                }
+            }
+        }
+
+        runtime.shutdown_background();
+    }
+
+    struct TestInput(String);
+
+    #[async_trait]
+    impl Call for TestInput {
+        async fn call(&self) -> Result<Properties, Error> {
+            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+            let mut result = Properties::default();
+            result[&self.0] = property_value(100);
+
+            Ok(result)
         }
     }
 }
