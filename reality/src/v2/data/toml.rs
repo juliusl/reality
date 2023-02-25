@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::ops::Index;
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::v2::thunk::AutoUpdateComponent;
@@ -222,6 +223,44 @@ pub struct TomlProperties {
 }
 
 impl TomlProperties {
+    /// Loads toml properties from a file and returns the result,
+    /// 
+    pub async fn try_load(path: impl AsRef<Path>) -> Result<Self, Error> {
+        let file = path.as_ref().canonicalize()?;
+        let file = tokio::fs::read_to_string(file).await?;
+
+        let mut doc: Document = file.parse()?;
+        let mut table = table();
+        table.as_table_mut().map(|t| t.set_implicit(true));
+        if !doc.contains_table("properties") {
+            doc["properties"] = table.clone();
+        }
+
+        if !doc.contains_table("block") {
+            doc["block"] = table.clone();
+        }
+
+        if !doc.contains_table("root") {
+            doc["root"] = table.clone();
+        }
+
+        Ok(Self { doc: Arc::new(doc) })
+    }
+
+    /// Tries to save toml document to a path,
+    /// 
+    pub async fn try_save(&self, path: impl AsRef<Path>) -> Result<(), Error> {
+        if let Some(dir) = path.as_ref().parent() {
+            tokio::fs::create_dir_all(&dir).await?;
+
+            tokio::fs::write(path, format!("{}", self.doc)).await?;
+    
+            Ok(())
+        } else {
+            Err("Could not save properties".into())
+        }
+    }
+
     /// Deserializes properties into T,
     ///
     pub fn deserialize<T: for<'de> Deserialize<'de>>(
@@ -387,5 +426,11 @@ impl<'a> Into<crate::Value> for &'a toml_edit::Value {
             }
             toml_edit::Value::InlineTable(_) => crate::Value::Empty,
         }
+    }
+}
+
+impl From<toml_edit::TomlError> for Error {
+    fn from(value: toml_edit::TomlError) -> Self {
+        format!("toml error {value}").into()
     }
 }
