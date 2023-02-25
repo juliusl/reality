@@ -1,8 +1,10 @@
+use std::collections::BTreeSet;
 use std::ops::Index;
 use std::sync::Arc;
 
 use crate::v2::thunk::AutoUpdateComponent;
 use crate::v2::thunk::Update;
+use crate::v2::Properties;
 use crate::v2::Visitor;
 use crate::Error;
 use crate::Identifier;
@@ -15,6 +17,8 @@ use toml_edit::value;
 use toml_edit::Array;
 use toml_edit::Document;
 use toml_edit::Item;
+
+use super::query::Query;
 
 /// Struct for building a TOML-document from V2 compiler build,
 ///
@@ -249,7 +253,7 @@ impl TomlProperties {
     /// : env       .symbol TIMEOUT
     /// : TIMEOUT   .int    100
     /// ```
-    /// 
+    ///
     /// will derive,
     /// ```norun
     /// [properties."host"]
@@ -263,7 +267,7 @@ impl TomlProperties {
     /// Another way to interpret this output would be as a map struct,
     ///
     /// Examples (TODO),
-    /// 
+    ///
     /// ```norun
     /// js/json
     /// {
@@ -272,7 +276,7 @@ impl TomlProperties {
     ///     "TIMEOUT": 100
     /// }
     /// ```
-    /// 
+    ///
     /// ```norun
     /// #[derive(Default, Serialize, Deserialize)]
     /// struct HostEnv {
@@ -284,7 +288,7 @@ impl TomlProperties {
     ///     timeout: i64,
     /// }
     ///```
-    /// 
+    ///
     pub fn deserialize_keys<T: for<'de> Deserialize<'de>>(
         &self,
         ident: &Identifier,
@@ -320,3 +324,66 @@ impl<'a> Index<&'a str> for TomlProperties {
 }
 
 impl AutoUpdateComponent for TomlProperties {}
+
+impl<'a> Query<'a> for TomlProperties {
+    fn query(
+        &'a self,
+        pat: impl AsRef<str>,
+        predicate: impl Fn(
+                &Identifier,
+                &std::collections::BTreeMap<String, String>,
+                &crate::v2::Properties,
+            ) -> bool
+            + Clone
+            + 'static,
+    ) -> Result<super::query::QueryIter<'a>, Error> {
+        let mut props = vec![];
+        self.doc["properties"].as_table().map(|t| {
+            for (key, item) in t.iter() {
+                if let Some(ident) = key.parse::<Identifier>().ok() {
+                    let mut properties = Properties::new(ident);
+
+                    item.as_table().map(|t| {
+                        for (key, item) in t.iter() {
+                            if let Some(value) = item.as_value() {
+                                properties.add(key, value);
+                            }
+                        }
+                    });
+
+                    props.push(properties);
+                }
+            }
+        });
+
+        let pat = pat.as_ref().to_string();
+
+        Ok(Box::new(props.into_iter().filter_map(move |p| {
+            if let Ok(mut result) = p.query(&pat, predicate.clone()) {
+                result.next()
+            } else {
+                None
+            }
+        })))
+    }
+}
+
+impl<'a> Into<crate::Value> for &'a toml_edit::Value {
+    fn into(self) -> crate::Value {
+        match self {
+            toml_edit::Value::String(s) => crate::Value::Symbol(s.to_string()),
+            toml_edit::Value::Integer(i) => crate::Value::Int(*i.value() as i32),
+            toml_edit::Value::Float(f) => crate::Value::Float(*f.value() as f32),
+            toml_edit::Value::Boolean(b) => crate::Value::Bool(*b.value()),
+            toml_edit::Value::Datetime(d) => crate::Value::Symbol(d.to_string()),
+            toml_edit::Value::Array(arr) => {
+                let mut c = BTreeSet::new();
+                for a in arr.iter().filter_map(|a| a.as_str()) {
+                    c.insert(a.to_string());
+                }
+                crate::Value::Complex(c)
+            }
+            toml_edit::Value::InlineTable(_) => crate::Value::Empty,
+        }
+    }
+}

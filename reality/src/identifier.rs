@@ -246,6 +246,10 @@ impl Identifier {
 
         let mut map = BTreeMap::<String, String>::default();
         let buf = if let Some(start) = sint.start {
+            if start > self.buf.len() {
+                return None;
+            }
+
             let (_, rest) = self.buf.split_at(start);
             trace!("rest: {rest}");
             if let Some(ident) = rest.parse::<Identifier>().ok() {
@@ -425,7 +429,7 @@ enum StringInterpolationTokens {
     EscapedMatch(String),
     /// Match this token,
     ///
-    #[regex("[.]?[a-zA-Z0-9]+[.]?", on_match)]
+    #[regex("[.]?[a-zA-Z0-9:]+[.]?", on_match)]
     Match(String),
     /// Assign the value from the identifier,
     ///

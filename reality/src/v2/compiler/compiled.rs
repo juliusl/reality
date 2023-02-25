@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-
 use super::BuildLog;
 use crate::state::Load;
 use crate::state::Provider;
@@ -123,22 +122,31 @@ impl<'a> Compiled<'a> {
     }
 
     /// Searches for call thunks from a build log w/ string interpolation pattern and prepares a batch call joinset,
-    /// 
+    ///
     /// The join set will return results in the order tasks complete,
-    /// 
-    pub fn batch_call_matches(&self, build: Entity, pat: impl Into<String>) -> Result<BatchCallJoinSet, Error> {
+    ///
+    pub fn batch_call_matches(
+        &self,
+        build: Entity,
+        pat: impl Into<String>,
+    ) -> Result<BatchCallJoinSet, Error> {
         if let Some((build_log, handle)) = self.find_build(build).zip(self.tokio_handle.as_ref()) {
-            let mut joinset = tokio::task::JoinSet::<Result<(Identifier, BTreeMap<String, String>, Properties), Error>>::new();
+            let mut joinset = tokio::task::JoinSet::<
+                Result<(Identifier, BTreeMap<String, String>, Properties), Error>,
+            >::new();
 
             for (ident, map, e) in build_log.search(pat) {
                 let thunk = self.state::<Object>(*e).and_then(|o| o.as_call().cloned());
                 if let Some(thunk) = thunk {
                     let ident = ident.clone();
-                    joinset.spawn_on(async move { 
-                        let result = thunk.call().await?;
-                        
-                        Ok((ident, map, result))
-                     }, handle);
+                    joinset.spawn_on(
+                        async move {
+                            let result = thunk.call().await?;
+
+                            Ok((ident, map, result))
+                        },
+                        handle,
+                    );
                 }
             }
 
@@ -149,7 +157,7 @@ impl<'a> Compiled<'a> {
     }
 
     /// Returns the result of a thunk call component stored on thunk_entity,
-    /// 
+    ///
     pub async fn call(&self, thunk_entity: Entity) -> Result<Properties, Error> {
         let thunk = self
             .state::<Object>(thunk_entity)
@@ -174,8 +182,9 @@ impl<'a> Compiled<'a> {
 }
 
 /// Type-alias for a batch call join-set,
-/// 
-pub type BatchCallJoinSet = tokio::task::JoinSet::<Result<(Identifier, BTreeMap<String, String>, Properties), Error>>;
+///
+pub type BatchCallJoinSet =
+    tokio::task::JoinSet<Result<(Identifier, BTreeMap<String, String>, Properties), Error>>;
 
 /// Compiled object struct,
 ///

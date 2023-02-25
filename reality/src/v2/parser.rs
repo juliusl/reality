@@ -235,8 +235,13 @@ mod tests {
     use crate::{
         state::Provider,
         v2::{
-            compiler::Compiled, data::toml::TomlProperties, property_value, thunk::Update,
-            thunk_call, toml::DocumentBuilder, BlockList, Call, Compiler, Object, Properties,
+            compiler::Compiled,
+            data::{query::Query, toml::TomlProperties},
+            property_value,
+            thunk::Update,
+            thunk_call,
+            toml::DocumentBuilder,
+            BlockList, Call, Compiler, Object, Properties,
         },
         BlockProperties, Error, Identifier,
     };
@@ -248,7 +253,7 @@ mod tests {
     use tracing_test::traced_test;
 
     #[tokio::test]
-    #[traced_test]
+    // #[traced_test]
     async fn test_parser() {
         let runmd = r#"
 ``` b
@@ -407,12 +412,41 @@ mod tests {
         }
 
         let test_root = "test.b.block.op.add.test:v1".parse::<Identifier>().unwrap();
-        let test_root = doc.deserialize::<TestRoot>(&test_root).expect("should deserialize");
+        let test_root = doc
+            .deserialize::<TestRoot>(&test_root)
+            .expect("should deserialize");
         println!("{:?}", test_root);
 
-        let test_root = "test.a.block.op.sub.test:v2.input.lhs".parse::<Identifier>().unwrap();
-        let test_root = doc.deserialize_keys::<TestEnv>(&test_root, "env").expect("should deserialize");
+        let test_root = "test.a.block.op.sub.test:v2.input.lhs"
+            .parse::<Identifier>()
+            .unwrap();
+        let test_root = doc
+            .deserialize_keys::<TestEnv>(&test_root, "env")
+            .expect("should deserialize");
         println!("{:?}", test_root);
+
+        for (ident, _, props) in compiler
+            .compiled()
+            .query("input.(var)", |_, map, props| {
+                map["var"] == "lhs"
+                    && props["type"]
+                        .as_symbol()
+                        .filter(|s| *s == "stdin")
+                        .is_some()
+                    && props["rust_log"].as_symbol().is_some()
+            })
+            .unwrap()
+        {
+            println!("{}", ident);
+            println!("{:?}", props);
+        }
+
+        for (ident, _, props) in doc
+            .query(r#"test:v1.test.input.(var)"#, |_, _, _| true)
+            .unwrap()
+        {
+            println!("{} {:?}", ident, props);
+        }
 
         runtime.shutdown_background();
     }
@@ -436,13 +470,13 @@ mod tests {
     struct TestRoot {
         lhs: i64,
         rhs: i64,
-        sum: i64
+        sum: i64,
     }
 
     #[allow(dead_code)]
     #[derive(Deserialize, Debug)]
     struct TestEnv {
         test: String,
-        rust_log: String 
+        rust_log: String,
     }
 }
