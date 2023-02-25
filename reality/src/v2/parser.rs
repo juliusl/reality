@@ -241,7 +241,7 @@ mod tests {
             thunk::Update,
             thunk_call,
             toml::DocumentBuilder,
-            BlockList, Call, Compiler, Object, Properties,
+            BlockList, Call, Compiler, Object, Properties, Visitor,
         },
         BlockProperties, Error, Identifier,
     };
@@ -446,6 +446,13 @@ mod tests {
             .unwrap()
         {
             println!("{} {:?}", ident, props);
+
+            let mut doc = DocumentBuilder::new();
+            doc.visit_properties(&props);
+
+            let doc: TomlProperties = (&doc).into();
+            let o = doc.deserialize::<TestInput2>(&"test.b.block.op.add.test:v1.test.input.rhs".parse().unwrap()).expect("should deserialize");
+            println!("{:?}", o);
         }
 
         runtime.shutdown_background();
@@ -463,6 +470,12 @@ mod tests {
 
             Ok(result)
         }
+    }
+
+    #[allow(dead_code)]
+    #[derive(Deserialize, Debug)]
+    struct TestInput2 {
+        testing_update: bool,
     }
 
     #[allow(dead_code)]

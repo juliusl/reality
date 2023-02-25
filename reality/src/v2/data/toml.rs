@@ -228,8 +228,9 @@ impl TomlProperties {
         &self,
         ident: &Identifier,
     ) -> Result<T, Error> {
-        if let Some(result) = self["properties"][ident.commit()?.to_string()]
-            .as_table()
+        if let Some(result) = self["properties"]
+            .get(ident.commit()?.to_string())
+            .and_then(|t| t.as_table())
             .map(|t| toml::from_str::<T>(&format!("{}", t)))
         {
             result.map_err(|e| format!("Could no deserialize, {e}").into())
@@ -294,8 +295,9 @@ impl TomlProperties {
         ident: &Identifier,
         key_arr: impl AsRef<str>,
     ) -> Result<T, Error> {
-        if let Some(result) = self["properties"][ident.commit()?.to_string()]
-            .as_table()
+        if let Some(result) = self["properties"]
+            .get(ident.commit()?.to_string())
+            .and_then(|t| t.as_table())
             .map(|t| {
                 let mut table = toml_edit::Table::new();
 
