@@ -237,11 +237,12 @@ mod tests {
         v2::{
             compiler::Compiled,
             data::{query::Query, toml::TomlProperties},
+            properties::property_list,
             property_value,
             thunk::Update,
             thunk_call,
             toml::DocumentBuilder,
-            BlockList, Call, Compiler, Object, Properties, Visitor, properties::property_list,
+            BlockList, Call, Compiler, Object, Properties, Visitor,
         },
         BlockProperties, Error, Identifier,
     };
@@ -253,7 +254,7 @@ mod tests {
     use tracing_test::traced_test;
 
     #[tokio::test]
-    #[traced_test]
+    // #[traced_test]
     async fn test_parser() {
         let runmd = r#"
 ``` b
@@ -373,9 +374,9 @@ mod tests {
             }
 
             b.search("input.(var)")
-                .for_each(|(ident, interpolated, entity)| {
+                .for_each(|(ident, mut interpolated, entity)| {
                     trace!("Installing thunk for input extension -- {:#}", ident);
-                    if let Some(var) = interpolated.get("var").cloned() {
+                    if let Some(var) = interpolated.remove("var") {
                         compiler
                             .as_ref()
                             .write_component()
@@ -391,6 +392,10 @@ mod tests {
 
         let doc: TomlProperties = (&test).into();
         println!("{}", doc.doc);
+        doc.try_save(".test/test1.toml").await.unwrap();
+        if let Ok(doc) = TomlProperties::try_load(".test/test1.toml").await {
+            println!("loaded\n{}", doc.doc);
+        }
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
         compiler.as_mut().insert(Some(runtime.handle().clone()));
@@ -458,15 +463,21 @@ mod tests {
                         .unwrap(),
                 )
                 .expect("should deserialize");
+
+            doc.try_save(".test/test2.toml").await.unwrap();
+            if let Ok(doc) = TomlProperties::try_load(".test/test2.toml").await {
+                println!("loaded\n{}", doc.doc);
+            }
             println!("{:?}", o);
         }
 
         println!("Testing query_inner");
-        build_properties.query_inner("input.(var)", |_, _, _| {
-            true
-        }).iter().for_each(|(id, _, _)| {
-            println!("{}", id);
-        });
+        build_properties
+            .query_inner("input.(var)", |_, _, _| true)
+            .iter()
+            .for_each(|(id, _, _)| {
+                println!("{}", id);
+            });
 
         runtime.shutdown_background();
     }
@@ -482,7 +493,7 @@ mod tests {
             result[&self.0] = property_value(100);
 
             result["t"] = property_list(vec![1.0, 2.0, 3.0, 4.0]);
-            
+
             Ok(result)
         }
     }
