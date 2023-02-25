@@ -241,7 +241,7 @@ mod tests {
             thunk::Update,
             thunk_call,
             toml::DocumentBuilder,
-            BlockList, Call, Compiler, Object, Properties, Visitor,
+            BlockList, Call, Compiler, Object, Properties, Visitor, properties::property_list,
         },
         BlockProperties, Error, Identifier,
     };
@@ -253,7 +253,7 @@ mod tests {
     use tracing_test::traced_test;
 
     #[tokio::test]
-    // #[traced_test]
+    #[traced_test]
     async fn test_parser() {
         let runmd = r#"
 ``` b
@@ -481,6 +481,8 @@ mod tests {
             let mut result = Properties::default();
             result[&self.0] = property_value(100);
 
+            result["t"] = property_list(vec![1.0, 2.0, 3.0, 4.0]);
+            
             Ok(result)
         }
     }

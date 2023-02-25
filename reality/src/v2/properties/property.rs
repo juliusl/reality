@@ -254,3 +254,10 @@ impl From<Vec<Value>> for Property {
 pub fn property_value(value: impl Into<Value>) -> Property {
     Property::Single(value.into())
 }
+
+/// Returns a property list from an iterator,
+/// 
+pub fn property_list(list: impl IntoIterator<Item = impl Into<Value>>) -> Property {
+    let list = list.into_iter().map(|l| l.into()).collect();
+    Property::List(list)
+}

@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 mod property;
 pub use property::property_value;
+pub use property::property_list;
 pub use property::Property;
 
 use super::data::query::Query;
