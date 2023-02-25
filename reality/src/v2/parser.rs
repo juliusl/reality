@@ -451,9 +451,22 @@ mod tests {
             doc.visit_properties(&props);
 
             let doc: TomlProperties = (&doc).into();
-            let o = doc.deserialize::<TestInput2>(&"test.b.block.op.add.test:v1.test.input.rhs".parse().unwrap()).expect("should deserialize");
+            let o = doc
+                .deserialize::<TestInput2>(
+                    &"test.b.block.op.add.test:v1.test.input.rhs"
+                        .parse()
+                        .unwrap(),
+                )
+                .expect("should deserialize");
             println!("{:?}", o);
         }
+
+        println!("Testing query_inner");
+        build_properties.query_inner("input.(var)", |_, _, _| {
+            true
+        }).iter().for_each(|(id, _, _)| {
+            println!("{}", id);
+        });
 
         runtime.shutdown_background();
     }
