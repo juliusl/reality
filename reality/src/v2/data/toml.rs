@@ -18,6 +18,7 @@ use toml_edit::value;
 use toml_edit::Array;
 use toml_edit::Document;
 use toml_edit::Item;
+use tracing::error;
 
 use super::query::Query;
 
@@ -41,18 +42,28 @@ impl DocumentBuilder {
         doc.doc["root"] = table.clone();
         doc
     }
+
+    /// Formats an identifier for use in a table header,
+    /// 
+    fn format_ident(ident: &Identifier) -> String {
+        match ident.commit() {
+            Ok(committed) => {
+                committed.to_string()
+                .replace("\"", "")
+                .trim_matches('.')
+                .to_string()
+            }
+            Err(err) => {
+                error!("Could not format ident, {err}");
+                ident.to_string()
+            }
+        }
+    }
 }
 
 impl Visitor for DocumentBuilder {
     fn visit_block(&mut self, block: &crate::v2::Block) {
-        let owner = block.ident();
-        let owner = owner
-            .commit()
-            .unwrap()
-            .to_string()
-            .replace("\"", "")
-            .trim_matches('.')
-            .to_string();
+        let owner = Self::format_ident(block.ident());
         self.doc["block"][&owner] = table();
 
         let mut roots = Array::new();
@@ -72,14 +83,7 @@ impl Visitor for DocumentBuilder {
     }
 
     fn visit_root(&mut self, root: &crate::v2::Root) {
-        let owner = root.ident.clone();
-        let owner = owner
-            .commit()
-            .unwrap()
-            .to_string()
-            .replace("\"", "")
-            .trim_matches('.')
-            .to_string();
+        let owner = Self::format_ident(&root.ident);
         self.doc["root"][&owner] = table();
 
         let mut extensions = Array::new();
@@ -94,14 +98,7 @@ impl Visitor for DocumentBuilder {
     }
 
     fn visit_properties(&mut self, properties: &crate::v2::Properties) {
-        let owner = properties.owner();
-        let owner = owner
-            .commit()
-            .unwrap()
-            .to_string()
-            .replace("\"", "")
-            .trim_matches('.')
-            .to_string();
+        let owner = Self::format_ident(properties.owner());
         self.doc["properties"][&owner] = table();
         self.doc["properties"][&owner]
             .as_table_mut()
