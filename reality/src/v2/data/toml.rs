@@ -26,8 +26,12 @@ use super::query::Query;
 ///
 #[derive(Default)]
 pub struct DocumentBuilder {
+    /// Current toml doc being built,
+    /// 
     doc: Document,
-    identifier: Option<String>,
+    /// Identifier being parsed,
+    /// 
+    parsing: Option<String>,
 }
 
 impl DocumentBuilder {
@@ -103,7 +107,7 @@ impl Visitor for DocumentBuilder {
         self.doc["properties"][&owner]
             .as_table_mut()
             .map(|t| t.set_implicit(true));
-        self.identifier = Some(owner);
+        self.parsing = Some(owner);
 
         for (name, property) in properties.iter_properties() {
             self.visit_property(name, property);
@@ -111,7 +115,7 @@ impl Visitor for DocumentBuilder {
     }
 
     fn visit_value(&mut self, name: &String, idx: Option<usize>, value: &Value) {
-        self.identifier.as_ref().map(|id| {
+        self.parsing.as_ref().map(|id| {
             if let Some(0) = idx {
                 self.doc["properties"][id][name] = toml_edit::value(Array::new());
                 let item: Item = value.clone().into();

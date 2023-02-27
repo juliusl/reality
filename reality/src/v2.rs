@@ -20,6 +20,9 @@ pub use block_list::BlockList;
 mod visitor;
 pub use visitor::Visitor;
 
+mod interner;
+pub use interner::Interner;
+
 mod properties;
 pub use properties::Properties;
 pub use properties::Property;
