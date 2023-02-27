@@ -1,7 +1,7 @@
-use std::collections::{HashMap, BTreeSet};
-
+use std::collections::BTreeSet;
+use std::collections::HashMap;
+use crate::Error;
 use crate::Value;
-use tracing::{event, Level};
 
 /// Struct to wrap interned data 
 /// 
@@ -27,48 +27,45 @@ pub type InternedSymbols = HashMap<u64, String>;
 pub type InternedComplexes = HashMap<u64, BTreeSet<String>>;
 
 impl Interner {
-    /// Returns the key for this ident,
+    /// Returns the key for this symbol,
     /// 
-    pub fn ident(&self, ident: impl AsRef<str>) -> u64 {
-        let ident = Value::Symbol(ident.as_ref().to_string());
-        if let (Value::Reference(key), Value::Symbol(_)) = (ident.to_ref(), ident) {
-            key 
+    pub fn symbol(&self, symbol: impl Into<String>) -> Result<u64, Error> {
+        let symbol = Value::Symbol(symbol.into());
+        if let (Value::Reference(key), Value::Symbol(_)) = (symbol.to_ref(), symbol) {
+            Ok(key) 
         } else {
-            event!(Level::ERROR, "Could not add string to interner");
-            0
+            Err("Could not add string to interner".into())
         }
     }
 
-    /// Adds an ident to the interner
+    /// Adds a symbol to the interner and returns the key,
     /// 
-    pub fn add_ident(&mut self, ident: impl AsRef<str>) -> u64 {
+    pub fn add_symbol(&mut self, ident: impl AsRef<str>) -> Result<u64, Error> {
         let ident = Value::Symbol(ident.as_ref().to_string());
         if let (Value::Reference(key), Value::Symbol(ident)) = (ident.to_ref(), ident) {
-            self.insert_string(key, ident);
-            key 
+            self.insert_symbol(key, ident);
+            Ok(key)
         } else {
-            event!(Level::ERROR, "Could not add string to interner");
-            0
+            Err("Could not add string to interner".into())
         }
     }
 
     /// Adds a map to the interner
     /// 
-    pub fn add_map(&mut self, map: Vec<&str>) -> u64 {
+    pub fn add_map(&mut self, map: Vec<&str>) -> Result<u64, Error> {
         let complex = Value::Complex(BTreeSet::from_iter(map.iter().map(|m| m.to_string())));
         if let (Value::Reference(key), Value::Complex(complex)) = (complex.to_ref(), complex) {
             self.insert_complex(key, &complex);
-            key
+            Ok(key)
         } else {
-            event!(Level::ERROR, "Could not add map to interner");
-            0
+            Err("Could not add map to interner".into())
         }
     }
 
-    /// Adds a string to the interner w/ key value
+    /// Adds a symbol to the interner w/ key value
     /// 
-    pub fn insert_string(&mut self, key: u64, string: String) {
-        self.symbols.insert(key, string);
+    pub fn insert_symbol(&mut self, key: u64, symbol: impl Into<String>) {
+        self.symbols.insert(key, symbol.into());
     }
 
     /// Adds a complex to the interner w/ key value
@@ -77,9 +74,9 @@ impl Interner {
         self.complexes.insert(key, complex.to_owned());
     }
 
-    /// Returns a reference to interned strings
+    /// Returns a reference to interned symbols
     /// 
-    pub fn strings(&self) -> &InternedSymbols {
+    pub fn symbols(&self) -> &InternedSymbols {
         self.as_ref()
     }
     
@@ -94,8 +91,8 @@ impl Interner {
     pub fn merge(&self, other: &Interner) -> Interner {
         let mut interner = self.clone();
 
-        for (_, s) in other.symbols.iter() {
-            interner.add_ident(s);
+        for (k, s) in other.symbols.iter() {
+            interner.insert_symbol(*k, s);
         }
 
         for (k, c) in other.complexes.iter() {
@@ -111,7 +108,7 @@ impl Default for Interner {
         let mut interner = Self { symbols: Default::default(), complexes: Default::default() };
         // When this is converted into a control device, since a read must be > 0, this can't normally be encoded
         // So by default add this to the interner as a special case
-        interner.add_ident("");
+        interner.add_symbol("").ok();
         interner
     }
 }
@@ -133,7 +130,7 @@ impl AsRef<InternedSymbols> for Interner {
 
 impl AsRef<InternedComplexes> for Interner {
     fn as_ref(&self) -> &InternedComplexes {
-        &&self.complexes
+        &self.complexes
     }
 }
 
