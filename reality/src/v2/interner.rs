@@ -1,11 +1,24 @@
 use std::collections::BTreeSet;
 use std::collections::HashMap;
+use std::ops::Deref;
+use specs::Component;
+use specs::VecStorage;
+use tracing::error;
 use crate::Error;
 use crate::Value;
 
-/// Struct to wrap interned data 
+use super::Object;
+use super::Properties;
+
+/// Struct w/ hash tables for interning types,
 /// 
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Interning is an encoding technique to map strings and other dynamically sized types to an integer value. 
+/// When encoding, this integer value can be used in place of the actual instance value, and then restored later. 
+/// 
+/// Interners can be merged into a single Interner and encoded into a "Control Device",
+/// 
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+#[storage(VecStorage)]
 pub struct Interner {
     /// Symbols that have been interned,
     /// 
@@ -27,6 +40,11 @@ pub type InternedSymbols = HashMap<u64, String>;
 pub type InternedComplexes = HashMap<u64, BTreeSet<String>>;
 
 impl Interner {
+    /// Gets a symbol from an interner if present,
+    /// 
+    pub fn get_symbol(&self, key: u64) -> Option<Value> {
+        self.symbols.get(&key).map(|s| Value::Symbol(s.to_string()))
+    }
     /// Returns the key for this symbol,
     /// 
     pub fn symbol(&self, symbol: impl Into<String>) -> Result<u64, Error> {
@@ -34,7 +52,7 @@ impl Interner {
         if let (Value::Reference(key), Value::Symbol(_)) = (symbol.to_ref(), symbol) {
             Ok(key) 
         } else {
-            Err("Could not add string to interner".into())
+            Err("Could not get key for symbol".into())
         }
     }
 
@@ -50,7 +68,7 @@ impl Interner {
         }
     }
 
-    /// Adds a map to the interner
+    /// Adds a map to the interner,
     /// 
     pub fn add_map(&mut self, map: Vec<&str>) -> Result<u64, Error> {
         let complex = Value::Complex(BTreeSet::from_iter(map.iter().map(|m| m.to_string())));
@@ -137,5 +155,105 @@ impl AsRef<InternedComplexes> for Interner {
 impl Into<HashMap<u64, String>> for Interner {
     fn into(self) -> HashMap<u64, String> {
         self.symbols
+    }
+}
+
+impl<'a> TryFrom<&Object<'a>> for Interner {
+    type Error = Error;
+
+    fn try_from(value: &Object<'a>) -> Result<Self, Self::Error> {
+        let interner = Interner::default();
+        let mut interner = interner.merge(&value.properties().into());
+        
+        value.ident().parts().map(|p| {
+            p.iter().for_each(|p| {
+                interner.add_symbol(p).ok();
+            });
+        })?;
+
+        Ok(interner)
+    }
+}
+
+impl From<Properties> for Interner {
+    fn from(value: Properties) -> Self {
+        (&value).into()
+    }
+}
+
+impl From<&Properties> for Interner {
+    fn from(value: &Properties) -> Self {
+        let mut interner = Interner::default();
+
+        for (name, property) in value.iter_properties() {
+            interner.add_symbol(name).map_err(|e| {
+                error!("Error adding property name to interner, {e}");
+            }).ok();
+
+            property.as_symbol().map(|p| {
+                interner.add_symbol(p).map_err(|e| {
+                    error!("Error adding symbol to interner, {e}");
+                })
+            });
+
+            property.as_symbol_vec().map(|p| {
+                for _p in p {
+                    interner.add_symbol(_p).map_err(|e| {
+                        error!("Error adding symbol to interner, {e}");
+                    }).ok();
+                }
+            });
+
+            property.as_properties().map(|p| {
+                let nested: Interner = p.deref().into();
+
+                interner = interner.merge(&nested);
+            });
+        }
+
+        interner
+    }
+}
+
+#[allow(unused_imports)]
+mod tests {
+    use crate::v2::Properties;
+
+    use super::Interner;
+
+    #[test]
+    fn test_interner_from_properties() {
+        let mut properties = Properties::new("test".parse().expect("should be able to parse"));
+        properties.add("a", "test");
+        properties.add("b", "test2");
+        properties.add("b", "test3");
+
+        let mut nested = Properties::new("test".parse().expect("should be able to parse"));
+        nested.add("c", "test4");
+        nested.add("d", "test5");
+        nested.add("d", "test6");
+        properties.add_readonly_properties(&nested);
+
+        let interner = Interner::try_from(properties).expect("should be able to convert interner");
+        let key = interner.symbol("a").expect("should be able to get key");
+        assert!(interner.get_symbol(key).is_some());
+        let key = interner.symbol("b").expect("should be able to get key");
+        assert!(interner.get_symbol(key).is_some());
+        let key = interner.symbol("c").expect("should be able to get key");
+        assert!(interner.get_symbol(key).is_some());
+        let key = interner.symbol("d").expect("should be able to get key");
+        assert!(interner.get_symbol(key).is_some());
+        let key = interner.symbol("test").expect("should be able to get key");
+        assert!(interner.get_symbol(key).is_some());
+        let key = interner.symbol("test2").expect("should be able to get key");
+        assert!(interner.get_symbol(key).is_some(), "{:?}", interner);
+        let key = interner.symbol("test3").expect("should be able to get key");
+        assert!(interner.get_symbol(key).is_some());
+        let key = interner.symbol("test4").expect("should be able to get key");
+        assert!(interner.get_symbol(key).is_some());
+        let key = interner.symbol("test5").expect("should be able to get key");
+        assert!(interner.get_symbol(key).is_some());
+        let key = interner.symbol("test6").expect("should be able to get key");
+        assert!(interner.get_symbol(key).is_some());
     }
 }
