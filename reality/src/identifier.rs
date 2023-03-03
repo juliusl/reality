@@ -688,4 +688,16 @@ mod tests {
 
         assert_eq!("main.id.other.id", ab.to_string().as_str());
     }
+
+    /// Test expected formatting w/ parent set,
+    /// 
+    #[test]
+    fn test_display_format() {
+        let mut a = "name".parse::<Identifier>().expect("should be able to parse");
+        let parent = "tests.block.test_display_format".parse::<Identifier>().expect("should be able to parse");
+        a.set_parent(Arc::new(parent));
+
+        assert_eq!("name", format!("{}", a).as_str());
+        assert_eq!("tests.block.test_display_format.name", format!("{:#}", a).as_str());
+    }
 }

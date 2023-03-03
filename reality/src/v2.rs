@@ -32,12 +32,16 @@ mod thunk;
 pub use thunk::Thunk;
 pub use thunk::ThunkBuild;
 pub use thunk::ThunkCall;
+pub use thunk::ThunkListen;
 pub use thunk::thunk_build;
-pub use thunk::thunk_call;
 pub use thunk::thunk_update;
+pub use thunk::thunk_call;
+pub use thunk::thunk_listen;
 pub use thunk::Build;
 pub use thunk::Call;
 pub use thunk::Update;
+pub use thunk::Accept;
+pub use thunk::Listen;
 
 mod data;
 pub mod toml {
