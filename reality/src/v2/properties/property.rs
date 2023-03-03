@@ -138,6 +138,19 @@ impl Property {
         }
     }
 
+    /// Returns a binary vector,
+    /// 
+    pub fn as_binary(&self) -> Option<&Vec<u8>> {
+        match self {
+            Property::Single(Value::BinaryVector(bin)) => {
+                Some(bin)
+            },
+            _ => {
+                None
+            }
+        }
+    }
+
     /// Returns as properties,
     /// 
     pub fn as_properties(&self) -> Option<Arc<Properties>> {

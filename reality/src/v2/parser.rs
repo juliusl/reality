@@ -242,7 +242,7 @@ mod tests {
             thunk::Update,
             thunk_call,
             toml::DocumentBuilder,
-            BlockList, Call, Compiler, Object, Properties, Visitor,
+            BlockList, Call, Compiler, Object, Properties, Visitor, Interner,
         },
         BlockProperties, Error, Identifier,
     };
@@ -295,6 +295,8 @@ mod tests {
 : lhs .int
 : rhs .int
 : prod .int
+: test .bin aGVsbG8gd29ybGQ=
+#: test .int 10
 <> .input lhs
 <> .input rhs
 <> .eval prod
@@ -349,6 +351,13 @@ mod tests {
                         println!("root - {k}");
                     }
                 });
+            }
+        });
+
+        let mut build_interner = Interner::default();
+        compiler.update_last_build(&mut build_interner).map(|l| {
+            if let Some(interner) = compiler.as_ref().read_component::<Interner>().get(l) {
+                println!("{:#?}", interner);
             }
         });
 
@@ -469,6 +478,13 @@ mod tests {
                 println!("loaded\n{}", doc.doc);
             }
             println!("{:?}", o);
+        }
+
+        for (_, _, props) in doc.query("test.a.block.op.mult", |_, _, _| true).unwrap() {
+            props["test"].as_binary().map(|b| {
+                println!("{:?}", b);
+                println!("{:?}", String::from_utf8(b.clone()));
+            });
         }
 
         println!("Testing query_inner");
