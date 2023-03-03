@@ -18,8 +18,10 @@ use toml_edit::value;
 use toml_edit::Array;
 use toml_edit::Document;
 use toml_edit::Item;
+use toml_edit::Table;
 use tracing::error;
 
+use super::blob::BlobInfo;
 use super::query::Query;
 
 /// Struct for building a TOML-document from V2 compiler build,
@@ -27,10 +29,10 @@ use super::query::Query;
 #[derive(Default)]
 pub struct DocumentBuilder {
     /// Current toml doc being built,
-    /// 
+    ///
     doc: Document,
     /// Identifier being parsed,
-    /// 
+    ///
     parsing: Option<String>,
 }
 
@@ -47,16 +49,27 @@ impl DocumentBuilder {
         doc
     }
 
-    /// Formats an identifier for use in a table header,
+    /// Visits the internal document w/ a visit_mut implementation,
     /// 
+    pub fn visit_mut(&mut self, mut visitor: impl toml_edit::visit_mut::VisitMut) {
+        visitor.visit_document_mut(&mut self.doc);
+    }
+
+    /// Visits the internal document w/ a visit implementation,
+    /// 
+    pub fn visit<'a>(&'a self, mut visitor: impl toml_edit::visit::Visit<'a>) {
+        visitor.visit_document(&self.doc);
+    }
+
+    /// Formats an identifier for use in a table header,
+    ///
     fn format_ident(ident: &Identifier) -> String {
         match ident.commit() {
-            Ok(committed) => {
-                committed.to_string()
+            Ok(committed) => committed
+                .to_string()
                 .replace("\"", "")
                 .trim_matches('.')
-                .to_string()
-            }
+                .to_string(),
             Err(err) => {
                 error!("Could not format ident, {err}");
                 ident.to_string()
@@ -124,6 +137,10 @@ impl Visitor for DocumentBuilder {
                     self.doc["properties"][id][name]
                         .as_array_mut()
                         .map(|a| a.push(value));
+                } else if let Some(table) = item.as_inline_table() {
+                    self.doc["properties"][id][name]
+                        .as_array_mut()
+                        .map(|a| a.push(table.clone()));
                 }
             } else if let Some(_) = idx {
                 let item: Item = value.clone().into();
@@ -174,7 +191,12 @@ impl Into<toml_edit::Item> for Value {
                 arr.push(f3 as f64);
                 value(arr)
             }
-            Value::BinaryVector(b) => value(base64::encode(b)), // TODO -- this will need to be changed at some point into a table
+            Value::BinaryVector(b) => {
+                let mut table = Table::new();
+                table["src"] = value("base64");
+                table["data"] = value(base64::encode(b));
+                value(table.into_inline_table())
+            }
             Value::Reference(r) => value(r as i64),
             Value::Symbol(s) => value(s),
             Value::Complex(c) => {
@@ -225,7 +247,7 @@ pub struct TomlProperties {
 
 impl TomlProperties {
     /// Loads toml properties from a file and returns the result,
-    /// 
+    ///
     pub async fn try_load(path: impl AsRef<Path>) -> Result<Self, Error> {
         let file = path.as_ref().canonicalize()?;
         let file = tokio::fs::read_to_string(file).await?;
@@ -249,13 +271,13 @@ impl TomlProperties {
     }
 
     /// Tries to save toml document to a path,
-    /// 
+    ///
     pub async fn try_save(&self, path: impl AsRef<Path>) -> Result<(), Error> {
         if let Some(dir) = path.as_ref().parent() {
             tokio::fs::create_dir_all(&dir).await?;
 
             tokio::fs::write(path, format!("{}", self.doc)).await?;
-    
+
             Ok(())
         } else {
             Err("Could not save properties".into())
@@ -425,7 +447,41 @@ impl<'a> Into<crate::Value> for &'a toml_edit::Value {
                 }
                 crate::Value::Complex(c)
             }
-            toml_edit::Value::InlineTable(_) => crate::Value::Empty,
+            toml_edit::Value::InlineTable(blob) => {
+                match BlobInfo::try_from(blob) {
+                    Ok(blob_info) => match Value::try_from(&blob_info) {
+                        Ok(v) => v,
+                        Err(err) => {
+                            error!("Could not convert blob info into value, {err}");
+                            Value::Empty
+                        },
+                    },
+                    Err(err) => {
+                        error!("Could not convert table into blob info, {err}");
+                        Value::Empty
+                    },
+                }
+            }
+        }
+    }
+}
+
+impl TryFrom<&toml_edit::InlineTable> for super::blob::BlobInfo {
+    type Error = Error;
+
+    fn try_from(value: &toml_edit::InlineTable) -> Result<Self, Self::Error> {
+        match (
+            value
+                .get("src")
+                .and_then(|e| e.as_str())
+                .map(|e| e.to_string()),
+            value
+                .get("data")
+                .and_then(|d| d.as_str())
+                .map(|d| d.to_string()),
+        ) {
+            (Some(src), Some(data)) => Ok(super::blob::BlobInfo { src, data, fetcher: None, ident: None }),
+            _ => Err("Could not create blob info from table".into()),
         }
     }
 }

@@ -164,6 +164,12 @@ impl Properties {
 
         results
     }
+
+    /// Returns the number of properties contained in the property map,
+    /// 
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
 }
 
 impl<'a> Index<&'a str> for Properties {
