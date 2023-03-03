@@ -98,7 +98,7 @@ impl Identifier {
     ///
     /// Returns an error if the root has any `.`'s
     ///
-    pub fn try_create(root: impl Into<String>) -> Result<Self, Error> {
+    pub fn new(root: impl Into<String>) -> Self {
         let root = root.into();
         let root = if root.contains(".") && !root.starts_with(r#"""#) && !root.ends_with(r#"""#) {
             format!(r#""{}""#, root)
@@ -106,12 +106,12 @@ impl Identifier {
             format!("{root}")
         };
 
-        Ok(Self {
+        Self {
             buf: root,
             len: 0,
             tags: BTreeSet::default(),
             parent: Default::default(),
-        })
+        }
     }
 
     /// Joins the next part of the identifier,
@@ -477,14 +477,14 @@ impl FromStr for Identifier {
         let parts = parts(s)?;
         let mut parts = parts.iter();
 
-        if let Some(mut root) = parts.next().and_then(|p| Self::try_create(p).ok()) {
+        if let Some(mut root) = parts.next().map(|p| Self::new(p)) {
             for p in parts {
                 root.join(p)?;
             }
 
             Ok(root)
         } else {
-            Self::try_create("")
+            Ok(Self::new(""))
         }
     }
 }
@@ -500,7 +500,7 @@ mod tests {
 
     #[test]
     fn test_identifier() {
-        let mut root = Identifier::try_create("test").expect("should be a root");
+        let mut root = Identifier::new("test");
 
         root.join("part1")
             .expect("should be part1")
@@ -512,7 +512,7 @@ mod tests {
         assert_eq!("part2", root.pos(2).expect("should have a part"));
         root.pos(3).expect_err("should be an error");
 
-        let root = Identifier::try_create("").expect("should be able to create root");
+        let root = Identifier::new("");
         assert_eq!("", root.root());
 
         let mut root: Identifier = "test.part1.part2".parse().expect("should be able to parse");

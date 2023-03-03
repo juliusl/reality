@@ -249,6 +249,12 @@ impl From<f64> for Value {
     }
 }
 
+impl From<Vec<u8>> for Value {
+    fn from(value: Vec<u8>) -> Self {
+        Value::BinaryVector(value)
+    }
+}
+
 impl Eq for Value {}
 
 impl Ord for Value {

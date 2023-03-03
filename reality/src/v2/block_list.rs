@@ -82,20 +82,6 @@ impl super::parser::PacketHandler for BlockList {
                     block.last_mut().map(|l| {
                         *l = l.clone().extend(&identifier);
                     });
-
-                    // let identifier = identifier.commit()?;
-
-                    // for a in actions {
-                    //     match a {
-                    //         action::Action::With(name, value) => {
-                    //             let ident = identifier.branch(name)?;
-                    //             block.last_mut().map(|l| {
-                    //                 *l = l.clone().with(ident.to_string(), value);
-                    //             });
-                    //         }
-                    //         _ => {}
-                    //     }
-                    // }
                 }
                 _ => {}
             }

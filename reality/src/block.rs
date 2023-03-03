@@ -56,9 +56,7 @@ impl Block {
         let mut ident = Identifier::default();
         // trace!("Creating new block name: {name} symbol: {symbol}");
         if !symbol.is_empty() {
-            if let Ok(root) = Identifier::try_create(&symbol) {
-                ident = root;
-            }
+            ident = Identifier::new(&symbol);
 
             if !name.is_empty() {
                 if let Err(err) = ident.join(&name) {
