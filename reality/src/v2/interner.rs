@@ -9,6 +9,8 @@ use crate::Value;
 
 use super::Object;
 use super::Properties;
+use super::Visitor;
+use super::thunk::AutoUpdateComponent;
 
 /// Struct w/ hash tables for interning types,
 /// 
@@ -26,7 +28,7 @@ pub struct Interner {
     /// rather than being stored in a blob device,
     /// 
     symbols: InternedSymbols,
-    /// A complex is a vector of strings that have been interned
+    /// A complex is a set of strings that have been interned
     /// 
     complexes: InternedComplexes
 }
@@ -40,11 +42,30 @@ pub type InternedSymbols = HashMap<u64, String>;
 pub type InternedComplexes = HashMap<u64, BTreeSet<String>>;
 
 impl Interner {
+    /// Gets a value (either a symbol of complex) from an interner if present,
+    /// 
+    pub fn get(&self, key: &u64) -> Option<Value> {
+        let mut value = self.get_symbol(key);
+        
+        if value == None {
+            value = self.get_complex(key);
+        }
+
+        value
+    }
+
     /// Gets a symbol from an interner if present,
     /// 
-    pub fn get_symbol(&self, key: u64) -> Option<Value> {
-        self.symbols.get(&key).map(|s| Value::Symbol(s.to_string()))
+    pub fn get_symbol(&self, key: &u64) -> Option<Value> {
+        self.symbols.get(key).map(|s| Value::Symbol(s.to_string()))
     }
+
+    /// Gets a complex from the interner if present,
+    /// 
+    pub fn get_complex(&self, key: &u64) -> Option<Value> {
+        self.complexes.get(key).map(|c| Value::Complex(c.clone()))
+    }
+
     /// Returns the key for this symbol,
     /// 
     pub fn symbol(&self, symbol: impl Into<String>) -> Result<u64, Error> {
@@ -158,6 +179,43 @@ impl Into<HashMap<u64, String>> for Interner {
     }
 }
 
+/// Allows the build itself to derive an interner,
+/// 
+impl Visitor for Interner {
+    fn visit_property_name(&mut self, name: &String) {
+        self.add_symbol(name).map_err(|e| error!("Could not add property name to interner, {e}")).ok();
+    }
+
+    fn visit_symbol(&mut self, _: &String, _: Option<usize>, symbol: &String) {
+        self.add_symbol(symbol).map_err(|e| error!("Could not add symbol to interner, {e}")).ok();
+    }
+
+    fn visit_readonly(&mut self, properties: std::sync::Arc<Properties>) {
+        let interner: Interner = properties.deref().into();
+
+        *self = self.merge(&interner);
+    }
+
+    fn visit_identifier(&mut self, identifier: &crate::Identifier) {
+        if let Some(parent) = identifier.parent() {
+            self.add_symbol(format!("{:#}", parent)).map_err(|e| error!("Could not add parent identifier to interner, {e}")).ok();
+        }
+
+        self.add_symbol(format!("{}", identifier)).map_err(|e| error!("Could not add identifier to interner, {e}")).ok();
+
+        match identifier.commit().and_then(|i| i.parts()) {
+            Ok(parts) => {
+                for p in parts.iter() {
+                    self.add_symbol(p).map_err(|e| error!("Could not add identifier part to interner, {e}")).ok();
+                }
+            },
+            Err(err) => {
+                error!("Could not get parts from identifier, {err}");
+            }
+        }
+    }
+}
+
 impl<'a> TryFrom<&Object<'a>> for Interner {
     type Error = Error;
 
@@ -215,6 +273,8 @@ impl From<&Properties> for Interner {
     }
 }
 
+impl AutoUpdateComponent for Interner {}
+
 #[allow(unused_imports)]
 mod tests {
     use crate::v2::Properties;
@@ -236,24 +296,24 @@ mod tests {
 
         let interner = Interner::try_from(properties).expect("should be able to convert interner");
         let key = interner.symbol("a").expect("should be able to get key");
-        assert!(interner.get_symbol(key).is_some());
+        assert!(interner.get(&key).is_some());
         let key = interner.symbol("b").expect("should be able to get key");
-        assert!(interner.get_symbol(key).is_some());
+        assert!(interner.get(&key).is_some());
         let key = interner.symbol("c").expect("should be able to get key");
-        assert!(interner.get_symbol(key).is_some());
+        assert!(interner.get(&key).is_some());
         let key = interner.symbol("d").expect("should be able to get key");
-        assert!(interner.get_symbol(key).is_some());
+        assert!(interner.get(&key).is_some());
         let key = interner.symbol("test").expect("should be able to get key");
-        assert!(interner.get_symbol(key).is_some());
+        assert!(interner.get(&key).is_some());
         let key = interner.symbol("test2").expect("should be able to get key");
-        assert!(interner.get_symbol(key).is_some(), "{:?}", interner);
+        assert!(interner.get(&key).is_some(), "{:?}", interner);
         let key = interner.symbol("test3").expect("should be able to get key");
-        assert!(interner.get_symbol(key).is_some());
+        assert!(interner.get(&key).is_some());
         let key = interner.symbol("test4").expect("should be able to get key");
-        assert!(interner.get_symbol(key).is_some());
+        assert!(interner.get(&key).is_some());
         let key = interner.symbol("test5").expect("should be able to get key");
-        assert!(interner.get_symbol(key).is_some());
+        assert!(interner.get(&key).is_some());
         let key = interner.symbol("test6").expect("should be able to get key");
-        assert!(interner.get_symbol(key).is_some());
+        assert!(interner.get(&key).is_some());
     }
 }
