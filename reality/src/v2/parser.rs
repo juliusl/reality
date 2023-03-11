@@ -242,7 +242,7 @@ mod tests {
             thunk::Update,
             thunk_call,
             toml::DocumentBuilder,
-            BlockList, Call, Compiler, Object, Properties, Visitor, Interner,
+            BlockList, Call, Compiler, Object, Properties, Visitor, Interner
         },
         BlockProperties, Error, Identifier,
     };
@@ -419,7 +419,7 @@ mod tests {
                 if let Ok((ident, interpolated, prop)) = result {
                     if let Some(var) = interpolated.get("var").cloned() {
                         trace!("{:#} -- {:?}", ident, prop);
-                        assert_eq!(Some(100), prop[&var].as_int());
+                        assert_eq!(Some(100), prop[var.as_str()].as_int());
                     }
                 }
             }
