@@ -9,7 +9,7 @@ use specs::{Entity, World, WorldExt};
 use std::{
     collections::HashMap,
     fmt::Display,
-    io::{Cursor, Read, Seek, Write, SeekFrom},
+    io::{Cursor, Read, Seek, SeekFrom, Write},
     ops::Range,
 };
 use tracing::{event, Level};
@@ -90,11 +90,13 @@ pub struct Frame {
 
 impl From<Bytes> for Frame {
     fn from(data: Bytes) -> Self {
-        assert_eq!(data.len(), 64, "data being converted into a frame is greater than 64 bytes");
+        assert_eq!(
+            data.len(),
+            64,
+            "data being converted into a frame is greater than 64 bytes"
+        );
 
-        Frame { 
-            data
-        }
+        Frame { data }
     }
 }
 
@@ -103,7 +105,9 @@ impl From<&[u8]> for Frame {
         let mut data = [0; 64];
         data.copy_from_slice(slice);
 
-        Frame { data: Bytes::from(data.to_vec()) }
+        Frame {
+            data: Bytes::from(data.to_vec()),
+        }
     }
 }
 
@@ -152,7 +156,9 @@ impl Frame {
         let mut data = [0; 64];
         data[0] = op.into();
         data[1..].copy_from_slice(argument);
-        Self { data: Bytes::from(data.to_vec()) }
+        Self {
+            data: Bytes::from(data.to_vec()),
+        }
     }
 
     /// Returns a new frame for the block delimitter keyword in normal block mode
@@ -389,7 +395,7 @@ impl Frame {
     }
 
     /// Length of frames (including this frame)
-    /// 
+    ///
     pub fn frame_len(&self) -> usize {
         match self.keyword() {
             Keywords::Extension => {
@@ -402,8 +408,8 @@ impl Frame {
                 buffer.copy_from_slice(&self.bytes()[33..49]);
                 let [len, _] = cast::<[u8; 16], [u64; 2]>(buffer);
                 1 + len as usize
-            },
-            _ => 1
+            }
+            _ => 1,
         }
     }
 
@@ -440,19 +446,19 @@ impl Frame {
     }
 
     /// Returns true if this is an extension frame,
-    /// 
+    ///
     pub fn is_extension(&self) -> bool {
         self.keyword() == Keywords::Extension
     }
 
     /// Returns true if this is an add frame,
-    /// 
+    ///
     pub fn is_add(&self) -> bool {
         self.keyword() == Keywords::Add
     }
 
-    /// Returns true if this is a define frame, 
-    /// 
+    /// Returns true if this is a define frame,
+    ///
     pub fn is_define(&self) -> bool {
         self.keyword() == Keywords::Define
     }
@@ -529,7 +535,7 @@ impl Frame {
     /// If the value is not inlined, then data must be read from
     /// either the interner data, or a cursor representing a blob device.
     ///
-    pub fn read_value<BlobImpl>(&self, interner: &Interner, blob_device: &BlobImpl) -> Option<Value> 
+    pub fn read_value<BlobImpl>(&self, interner: &Interner, blob_device: &BlobImpl) -> Option<Value>
     where
         BlobImpl: Read + Write + Seek + Clone + Default,
     {
@@ -612,7 +618,9 @@ impl Frame {
                         buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
                         let [len, cursor] = cast::<[u8; 16], [u64; 2]>(buffer);
 
-                        blob_device.seek(SeekFrom::Start(cursor)).expect("should be able to seek to cursor");
+                        blob_device
+                            .seek(SeekFrom::Start(cursor))
+                            .expect("should be able to seek to cursor");
 
                         let mut buf = vec![0; len as usize];
 
@@ -635,7 +643,9 @@ impl Frame {
                         buffer.copy_from_slice(&self.data[value_offset..value_offset + 16]);
                         let [len, cursor] = cast::<[u8; 16], [u64; 2]>(buffer);
 
-                        blob_device.seek(SeekFrom::Start(cursor)).expect("should be able to seek to cursor");
+                        blob_device
+                            .seek(SeekFrom::Start(cursor))
+                            .expect("should be able to seek to cursor");
 
                         let mut buf = vec![0; len as usize];
                         match blob_device.read_exact(&mut buf) {
@@ -656,7 +666,12 @@ impl Frame {
                             .get(&key)
                             .map(|d| Value::Complex(d.clone()))
                     }
-                    Attributes::Custom | Attributes::Identifier | Attributes::Error | Attributes::Comment | Attributes::Whitespace | Attributes::NewLine => {
+                    Attributes::Custom
+                    | Attributes::Identifier
+                    | Attributes::Error
+                    | Attributes::Comment
+                    | Attributes::Whitespace
+                    | Attributes::NewLine => {
                         panic!("frame does not have a value type")
                     }
                 }
@@ -719,24 +734,36 @@ impl Frame {
     }
 
     /// Returns this frame with data as it's value,
-    /// 
+    ///
     pub fn with_value(&self, attribute: Attributes, data: Data) -> Frame {
         let mut frame_builder = FrameBuilder::default();
         const EMPTY_BLOB: Option<&mut Cursor<Vec<u8>>> = None::<&mut Cursor<Vec<u8>>>;
         match self.keyword() {
-            Keywords::Add => { 
-                frame_builder.cursor.write(&self.data[..17]).expect("should be able to write");
-                frame_builder.write(attribute, EMPTY_BLOB).expect("should be able to write");
-                frame_builder.write(data, EMPTY_BLOB).expect("should be able to write");
-            },
+            Keywords::Add => {
+                frame_builder
+                    .cursor
+                    .write(&self.data[..17])
+                    .expect("should be able to write");
+                frame_builder
+                    .write(attribute, EMPTY_BLOB)
+                    .expect("should be able to write");
+                frame_builder
+                    .write(data, EMPTY_BLOB)
+                    .expect("should be able to write");
+            }
             Keywords::Define => {
-                frame_builder.cursor.write(&self.data[..33]).expect("should be able to write");
-                frame_builder.write(attribute, EMPTY_BLOB).expect("should be able to write");
-                frame_builder.write(data, EMPTY_BLOB).expect("should be able to write");
+                frame_builder
+                    .cursor
+                    .write(&self.data[..33])
+                    .expect("should be able to write");
+                frame_builder
+                    .write(attribute, EMPTY_BLOB)
+                    .expect("should be able to write");
+                frame_builder
+                    .write(data, EMPTY_BLOB)
+                    .expect("should be able to write");
             }
-            _ => {
-
-            }
+            _ => {}
         }
 
         frame_builder.cursor.into()
@@ -812,26 +839,32 @@ impl Frame {
     }
 
     /// Set a binary extent to this frame,
-    /// 
+    ///
     pub fn set_binary_extent(&self, length: u64, cursor: u64) -> Frame {
-        let data = Data::Extent { length, cursor: Some(cursor) };
+        let data = Data::Extent {
+            length,
+            cursor: Some(cursor),
+        };
 
         self.with_value(Attributes::BinaryVector, data)
     }
 
     /// Set a text extent to this frame,
-    /// 
+    ///
     pub fn set_text_extent(&self, length: u64, cursor: u64) -> Frame {
-        let data = Data::Extent { length, cursor: Some(cursor) };
+        let data = Data::Extent {
+            length,
+            cursor: Some(cursor),
+        };
 
         self.with_value(Attributes::Text, data)
     }
 
-    /// Returns the current parity for this frame, 
-    /// 
-    /// Parity is measured w/ a world's entity id/generation. If this frame is being decoded remotely to clone a world, 
+    /// Returns the current parity for this frame,
+    ///
+    /// Parity is measured w/ a world's entity id/generation. If this frame is being decoded remotely to clone a world,
     /// then the parity must match.
-    /// 
+    ///
     pub fn parity(&self) -> (u32, u32) {
         let [id, gen] = cast::<[u8; 8], [u32; 2]>(self.parity_bytes());
         (id, gen)
@@ -878,13 +911,17 @@ impl From<Cursor<[u8; 64]>> for Frame {
 
 impl From<[u8; 64]> for Frame {
     fn from(data: [u8; 64]) -> Self {
-        Self { data: Bytes::from(data.to_vec()) }
+        Self {
+            data: Bytes::from(data.to_vec()),
+        }
     }
 }
 
 impl Default for Frame {
     fn default() -> Self {
-        Self { data: Bytes::from_static(&[0; 64]) }
+        Self {
+            data: Bytes::from_static(&[0; 64]),
+        }
     }
 }
 
@@ -933,6 +970,45 @@ impl FrameBuilder {
     ) -> Result<usize, std::io::Error> {
         let data: Data = data.into();
         match data {
+            // Non-blob data
+            Data::Length(..) |
+            Data::Entropy |
+            Data::Operation(..)|
+            Data::Value(..) |
+            Data::InlineFalse |
+            Data::InlineTrue |
+            Data::InlineEmpty | 
+            Data::Inline { .. } |
+            Data::FrameExtent {..} | 
+            Data::Interned {..} => self.write_non_blob(data),
+            // An extent will never be in the middle of the frame,
+            // So it does not require any padding.
+            // However, extents require a write to a blob to figure out the cursor pos
+            // So the if the cursor is not set, pad with u64::MAX
+            // All of these details should be handled by the encoder.
+            Data::Extent { length, cursor } => match cursor {
+                Some(cursor) => self
+                    .cursor
+                    .write(&cast::<[u64; 2], [u8; 16]>([length, cursor])),
+                None => match (blob, self.value.as_ref()) {
+                    (Some(blob), Some(value)) => {
+                        let data = Data::parse_blob(value.clone(), blob).expect("blob is parsed");
+
+                        self.write(data, None::<&mut Cursor<Vec<u8>>>)
+                    }
+                    _ => self
+                        .cursor
+                        .write(&cast::<[u64; 2], [u8; 16]>([length, u64::MAX])),
+                },
+            },
+        }
+    }
+    
+    /// Write non-blob data variants,
+    /// 
+    pub fn write_non_blob(&mut self, data: impl Into<Data>) -> Result<usize, std::io::Error> {
+        let data: Data = data.into();
+        match data {
             // u64 followed by entropy bytes
             Data::Length(len) => self
                 .cursor
@@ -958,26 +1034,6 @@ impl FrameBuilder {
             Data::Interned { key } => self
                 .cursor
                 .write(&cast::<[u64; 2], [u8; 16]>([key, Self::entropy()])),
-            // An extent will never be in the middle of the frame,
-            // So it does not require any padding.
-            // However, extents require a write to a blob to figure out the cursor pos
-            // So the if the cursor is not set, pad with u64::MAX
-            // All of these details should be handled by the encoder.
-            Data::Extent { length, cursor } => match cursor {
-                Some(cursor) => self
-                    .cursor
-                    .write(&cast::<[u64; 2], [u8; 16]>([length, cursor])),
-                None => match (blob, self.value.as_ref()) {
-                    (Some(blob), Some(value)) => {
-                        let data = Data::parse_blob(value.clone(), blob).expect("blob is parsed");
-
-                        self.write(data, None::<&mut Cursor<Vec<u8>>>)
-                    }
-                    _ => self
-                        .cursor
-                        .write(&cast::<[u64; 2], [u8; 16]>([length, u64::MAX])),
-                },
-            },
             // Frame extents will be constructed from regular extents,
             Data::FrameExtent {
                 start,
@@ -987,6 +1043,9 @@ impl FrameBuilder {
             } => self
                 .cursor
                 .write(&cast::<[u64; 4], [u8; 32]>([start, end, cursor, length])),
+            _ => {
+                unreachable!("Cannot reach this arm unless write() has a bug")
+            }
         }
     }
 

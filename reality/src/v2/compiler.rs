@@ -1,10 +1,13 @@
+use super::Listen;
 use super::parser::Packet;
 use super::parser::PacketHandler;
 use super::thunk::ThunkUpdate;
 use super::thunk::Update;
+use super::Links;
 use super::Properties;
 use super::ThunkBuild;
 use super::ThunkCall;
+use super::ThunkListen;
 use super::Visitor;
 use crate::v2::Block;
 use crate::v2::BlockList;
@@ -12,6 +15,7 @@ use crate::v2::Build;
 use crate::v2::Root;
 use crate::Error;
 use crate::Identifier;
+use async_trait::async_trait;
 use specs::Builder;
 use specs::Component;
 use specs::Entity;
@@ -58,6 +62,8 @@ impl Compiler {
         world.register::<ThunkBuild>();
         world.register::<ThunkCall>();
         world.register::<ThunkUpdate>();
+        world.register::<ThunkListen>();
+        world.register::<Links>();
         world.insert(None::<tokio::runtime::Handle>);
         Compiler {
             world,
@@ -221,6 +227,8 @@ impl Build for Compiler {
 #[derive(Component, Clone, Default)]
 #[storage(HashMapStorage)]
 pub struct BuildLog {
+    /// Index mapping identifiers into their current entities,
+    ///
     index: BTreeMap<Identifier, Entity>,
 }
 
@@ -241,14 +249,18 @@ impl BuildLog {
             .map(|e| Ok(e))
             .unwrap_or(Err(
                 format!("Could not find object w/ {:#}", identifier).into()
-            )).copied()
+            ))
+            .copied()
     }
 
     /// Queries the index w/ a string interpolation pattern,
-    /// 
+    ///
     /// Returns the original identifier, interpolation result, and the found entity w/ for each successful interpolation,
-    /// 
-    pub fn search(&self, pat: impl Into<String>) -> impl Iterator<Item = (&Identifier, BTreeMap<String, String>, &Entity)> {
+    ///
+    pub fn search(
+        &self,
+        pat: impl Into<String>,
+    ) -> impl Iterator<Item = (&Identifier, BTreeMap<String, String>, &Entity)> {
         let pat = pat.into();
         self.index().iter().filter_map(move |(ident, entity)| {
             if let Some(map) = ident.interpolate(&pat) {
@@ -257,5 +269,35 @@ impl BuildLog {
                 None
             }
         })
+    }
+
+    /// Updates a property from src properties, where the ident is the property name, and the parent of the ident
+    /// is the ident of the object whose properties need to be updated,
+    ///
+    pub fn update_property(&self, src: &Properties, lazy_update: &LazyUpdate) {
+        let property_name = src.owner().to_string();
+        let property = src[&property_name].clone();
+        if let Some(parent) = src
+            .owner()
+            .parent()
+            .and_then(|p| p.commit().ok())
+            .and_then(|p| self.index.get(&p))
+            .cloned()
+        {
+            lazy_update.exec_mut(move |world| {
+                if let Some(p) = world.write_component::<Properties>().get_mut(parent) {
+                    p.set(property_name, property);
+                }
+            })
+        }
+    }
+}
+
+#[async_trait]
+impl Listen for BuildLog {
+    async fn listen(&self, properties: Properties, lazy_update: &LazyUpdate) -> Result<(), Error> {
+        self.update_property(&properties, lazy_update);
+
+        Ok(())
     }
 }

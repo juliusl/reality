@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use super::BuildLog;
 use crate::state::Load;
 use crate::state::Provider;
+use crate::v2::Listen;
+use crate::v2::ThunkListen;
 use crate::v2::thunk::ThunkUpdate;
 use crate::v2::thunk::Update;
 use crate::v2::Block;
@@ -53,6 +55,9 @@ pub struct Compiled<'a> {
     /// Thunk update storage,
     ///
     thunk_updates: ReadStorage<'a, ThunkUpdate>,
+    /// Thunk listen storage,
+    /// 
+    thunk_listens: ReadStorage<'a, ThunkListen>,
     /// Build log storage,
     ///
     build_logs: ReadStorage<'a, BuildLog>,
@@ -210,6 +215,9 @@ pub struct ObjectData<'a> {
     /// Thunk'ed update fn,
     ///
     update: Option<&'a ThunkUpdate>,
+    /// Thunk'ed listen fn,
+    /// 
+    listen: Option<&'a ThunkListen>,
 }
 
 /// Enumeration of compiled object hierarchy,
@@ -331,6 +339,30 @@ impl<'a> Object<'a> {
             Object::Block(d) | Object::Root(d) | Object::Extension(d) => d.update,
         }
     }
+
+    /// Returns the thunk listen if one exists,
+    /// 
+    pub fn as_listen(&self) -> Option<&ThunkListen> {
+        match self {
+            Object::Block(d) | Object::Root(d) | Object::Extension(d) => d.listen,
+        }
+    }
+
+    /// If object has a Thunk call and listen component, will execute the call thunk and pass the result to the
+    /// listen thunk
+    /// 
+    pub async fn call_listen(&self, lazy_update: &LazyUpdate) -> Result<(), Error> {
+        match (self.as_call(), self.as_listen()) {
+            (Some(call), Some(listen)) => {
+                let properties = call.call().await?;
+
+                listen.listen(properties, lazy_update).await
+            },
+            _ => {
+                Err("Object does not have a call and listen thunk".into())
+            }
+        }
+    }
 }
 
 /// Object data format,
@@ -343,13 +375,14 @@ pub type ObjectFormat<'a> = (
     MaybeJoin<&'a ReadStorage<'a, ThunkCall>>,
     MaybeJoin<&'a ReadStorage<'a, ThunkBuild>>,
     MaybeJoin<&'a ReadStorage<'a, ThunkUpdate>>,
+    MaybeJoin<&'a ReadStorage<'a, ThunkListen>>,
 );
 
 impl<'a> Load for Object<'a> {
     type Layout = ObjectFormat<'a>;
 
     fn load(
-        (identifier, properties, block, root, call, build, update): <Self::Layout as Join>::Type,
+        (identifier, properties, block, root, call, build, update, listen): <Self::Layout as Join>::Type,
     ) -> Self {
         let object_data = ObjectData {
             identifier,
@@ -359,6 +392,7 @@ impl<'a> Load for Object<'a> {
             call,
             build,
             update,
+            listen,
         };
 
         if block.is_some() {
@@ -381,6 +415,7 @@ impl<'a> Provider<'a, ObjectFormat<'a>> for Compiled<'a> {
             self.thunk_calls.maybe(),
             self.thunk_builds.maybe(),
             self.thunk_updates.maybe(),
+            self.thunk_listens.maybe(),
         )
     }
 }

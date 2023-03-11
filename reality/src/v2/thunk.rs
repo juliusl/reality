@@ -20,6 +20,7 @@ pub use update::AutoUpdateComponent;
 mod listen;
 pub use listen::Accept;
 pub use listen::Listen;
+pub use listen::Listener;
 pub use listen::ERROR_NOT_ACCEPTED;
 
 /// Wrapper struct Component for storing a reference to a dyn Trait reference to be called later,

@@ -28,9 +28,7 @@ impl Update for Arc<dyn Update> {
 
 /// Super-trait for Components to auto-register and insert an updated component to world storage,
 /// 
-pub trait AutoUpdateComponent: Update + Clone + Component + Debug
-{
-}
+pub trait AutoUpdateComponent: Update + Clone + Component + Debug {}
 
 impl<T: AutoUpdateComponent> Update for T
 where

@@ -42,6 +42,11 @@ pub use thunk::Call;
 pub use thunk::Update;
 pub use thunk::Accept;
 pub use thunk::Listen;
+pub use thunk::Listener;
+
+mod links;
+pub use links::Link;
+pub use links::Links;
 
 mod data;
 pub mod toml {

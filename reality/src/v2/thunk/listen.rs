@@ -70,4 +70,4 @@ pub trait Listener: Listen + Accept + Build {}
 
 /// Error returned when identifier is not accepted,
 /// 
-pub const ERROR_NOT_ACCEPTED: &'static str = "Identifier is not accepted";
+pub const ERROR_NOT_ACCEPTED: &'static str = "Listener does not accept identifier";

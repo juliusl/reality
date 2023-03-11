@@ -3,27 +3,32 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use serde::Serialize;
 use serde::Deserialize;
+use specs::Component;
+use specs::VecStorage;
 use crate::Identifier;
 use crate::Value;
+use crate::v2::ThunkCall;
 use crate::v2::property_value;
 use crate::v2::Properties;
 use crate::v2::Call;
 use crate::Error;
+use crate::v2::thunk_call;
 
 /// Struct for encoding binary data,
 /// 
-/// # Blob Source Types
+/// # Built-in Blob Source Types
 /// 
-/// base64 - data is base64 encoded 
-/// file - data is stored in a local file
-/// url - data is stored in a remote location, https only
+/// base64  - data is base64 encoded 
+/// file    - data is stored in a local file
 /// 
-#[derive(Serialize, Deserialize)]
+#[derive(Component, Serialize, Deserialize)]
+#[storage(VecStorage)]
 pub struct BlobInfo {
     /// Source, 
     /// 
     /// # Sources
     /// base64 - data is a base64 encoded string
+    /// local - data is a canonicalizable path
     /// 
     pub(super) src: String,
     /// Data, value depends on encoding type,
@@ -139,6 +144,18 @@ impl TryFrom<&BlobInfo> for crate::Value {
     }
 }
 
+impl TryInto<ThunkCall> for BlobInfo {
+    type Error = Error;
+
+    fn try_into(self) -> Result<ThunkCall, Self::Error> {
+        if self.is_valid_remote() || self.is_valid_local() {
+            Ok(thunk_call(self))
+        } else {
+            Err(BLOB_INFO_CANNOT_BE_THUNKED.into())
+        }
+    }
+}
+
 /// Error message if blob cannot be converted into a value locally,
 /// 
 pub const BLOB_INFO_CONVERT_ERROR: &'static str = "Could not convert blob info into value";
@@ -146,3 +163,7 @@ pub const BLOB_INFO_CONVERT_ERROR: &'static str = "Could not convert blob info i
 /// Error message if blob cannot be converted into a value locally, but a fetcher and identifier are present,
 /// 
 pub const BLOB_INFO_USE_REMOTE: &'static str = "Could not convert blob info, use fetcher impl w/ call fn instead"; 
+
+/// Error message if blob info cannot be converted into a thunk call,
+/// 
+pub const BLOB_INFO_CANNOT_BE_THUNKED: &'static str = "Blob info cannot be converted into thunk call";

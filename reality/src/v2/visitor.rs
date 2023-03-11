@@ -85,7 +85,13 @@ pub trait Visitor {
     /// 
     fn visit_readonly(&mut self, properties: Arc<Properties>) {}
 
+    /// Visits a property name,
+    /// 
+    fn visit_property_name(&mut self, name: &String) {}
+
     /// Visits a list of values,
+    /// 
+    /// Default implementation will call this method on the alternate if some,
     /// 
     /// Note: if overriding default implementation, value idx will need to be derived if calling visit_value
     /// 
@@ -93,9 +99,13 @@ pub trait Visitor {
         for (idx, v) in values.iter().enumerate() {
             self.visit_value(name, Some(idx), v);
         }
+
+        self.alternate().map(|a| a.visit_list(name, values));
     }
 
     /// Visits a property value,
+    /// 
+    /// Default implementation will call this method on the alternate if some,
     /// 
     /// Note: If overriding default implementation, visit_* value types will need to be called manually
     /// 
@@ -115,9 +125,13 @@ pub trait Visitor {
             Value::Reference(r) => self.visit_reference(name, idx, *r),
             Value::Complex(c) => self.visit_complex(name, idx, c),
         }
+
+        self.alternate().map(|a| a.visit_value(name, idx, value));
     }
 
     /// Visits an object,
+    /// 
+    /// Default implementation will call this method on the alternate if some,
     /// 
     /// Note: If overriding the default implementation, visit_block, visit_identifier, and visit_properties, will need to be called manually.
     /// 
@@ -125,9 +139,13 @@ pub trait Visitor {
         object.as_block().map(|b| self.visit_block(b));
         self.visit_identifier(object.ident());
         self.visit_properties(object.properties());
+
+        self.alternate().map(|a| a.visit_object(object));
     }
 
     /// Visits a block,
+    /// 
+    /// Default implementation will call this method on the alternate if some,
     /// 
     /// Note: If overriding the default implementation, visit_root will need to be called manually.
     /// 
@@ -135,9 +153,13 @@ pub trait Visitor {
         for root in block.roots() {
             self.visit_root(root);
         }
+
+        self.alternate().map(|a| a.visit_block(block));
     }
 
     /// Visits a root,
+    /// 
+    /// Default implementation will call this method on the alternate if some,
     /// 
     /// Note: If overriding the default implementation, visit_extension will need to be called manually.
     /// 
@@ -145,30 +167,54 @@ pub trait Visitor {
         for ext in root.extensions() {
             self.visit_extension(ext);
         }
+
+        self.alternate().map(|a| a.visit_root(root));
     }
 
     /// Visits a properties map,
+    /// 
+    /// Default implementation will call this method on the alternate if some,
     /// 
     /// Note: If overriding the default implementation, visit_property will need to be called manually.
     /// 
     fn visit_properties(&mut self, properties: &Properties) {
         for (name, property) in properties.iter_properties() {
             self.visit_property(name, property);
+
+            self.alternate().map(|a| a.visit_property(name, property));
         }
+
+        self.alternate().map(|a| a.visit_properties(properties));
     }
 
     /// Visits a property,
+    /// 
+    /// Default implementation will call this method on the alternate if some,
     /// 
     /// Note: If overriding the default implementation, visit_value, visit_list, visit_readonly, 
     /// and visit_empty and will need to be called manually.
     /// 
     fn visit_property(&mut self, name: &String, property: &Property) {
+        self.visit_property_name(name);
+
         match property {
             Property::Single(value) => self.visit_value(name, None, value),
             Property::List(values) => self.visit_list(name, values),
             Property::Properties(properties) => self.visit_readonly(properties.clone()),
             Property::Empty => self.visit_empty(name),
         }
+
+        self.alternate().map(|a| a.visit_property(name, property));
+    }
+
+    /// Alternate visitor,
+    /// 
+    /// # Background
+    /// Allows for a two-tiered visitor approach, where the primary visitor implements this fn, and the secondary visitor overrides 
+    /// defaults.
+    /// 
+    fn alternate(&mut self) -> Option<&mut (dyn Visitor + 'static)> {
+        None
     }
 }
 
