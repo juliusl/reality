@@ -76,6 +76,8 @@ impl Parser {
             {
                 trace!("Setting implicit family name {family_name}");
                 v1_parser.set_implicit_symbol(family_name);
+            } else {
+                v1_parser.unset_implicit_symbol();
             }
 
             v1_parser.set_metadata(Metadata::new(Source::file(path)));
