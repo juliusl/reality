@@ -241,16 +241,20 @@ mod tests {
             data::{query::Query, toml::TomlProperties},
             properties::property_list,
             property_value,
-            thunk::{Update, auto::Auto},
+            thunk::{
+                auto::Auto,
+                Update,
+            },
             thunk_call,
             toml::DocumentBuilder,
-            BlockList, Call, Compiler, Object, Properties, Visitor, Interner
+            BlockList, Call, Compiler, Interner, Object, Properties, Visitor,
         },
         BlockProperties, Error, Identifier,
     };
     use async_trait::async_trait;
     use serde::Deserialize;
     use specs::{Join, ReadStorage, WorldExt};
+    use tokio::io::AsyncWriteExt;
     use toml_edit::Document;
     use tracing::trace;
     use tracing_test::traced_test;
@@ -306,11 +310,11 @@ mod tests {
 
 ``` host
 : RUST_LOG  .env reality=trace
-: HOST      .env test.io 
+: HOST      .env test.io
 
 + .host
 : RUST_LOG  .env reality=trace
-: HOST      .env test.io 
+: HOST      .env test.io
 ```
 
 ```
@@ -318,7 +322,7 @@ mod tests {
 
 + .host
 : RUST_LOG  .env reality=trace
-: HOST      .env test.io 
+: HOST      .env test.io
 ```
 "#;
 
@@ -332,10 +336,13 @@ mod tests {
 
         let mut doc_builder = DocumentBuilder::new();
         let mut build_properties = Properties::new(Identifier::default());
-        compiler.update_last_build(&mut doc_builder).map(|l| {
-            if let Some(toml) = compiler.as_ref().read_component::<TomlProperties>().get(l) {
-                println!("{}", toml.doc);
-
+        compiler
+            .update_last_build(&mut doc_builder)
+            .map_into(|build| {
+                let props: TomlProperties = build.into();
+                Ok(props)
+            })
+            .read(|toml| {
                 toml["properties"].as_table().map(|t| {
                     for (k, _) in t.iter() {
                         println!("properties - {k}");
@@ -353,21 +360,34 @@ mod tests {
                         println!("root - {k}");
                     }
                 });
-            }
-        });
+            });
+
+        let mut doc_builder = DocumentBuilder::new();
+        compiler
+            .update_last_build(&mut doc_builder)
+            .enable_async()
+            .read(|_| async {
+                println!("Entering async");
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+            })
+            .await
+            .disable_async()
+            .read(|_| {
+                println!("Exiting async");
+            });
 
         let mut build_interner = Interner::default();
-        compiler.update_last_build(&mut build_interner).map(|l| {
-            if let Some(interner) = compiler.as_ref().read_component::<Interner>().get(l) {
+        compiler
+            .update_last_build(&mut build_interner)
+            .read(|interner| {
                 println!("{:#?}", interner);
-            }
-        });
+            });
 
-        compiler.update_last_build(&mut build_properties).map(|l| {
-            if let Some(prop) = compiler.as_ref().read_component::<Properties>().get(l) {
+        compiler
+            .update_last_build(&mut build_properties)
+            .read(|prop| {
                 println!("{:#?}", prop);
-            }
-        });
+            });
 
         compiler.last_build_log().map(|b| {
             for (_, e) in b.index() {
@@ -384,7 +404,7 @@ mod tests {
                     });
             }
 
-            b.search("input.(var)")
+            b.search_index("input.(var)")
                 .for_each(|(ident, mut interpolated, entity)| {
                     trace!("Installing thunk for input extension -- {:#}", ident);
                     if let Some(var) = interpolated.remove("var") {

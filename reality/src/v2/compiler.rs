@@ -1,15 +1,14 @@
-use super::Listen;
 use super::parser::Packet;
 use super::parser::PacketHandler;
 use super::thunk::ThunkUpdate;
 use super::thunk::Update;
 use super::Links;
+use super::Listen;
 use super::Properties;
 use super::ThunkBuild;
 use super::ThunkCall;
 use super::ThunkListen;
 use super::Visitor;
-use super::thunk::auto::Auto;
 use crate::v2::Block;
 use crate::v2::BlockList;
 use crate::v2::Build;
@@ -32,6 +31,9 @@ use tracing::trace;
 mod compiled;
 pub use compiled::Compiled;
 pub use compiled::Object;
+
+mod build_ref;
+pub use build_ref::BuildRef;
 
 /// Struct to build a world from interop packets,
 ///
@@ -144,7 +146,10 @@ impl Compiler {
 
     /// Updates the last build, if successful returns the entity of the last build,
     ///
-    pub fn update_last_build<T, C: Visitor + Update<T>>(&mut self, updater: &mut C) -> Option<Entity> {
+    pub fn update_last_build<'a, T, C: Visitor + Update<T> + Default>(
+        &'a mut self,
+        updater: &mut C,
+    ) -> BuildRef<'a, C> {
         self.visit_last_build(updater)
             .and_then(|l| match self.compiled().update(l, updater) {
                 Ok(_) => Some(l),
@@ -153,10 +158,15 @@ impl Compiler {
                     None
                 }
             })
-            .map(|l| {
+            .map(move |l| {
                 self.as_mut().maintain();
-                l
+                BuildRef::<'a, C> {
+                    compiler: Some(self),
+                    entity: Some(l),
+                    ..Default::default()
+                }
             })
+            .unwrap_or_default()
     }
 
     /// Visits and updates an object,
@@ -242,7 +252,7 @@ impl BuildLog {
 
     /// Searches for an object by identifier,
     ///
-    pub fn get(&self, identifier: &Identifier) -> Result<Entity, Error> {
+    pub fn try_get(&self, identifier: &Identifier) -> Result<Entity, Error> {
         let search = identifier.commit()?;
 
         self.index()
@@ -254,15 +264,15 @@ impl BuildLog {
             .copied()
     }
 
-    /// Queries the index w/ a string interpolation pattern,
+    /// Searches the index by identity w/ a reverse interpolation identity pattern,
     ///
-    /// Returns the original identifier, interpolation result, and the found entity w/ for each successful interpolation,
+    /// Returns an iterator over the results,
     ///
-    pub fn search(
+    pub fn search_index(
         &self,
-        pat: impl Into<String>,
+        ident_pat: impl Into<String>,
     ) -> impl Iterator<Item = (&Identifier, BTreeMap<String, String>, &Entity)> {
-        let pat = pat.into();
+        let pat = ident_pat.into();
         self.index().iter().filter_map(move |(ident, entity)| {
             if let Some(map) = ident.interpolate(&pat) {
                 Some((ident, map, entity))

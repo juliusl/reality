@@ -3,18 +3,14 @@ use std::ops::Index;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::v2::thunk::Update;
 use crate::v2::Properties;
 use crate::v2::Visitor;
 use crate::Error;
 use crate::Identifier;
 use crate::Value;
-use crate::v2::thunk::auto::Auto;
 use serde::Deserialize;
 use specs::Component;
-use specs::Entity;
 use specs::HashMapStorage;
-use specs::LazyUpdate;
 use toml_edit::table;
 use toml_edit::value;
 use toml_edit::Array;
@@ -28,7 +24,8 @@ use super::query::Query;
 
 /// Struct for building a TOML-document from V2 compiler build,
 ///
-#[derive(Default)]
+#[derive(Default, Component, Clone, Debug)]
+#[storage(HashMapStorage)]
 pub struct DocumentBuilder {
     /// Current toml doc being built,
     ///
@@ -223,17 +220,6 @@ impl Into<TomlProperties> for &DocumentBuilder {
         TomlProperties {
             doc: Arc::new(self.doc.clone()),
         }
-    }
-}
-
-impl Update<Auto> for DocumentBuilder {
-    fn update(
-        &self,
-        updating: Entity,
-        lazy_update: &LazyUpdate,
-    ) -> Result<(), crate::Error> {
-        let properties: TomlProperties = self.into();
-        Update::<Auto>::update(&properties, updating, lazy_update)
     }
 }
 

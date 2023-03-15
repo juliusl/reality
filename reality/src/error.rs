@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 /// Struct for build errors,
 ///
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Error {
     error: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
     message: Option<String>,

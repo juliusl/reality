@@ -15,7 +15,6 @@ use crate::v2::ThunkCall;
 use crate::v2::Visitor;
 use crate::Error;
 use crate::Identifier;
-use crate::v2::thunk::auto::Auto;
 use specs::join::MaybeJoin;
 use specs::prelude::*;
 use specs::ReadStorage;
@@ -113,7 +112,7 @@ impl<'a> Compiled<'a> {
     /// search_index fn will call commit before trying to get the entity from the index.
     ///
     pub async fn call_from(&self, build: Entity, ident: &Identifier) -> Result<Properties, Error> {
-        if let Some(thunk) = self.find_build(build).map(|log| log.get(ident)) {
+        if let Some(thunk) = self.find_build(build).map(|log| log.try_get(ident)) {
             let thunk = thunk?;
             self.call(thunk).await.map_err(|_| {
                 format!(
@@ -141,7 +140,7 @@ impl<'a> Compiled<'a> {
                 Result<(Identifier, BTreeMap<String, String>, Properties), Error>,
             >::new();
 
-            for (ident, map, e) in build_log.search(pat) {
+            for (ident, map, e) in build_log.search_index(pat) {
                 let thunk = self.state::<Object>(*e).and_then(|o| o.as_call().cloned());
                 if let Some(thunk) = thunk {
                     let ident = ident.clone();

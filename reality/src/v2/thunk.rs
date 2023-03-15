@@ -34,6 +34,7 @@ pub mod auto {
 
     /// Flags to indicate the behavior in cases when the type being automated already implements some thunks,
     /// 
+    #[allow(dead_code)]
     pub(super) mod existing_impl {
         /// Existing Update trait implementation,
         /// 
