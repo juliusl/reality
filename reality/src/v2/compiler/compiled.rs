@@ -15,6 +15,7 @@ use crate::v2::ThunkCall;
 use crate::v2::Visitor;
 use crate::Error;
 use crate::Identifier;
+use crate::v2::thunk::auto::Auto;
 use specs::join::MaybeJoin;
 use specs::prelude::*;
 use specs::ReadStorage;
@@ -94,7 +95,7 @@ impl<'a> Compiled<'a> {
 
     /// Updates an entity w/ a type that implements the Update trait,
     ///
-    pub fn update(&self, updating: Entity, update: &impl Update) -> Result<(), Error> {
+    pub fn update<T>(&self, updating: Entity, update: &impl Update<T>) -> Result<(), Error> {
         update.update(updating, self.lazy_update())
     }
 

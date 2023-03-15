@@ -9,42 +9,66 @@ pub struct Error {
     message: Option<String>,
 }
 
-impl std::error::Error for Error {
-
-}
+impl std::error::Error for Error {}
 
 impl serde::de::Error for Error {
-    fn custom<T>(msg:T) -> Self where T:Display {
-        Self { error: None, message: Some(format!("{msg}")) }
+    fn custom<T>(msg: T) -> Self
+    where
+        T: Display,
+    {
+        Self {
+            error: None,
+            message: Some(format!("{msg}")),
+        }
     }
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} {:?}", self.error, self.message)
+        if let Some(result) = self.error.as_ref().map(|e| write!(f, "{} ", e)) {
+            result?;
+        }
+
+        if let Some(result) = self.message.as_ref().map(|msg| write!(f, "{}", msg)) {
+            result?;
+        }
+
+        Ok(())
     }
 }
 
 impl From<std::io::Error> for Error {
     fn from(value: std::io::Error) -> Self {
-        Self { error: Some(Arc::new(value)), message: None }
+        Self {
+            error: Some(Arc::new(value)),
+            message: None,
+        }
     }
 }
 
 impl From<std::fmt::Error> for Error {
     fn from(value: std::fmt::Error) -> Self {
-        Self { error: Some(Arc::new(value)), message: None }
+        Self {
+            error: Some(Arc::new(value)),
+            message: None,
+        }
     }
 }
 
 impl From<String> for Error {
     fn from(value: String) -> Self {
-        Self { error: None, message: Some(value) }
+        Self {
+            error: None,
+            message: Some(value),
+        }
     }
 }
 
 impl From<&'static str> for Error {
     fn from(value: &'static str) -> Self {
-        Self { error: None, message: Some(value.to_string()) }
+        Self {
+            error: None,
+            message: Some(value.to_string()),
+        }
     }
 }

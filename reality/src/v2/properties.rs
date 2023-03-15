@@ -14,7 +14,6 @@ pub use property::Property;
 
 use super::data::query::Query;
 use super::data::query::QueryResult;
-use super::thunk::AutoUpdateComponent;
 use super::Visitor;
 
 /// Component for a map of property attributes
@@ -195,8 +194,6 @@ impl Visitor for Properties {
         self.add_readonly_properties(properties);
     }
 }
-
-impl AutoUpdateComponent for Properties {}
 
 #[allow(unused_imports)]
 mod tests {

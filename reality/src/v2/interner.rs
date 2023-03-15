@@ -10,7 +10,6 @@ use crate::Value;
 use super::Object;
 use super::Properties;
 use super::Visitor;
-use super::thunk::AutoUpdateComponent;
 
 /// Struct w/ hash tables for interning types,
 /// 
@@ -272,8 +271,6 @@ impl From<&Properties> for Interner {
         interner
     }
 }
-
-impl AutoUpdateComponent for Interner {}
 
 #[allow(unused_imports)]
 mod tests {

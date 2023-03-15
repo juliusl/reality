@@ -3,16 +3,18 @@ use std::ops::Index;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::v2::thunk::AutoUpdateComponent;
 use crate::v2::thunk::Update;
 use crate::v2::Properties;
 use crate::v2::Visitor;
 use crate::Error;
 use crate::Identifier;
 use crate::Value;
+use crate::v2::thunk::auto::Auto;
 use serde::Deserialize;
 use specs::Component;
+use specs::Entity;
 use specs::HashMapStorage;
+use specs::LazyUpdate;
 use toml_edit::table;
 use toml_edit::value;
 use toml_edit::Array;
@@ -224,14 +226,14 @@ impl Into<TomlProperties> for &DocumentBuilder {
     }
 }
 
-impl Update for DocumentBuilder {
+impl Update<Auto> for DocumentBuilder {
     fn update(
         &self,
-        updating: specs::Entity,
-        lazy_update: &specs::LazyUpdate,
+        updating: Entity,
+        lazy_update: &LazyUpdate,
     ) -> Result<(), crate::Error> {
         let properties: TomlProperties = self.into();
-        properties.update(updating, lazy_update)
+        Update::<Auto>::update(&properties, updating, lazy_update)
     }
 }
 
@@ -386,8 +388,6 @@ impl<'a> Index<&'a str> for TomlProperties {
         &self.doc[index]
     }
 }
-
-impl AutoUpdateComponent for TomlProperties {}
 
 impl<'a> Query<'a> for TomlProperties {
     fn query(

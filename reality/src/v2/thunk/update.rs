@@ -1,17 +1,12 @@
-use std::sync::Arc;
-use std::ops::Deref;
-use std::fmt::Debug;
-use specs::WorldExt;
-use specs::LazyUpdate;
-use specs::Entity;
-use specs::Component;
-use tracing::error;
-use tracing::debug;
 use crate::Error;
+use specs::Entity;
+use specs::LazyUpdate;
+use std::ops::Deref;
+use std::sync::Arc;
 
 /// Trait to setup an update for an entity,
 ///
-pub trait Update
+pub trait Update<T = ()>
 where
     Self: Send + Sync,
 {
@@ -26,26 +21,8 @@ impl Update for Arc<dyn Update> {
     }
 }
 
-/// Super-trait for Components to auto-register and insert an updated component to world storage,
-/// 
-pub trait AutoUpdateComponent: Update + Clone + Component + Debug {}
-
-impl<T: AutoUpdateComponent> Update for T
-where
-    <Self as Component>::Storage: Default, 
-{
+impl<T: Fn(Entity, &LazyUpdate) -> Result<(), Error> + Send + Sync + 'static> Update for T {
     fn update(&self, updating: Entity, lazy_update: &LazyUpdate) -> Result<(), Error> {
-        let next = self.clone();
-        lazy_update.exec_mut(move |w| {
-            w.register::<T>();
-            match w.write_component::<T>().insert(updating, next) {
-                Ok(last) => {
-                    last.map(|l| debug!("Component updated, last: {:?}", l));
-                }
-                Err(err) => error!("Error inserting component, {err}"),
-            }
-        });
-
-        Ok(())
+        self(updating, lazy_update)
     }
 }

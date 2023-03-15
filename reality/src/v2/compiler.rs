@@ -9,6 +9,7 @@ use super::ThunkBuild;
 use super::ThunkCall;
 use super::ThunkListen;
 use super::Visitor;
+use super::thunk::auto::Auto;
 use crate::v2::Block;
 use crate::v2::BlockList;
 use crate::v2::Build;
@@ -143,7 +144,7 @@ impl Compiler {
 
     /// Updates the last build, if successful returns the entity of the last build,
     ///
-    pub fn update_last_build<C: Visitor + Update>(&mut self, updater: &mut C) -> Option<Entity> {
+    pub fn update_last_build<T, C: Visitor + Update<T>>(&mut self, updater: &mut C) -> Option<Entity> {
         self.visit_last_build(updater)
             .and_then(|l| match self.compiled().update(l, updater) {
                 Ok(_) => Some(l),
@@ -162,7 +163,7 @@ impl Compiler {
     ///
     /// Returns an error if the object no longer exists,
     ///
-    pub fn update_object<C: Visitor + Update>(
+    pub fn update_object<T, C: Visitor + Update<T>>(
         &mut self,
         obj_entity: Entity,
         updater: &mut C,

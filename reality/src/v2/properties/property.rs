@@ -43,13 +43,19 @@ impl Property {
         }
     }
 
-    /// Returns a string if the property is a single symbol
+    /// Returns a reference to a String if the property is a single symbol
     ///
     pub fn as_symbol(&self) -> Option<&String> {
         match self {
             Property::Single(Value::Symbol(symbol)) => Some(symbol),
             _ => None,
         }
+    }
+
+    /// Returns a &str if the property is a single symbol,
+    /// 
+    pub fn as_symbol_str(&self) -> Option<&str> {
+        self.as_symbol().map(|s| s.as_str())
     }
 
     /// Returns an integer if the property is an int,

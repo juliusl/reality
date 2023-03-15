@@ -22,3 +22,9 @@ impl Build for Arc<dyn Build> {
         self.deref().build(lazy_builder)
     }
 }
+
+impl<T: Fn(LazyBuilder) -> Result<Entity, Error> + Sync + Send + 'static> Build for T {
+    fn build(&self, lazy_builder: LazyBuilder) -> Result<Entity, Error> {
+        self(lazy_builder)
+    }
+}

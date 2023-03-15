@@ -241,7 +241,7 @@ mod tests {
             data::{query::Query, toml::TomlProperties},
             properties::property_list,
             property_value,
-            thunk::Update,
+            thunk::{Update, auto::Auto},
             thunk_call,
             toml::DocumentBuilder,
             BlockList, Call, Compiler, Object, Properties, Visitor, Interner
