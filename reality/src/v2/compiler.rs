@@ -162,11 +162,7 @@ impl Compiler {
         .map(move |result| match result {
             Ok(entity) => {
                 self.as_mut().maintain();
-                BuildRef::<'a, C> {
-                    compiler: Some(self),
-                    entity: Some(entity),
-                    ..Default::default()
-                }
+                self.build_ref(entity)
             }
             Err(err) => err.into(),
         })
@@ -187,15 +183,22 @@ impl Compiler {
             .map(move |result| match result {
                 Ok(_) => {
                     self.as_mut().maintain();
-                    BuildRef::<'a, C> {
-                        compiler: Some(self),
-                        entity: Some(entity),
-                        ..Default::default()
-                    }
+                    self.build_ref(entity)
                 }
                 Err(err) => err.into(),
             })
             .unwrap_or_default()
+    }
+
+    /// Returns a build ref for a given entity,
+    /// 
+    pub fn build_ref<'a, T>(&'a mut self, entity: Entity) -> BuildRef<'a, T> {
+        BuildRef::<'a, T> {
+            compiler: Some(self),
+            entity: Some(entity),
+            error: None,
+            _u: None,
+        }
     }
 }
 

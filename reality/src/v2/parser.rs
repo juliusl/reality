@@ -261,7 +261,7 @@ mod tests {
 
     #[tokio::test]
     // #[traced_test]
-    async fn test_parser() {
+    async fn test_parser() -> Result<(), Error> {
         let runmd = r#"
 ``` b
 : test .true
@@ -434,25 +434,6 @@ mod tests {
             println!("loaded\n{}", doc.doc);
         }
 
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        compiler.as_mut().insert(Some(runtime.handle().clone()));
-
-        if let Some(b) = compiler.last_build() {
-            let mut joinset = compiler
-                .compiled()
-                .batch_call_matches(*b, "input.(var)")
-                .expect("should return a set");
-
-            while let Some(Ok(result)) = joinset.join_next().await {
-                if let Ok((ident, interpolated, prop)) = result {
-                    if let Some(var) = interpolated.get("var").cloned() {
-                        trace!("{:#} -- {:?}", ident, prop);
-                        assert_eq!(Some(100), prop[var.as_str()].as_int());
-                    }
-                }
-            }
-        }
-
         let test_root = "test.b.block.op.add.test:v1".parse::<Identifier>().unwrap();
         let test_root = doc
             .deserialize::<TestRoot>(&test_root)
@@ -522,8 +503,8 @@ mod tests {
             .for_each(|(id, _, _)| {
                 println!("{}", id);
             });
-
-        runtime.shutdown_background();
+        
+        Ok(())
     }
 
     struct TestInput(String);

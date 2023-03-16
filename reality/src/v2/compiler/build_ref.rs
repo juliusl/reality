@@ -1,3 +1,5 @@
+use std::ops::Deref;
+use std::sync::Arc;
 
 use super::Compiler;
 use crate::Error;
@@ -13,9 +15,17 @@ use tracing::error;
 ///
 #[derive(Default)]
 pub struct BuildRef<'a, T, const ENABLE_ASYNC: bool = false> {
+    /// The compiler that owns the entity being referenced,
+    /// 
     pub(super) compiler: Option<&'a mut Compiler>,
+    /// The entity built by the reality compiler,
+    /// 
     pub(super) entity: Option<Entity>,
-    pub(super) error: Option<Error>,
+    /// Current error,
+    /// 
+    pub(super) error: Option<Arc<Error>>,
+    /// (unused) Struct alignment + Phantom
+    /// 
     pub(super) _u: Option<fn(T)>,
 }
 
@@ -26,7 +36,7 @@ impl<T, const ENABLE_ASYNC: bool> BuildRef<'_, T, ENABLE_ASYNC> {
     ///
     pub fn result(self) -> Result<Self, Error> {
         if let Some(err) = self.error.as_ref() {
-            Err(err.clone())
+            Err(err.deref().clone())
         } else {
             Ok(self)
         }
@@ -51,7 +61,7 @@ impl<'a, T: Component> BuildRef<'a, T> {
             (Some(compiler), Some(entity)) => {
                 let world = compiler.as_ref();
                 if let Some(Err(err)) = world.write_component::<T>().get_mut(entity).map(d) {
-                    self.error = Some(err);
+                    self.error = Some(Arc::new(err));
                 }
             }
             _ => {}
@@ -67,7 +77,7 @@ impl<'a, T: Component> BuildRef<'a, T> {
             (Some(compiler), Some(entity)) => {
                 let world = compiler.as_ref();
                 if let Some(Err(err)) = world.read_component::<T>().get(entity).map(d) {
-                    self.error = Some(err);
+                    self.error = Some(Arc::new(err));
                 }
             }
             _ => {}
@@ -94,7 +104,7 @@ impl<'a, T: Component> BuildRef<'a, T> {
                         });
                     }
                     Some(Err(err)) => {
-                        self.error = Some(err);
+                        self.error = Some(Arc::new(err));
                     }
                     _ => {}
                 }
@@ -153,7 +163,7 @@ impl<'a, T: Component> BuildRef<'a, T, true> {
                 let world = compiler.as_ref();
                 if let Some(f) = world.write_component::<T>().get_mut(entity).map(d) {
                     if let Err(err) = f.await {
-                        self.error = Some(err);
+                        self.error = Some(Arc::new(err));
                     }
                 }
             }
@@ -174,7 +184,7 @@ impl<'a, T: Component> BuildRef<'a, T, true> {
                 let world = compiler.as_ref();
                 if let Some(f) = world.read_component::<T>().get(entity).map(d) {
                     if let Err(err) = f.await {
-                        self.error = Some(err);
+                        self.error = Some(Arc::new(err));
                     }
                 }
             }
@@ -204,7 +214,7 @@ impl<'a, T: Component> BuildRef<'a, T, true> {
                             });
                         }
                         Err(err) => {
-                            self.error = Some(err);
+                            self.error = Some(Arc::new(err));
                         }
                     }
                 }
@@ -252,6 +262,6 @@ impl<'a, T: Component> BuildRef<'a, T, true> {
 
 impl<T, const ENABLE_ASYNC: bool> From<Error> for BuildRef<'_, T, ENABLE_ASYNC> {
     fn from(value: Error) -> Self {
-        Self { compiler: None, entity: None, error: Some(value), _u: None }
+        Self { compiler: None, entity: None, error: Some(Arc::new(value)), _u: None }
     }
 }
