@@ -360,6 +360,8 @@ mod tests {
                         println!("root - {k}");
                     }
                 });
+
+                Ok(())
             });
 
         let mut doc_builder = DocumentBuilder::new();
@@ -369,11 +371,13 @@ mod tests {
             .read(|_| async {
                 println!("Entering async");
                 tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                Ok(())
             })
             .await
             .disable_async()
             .read(|_| {
                 println!("Exiting async");
+                Ok(())
             });
 
         let mut build_interner = Interner::default();
@@ -381,12 +385,14 @@ mod tests {
             .update_last_build(&mut build_interner)
             .read(|interner| {
                 println!("{:#?}", interner);
+                Ok(())
             });
 
         compiler
             .update_last_build(&mut build_properties)
             .read(|prop| {
                 println!("{:#?}", prop);
+                Ok(())
             });
 
         compiler.last_build_log().map(|b| {

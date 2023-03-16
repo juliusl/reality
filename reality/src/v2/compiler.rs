@@ -13,24 +13,21 @@ use crate::v2::Block;
 use crate::v2::BlockList;
 use crate::v2::Build;
 use crate::v2::Root;
-use crate::Error;
 use crate::Identifier;
-use async_trait::async_trait;
 use specs::Builder;
-use specs::Component;
 use specs::Entity;
-use specs::HashMapStorage;
 use specs::LazyUpdate;
 use specs::World;
 use specs::WorldExt;
-use std::collections::BTreeMap;
 use std::ops::Deref;
-use tracing::error;
 use tracing::trace;
 
 mod compiled;
 pub use compiled::Compiled;
 pub use compiled::Object;
+
+mod build_log;
+pub use build_log::BuildLog;
 
 mod build_ref;
 pub use build_ref::BuildRef;
@@ -144,6 +141,16 @@ impl Compiler {
         }
     }
 
+    /// Visits an object,
+    ///
+    /// Returns the entity of the object if successfully visited,
+    ///
+    pub fn visit_object(&self, entity: Entity, visitor: &mut impl Visitor) -> Option<Entity> {
+        self.compiled()
+            .visit_object(entity, visitor)
+            .map(|_| entity)
+    }
+
     /// Updates the last build, if successful returns the entity of the last build,
     ///
     pub fn update_last_build<'a, T, C: Visitor + Update<T> + Default>(
@@ -151,38 +158,44 @@ impl Compiler {
         updater: &mut C,
     ) -> BuildRef<'a, C> {
         self.visit_last_build(updater)
-            .and_then(|l| match self.compiled().update(l, updater) {
-                Ok(_) => Some(l),
-                Err(err) => {
-                    error!("Could not update, {err}");
-                    None
-                }
-            })
-            .map(move |l| {
+        .map(|entity| self.compiled().update(entity, updater).map(|_| entity))
+        .map(move |result| match result {
+            Ok(entity) => {
                 self.as_mut().maintain();
                 BuildRef::<'a, C> {
                     compiler: Some(self),
-                    entity: Some(l),
+                    entity: Some(entity),
                     ..Default::default()
                 }
-            })
-            .unwrap_or_default()
+            }
+            Err(err) => err.into(),
+        })
+        .unwrap_or_default()
     }
 
     /// Visits and updates an object,
     ///
     /// Returns an error if the object no longer exists,
     ///
-    pub fn update_object<T, C: Visitor + Update<T>>(
-        &mut self,
-        obj_entity: Entity,
+    pub fn update_object<'a, T, C: Visitor + Update<T> + Default>(
+        &'a mut self,
+        entity: Entity,
         updater: &mut C,
-    ) -> Result<(), crate::Error> {
-        if self.compiled().visit_object(obj_entity, updater).is_some() {
-            self.compiled().update(obj_entity, updater)
-        } else {
-            Err("Object did not exist".into())
-        }
+    ) -> BuildRef<'a, C> {
+        self.visit_object(entity, updater)
+            .map(|_| self.compiled().update(entity, updater))
+            .map(move |result| match result {
+                Ok(_) => {
+                    self.as_mut().maintain();
+                    BuildRef::<'a, C> {
+                        compiler: Some(self),
+                        entity: Some(entity),
+                        ..Default::default()
+                    }
+                }
+                Err(err) => err.into(),
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -230,85 +243,5 @@ impl Build for Compiler {
         }
 
         Ok(lazy_builder.with(log).build())
-    }
-}
-
-/// Log of built entities,
-///
-#[derive(Component, Clone, Default)]
-#[storage(HashMapStorage)]
-pub struct BuildLog {
-    /// Index mapping identifiers into their current entities,
-    ///
-    index: BTreeMap<Identifier, Entity>,
-}
-
-impl BuildLog {
-    /// Returns a reference to the build log's index,
-    ///
-    pub fn index(&self) -> &BTreeMap<Identifier, Entity> {
-        &self.index
-    }
-
-    /// Searches for an object by identifier,
-    ///
-    pub fn try_get(&self, identifier: &Identifier) -> Result<Entity, Error> {
-        let search = identifier.commit()?;
-
-        self.index()
-            .get(&search)
-            .map(|e| Ok(e))
-            .unwrap_or(Err(
-                format!("Could not find object w/ {:#}", identifier).into()
-            ))
-            .copied()
-    }
-
-    /// Searches the index by identity w/ a reverse interpolation identity pattern,
-    ///
-    /// Returns an iterator over the results,
-    ///
-    pub fn search_index(
-        &self,
-        ident_pat: impl Into<String>,
-    ) -> impl Iterator<Item = (&Identifier, BTreeMap<String, String>, &Entity)> {
-        let pat = ident_pat.into();
-        self.index().iter().filter_map(move |(ident, entity)| {
-            if let Some(map) = ident.interpolate(&pat) {
-                Some((ident, map, entity))
-            } else {
-                None
-            }
-        })
-    }
-
-    /// Updates a property from src properties, where the ident is the property name, and the parent of the ident
-    /// is the ident of the object whose properties need to be updated,
-    ///
-    pub fn update_property(&self, src: &Properties, lazy_update: &LazyUpdate) {
-        let property_name = src.owner().to_string();
-        let property = src[&property_name].clone();
-        if let Some(parent) = src
-            .owner()
-            .parent()
-            .and_then(|p| p.commit().ok())
-            .and_then(|p| self.index.get(&p))
-            .cloned()
-        {
-            lazy_update.exec_mut(move |world| {
-                if let Some(p) = world.write_component::<Properties>().get_mut(parent) {
-                    p.set(property_name, property);
-                }
-            })
-        }
-    }
-}
-
-#[async_trait]
-impl Listen for BuildLog {
-    async fn listen(&self, properties: Properties, lazy_update: &LazyUpdate) -> Result<(), Error> {
-        self.update_property(&properties, lazy_update);
-
-        Ok(())
     }
 }

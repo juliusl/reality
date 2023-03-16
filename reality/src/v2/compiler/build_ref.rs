@@ -62,16 +62,18 @@ impl<'a, T: Component> BuildRef<'a, T> {
 
     /// Read the Component from the build reference, chainable
     ///
-    pub fn read(self, d: impl FnOnce(&T)) -> Self {
+    pub fn read(mut self, d: impl FnOnce(&T) -> Result<(), Error>) -> Self {
         match (self.compiler.as_ref(), self.entity) {
             (Some(compiler), Some(entity)) => {
                 let world = compiler.as_ref();
-                world.read_component::<T>().get(entity).map(d).map(|_| {});
+                if let Some(Err(err)) = world.read_component::<T>().get(entity).map(d) {
+                    self.error = Some(err);
+                }
             }
             _ => {}
         }
 
-        self
+        self.check()
     }
 
     /// Maps component T to component C and inserts C to storage, chainable
@@ -163,21 +165,23 @@ impl<'a, T: Component> BuildRef<'a, T, true> {
 
     /// Read the Component from the build reference, chainable
     ///
-    pub async fn read<F>(self, d: impl FnOnce(&T) -> F) -> BuildRef<'a, T, true>
+    pub async fn read<F>(mut self, d: impl FnOnce(&T) -> F) -> BuildRef<'a, T, true>
     where
-        F: Future<Output = ()>,
+        F: Future<Output = Result<(), Error>>,
     {
         match (self.compiler.as_ref(), self.entity) {
             (Some(compiler), Some(entity)) => {
                 let world = compiler.as_ref();
                 if let Some(f) = world.read_component::<T>().get(entity).map(d) {
-                    f.await;
+                    if let Err(err) = f.await {
+                        self.error = Some(err);
+                    }
                 }
             }
             _ => {}
         }
 
-        self
+        self.check()
     }
 
     /// Maps component T to component C and inserts C to storage, chainable
@@ -243,5 +247,11 @@ impl<'a, T: Component> BuildRef<'a, T, true> {
             _u: None,
             error: self.error,
         }
+    }
+}
+
+impl<T, const ENABLE_ASYNC: bool> From<Error> for BuildRef<'_, T, ENABLE_ASYNC> {
+    fn from(value: Error) -> Self {
+        Self { compiler: None, entity: None, error: Some(value), _u: None }
     }
 }
