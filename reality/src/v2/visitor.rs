@@ -180,8 +180,6 @@ pub trait Visitor {
     fn visit_properties(&mut self, properties: &Properties) {
         for (name, property) in properties.iter_properties() {
             self.visit_property(name, property);
-
-            self.alternate().map(|a| a.visit_property(name, property));
         }
 
         self.alternate().map(|a| a.visit_properties(properties));

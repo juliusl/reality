@@ -1,5 +1,4 @@
 use std::sync::Arc;
-
 use super::Properties;
 use crate::Error;
 use async_trait::async_trait;
