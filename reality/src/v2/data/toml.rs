@@ -20,6 +20,7 @@ use toml_edit::Table;
 use tracing::error;
 
 use super::blob::BlobInfo;
+use super::query::Predicate;
 use super::query::Query;
 
 /// Struct for building a TOML-document from V2 compiler build,
@@ -379,13 +380,7 @@ impl<'a> Query<'a> for TomlProperties {
     fn query(
         &'a self,
         pat: impl AsRef<str>,
-        predicate: impl Fn(
-                &Identifier,
-                &std::collections::BTreeMap<String, String>,
-                &crate::v2::Properties,
-            ) -> bool
-            + Clone
-            + 'static,
+        predicate: impl Predicate + 'static,
     ) -> Result<super::query::QueryIter<'a>, Error> {
         let mut props = vec![];
         self.doc["properties"].as_table().map(|t| {
@@ -409,7 +404,7 @@ impl<'a> Query<'a> for TomlProperties {
         let pat = pat.as_ref().to_string();
 
         Ok(Box::new(props.into_iter().filter_map(move |p| {
-            if let Ok(mut result) = p.query(&pat, predicate.clone()) {
+            if let Ok(mut result) = p.query(&pat, predicate) {
                 result.next()
             } else {
                 None

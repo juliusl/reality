@@ -7,7 +7,6 @@ use futures::Future;
 use specs::Component;
 use specs::Entity;
 use specs::WorldExt;
-use tracing::error;
 
 /// Struct for working w/ a compiler's build log,
 ///
@@ -24,9 +23,9 @@ pub struct BuildRef<'a, T, const ENABLE_ASYNC: bool = false> {
     /// Current error,
     /// 
     pub(super) error: Option<Arc<Error>>,
-    /// (unused) Struct alignment + Phantom
+    /// (unused) Alignment + Phantom
     /// 
-    pub(super) _u: Option<fn(T)>,
+    pub(super) _u: Option<fn() -> T>,
 }
 
 impl<T, const ENABLE_ASYNC: bool> BuildRef<'_, T, ENABLE_ASYNC> {
@@ -57,14 +56,11 @@ impl<'a, T: Component> BuildRef<'a, T> {
     /// Write the Component from the build reference, chainable
     ///
     pub fn write(mut self, d: impl FnOnce(&mut T) -> Result<(), Error>) -> Self {
-        match (self.compiler.as_mut(), self.entity) {
-            (Some(compiler), Some(entity)) => {
-                let world = compiler.as_ref();
-                if let Some(Err(err)) = world.write_component::<T>().get_mut(entity).map(d) {
-                    self.error = Some(Arc::new(err));
-                }
+        if let (Some(compiler), Some(entity)) = (self.compiler.as_mut(), self.entity) {
+            let world = compiler.as_ref();
+            if let Some(Err(err)) = world.write_component::<T>().get_mut(entity).map(d) {
+                self.error = Some(Arc::new(err));
             }
-            _ => {}
         }
 
         self.check()
@@ -73,14 +69,11 @@ impl<'a, T: Component> BuildRef<'a, T> {
     /// Read the Component from the build reference, chainable
     ///
     pub fn read(mut self, d: impl FnOnce(&T) -> Result<(), Error>) -> Self {
-        match (self.compiler.as_ref(), self.entity) {
-            (Some(compiler), Some(entity)) => {
-                let world = compiler.as_ref();
-                if let Some(Err(err)) = world.read_component::<T>().get(entity).map(d) {
-                    self.error = Some(Arc::new(err));
-                }
+        if let (Some(compiler), Some(entity)) = (self.compiler.as_ref(), self.entity) {
+            let world = compiler.as_ref();
+            if let Some(Err(err)) = world.read_component::<T>().get(entity).map(d) {
+                self.error = Some(Arc::new(err));
             }
-            _ => {}
         }
 
         self.check()
@@ -92,24 +85,21 @@ impl<'a, T: Component> BuildRef<'a, T> {
     where
         <C as specs::Component>::Storage: std::default::Default,
     {
-        match (self.compiler.as_mut(), self.entity) {
-            (Some(compiler), Some(entity)) => {
-                let world = compiler.as_mut();
-                world.register::<C>();
+        if let (Some(compiler), Some(entity)) = (self.compiler.as_mut(), self.entity) {
+            let world = compiler.as_mut();
+            world.register::<C>();
 
-                match world.read_component::<T>().get(entity).map(d) {
-                    Some(Ok(next)) => {
-                        let _ = world.write_component().insert(entity, next).map_err(|e| {
-                            error!("Error writing component, {e}");
-                        });
+            match world.read_component::<T>().get(entity).map(d) {
+                Some(Ok(next)) => {
+                    if let Err(err) = world.write_component().insert(entity, next) {
+                        self.error = Some(Arc::new(err.into()));
                     }
-                    Some(Err(err)) => {
-                        self.error = Some(Arc::new(err));
-                    }
-                    _ => {}
                 }
+                Some(Err(err)) => {
+                    self.error = Some(Arc::new(err));
+                }
+                _ => {}
             }
-            _ => {}
         }
 
         self.check()
@@ -158,16 +148,13 @@ impl<'a, T: Component> BuildRef<'a, T, true> {
     where
         F: Future<Output = Result<(), Error>>,
     {
-        match (self.compiler.as_mut(), self.entity) {
-            (Some(compiler), Some(entity)) => {
-                let world = compiler.as_ref();
-                if let Some(f) = world.write_component::<T>().get_mut(entity).map(d) {
-                    if let Err(err) = f.await {
-                        self.error = Some(Arc::new(err));
-                    }
+        if let (Some(compiler), Some(entity)) = (self.compiler.as_mut(), self.entity) {
+            let world = compiler.as_ref();
+            if let Some(f) = world.write_component::<T>().get_mut(entity).map(d) {
+                if let Err(err) = f.await {
+                    self.error = Some(Arc::new(err));
                 }
             }
-            _ => {}
         }
 
         self.check()
@@ -179,16 +166,13 @@ impl<'a, T: Component> BuildRef<'a, T, true> {
     where
         F: Future<Output = Result<(), Error>>,
     {
-        match (self.compiler.as_ref(), self.entity) {
-            (Some(compiler), Some(entity)) => {
-                let world = compiler.as_ref();
-                if let Some(f) = world.read_component::<T>().get(entity).map(d) {
-                    if let Err(err) = f.await {
-                        self.error = Some(Arc::new(err));
-                    }
+        if let (Some(compiler), Some(entity)) = (self.compiler.as_ref(), self.entity) {
+            let world = compiler.as_ref();
+            if let Some(f) = world.read_component::<T>().get(entity).map(d) {
+                if let Err(err) = f.await {
+                    self.error = Some(Arc::new(err));
                 }
             }
-            _ => {}
         }
 
         self.check()
@@ -201,25 +185,22 @@ impl<'a, T: Component> BuildRef<'a, T, true> {
         <C as specs::Component>::Storage: std::default::Default,
         F: Future<Output = Result<C, Error>>,
     {
-        match (self.compiler.as_mut(), self.entity) {
-            (Some(compiler), Some(entity)) => {
-                let world = compiler.as_mut();
-                world.register::<C>();
+        if let (Some(compiler), Some(entity)) = (self.compiler.as_mut(), self.entity) {
+            let world = compiler.as_mut();
+            world.register::<C>();
 
-                if let Some(next) = world.read_component::<T>().get(entity).map(d) {
-                    match next.await {
-                        Ok(next) => {
-                            let _ = world.write_component().insert(entity, next).map_err(|e| {
-                                error!("Error writing component, {e}");
-                            });
+            if let Some(next) = world.read_component::<T>().get(entity).map(d) {
+                match next.await {
+                    Ok(next) => {
+                        if let Err(err) = world.write_component().insert(entity, next) {
+                            self.error = Some(Arc::new(err.into()));
                         }
-                        Err(err) => {
-                            self.error = Some(Arc::new(err));
-                        }
+                    }
+                    Err(err) => {
+                        self.error = Some(Arc::new(err));
                     }
                 }
             }
-            _ => {}
         }
 
         self.check()

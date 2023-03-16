@@ -12,6 +12,7 @@ pub use property::property_value;
 pub use property::property_list;
 pub use property::Property;
 
+use super::data::query::Predicate;
 use super::data::query::Query;
 use super::data::query::QueryResult;
 use super::Visitor;
@@ -142,19 +143,17 @@ impl Properties {
         self.map.iter_mut().map(|(name, property)| (name, property))
     }
 
-    /// Queries all inner properties,
+    /// Queries all nested properties, non-recursive
     /// 
-    pub fn query_inner(
+    pub fn query_nested(
         &self,
         pat: impl Into<String>,
-        predicate: impl Fn(&Identifier, &BTreeMap<String, String>, &Properties) -> bool
-            + Clone
-            + 'static,
+        predicate: impl Predicate + 'static,
     ) -> Vec<QueryResult> {
         let mut results = vec![];
         let pat = pat.into();
         for p in self.iter_properties().filter_map(|p| p.1.as_properties()) {
-            if let Ok(result) = p.query(&pat, predicate.clone()) {
+            if let Ok(result) = p.query(&pat, predicate) {
                 for r in result {
                     results.push(r);
                 }
@@ -162,6 +161,15 @@ impl Properties {
         }
 
         results
+    }
+
+    /// Shortcut for query_nested(.., all)
+    /// 
+    pub fn all_nested(
+        &self,
+        pat: impl Into<String>,
+    ) -> Vec<QueryResult> {
+        self.query_nested(pat, super::data::query::all)
     }
 
     /// Returns the number of properties contained in the property map,

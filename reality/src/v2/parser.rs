@@ -233,18 +233,20 @@ impl Parser {
 
 #[allow(unused_imports)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::Parser;
     use crate::{
         state::Provider,
         v2::{
             compiler::Compiled,
-            data::{query::Query, toml::TomlProperties},
+            data::{
+                query::{self, all, Predicate, Query},
+                toml::TomlProperties,
+            },
             properties::property_list,
             property_value,
-            thunk::{
-                auto::Auto,
-                Update,
-            },
+            thunk::{auto::Auto, Update},
             thunk_call,
             toml::DocumentBuilder,
             BlockList, Call, Compiler, Interner, Object, Properties, Visitor,
@@ -450,24 +452,17 @@ mod tests {
 
         for (ident, _, props) in compiler
             .compiled()
-            .query("input.(var)", |_, map, props| {
-                map["var"] == "lhs"
-                    && props["type"]
-                        .as_symbol()
-                        .filter(|s| *s == "stdin")
-                        .is_some()
-                    && props["rust_log"].as_symbol().is_some()
-            })
+            .query(
+                "input.(var)",
+                LHSOperator()
+            )
             .unwrap()
         {
             println!("{}", ident);
             println!("{:?}", props);
         }
 
-        for (ident, _, props) in doc
-            .query(r#"test:v1.test.input.(var)"#, |_, _, _| true)
-            .unwrap()
-        {
+        for (ident, _, props) in doc.all(r#"test:v1.test.input.(var)"#).unwrap() {
             println!("{} {:?}", ident, props);
 
             let mut doc = DocumentBuilder::new();
@@ -489,7 +484,7 @@ mod tests {
             println!("{:?}", o);
         }
 
-        for (_, _, props) in doc.query("test.a.block.op.mult", |_, _, _| true).unwrap() {
+        for (_, _, props) in doc.all("test.a.block.op.mult").unwrap() {
             props["test"].as_binary().map(|b| {
                 println!("{:?}", b);
                 println!("{:?}", String::from_utf8(b.clone()));
@@ -498,15 +493,40 @@ mod tests {
 
         println!("Testing query_inner");
         build_properties
-            .query_inner("input.(var)", |_, _, _| true)
+            .all_nested("input.(var)")
             .iter()
             .for_each(|(id, _, _)| {
                 println!("{}", id);
             });
-        
+
         Ok(())
     }
 
+    #[derive(Copy, Clone)]
+    struct LHSOperator();
+    
+    /*
+        If feature(adt_const_params) then this could be written as --
+
+        Operator<Expression::LHS>();
+    */
+
+    impl Predicate for LHSOperator {
+        fn filter(
+            self,
+            _: &Identifier,
+            interpolated: &BTreeMap<String, String>,
+            properties: &Properties,
+        ) -> bool {
+            interpolated["var"] == "lhs"
+                && properties["type"]
+                    .as_symbol()
+                    .filter(|s| *s == "stdin")
+                    .is_some()
+                && properties["rust_log"].as_symbol().is_some()
+        }
+    }
+    
     struct TestInput(String);
 
     #[async_trait]

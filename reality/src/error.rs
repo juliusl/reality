@@ -72,3 +72,12 @@ impl From<&'static str> for Error {
         }
     }
 }
+
+impl From<specs::error::Error> for Error {
+    fn from(value: specs::error::Error) -> Self {
+        Self {
+            error: Some(Arc::new(value)),
+            message: None
+        }
+    }
+}
