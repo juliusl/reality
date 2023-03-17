@@ -96,8 +96,6 @@ impl Identifier {
 
     /// Returns a new identifier w/ root,
     ///
-    /// Returns an error if the root has any `.`'s
-    ///
     pub fn new(root: impl Into<String>) -> Self {
         let root = root.into();
         let root = if root.contains(".") && !root.starts_with(r#"""#) && !root.ends_with(r#"""#) {
@@ -392,12 +390,12 @@ impl Display for Identifier {
             write!(f, r#".""#)?;
             let mut tags = self.tags.iter();
             if let Some(tag) = tags.next() {
-                write!(f, "{tag}")?;
+                write!(f, "#{tag}")?;
             }
             for t in tags {
                 write!(f, ":{t}")?;
             }
-            write!(f, r#"""#)?;
+            write!(f, r#"#""#)?;
         }
 
         Ok(())
@@ -414,12 +412,16 @@ struct StringInterpolation {
 ///
 /// Example,
 ///
-/// Given an identifier, "blocks.test.object" and a pattern "blocks.(name).(symbol)"
+/// Given an identifier, "blocks.test.object."#tagA:tagB#" and a pattern "blocks.(name).(symbol).#tagA#",
 ///
 /// String interpolation would return a mapping such as,
 ///
 /// name = "test"
 /// symbol = "object"
+/// 
+/// Given a pattern "blocks.(name).(symbol).#tagC#",
+/// 
+/// String interpolation would return an empty result
 ///
 #[derive(Logos, Debug)]
 enum StringInterpolationTokens {
@@ -431,6 +433,10 @@ enum StringInterpolationTokens {
     ///
     #[regex("[.]?[a-zA-Z0-9:]+[.]?", on_match)]
     Match(String),
+    /// (TODO) Match tags, 
+    /// 
+    #[regex("[.]?#[a-zA-Z0-9:]+#[.]?", on_match)]
+    MatchTags(String),
     /// Assign the value from the identifier,
     ///
     #[regex("[(][a-zA-Z-0-9]+[)]", on_assignment)]
@@ -527,12 +533,12 @@ mod tests {
         assert_eq!("part3", branch.pos(3).expect("should have a part"));
         assert_eq!(2, root.len);
         assert_eq!(
-            r#"test.part1.part2.part3."test:v1""#,
+            r##"test.part1.part2.part3."#test:v1#""##,
             format!("{:#}", branch)
         );
 
         let truncated = branch.truncate(2).expect("should truncate");
-        assert_eq!(r#"test.part1."test:v1""#, format!("{:#}", truncated));
+        assert_eq!(r##"test.part1."#test:v1#""##, format!("{:#}", truncated));
 
         let branch = branch
             .branch("testing.branch")
