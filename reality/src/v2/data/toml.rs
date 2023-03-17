@@ -422,6 +422,7 @@ impl<'a> Into<crate::Value> for &'a toml_edit::Value {
             toml_edit::Value::Boolean(b) => crate::Value::Bool(*b.value()),
             toml_edit::Value::Datetime(d) => crate::Value::Symbol(d.to_string()),
             toml_edit::Value::Array(arr) => {
+                // TODO: handle int2 int3 float2 float3
                 let mut c = BTreeSet::new();
                 for a in arr.iter().filter_map(|a| a.as_str()) {
                     c.insert(a.to_string());

@@ -25,7 +25,7 @@ where
     fn filter(
         self,
         ident: &Identifier,
-        interpolated: &BTreeMap<String, String>,
+        rv_interpolated_ident_map: &BTreeMap<String, String>, // Reverse interpolated identifier map
         properties: &Properties,
     ) -> bool;
 }

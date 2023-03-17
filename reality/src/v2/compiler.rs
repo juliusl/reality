@@ -87,7 +87,12 @@ impl Compiler {
     /// Returns the entity of the build,
     ///
     /// Compiler can be re-used w/o removing previous built components,
-    ///
+    /// 
+    /// **Notes**
+    /// 
+    /// - A build for a compiler is any entity w/ a BuildLog component. 
+    /// - Builds built by a compiler share the same resources.
+    /// 
     pub fn compile(&mut self) -> Result<specs::Entity, crate::Error> {
         let build = {
             let lzb = self.world.fetch::<LazyUpdate>();
@@ -158,15 +163,15 @@ impl Compiler {
         updater: &mut C,
     ) -> BuildRef<'a, C> {
         self.visit_last_build(updater)
-        .map(|entity| self.compiled().update(entity, updater).map(|_| entity))
-        .map(move |result| match result {
-            Ok(entity) => {
-                self.as_mut().maintain();
-                self.build_ref(entity)
-            }
-            Err(err) => err.into(),
-        })
-        .unwrap_or_default()
+            .map(|entity| self.compiled().update(entity, updater).map(|_| entity))
+            .map(move |result| match result {
+                Ok(entity) => {
+                    self.as_mut().maintain();
+                    self.build_ref(entity)
+                }
+                Err(err) => err.into(),
+            })
+            .unwrap_or_default()
     }
 
     /// Visits and updates an object,
@@ -191,7 +196,7 @@ impl Compiler {
     }
 
     /// Returns a build ref for a given entity,
-    /// 
+    ///
     pub fn build_ref<'a, T>(&'a mut self, entity: Entity) -> BuildRef<'a, T> {
         BuildRef::<'a, T> {
             compiler: Some(self),
@@ -206,6 +211,7 @@ impl PacketHandler for Compiler {
     fn on_packet(&mut self, packet: Packet) -> Result<(), crate::Error> {
         self.block_list.on_packet(packet.clone())?;
 
+        // Ignoring errors since at this level we only care about the extension keyword,
         if let Some(built) = self.lazy_build(&packet).ok() {
             trace!("Built packet, {:?}", built);
             self.build_log

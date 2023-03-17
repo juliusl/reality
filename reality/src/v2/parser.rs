@@ -337,7 +337,6 @@ mod tests {
         let _ = compiler.compile().expect("should be able to build self");
 
         let mut doc_builder = DocumentBuilder::new();
-        let mut build_properties = Properties::new(Identifier::default());
         compiler
             .update_last_build(&mut doc_builder)
             .map_into(|build| {
@@ -390,6 +389,7 @@ mod tests {
                 Ok(())
             });
 
+        let mut build_properties = Properties::new(Identifier::default());
         compiler
             .update_last_build(&mut build_properties)
             .read(|prop| {
@@ -426,30 +426,7 @@ mod tests {
         });
         compiler.as_mut().maintain();
 
-        let mut test = DocumentBuilder::new();
-        compiler.visit_last_build(&mut test);
-
-        let doc: TomlProperties = (&test).into();
-        println!("{}", doc.doc);
-        doc.try_save(".test/test1.toml").await.unwrap();
-        if let Ok(doc) = TomlProperties::try_load(".test/test1.toml").await {
-            println!("loaded\n{}", doc.doc);
-        }
-
-        let test_root = "test.b.block.op.add.test:v1".parse::<Identifier>().unwrap();
-        let test_root = doc
-            .deserialize::<TestRoot>(&test_root)
-            .expect("should deserialize");
-        println!("{:?}", test_root);
-
-        let test_root = "test.a.block.op.sub.test:v2.input.lhs"
-            .parse::<Identifier>()
-            .unwrap();
-        let test_root = doc
-            .deserialize_keys::<TestEnv>(&test_root, "env")
-            .expect("should deserialize");
-        println!("{:?}", test_root);
-
+        // Test query api
         for (ident, _, props) in compiler
             .compiled()
             .query(
@@ -462,6 +439,38 @@ mod tests {
             println!("{:?}", props);
         }
 
+        // Test doc loading
+        let mut test = DocumentBuilder::new();
+        compiler.visit_last_build(&mut test);
+
+        // Test saving a doc
+        let doc: TomlProperties = (&test).into();
+        println!("{}", doc.doc);
+        doc.try_save(".test/test1.toml").await.unwrap();
+
+        // Test loading a doc
+        if let Ok(doc) = TomlProperties::try_load(".test/test1.toml").await {
+            println!("loaded\n{}", doc.doc);
+        }
+
+        // Test deserializing from a doc,
+        let test_root = "test.b.block.op.add.test:v1".parse::<Identifier>().unwrap();
+        let test_root = doc
+            .deserialize::<TestRoot>(&test_root)
+            .expect("should deserialize");
+        println!("{:?}", test_root);
+
+        // Test deserializing by keys from a doc,
+        let test_root = "test.a.block.op.sub.test:v2.input.lhs"
+            .parse::<Identifier>()
+            .unwrap();
+        let test_root = doc
+            .deserialize_keys::<TestEnv>(&test_root, "env")
+            .expect("should deserialize");
+        println!("{:?}", test_root);
+
+
+        // Test querying from a doc,
         for (ident, _, props) in doc.all(r#"test:v1.test.input.(var)"#).unwrap() {
             println!("{} {:?}", ident, props);
 
@@ -484,6 +493,7 @@ mod tests {
             println!("{:?}", o);
         }
 
+        // Test querying from a doc w/ binary
         for (_, _, props) in doc.all("test.a.block.op.mult").unwrap() {
             props["test"].as_binary().map(|b| {
                 println!("{:?}", b);
@@ -491,6 +501,7 @@ mod tests {
             });
         }
 
+        // Test nested querying from a doc
         println!("Testing query_inner");
         build_properties
             .all_nested("input.(var)")
@@ -526,7 +537,7 @@ mod tests {
                 && properties["rust_log"].as_symbol().is_some()
         }
     }
-    
+
     struct TestInput(String);
 
     #[async_trait]

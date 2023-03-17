@@ -7,7 +7,7 @@ use crate::{Parser, Identifier};
 #[derive(Logos, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[logos(extras = Parser)]
 pub enum Keywords {
-    /// Write a stable attribute
+    /// Add a root
     ///
     #[token("+", on_add)]
     Add = 0x0A,
@@ -39,15 +39,13 @@ pub enum Keywords {
     #[token("/*", on_inline_comment)]
     Comment = 0x0C,
 
-    /// Writes a transient attribute
-    ///
-    /// If `::` is used, the current attribute parser will be reused.
-    ///
+    /// Define a property
+    /// 
     #[token(":", on_define)]
     Define = 0x0D,
 
-    /// Extension keyword, allows for wire protocol to include user frames
-    ///
+    /// Apply extension logic
+    /// 
     #[regex(r"<[a-zA-Z0-9]+>", on_extension)]
     #[token("<>", on_extension)]
     Extension = 0x0E,
