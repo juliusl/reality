@@ -7,7 +7,6 @@ use crate::Value;
 use specs::Builder;
 use specs::Component;
 use specs::HashMapStorage;
-use std::fmt::Display;
 
 /// Struct representing a .runmd block,
 ///
