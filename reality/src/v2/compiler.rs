@@ -13,6 +13,7 @@ use crate::v2::Block;
 use crate::v2::BlockList;
 use crate::v2::Build;
 use crate::v2::Root;
+use crate::Error;
 use crate::Identifier;
 use specs::Builder;
 use specs::Entity;
@@ -87,13 +88,13 @@ impl Compiler {
     /// Returns the entity of the build,
     ///
     /// Compiler can be re-used w/o removing previous built components,
-    /// 
+    ///
     /// **Notes**
-    /// 
-    /// - A build for a compiler is any entity w/ a BuildLog component. 
+    ///
+    /// - A build for a compiler is any entity w/ a BuildLog component.
     /// - Builds built by a compiler share the same resources.
-    /// 
-    pub fn compile(&mut self) -> Result<specs::Entity, crate::Error> {
+    ///
+    pub fn compile(&mut self) -> Result<Entity, Error> {
         let build = {
             let lzb = self.world.fetch::<LazyUpdate>();
             let lzb = lzb.deref().create_entity(&self.world.entities());
@@ -213,7 +214,7 @@ impl PacketHandler for Compiler {
 
         // Ignoring errors since at this level we only care about the extension keyword,
         if let Some(built) = self.lazy_build(&packet).ok() {
-            trace!("Built packet, {:?}", built);
+            trace!("Built extension packet, {:?}", built);
             self.build_log
                 .index
                 .insert(packet.identifier.commit()?, built);
