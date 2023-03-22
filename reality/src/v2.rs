@@ -27,6 +27,7 @@ mod properties;
 pub use properties::Properties;
 pub use properties::Property;
 pub use properties::property_value;
+pub use properties::property_list;
 
 mod thunk;
 pub use thunk::Thunk;

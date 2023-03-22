@@ -32,6 +32,7 @@ pub use build_log::BuildLog;
 
 mod build_ref;
 pub use build_ref::BuildRef;
+pub(crate) use build_ref::WorldRef;
 
 /// Struct to build a world from interop packets,
 ///
@@ -200,7 +201,7 @@ impl Compiler {
     ///
     pub fn build_ref<'a, T>(&'a mut self, entity: Entity) -> BuildRef<'a, T> {
         BuildRef::<'a, T> {
-            compiler: Some(self),
+            world_ref: Some(self),
             entity: Some(entity),
             error: None,
             _u: None,
@@ -235,6 +236,8 @@ impl AsMut<World> for Compiler {
         &mut self.world
     }
 }
+
+impl WorldRef for Compiler {}
 
 impl Build for Compiler {
     fn build(

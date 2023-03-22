@@ -51,7 +51,7 @@ impl super::parser::PacketHandler for BlockList {
                     ..
                 } if !actions.is_empty() => {
                     if let Some(action::Action::With(_, value)) = actions.first() {
-                        block.add_attribute(identifier, value.clone());
+                        block.add_root(identifier, value.clone());
                     }
                 }
                 Packet {

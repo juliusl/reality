@@ -137,6 +137,7 @@ pub trait Visitor {
     /// 
     fn visit_object(&mut self, object: &Object) {
         object.as_block().map(|b| self.visit_block(b));
+        object.as_root().map(|b| self.visit_root(b));
         self.visit_identifier(object.ident());
         self.visit_properties(object.properties());
 

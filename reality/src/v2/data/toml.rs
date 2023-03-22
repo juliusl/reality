@@ -7,6 +7,7 @@ use crate::v2::compiler::BuildLog;
 use crate::v2::Block;
 use crate::v2::Build;
 use crate::v2::Properties;
+use crate::v2::Property;
 use crate::v2::Root;
 use crate::v2::Visitor;
 use crate::Error;
@@ -23,11 +24,11 @@ use toml_edit::value;
 use toml_edit::visit::Visit;
 use toml_edit::Array;
 use toml_edit::Document;
+use toml_edit::InlineTable;
 use toml_edit::Item;
 use toml_edit::Table;
 use tracing::error;
 use tracing::trace;
-use tracing::warn;
 
 use super::blob::BlobInfo;
 use super::query::Predicate;
@@ -99,7 +100,6 @@ impl Visitor for DocumentBuilder {
                     .replace("\"", "")
                     .trim_matches('.'),
             );
-            self.visit_root(root);
         }
 
         self.doc["block"][&owner].as_table_mut().map(|t| {
@@ -110,7 +110,13 @@ impl Visitor for DocumentBuilder {
 
     fn visit_root(&mut self, root: &crate::v2::Root) {
         let owner = Self::format_ident(&root.ident);
-        self.doc["root"][&owner] = table();
+        if !self.doc["root"]
+            .get(&owner)
+            .map(|t| t.is_table())
+            .unwrap_or_default()
+        {
+            self.doc["root"][&owner] = table();
+        }
 
         let mut extensions = Array::new();
         for ext in root.extensions() {
@@ -209,11 +215,12 @@ impl Into<toml_edit::Item> for Value {
             Value::Reference(r) => value(r as i64),
             Value::Symbol(s) => value(s),
             Value::Complex(c) => {
-                let mut arr = Array::new();
-                for c in c.iter() {
-                    arr.push(c);
+                let mut table = InlineTable::new();
+                table["_type"] = "complex".into();
+                for (idx, c) in c.iter().enumerate() {
+                    table[c] = (idx as i64).into();
                 }
-                value(arr)
+                value(table)
             }
         }
     }
@@ -422,6 +429,17 @@ impl<'a> Query<'a> for TomlProperties {
     }
 }
 
+impl<'a> Into<crate::v2::Property> for &'a toml_edit::Value {
+    fn into(self) -> crate::v2::Property {
+        let value: Value = (&self.clone()).into();
+
+        match self {
+            toml_edit::Value::Array(arr) if value == Value::Empty => crate::v2::property_list(arr),
+            _ => crate::v2::property_value(value),
+        }
+    }
+}
+
 impl<'a> Into<crate::Value> for &'a toml_edit::Value {
     fn into(self) -> crate::Value {
         match self {
@@ -463,14 +481,20 @@ impl<'a> Into<crate::Value> for &'a toml_edit::Value {
                     let c = *c.value() as f32;
                     Value::FloatRange(a, b, c)
                 }
-                _ => {
-                    let mut c = BTreeSet::new();
-                    for a in arr.iter().filter_map(|a| a.as_str()) {
-                        c.insert(a.to_string());
-                    }
-                    crate::Value::Complex(c)
-                }
+                _ => Value::Empty,
             },
+            toml_edit::Value::InlineTable(table)
+                if table
+                    .get("_type")
+                    .map(|t| t.as_str().map(|_t| _t == "complex").unwrap_or_default())
+                    .unwrap_or_default() =>
+            {
+                let mut c = BTreeSet::new();
+                for (key, _) in table.iter() {
+                    c.insert(key.to_string());
+                }
+                crate::Value::Complex(c)
+            }
             toml_edit::Value::InlineTable(blob) => match BlobInfo::try_from(blob) {
                 Ok(blob_info) => match Value::try_from(&blob_info) {
                     Ok(v) => v,
@@ -545,12 +569,26 @@ struct TomlImporter<'a> {
     importing: Option<Importing>,
 }
 
+impl AsRef<World> for TomlImporter<'_> {
+    fn as_ref(&self) -> &World {
+        &self.world
+    }
+}
+
+impl AsMut<World> for TomlImporter<'_> {
+    fn as_mut(&mut self) -> &mut World {
+        &mut self.world
+    }
+}
+
+impl crate::v2::compiler::WorldRef for TomlImporter<'_> {}
+
 enum Importing {
     Block(Identifier),
     Root(Identifier),
 }
 
-impl<'a> toml_edit::visit::Visit<'a> for TomlImporter<'a> {
+impl<'a> toml_edit::visit::Visit<'a> for TomlImporter<'_> {
     fn visit_document(&mut self, node: &'a Document) {
         if let Some(blocks) = node["block"].as_table() {
             for (id, block) in blocks.iter() {
@@ -574,22 +612,27 @@ impl<'a> toml_edit::visit::Visit<'a> for TomlImporter<'a> {
         }
 
         if let Some(properties) = node["properties"].as_table() {
+            // Use the current build log
+            let build_log = self.build_log.clone();
+
             for (id, properties) in properties.iter() {
                 if let (Some(ident), Some(properties)) =
                     (id.parse::<Identifier>().ok(), properties.as_table())
                 {
                     let mut _properties = Properties::new(ident.clone());
                     for (k, v) in properties.iter() {
-                        warn!("TODO: Should actually be Into::<Property>");
-                        if let Some(value) = v.as_value().map(|i| Into::<Value>::into(i)) {
-                            _properties.add(k, value);
+                        if let Some(value) = v.as_value().map(|i| Into::<Property>::into(i)) {
+                            _properties.set(k, value);
                         }
                     }
 
-                    if let Some(e) = self.build_log.index().get(&ident) {
-                        let result = self.world.write_component().insert(*e, _properties);
-                        trace!("Importing properties, result: {:?}", result);
-                    }
+                    build_log
+                        .get_build_ref::<Identifier>(&ident, self)
+                        .map(|build_ref| {
+                            let _ = build_ref.map(|_| Ok(_properties)).result().map_err(|e| {
+                                error!("Could not map properties {e}");
+                            });
+                        });
                 }
             }
         }
@@ -607,7 +650,7 @@ impl<'a> toml_edit::visit::Visit<'a> for TomlImporter<'a> {
                             .filter_map(|i| i.as_str())
                             .filter_map(|i| i.parse::<Identifier>().ok())
                         {
-                            block.add_attribute(_root, Value::Empty);
+                            block.add_root(_root, Value::Empty);
                         }
 
                         let entity = self
@@ -622,21 +665,19 @@ impl<'a> toml_edit::visit::Visit<'a> for TomlImporter<'a> {
                     }
                 }
                 Importing::Root(ident) => {
-                    if let Some(roots) = node["extensions"].as_array() {
+                    if let Some(extensions) = node["extensions"].as_array() {
                         let mut root = Root::new(ident.clone(), Value::Empty);
 
-                        for ext in roots
+                        for ext in extensions
                             .iter()
                             .filter_map(|i| i.as_str())
                             .filter_map(|i| i.parse::<Identifier>().ok())
+                            .filter_map(|i| i.commit().ok())
                         {
                             root = root.extend(&ext);
 
                             let ext_entity = self.world.create_entity().with(ext.clone()).build();
-                            self.build_log.index_mut().insert(
-                                ext.commit().expect("should be able to commit"),
-                                ext_entity,
-                            );
+                            self.build_log.index_mut().insert(ext, ext_entity);
                         }
 
                         let entity = self

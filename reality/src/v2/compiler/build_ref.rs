@@ -1,11 +1,11 @@
 use futures::Future;
 use specs::Component;
 use specs::Entity;
+use specs::World;
 use specs::WorldExt;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use super::Compiler;
 use crate::Error;
 
 /// Struct for working w/ a compiler's build log,
@@ -16,7 +16,7 @@ use crate::Error;
 pub struct BuildRef<'a, T: 'a, const ENABLE_ASYNC: bool = false> {
     /// The compiler that owns the entity being referenced,
     ///
-    pub(super) compiler: Option<&'a mut Compiler>,
+    pub(super) world_ref: Option<&'a mut dyn WorldRef>,
     /// The entity built by the reality compiler,
     ///
     pub(super) entity: Option<Entity>,
@@ -27,6 +27,8 @@ pub struct BuildRef<'a, T: 'a, const ENABLE_ASYNC: bool = false> {
     ///
     pub(super) _u: Option<fn() -> T>,
 }
+
+pub trait WorldRef: AsMut<World> + AsRef<World> {}
 
 impl<'a, T: 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
     /// Returns the self as Result,
@@ -42,10 +44,10 @@ impl<'a, T: 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
     }
 
     /// Check if an error is set,
-    /// 
+    ///
     fn check(mut self) -> Self {
         if self.error.is_some() {
-            self.compiler.take();
+            self.world_ref.take();
             self.entity.take();
         }
         self
@@ -54,13 +56,13 @@ impl<'a, T: 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
     /// Stores a component w/ the entity in the current reference,
     ///
     /// Note: Ensures that the component being stored is registered first
-    /// 
+    ///
     fn store<C: Component>(&mut self, comp: C) -> Result<(), Error>
     where
         <C as specs::Component>::Storage: std::default::Default,
     {
         if let Some(entity) = self.entity {
-            if let Some(result) = self.compiler.as_mut().map(|c| {
+            if let Some(result) = self.world_ref.as_mut().map(|c| {
                 let world = c.as_mut();
                 world.register::<C>();
 
@@ -75,13 +77,13 @@ impl<'a, T: 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
 }
 
 /// (Internal) Common Component storage-access functions
-/// 
+///
 impl<'a, T: Component + 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
     /// Map a component T to C w/ read access to T
-    /// 
+    ///
     fn map_entity<C>(&self, map: impl FnOnce(&T) -> C) -> Option<C> {
         if let Some(entity) = self.entity {
-            self.compiler
+            self.world_ref
                 .as_ref()
                 .map(|c| c.as_ref().read_component::<T>())
                 .and_then(|s| s.get(entity).map(map))
@@ -91,10 +93,10 @@ impl<'a, T: Component + 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASY
     }
 
     /// Map a component T to C w/ mut access to T
-    /// 
+    ///
     fn map_entity_mut<C>(&self, map: impl FnOnce(&mut T) -> C) -> Option<C> {
         if let Some(entity) = self.entity {
-            self.compiler
+            self.world_ref
                 .as_ref()
                 .map(|c| c.as_ref().write_component::<T>())
                 .and_then(|mut s| s.get_mut(entity).map(map))
@@ -152,7 +154,10 @@ impl<'a, T: Component + 'a> BuildRef<'a, T> {
     ///
     /// Returns the transmutation of this build reference into a BuildRef<C>,
     ///
-    pub fn map_into<C: Component + 'a>(self, d: impl FnOnce(&T) -> Result<C, Error>) -> BuildRef<'a, C>
+    pub fn map_into<C: Component + 'a>(
+        self,
+        d: impl FnOnce(&T) -> Result<C, Error>,
+    ) -> BuildRef<'a, C>
     where
         <C as specs::Component>::Storage: std::default::Default,
     {
@@ -163,7 +168,7 @@ impl<'a, T: Component + 'a> BuildRef<'a, T> {
     ///
     pub fn transmute<C: Component + 'a>(self) -> BuildRef<'a, C> {
         BuildRef {
-            compiler: self.compiler,
+            world_ref: self.world_ref,
             entity: self.entity,
             _u: None,
             error: self.error,
@@ -174,7 +179,7 @@ impl<'a, T: Component + 'a> BuildRef<'a, T> {
     ///
     pub fn enable_async(self) -> BuildRef<'a, T, true> {
         BuildRef {
-            compiler: self.compiler,
+            world_ref: self.world_ref,
             entity: self.entity,
             _u: None,
             error: self.error,
@@ -217,7 +222,10 @@ impl<'a, T: Component + 'a> BuildRef<'a, T, true> {
 
     /// Maps component T to component C and inserts C to storage for this entity, chainable
     ///
-    pub async fn map<C: Component + 'a, F>(mut self, d: impl FnOnce(&T) -> F) -> BuildRef<'a, T, true>
+    pub async fn map<C: Component + 'a, F>(
+        mut self,
+        d: impl FnOnce(&T) -> F,
+    ) -> BuildRef<'a, T, true>
     where
         <C as specs::Component>::Storage: std::default::Default,
         F: Future<Output = Result<C, Error>>,
@@ -242,7 +250,10 @@ impl<'a, T: Component + 'a> BuildRef<'a, T, true> {
     ///
     /// Returns the transmutation of this build reference into a BuildRef<C>,
     ///
-    pub async fn map_into<C: Component + 'a, F>(self, d: impl FnOnce(&T) -> F) -> BuildRef<'a, C, true>
+    pub async fn map_into<C: Component + 'a, F>(
+        self,
+        d: impl FnOnce(&T) -> F,
+    ) -> BuildRef<'a, C, true>
     where
         <C as specs::Component>::Storage: std::default::Default,
         F: Future<Output = Result<C, Error>>,
@@ -254,7 +265,7 @@ impl<'a, T: Component + 'a> BuildRef<'a, T, true> {
     ///
     pub fn transmute<C: Component + 'a>(self) -> BuildRef<'a, C, true> {
         BuildRef {
-            compiler: self.compiler,
+            world_ref: self.world_ref,
             entity: self.entity,
             _u: None,
             error: self.error,
@@ -265,7 +276,7 @@ impl<'a, T: Component + 'a> BuildRef<'a, T, true> {
     ///
     pub fn disable_async(self) -> BuildRef<'a, T> {
         BuildRef {
-            compiler: self.compiler,
+            world_ref: self.world_ref,
             entity: self.entity,
             _u: None,
             error: self.error,
@@ -276,7 +287,7 @@ impl<'a, T: Component + 'a> BuildRef<'a, T, true> {
 impl<T, const ENABLE_ASYNC: bool> From<Error> for BuildRef<'_, T, ENABLE_ASYNC> {
     fn from(value: Error) -> Self {
         Self {
-            compiler: None,
+            world_ref: None,
             entity: None,
             error: Some(Arc::new(value)),
             _u: None,

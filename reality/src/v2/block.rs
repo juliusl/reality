@@ -57,7 +57,7 @@ impl Block {
 
     /// Adds an attribute to the block,
     ///
-    pub fn add_attribute(&mut self, ident: Identifier, value: impl Into<Value>) {
+    pub fn add_root(&mut self, ident: Identifier, value: impl Into<Value>) {
         self.roots.push(Root::new(ident, value));
     }
 

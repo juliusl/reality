@@ -1,5 +1,7 @@
+use super::BuildRef;
 use super::Listen;
 use super::Properties;
+use super::WorldRef;
 use crate::Error;
 use crate::Identifier;
 use async_trait::async_trait;
@@ -84,6 +86,17 @@ impl BuildLog {
                 }
             })
         }
+    }
+
+    /// Returns a build ref if the identifier resolves to an entity,
+    /// 
+    pub fn get_build_ref<'a, T>(&self, ident: &Identifier, world_ref: &'a mut impl WorldRef) -> Option<BuildRef<'a, T>> {
+        self.try_get(ident).ok().map(|e| BuildRef {
+            world_ref: Some(world_ref),
+            entity: Some(e),
+            error: None,
+            _u: None,
+        })
     }
 }
 

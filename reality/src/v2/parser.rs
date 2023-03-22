@@ -472,6 +472,8 @@ mod tests {
             compiler.compiled().visit_build(e, &mut test_import);
 
             let properties: TomlProperties = (&test_import).into();
+            println!("{}", properties.doc);
+            println!("{}", properties["root"]["test.b.#block#.op.add.#test:v1#"]);
             properties.try_save(".test/test3.toml").await.unwrap();
         }
 
