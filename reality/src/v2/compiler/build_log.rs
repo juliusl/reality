@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 /// Log of built entities,
 ///
-#[derive(Component, Clone, Default)]
+#[derive(Debug, Component, Clone, Default)]
 #[storage(HashMapStorage)]
 pub struct BuildLog {
     /// Index mapping identifiers into their current entities,
@@ -25,6 +25,12 @@ impl BuildLog {
     ///
     pub fn index(&self) -> &BTreeMap<Identifier, Entity> {
         &self.index
+    }
+
+    /// Returns a mutable reference to build log's index,
+    /// 
+    pub fn index_mut(&mut self) -> &mut BTreeMap<Identifier, Entity> {
+        &mut self.index
     }
 
     /// Searches for an object by identifier,

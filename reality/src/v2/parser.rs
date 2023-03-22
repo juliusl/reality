@@ -239,7 +239,7 @@ mod tests {
     use crate::{
         state::Provider,
         v2::{
-            compiler::Compiled,
+            compiler::{BuildLog, Compiled},
             data::{
                 query::{self, all, Predicate, Query},
                 toml::TomlProperties,
@@ -430,10 +430,7 @@ mod tests {
         // Test query api
         for (ident, _, props) in compiler
             .compiled()
-            .query(
-                "input.(var)",
-                LHSOperator()
-            )
+            .query("input.(var)", LHSOperator())
             .unwrap()
         {
             println!("{}", ident);
@@ -452,10 +449,36 @@ mod tests {
         // Test loading a doc
         if let Ok(doc) = TomlProperties::try_load(".test/test1.toml").await {
             println!("loaded\n{}", doc.doc);
+
+            let e = compiler.lazy_build(&doc).expect("should be okay");
+            println!("Imported, {:?}", e);
+
+            compiler.as_mut().maintain();
+
+            // let log = compiler
+            //     .compiled()
+            //     .find_build(e)
+            //     .map(|e| e.clone())
+            //     .expect("should have build log");
+            // for (ident, e) in log.index().iter() {
+            //     compiler.build_ref::<Properties>(*e).read(|props| {
+            //         println!("Imported {:#}", ident);
+            //         println!("{:?}", props);
+            //         Ok(())
+            //     });
+            // }
+
+            let mut test_import = DocumentBuilder::new();
+            compiler.compiled().visit_build(e, &mut test_import);
+
+            let properties: TomlProperties = (&test_import).into();
+            properties.try_save(".test/test3.toml").await.unwrap();
         }
 
         // Test deserializing from a doc,
-        let test_root = "test.b.#block#.op.add.#test:v1#".parse::<Identifier>().unwrap();
+        let test_root = "test.b.#block#.op.add.#test:v1#"
+            .parse::<Identifier>()
+            .unwrap();
         let test_root = doc
             .deserialize::<TestRoot>(&test_root)
             .expect("should deserialize");
@@ -469,7 +492,6 @@ mod tests {
             .deserialize_keys::<TestEnv>(&test_root, "env")
             .expect("should deserialize");
         println!("{:?}", test_root);
-
 
         // Test querying from a doc,
         for (ident, _, props) in doc.all(r##"#v1#.test.input.(var)"##).unwrap() {
@@ -516,7 +538,7 @@ mod tests {
 
     #[derive(Copy, Clone)]
     struct LHSOperator();
-    
+
     /*
         If feature(adt_const_params) then this could be written as --
 

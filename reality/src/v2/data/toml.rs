@@ -3,21 +3,31 @@ use std::ops::Index;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::v2::compiler::BuildLog;
+use crate::v2::Block;
+use crate::v2::Build;
 use crate::v2::Properties;
+use crate::v2::Root;
 use crate::v2::Visitor;
 use crate::Error;
 use crate::Identifier;
 use crate::Value;
 use serde::Deserialize;
+use specs::Builder;
 use specs::Component;
 use specs::HashMapStorage;
+use specs::World;
+use specs::WorldExt;
 use toml_edit::table;
 use toml_edit::value;
+use toml_edit::visit::Visit;
 use toml_edit::Array;
 use toml_edit::Document;
 use toml_edit::Item;
 use toml_edit::Table;
 use tracing::error;
+use tracing::trace;
+use tracing::warn;
 
 use super::blob::BlobInfo;
 use super::query::Predicate;
@@ -50,13 +60,13 @@ impl DocumentBuilder {
     }
 
     /// Visits the internal document w/ a visit_mut implementation,
-    /// 
+    ///
     pub fn visit_mut(&mut self, mut visitor: impl toml_edit::visit_mut::VisitMut) {
         visitor.visit_document_mut(&mut self.doc);
     }
 
     /// Visits the internal document w/ a visit implementation,
-    /// 
+    ///
     pub fn visit<'a>(&'a self, mut visitor: impl toml_edit::visit::Visit<'a>) {
         visitor.visit_document(&self.doc);
     }
@@ -415,59 +425,65 @@ impl<'a> Query<'a> for TomlProperties {
 impl<'a> Into<crate::Value> for &'a toml_edit::Value {
     fn into(self) -> crate::Value {
         match self {
-            toml_edit::Value::String(s) => crate::Value::Symbol(s.to_string()),
+            toml_edit::Value::String(s) => {
+                crate::Value::Symbol(s.to_string().trim().trim_matches('"').to_string())
+            }
             toml_edit::Value::Integer(i) => crate::Value::Int(*i.value() as i32),
             toml_edit::Value::Float(f) => crate::Value::Float(*f.value() as f32),
             toml_edit::Value::Boolean(b) => crate::Value::Bool(*b.value()),
             toml_edit::Value::Datetime(d) => crate::Value::Symbol(d.to_string()),
-            toml_edit::Value::Array(arr) => {
-                match (arr.get(0), arr.get(1), arr.get(2)) {
-                    (Some(toml_edit::Value::Integer(a)), Some(toml_edit::Value::Integer(b)), None) => {
-                        let a = *a.value() as i32;
-                        let b = *b.value() as i32;
-                        Value::IntPair(a, b)
-                    }
-                    (Some(toml_edit::Value::Integer(a)), Some(toml_edit::Value::Integer(b)), Some(toml_edit::Value::Integer(c)),) => {
-                        let a = *a.value() as i32;
-                        let b = *b.value() as i32;
-                        let c = *c.value() as i32;
-                        Value::IntRange(a, b, c)
-                    }
-                    (Some(toml_edit::Value::Float(a)), Some(toml_edit::Value::Float(b)), None) => {
-                        let a = *a.value() as f32;
-                        let b = *b.value() as f32;
-                        Value::FloatPair(a, b)
-                    }
-                    (Some(toml_edit::Value::Float(a)), Some(toml_edit::Value::Float(b)), Some(toml_edit::Value::Float(c))) => {
-                        let a = *a.value() as f32;
-                        let b = *b.value() as f32;
-                        let c = *c.value() as f32;
-                        Value::FloatRange(a, b, c)
-                    }
-                    _ => {
-                        let mut c = BTreeSet::new();
-                        for a in arr.iter().filter_map(|a| a.as_str()) {
-                            c.insert(a.to_string());
-                        }
-                        crate::Value::Complex(c)
-                    }
+            toml_edit::Value::Array(arr) => match (arr.get(0), arr.get(1), arr.get(2)) {
+                (Some(toml_edit::Value::Integer(a)), Some(toml_edit::Value::Integer(b)), None) => {
+                    let a = *a.value() as i32;
+                    let b = *b.value() as i32;
+                    Value::IntPair(a, b)
                 }
-            }
-            toml_edit::Value::InlineTable(blob) => {
-                match BlobInfo::try_from(blob) {
-                    Ok(blob_info) => match Value::try_from(&blob_info) {
-                        Ok(v) => v,
-                        Err(err) => {
-                            error!("Could not convert blob info into value, {err}");
-                            Value::Empty
-                        },
-                    },
+                (
+                    Some(toml_edit::Value::Integer(a)),
+                    Some(toml_edit::Value::Integer(b)),
+                    Some(toml_edit::Value::Integer(c)),
+                ) => {
+                    let a = *a.value() as i32;
+                    let b = *b.value() as i32;
+                    let c = *c.value() as i32;
+                    Value::IntRange(a, b, c)
+                }
+                (Some(toml_edit::Value::Float(a)), Some(toml_edit::Value::Float(b)), None) => {
+                    let a = *a.value() as f32;
+                    let b = *b.value() as f32;
+                    Value::FloatPair(a, b)
+                }
+                (
+                    Some(toml_edit::Value::Float(a)),
+                    Some(toml_edit::Value::Float(b)),
+                    Some(toml_edit::Value::Float(c)),
+                ) => {
+                    let a = *a.value() as f32;
+                    let b = *b.value() as f32;
+                    let c = *c.value() as f32;
+                    Value::FloatRange(a, b, c)
+                }
+                _ => {
+                    let mut c = BTreeSet::new();
+                    for a in arr.iter().filter_map(|a| a.as_str()) {
+                        c.insert(a.to_string());
+                    }
+                    crate::Value::Complex(c)
+                }
+            },
+            toml_edit::Value::InlineTable(blob) => match BlobInfo::try_from(blob) {
+                Ok(blob_info) => match Value::try_from(&blob_info) {
+                    Ok(v) => v,
                     Err(err) => {
-                        error!("Could not convert table into blob info, {err}");
+                        error!("Could not convert blob info into value, {err}");
                         Value::Empty
-                    },
+                    }
+                },
+                Err(err) => {
+                    error!("Could not convert table into blob info, {err}");
+                    Value::Empty
                 }
-            }
+            },
         }
     }
 }
@@ -486,8 +502,156 @@ impl TryFrom<&toml_edit::InlineTable> for super::blob::BlobInfo {
                 .and_then(|d| d.as_str())
                 .map(|d| d.to_string()),
         ) {
-            (Some(src), Some(data)) => Ok(super::blob::BlobInfo { src, data, fetcher: None, ident: None }),
+            (Some(src), Some(data)) => Ok(super::blob::BlobInfo {
+                src,
+                data,
+                fetcher: None,
+                ident: None,
+            }),
             _ => Err("Could not create blob info from table".into()),
+        }
+    }
+}
+
+impl Build for TomlProperties {
+    fn build(&self, lazy_builder: specs::world::LazyBuilder) -> Result<specs::Entity, Error> {
+        let entity = lazy_builder.entity;
+
+        let doc = self.clone();
+        lazy_builder.lazy.exec_mut(move |world| {
+            let build_log = {
+                let mut toml_importer = TomlImporter {
+                    world,
+                    build_log: BuildLog::default(),
+                    importing: None,
+                };
+                toml_importer.visit_document(&doc.doc);
+                toml_importer.build_log
+            };
+
+            let result = world.write_component().insert(entity, build_log);
+            trace!("Importing toml doc, result: {:?}", result);
+        });
+
+        Ok(lazy_builder.build())
+    }
+}
+
+/// Struct for importing a toml build doc into World storage,
+///
+struct TomlImporter<'a> {
+    world: &'a mut World,
+    build_log: BuildLog,
+    importing: Option<Importing>,
+}
+
+enum Importing {
+    Block(Identifier),
+    Root(Identifier),
+}
+
+impl<'a> toml_edit::visit::Visit<'a> for TomlImporter<'a> {
+    fn visit_document(&mut self, node: &'a Document) {
+        if let Some(blocks) = node["block"].as_table() {
+            for (id, block) in blocks.iter() {
+                if let (Some(ident), Some(block)) =
+                    (id.parse::<Identifier>().ok(), block.as_table())
+                {
+                    self.importing = Some(Importing::Block(ident));
+                    self.visit_table(block);
+                }
+            }
+        }
+
+        if let Some(roots) = node["root"].as_table() {
+            for (id, root) in roots.iter() {
+                if let (Some(ident), Some(root)) = (id.parse::<Identifier>().ok(), root.as_table())
+                {
+                    self.importing = Some(Importing::Root(ident));
+                    self.visit_table(root);
+                }
+            }
+        }
+
+        if let Some(properties) = node["properties"].as_table() {
+            for (id, properties) in properties.iter() {
+                if let (Some(ident), Some(properties)) =
+                    (id.parse::<Identifier>().ok(), properties.as_table())
+                {
+                    let mut _properties = Properties::new(ident.clone());
+                    for (k, v) in properties.iter() {
+                        warn!("TODO: Should actually be Into::<Property>");
+                        if let Some(value) = v.as_value().map(|i| Into::<Value>::into(i)) {
+                            _properties.add(k, value);
+                        }
+                    }
+
+                    if let Some(e) = self.build_log.index().get(&ident) {
+                        let result = self.world.write_component().insert(*e, _properties);
+                        trace!("Importing properties, result: {:?}", result);
+                    }
+                }
+            }
+        }
+    }
+
+    fn visit_table(&mut self, node: &'a Table) {
+        match self.importing.take() {
+            Some(importing) => match importing {
+                Importing::Block(ident) => {
+                    if let Some(roots) = node["roots"].as_array() {
+                        let mut block = Block::new(ident.clone());
+
+                        for _root in roots
+                            .iter()
+                            .filter_map(|i| i.as_str())
+                            .filter_map(|i| i.parse::<Identifier>().ok())
+                        {
+                            block.add_attribute(_root, Value::Empty);
+                        }
+
+                        let entity = self
+                            .world
+                            .create_entity()
+                            .with(ident.clone())
+                            .with(block)
+                            .build();
+                        self.build_log
+                            .index_mut()
+                            .insert(ident.commit().expect("should be able to commit"), entity);
+                    }
+                }
+                Importing::Root(ident) => {
+                    if let Some(roots) = node["extensions"].as_array() {
+                        let mut root = Root::new(ident.clone(), Value::Empty);
+
+                        for ext in roots
+                            .iter()
+                            .filter_map(|i| i.as_str())
+                            .filter_map(|i| i.parse::<Identifier>().ok())
+                        {
+                            root = root.extend(&ext);
+
+                            let ext_entity = self.world.create_entity().with(ext.clone()).build();
+                            self.build_log.index_mut().insert(
+                                ext.commit().expect("should be able to commit"),
+                                ext_entity,
+                            );
+                        }
+
+                        let entity = self
+                            .world
+                            .create_entity()
+                            .with(ident.clone())
+                            .with(root)
+                            .build();
+                        self.build_log
+                            .index_mut()
+                            .insert(ident.commit().expect("should be able to commit"), entity);
+                    }
+                }
+            },
+            None => {}
         }
     }
 }
