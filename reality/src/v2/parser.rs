@@ -267,6 +267,7 @@ mod tests {
         let runmd = r#"
 ``` b
 : test .true
+: expr .int3 1, 2, 3
 
 + test:v1 .op add
 : lhs .int
@@ -454,14 +455,14 @@ mod tests {
         }
 
         // Test deserializing from a doc,
-        let test_root = "test.b.block.op.add.test:v1".parse::<Identifier>().unwrap();
+        let test_root = "test.b.#block#.op.add.#test:v1#".parse::<Identifier>().unwrap();
         let test_root = doc
             .deserialize::<TestRoot>(&test_root)
             .expect("should deserialize");
         println!("{:?}", test_root);
 
         // Test deserializing by keys from a doc,
-        let test_root = "test.a.block.op.sub.test:v2.input.lhs"
+        let test_root = "test.a.#block#.op.sub.#test:v2#.input.lhs"
             .parse::<Identifier>()
             .unwrap();
         let test_root = doc
@@ -471,7 +472,7 @@ mod tests {
 
 
         // Test querying from a doc,
-        for (ident, _, props) in doc.all(r#"test:v1.test.input.(var)"#).unwrap() {
+        for (ident, _, props) in doc.all(r##"op.sub.#test#.test.input.(var)"##).unwrap() {
             println!("{} {:?}", ident, props);
 
             let mut doc = DocumentBuilder::new();
@@ -480,7 +481,7 @@ mod tests {
             let doc: TomlProperties = (&doc).into();
             let o = doc
                 .deserialize::<TestInput2>(
-                    &"test.b.block.op.add.test:v1.test.input.rhs"
+                    &"test.b.#block#.op.add.#test:v1#.test.input.rhs"
                         .parse()
                         .unwrap(),
                 )

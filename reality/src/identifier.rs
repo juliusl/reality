@@ -119,6 +119,22 @@ impl Identifier {
     pub fn join(&mut self, next: impl AsRef<str>) -> Result<&mut Self, Error> {
         let next = next.as_ref();
 
+        // Handle joining tag format
+        if (next.starts_with(r##""#"##) && next.ends_with(r##"#""##))
+            || (next.starts_with(r##"#"##) && next.ends_with(r##"#"##))
+        {
+            for tag in next
+                .trim_matches('"')
+                .trim_matches('#')
+                .split(":")
+                .map(|s| s.trim())
+            {
+                self.add_tag(tag);
+            }
+
+            return Ok(self.promote());
+        }
+
         if Self::should_escape_with_quotes(next)
             && !next.starts_with(r#"""#)
             && !next.ends_with(r#"""#)
@@ -130,6 +146,19 @@ impl Identifier {
 
         self.len += 1;
         Ok(self)
+    }
+
+    /// Promotes the current identifier,
+    ///
+    pub fn promote(&mut self) -> &mut Self {
+        let parent = self.clone();
+        let parent = Arc::new(parent);
+
+        self.set_parent(parent);
+        self.buf.clear();
+        self.tags.clear();
+        self.len = 0;
+        self
     }
 
     /// Branches from the current identifier,
@@ -297,6 +326,9 @@ impl Identifier {
                     | StringInterpolationTokens::OptionalSuffixAssignment(name) => {
                         map.insert(name, part.to_string());
                     }
+                    StringInterpolationTokens::MatchTags(tags) if !self.contains_tags(&tags) => {
+                        return None;
+                    }
                     _ => {
                         return None;
                     }
@@ -418,9 +450,9 @@ struct StringInterpolation {
 ///
 /// name = "test"
 /// symbol = "object"
-/// 
+///
 /// Given a pattern "blocks.(name).(symbol).#tagC#",
-/// 
+///
 /// String interpolation would return an empty result
 ///
 #[derive(Logos, Debug)]
@@ -433,10 +465,10 @@ enum StringInterpolationTokens {
     ///
     #[regex("[.]?[a-zA-Z0-9:]+[.]?", on_match)]
     Match(String),
-    /// (TODO) Match tags, 
-    /// 
-    #[regex("[.]?#[a-zA-Z0-9:]+#[.]?", on_match)]
-    MatchTags(String),
+    /// (TODO) Match tags,
+    ///
+    #[regex("[.]?[#][a-zA-Z0-9:]+[#][.]?", on_match_tags)]
+    MatchTags(BTreeSet<String>),
     /// Assign the value from the identifier,
     ///
     #[regex("[(][a-zA-Z-0-9]+[)]", on_assignment)]
@@ -464,6 +496,27 @@ fn on_match(lex: &mut Lexer<StringInterpolationTokens>) -> String {
     };
 
     lex.slice()[start..end].to_string()
+}
+
+fn on_match_tags(lex: &mut Lexer<StringInterpolationTokens>) -> BTreeSet<String> {
+    let start = if lex.slice().chars().nth(0) == Some('.') {
+        1
+    } else {
+        0
+    };
+
+    let end = if lex.slice().chars().last() == Some('.') {
+        lex.slice().len() - 1
+    } else {
+        lex.slice().len()
+    };
+
+    let mut tags = BTreeSet::new();
+    for tag in lex.slice()[start..end].trim_matches('#').split(":") {
+        tags.insert(tag.to_string());
+    }
+
+    tags
 }
 
 fn on_assignment(lex: &mut Lexer<StringInterpolationTokens>) -> String {
@@ -503,6 +556,17 @@ mod tests {
     use tracing_test::traced_test;
 
     use super::{Identifier, StringInterpolationTokens};
+
+    #[test]
+    fn test_tags() {
+        let test = r##"a.b."#test:debug#".c.d"##;
+        let test: Identifier = test.parse().expect("should be parsed");
+
+        let parent = test.parent().expect("should have a parent");
+        assert!(parent.contains_tag("test"), "{:?}", test);
+
+        assert!(parent.contains_tag("debug"));
+    }
 
     #[test]
     fn test_identifier() {
@@ -696,14 +760,21 @@ mod tests {
     }
 
     /// Test expected formatting w/ parent set,
-    /// 
+    ///
     #[test]
     fn test_display_format() {
-        let mut a = "name".parse::<Identifier>().expect("should be able to parse");
-        let parent = "tests.block.test_display_format".parse::<Identifier>().expect("should be able to parse");
+        let mut a = "name"
+            .parse::<Identifier>()
+            .expect("should be able to parse");
+        let parent = "tests.block.test_display_format"
+            .parse::<Identifier>()
+            .expect("should be able to parse");
         a.set_parent(Arc::new(parent));
 
         assert_eq!("name", format!("{}", a).as_str());
-        assert_eq!("tests.block.test_display_format.name", format!("{:#}", a).as_str());
+        assert_eq!(
+            "tests.block.test_display_format.name",
+            format!("{:#}", a).as_str()
+        );
     }
 }

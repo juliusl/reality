@@ -65,8 +65,7 @@ impl DocumentBuilder {
     ///
     fn format_ident(ident: &Identifier) -> String {
         match ident.commit() {
-            Ok(committed) => committed
-                .to_string()
+            Ok(committed) => format!("{:#}", committed)
                 .replace("\"", "")
                 .trim_matches('.')
                 .to_string(),
@@ -280,7 +279,7 @@ impl TomlProperties {
         ident: &Identifier,
     ) -> Result<T, Error> {
         if let Some(result) = self["properties"]
-            .get(ident.commit()?.to_string())
+            .get(DocumentBuilder::format_ident(ident))
             .and_then(|t| t.as_table())
             .map(|t| toml::from_str::<T>(&format!("{}", t)))
         {
@@ -347,7 +346,7 @@ impl TomlProperties {
         key_arr: impl AsRef<str>,
     ) -> Result<T, Error> {
         if let Some(result) = self["properties"]
-            .get(ident.commit()?.to_string())
+            .get(DocumentBuilder::format_ident(ident))
             .and_then(|t| t.as_table())
             .map(|t| {
                 let mut table = toml_edit::Table::new();
@@ -422,12 +421,37 @@ impl<'a> Into<crate::Value> for &'a toml_edit::Value {
             toml_edit::Value::Boolean(b) => crate::Value::Bool(*b.value()),
             toml_edit::Value::Datetime(d) => crate::Value::Symbol(d.to_string()),
             toml_edit::Value::Array(arr) => {
-                // TODO: handle int2 int3 float2 float3
-                let mut c = BTreeSet::new();
-                for a in arr.iter().filter_map(|a| a.as_str()) {
-                    c.insert(a.to_string());
+                match (arr.get(0), arr.get(1), arr.get(2)) {
+                    (Some(toml_edit::Value::Integer(a)), Some(toml_edit::Value::Integer(b)), None) => {
+                        let a = *a.value() as i32;
+                        let b = *b.value() as i32;
+                        Value::IntPair(a, b)
+                    }
+                    (Some(toml_edit::Value::Integer(a)), Some(toml_edit::Value::Integer(b)), Some(toml_edit::Value::Integer(c)),) => {
+                        let a = *a.value() as i32;
+                        let b = *b.value() as i32;
+                        let c = *c.value() as i32;
+                        Value::IntRange(a, b, c)
+                    }
+                    (Some(toml_edit::Value::Float(a)), Some(toml_edit::Value::Float(b)), None) => {
+                        let a = *a.value() as f32;
+                        let b = *b.value() as f32;
+                        Value::FloatPair(a, b)
+                    }
+                    (Some(toml_edit::Value::Float(a)), Some(toml_edit::Value::Float(b)), Some(toml_edit::Value::Float(c))) => {
+                        let a = *a.value() as f32;
+                        let b = *b.value() as f32;
+                        let c = *c.value() as f32;
+                        Value::FloatRange(a, b, c)
+                    }
+                    _ => {
+                        let mut c = BTreeSet::new();
+                        for a in arr.iter().filter_map(|a| a.as_str()) {
+                            c.insert(a.to_string());
+                        }
+                        crate::Value::Complex(c)
+                    }
                 }
-                crate::Value::Complex(c)
             }
             toml_edit::Value::InlineTable(blob) => {
                 match BlobInfo::try_from(blob) {
