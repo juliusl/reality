@@ -44,10 +44,14 @@ impl Identifier {
         self.tags.contains(tag.as_ref())
     }
 
-    /// Returns true if this identifier contains all tags,
+    /// Returns true if this identifier or it's parent contains all tags,
     ///
     pub fn contains_tags(&self, tags: &BTreeSet<String>) -> bool {
         self.tags.is_subset(tags)
+            || self
+                .parent()
+                .map(|p| p.contains_tags(tags))
+                .unwrap_or_default()
     }
 
     /// Removes a tag,
@@ -245,18 +249,39 @@ impl Identifier {
         let mut tokens = StringInterpolationTokens::lexer(pat.as_ref());
         let mut sint = StringInterpolation::default();
 
+        let mut buf = format!("{:#}", self);
+
         while let Some(token) = tokens.next() {
             match token {
+                // Skip ahead to the first match
                 StringInterpolationTokens::Match(match_ident)
                 | StringInterpolationTokens::EscapedMatch(match_ident)
                     if sint.start.is_none() =>
                 {
-                    sint.start = self
-                        .buf
-                        .find(&match_ident)
-                        .map(|s| s + match_ident.len() + 1);
+                    sint.start = buf.find(&match_ident).map(|s| s + match_ident.len() + 1);
 
                     if sint.start.is_none() {
+                        return None;
+                    }
+                }
+                // Skip ahead to the first tag match
+                StringInterpolationTokens::MatchTags(tags) if sint.start.is_none() => {
+                    let mut _lex = StringInterpolationTokens::lexer(&buf);
+
+                    let mut found = false;
+                    while let Some(token) = _lex.next() {
+                        match token {
+                            StringInterpolationTokens::MatchTags(_tags) if tags.is_subset(&_tags) => {
+                                let remaining =_lex.remainder().to_string();
+                                buf = remaining;
+                                found = true;
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    if !found {
                         return None;
                     }
                 }
@@ -273,23 +298,23 @@ impl Identifier {
 
         let mut map = BTreeMap::<String, String>::default();
         let buf = if let Some(start) = sint.start {
-            if start > self.buf.len() {
+            if start > buf.len() {
                 return None;
             }
 
-            let (_, rest) = self.buf.split_at(start);
+            let (_, rest) = buf.split_at(start);
             trace!("rest: {rest}");
             if let Some(ident) = rest.parse::<Identifier>().ok() {
-                trace!("ident: {ident}");
-                ident.buf.to_string()
+                trace!("ident: {:#}", ident);
+                format!("{:#}", ident)
             } else {
                 return None;
             }
         } else {
-            self.buf.to_string()
+            buf.to_string()
         };
 
-        trace!("buf: {buf} sint: {:?}", sint);
+        trace!("buf: {buf}\nsint: {:?}", sint);
 
         if let Some(buf) = parts(buf).ok() {
             if buf.len() < sint.tokens.len()
@@ -326,8 +351,12 @@ impl Identifier {
                     | StringInterpolationTokens::OptionalSuffixAssignment(name) => {
                         map.insert(name, part.to_string());
                     }
-                    StringInterpolationTokens::MatchTags(tags) if !self.contains_tags(&tags) => {
-                        return None;
+                    StringInterpolationTokens::MatchTags(tags) => {
+                        if !self.contains_tags(&tags) {
+                            return None;
+                        } else {
+                            continue;
+                        }
                     }
                     _ => {
                         return None;
@@ -419,7 +448,7 @@ impl Display for Identifier {
 
         write!(f, "{}", self.buf)?;
         if f.alternate() && self.tag_count() > 0 {
-            write!(f, r#".""#)?;
+            write!(f, r#"."#)?;
             let mut tags = self.tags.iter();
             if let Some(tag) = tags.next() {
                 write!(f, "#{tag}")?;
@@ -427,7 +456,7 @@ impl Display for Identifier {
             for t in tags {
                 write!(f, ":{t}")?;
             }
-            write!(f, r#"#""#)?;
+            write!(f, r#"#"#)?;
         }
 
         Ok(())
@@ -465,7 +494,7 @@ enum StringInterpolationTokens {
     ///
     #[regex("[.]?[a-zA-Z0-9:]+[.]?", on_match)]
     Match(String),
-    /// (TODO) Match tags,
+    /// Match tags,
     ///
     #[regex("[.]?[#][a-zA-Z0-9:]+[#][.]?", on_match_tags)]
     MatchTags(BTreeSet<String>),
@@ -558,14 +587,24 @@ mod tests {
     use super::{Identifier, StringInterpolationTokens};
 
     #[test]
+    #[traced_test]
     fn test_tags() {
-        let test = r##"a.b."#test:debug#".c.d"##;
+        let test = r##"a.b.#test:debug#.c.d"##;
         let test: Identifier = test.parse().expect("should be parsed");
 
         let parent = test.parent().expect("should have a parent");
         assert!(parent.contains_tag("test"), "{:?}", test);
-
         assert!(parent.contains_tag("debug"));
+
+        let map = test
+            .interpolate("a.b.#test#.(let)")
+            .expect("should interpolate");
+        assert_eq!("c", map["let"]);
+
+        let map = test
+            .interpolate("#debug#.(let)")
+            .expect("should interpolate");
+        assert_eq!("c", map["let"]);
     }
 
     #[test]

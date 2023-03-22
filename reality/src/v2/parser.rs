@@ -472,7 +472,7 @@ mod tests {
 
 
         // Test querying from a doc,
-        for (ident, _, props) in doc.all(r##"op.sub.#test#.test.input.(var)"##).unwrap() {
+        for (ident, _, props) in doc.all(r##"#v1#.test.input.(var)"##).unwrap() {
             println!("{} {:?}", ident, props);
 
             let mut doc = DocumentBuilder::new();
