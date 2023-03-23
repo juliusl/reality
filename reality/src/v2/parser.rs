@@ -239,7 +239,7 @@ mod tests {
     use crate::{
         state::Provider,
         v2::{
-            compiler::{BuildLog, Compiled},
+            compiler::{BuildLog, Compiled, WorldWrapper},
             data::{
                 query::{self, all, Predicate, Query},
                 toml::TomlProperties,
@@ -255,7 +255,7 @@ mod tests {
     };
     use async_trait::async_trait;
     use serde::Deserialize;
-    use specs::{Join, ReadStorage, WorldExt};
+    use specs::{Join, ReadStorage, WorldExt, World, System, LazyUpdate, Read, Entities, RunNow};
     use tokio::io::AsyncWriteExt;
     use toml_edit::Document;
     use tracing::trace;
@@ -450,31 +450,33 @@ mod tests {
         if let Ok(doc) = TomlProperties::try_load(".test/test1.toml").await {
             println!("loaded\n{}", doc.doc);
 
+            // Test that importing a toml doc works
             let e = compiler.lazy_build(&doc).expect("should be okay");
             println!("Imported, {:?}", e);
-
             compiler.as_mut().maintain();
 
-            // let log = compiler
-            //     .compiled()
-            //     .find_build(e)
-            //     .map(|e| e.clone())
-            //     .expect("should have build log");
-            // for (ident, e) in log.index().iter() {
-            //     compiler.build_ref::<Properties>(*e).read(|props| {
-            //         println!("Imported {:#}", ident);
-            //         println!("{:?}", props);
-            //         Ok(())
-            //     });
-            // }
-
+            // Test that exporting an imported toml doc returns the same file
             let mut test_import = DocumentBuilder::new();
             compiler.compiled().visit_build(e, &mut test_import);
 
-            let properties: TomlProperties = (&test_import).into();
-            println!("{}", properties.doc);
-            println!("{}", properties["root"]["test.b.#block#.op.add.#test:v1#"]);
-            properties.try_save(".test/test3.toml").await.unwrap();
+            let mut build_ref = compiler.build_ref::<DocumentBuilder>(e);
+            build_ref.store(test_import).expect("should store");
+
+            // Test build-ref api
+            build_ref
+                .map_into::<TomlProperties>(|doc| Ok(doc.into()))
+                .enable_async()
+                .read(|properties| {
+                    let properties = properties.clone();
+
+                    async move {
+                        properties.try_save(".test/test3.toml").await?;
+                        Ok(())
+                    }
+                })
+                .await
+                .result()
+                .expect("should not return an error");
         }
 
         // Test deserializing from a doc,
@@ -528,18 +530,53 @@ mod tests {
 
         // Test nested querying from a doc
         println!("Testing query_inner");
+        
+        let build_log = compiler.last_build_log().unwrap();
+        
         build_properties
             .all_nested("input.(var)")
             .iter()
             .for_each(|(id, _, _)| {
-                println!("{}", id);
+                if let Some(build_ref) = build_log.find_ref::<Properties>(id, &mut compiler) {
+                    build_ref.read(|_| {
+                        Ok(())
+                    });
+                }
             });
 
+        LHSOperator().run_now(compiler.as_ref());
+        compiler.as_mut().maintain();
         Ok(())
     }
 
     #[derive(Copy, Clone)]
     struct LHSOperator();
+
+    impl<'a> System<'a> for LHSOperator {
+        type SystemData = (Read<'a, LazyUpdate>, Entities<'a>, ReadStorage<'a, BuildLog>);
+
+        fn run(&mut self, (lazy_update, entities, logs): Self::SystemData) {
+
+            for (e, log) in (&entities, &logs).join() {
+                let log = log.clone();
+
+                // Test being able to use build_ref w/ System<'a>
+                lazy_update.exec_mut(move |world| {
+                    let mut world_ref = WorldWrapper::from(world);
+                    let world_ref = &mut world_ref;
+
+                    for (ident, _, _) in log.search_index("input.(var)") {
+                        if let Some(build_ref) = log.find_ref::<Properties>(ident, world_ref) {
+                            build_ref.read(|p| {
+                                println!("BuildLog: {}, Found properties for: {} {:#}", e.id(), p.owner(), p.owner());
+                                Ok(())
+                            });
+                        }
+                    }
+                });
+            }
+        }
+    }
 
     /*
         If feature(adt_const_params) then this could be written as --

@@ -3,6 +3,7 @@ use specs::Component;
 use specs::Entity;
 use specs::World;
 use specs::WorldExt;
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -25,10 +26,34 @@ pub struct BuildRef<'a, T: 'a, const ENABLE_ASYNC: bool = false> {
     pub(super) error: Option<Arc<Error>>,
     /// (unused) Alignment + Phantom
     ///
-    pub(super) _u: Option<fn() -> T>,
+    pub(super) _u: PhantomData<T>,
 }
 
 pub trait WorldRef: AsMut<World> + AsRef<World> {}
+
+pub struct WorldWrapper<'a>(&'a mut World);
+
+impl<'a> AsRef<World> for WorldWrapper<'a> {
+    fn as_ref(&self) -> &World {
+        self.0
+    }
+}
+
+impl<'a> AsMut<World> for WorldWrapper<'a> {
+    fn as_mut(&mut self) -> &mut World {
+        self.0
+    }
+}
+
+impl<'a> WorldRef for WorldWrapper<'a> {}
+
+/// Returns a wrapper over world that implements WorldRef
+/// 
+impl<'a> From<&'a mut World> for WorldWrapper<'a> {
+    fn from(value: &'a mut World) -> Self {
+        Self(value)
+    }
+}
 
 impl<'a, T: 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
     /// Returns the self as Result,
@@ -57,7 +82,7 @@ impl<'a, T: 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
     ///
     /// Note: Ensures that the component being stored is registered first
     ///
-    fn store<C: Component>(&mut self, comp: C) -> Result<(), Error>
+    pub fn store<C: Component + 'a>(&mut self, comp: C) -> Result<(), Error>
     where
         <C as specs::Component>::Storage: std::default::Default,
     {
@@ -170,7 +195,7 @@ impl<'a, T: Component + 'a> BuildRef<'a, T> {
         BuildRef {
             world_ref: self.world_ref,
             entity: self.entity,
-            _u: None,
+            _u: PhantomData,
             error: self.error,
         }
     }
@@ -181,7 +206,7 @@ impl<'a, T: Component + 'a> BuildRef<'a, T> {
         BuildRef {
             world_ref: self.world_ref,
             entity: self.entity,
-            _u: None,
+            _u: PhantomData,
             error: self.error,
         }
     }
@@ -267,8 +292,8 @@ impl<'a, T: Component + 'a> BuildRef<'a, T, true> {
         BuildRef {
             world_ref: self.world_ref,
             entity: self.entity,
-            _u: None,
             error: self.error,
+            _u: PhantomData,
         }
     }
 
@@ -278,8 +303,8 @@ impl<'a, T: Component + 'a> BuildRef<'a, T, true> {
         BuildRef {
             world_ref: self.world_ref,
             entity: self.entity,
-            _u: None,
             error: self.error,
+            _u: PhantomData,
         }
     }
 }
@@ -290,7 +315,7 @@ impl<T, const ENABLE_ASYNC: bool> From<Error> for BuildRef<'_, T, ENABLE_ASYNC> 
             world_ref: None,
             entity: None,
             error: Some(Arc::new(value)),
-            _u: None,
+            _u: PhantomData,
         }
     }
 }

@@ -11,6 +11,7 @@ use specs::HashMapStorage;
 use specs::LazyUpdate;
 use specs::WorldExt;
 use std::collections::BTreeMap;
+use std::marker::PhantomData;
 
 /// Log of built entities,
 ///
@@ -90,12 +91,12 @@ impl BuildLog {
 
     /// Returns a build ref if the identifier resolves to an entity,
     /// 
-    pub fn get_build_ref<'a, T>(&self, ident: &Identifier, world_ref: &'a mut impl WorldRef) -> Option<BuildRef<'a, T>> {
+    pub fn find_ref<'a, T>(&self, ident: &Identifier, world_ref: &'a mut impl WorldRef) -> Option<BuildRef<'a, T>> {
         self.try_get(ident).ok().map(|e| BuildRef {
             world_ref: Some(world_ref),
             entity: Some(e),
             error: None,
-            _u: None,
+            _u: PhantomData,
         })
     }
 }

@@ -20,6 +20,7 @@ use specs::Entity;
 use specs::LazyUpdate;
 use specs::World;
 use specs::WorldExt;
+use std::marker::PhantomData;
 use std::ops::Deref;
 use tracing::trace;
 
@@ -33,6 +34,7 @@ pub use build_log::BuildLog;
 mod build_ref;
 pub use build_ref::BuildRef;
 pub(crate) use build_ref::WorldRef;
+pub use build_ref::WorldWrapper;
 
 /// Struct to build a world from interop packets,
 ///
@@ -148,6 +150,11 @@ impl Compiler {
         }
     }
 
+    pub fn visit_build(&self, entity: Entity, visitor: &mut impl Visitor) -> Entity {
+        self.compiled().visit_build(entity, visitor);
+        entity
+    }
+
     /// Visits an object,
     ///
     /// Returns the entity of the object if successfully visited,
@@ -204,7 +211,7 @@ impl Compiler {
             world_ref: Some(self),
             entity: Some(entity),
             error: None,
-            _u: None,
+            _u: PhantomData,
         }
     }
 }
