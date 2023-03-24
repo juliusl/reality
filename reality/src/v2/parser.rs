@@ -337,32 +337,43 @@ mod tests {
         let _parser = parser.parse_file(".test/test.runmd", &mut compiler);
         let _ = compiler.compile().expect("should be able to build self");
 
+        // Test building state document
         let mut doc_builder = DocumentBuilder::new();
-        compiler
+        let count_block_len_thunk = compiler
             .update_last_build(&mut doc_builder)
+            // Map document builder into toml properties
             .map_into(|build| {
                 let props: TomlProperties = build.into();
                 Ok(props)
             })
-            .read(|toml| {
-                toml["properties"].as_table().map(|t| {
-                    for (k, _) in t.iter() {
-                        println!("properties - {k}");
+            // Map toml properties to a call thunk
+            .map_into(|toml| {
+                // Test preparing the call
+                let len = toml["block"].as_table().map(|t| t.len()).unwrap_or_default();
+                Ok(thunk_call(move || {
+                    async move {
+                        let mut properties = Properties::default();
+                        properties["len"] = property_value(len);
+                        Ok(properties)
                     }
-                });
-
-                toml["block"].as_table().map(|t| {
-                    for (k, _) in t.iter() {
-                        println!("block - {k}");
-                    }
-                });
-
-                toml["root"].as_table().map(|t| {
-                    for (k, _) in t.iter() {
-                        println!("root - {k}");
-                    }
-                });
-
+                }))
+            })
+            // Configure execution to be async
+            .enable_async();
+        
+        // Test executing thunk and reading properties
+        let _ = count_block_len_thunk
+            .map_into(|call| {
+                // Test executing the call
+                let _call = call.clone();
+                async move {
+                    _call.call().await
+                }
+            }).await
+            .disable_async()
+            .read(|properties| {
+                // Test reading the result
+                println!("{:?}", properties["len"]);
                 Ok(())
             });
 
@@ -556,7 +567,6 @@ mod tests {
         type SystemData = (Read<'a, LazyUpdate>, Entities<'a>, ReadStorage<'a, BuildLog>);
 
         fn run(&mut self, (lazy_update, entities, logs): Self::SystemData) {
-
             for (e, log) in (&entities, &logs).join() {
                 let log = log.clone();
 

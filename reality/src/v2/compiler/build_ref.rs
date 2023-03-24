@@ -175,7 +175,7 @@ impl<'a, T: Component + 'a> BuildRef<'a, T> {
         self.check()
     }
 
-    /// Maps component T to component C and inserts C to storage,
+    /// Maps component T to component C and inserts C to storage for the entity being referenced,
     ///
     /// Returns the transmutation of this build reference into a BuildRef<C>,
     ///
