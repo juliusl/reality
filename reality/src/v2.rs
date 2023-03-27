@@ -13,6 +13,7 @@ pub use parser::Parser;
 mod compiler;
 pub use compiler::Compiler;
 pub use compiler::Object;
+pub use compiler::BuildRef;
 
 mod block_list;
 pub use block_list::BlockList;
@@ -34,15 +35,18 @@ pub use thunk::Thunk;
 pub use thunk::ThunkBuild;
 pub use thunk::ThunkCall;
 pub use thunk::ThunkListen;
+pub use thunk::ThunkCompile;
 pub use thunk::thunk_build;
 pub use thunk::thunk_update;
 pub use thunk::thunk_call;
 pub use thunk::thunk_listen;
+pub use thunk::thunk_compile;
 pub use thunk::Build;
 pub use thunk::Call;
 pub use thunk::Update;
 pub use thunk::Accept;
 pub use thunk::Listen;
+pub use thunk::Compile;
 pub use thunk::Listener;
 
 mod links;
@@ -53,3 +57,5 @@ mod data;
 pub mod toml {
     pub use crate::v2::data::toml::DocumentBuilder;
 }
+
+pub mod command;

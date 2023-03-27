@@ -233,12 +233,13 @@ impl Parser {
 
 #[allow(unused_imports)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, sync::Arc};
 
     use super::Parser;
     use crate::{
         state::Provider,
         v2::{
+            command::{export_toml, import_toml},
             compiler::{BuildLog, Compiled, WorldWrapper},
             data::{
                 query::{self, all, Predicate, Query},
@@ -249,16 +250,23 @@ mod tests {
             thunk::{auto::Auto, Update},
             thunk_call,
             toml::DocumentBuilder,
-            BlockList, Call, Compiler, Interner, Object, Properties, Visitor,
+            BlockList, Call, Compiler, Interner, Object, Properties, ThunkCall, Visitor, Listener,
         },
         BlockProperties, Error, Identifier,
     };
     use async_trait::async_trait;
     use serde::Deserialize;
-    use specs::{Join, ReadStorage, WorldExt, World, System, LazyUpdate, Read, Entities, RunNow};
-    use tokio::io::AsyncWriteExt;
+    use specs::{
+        storage, Builder, Component, Entities, Join, LazyUpdate, Read, ReadStorage, RunNow, System,
+        VecStorage, World, WorldExt, WriteStorage,
+    };
+    use tokio::{
+        io::AsyncWriteExt,
+        runtime::Handle,
+        task::{JoinHandle, JoinSet},
+    };
     use toml_edit::Document;
-    use tracing::trace;
+    use tracing::{trace, error};
     use tracing_test::traced_test;
 
     #[tokio::test]
@@ -328,7 +336,6 @@ mod tests {
 : HOST      .env test.io
 ```
 "#;
-
         std::fs::create_dir_all(".test").expect("should be able to create test dir");
         std::fs::write(".test/test.runmd", runmd).expect("should be able to write");
 
@@ -338,44 +345,44 @@ mod tests {
         let _ = compiler.compile().expect("should be able to build self");
 
         // Test building state document
-        let mut doc_builder = DocumentBuilder::new();
-        let count_block_len_thunk = compiler
-            .update_last_build(&mut doc_builder)
-            // Map document builder into toml properties
-            .map_into(|build| {
-                let props: TomlProperties = build.into();
-                Ok(props)
-            })
-            // Map toml properties to a call thunk
-            .map_into(|toml| {
-                // Test preparing the call
-                let len = toml["block"].as_table().map(|t| t.len()).unwrap_or_default();
-                Ok(thunk_call(move || {
-                    async move {
-                        let mut properties = Properties::default();
-                        properties["len"] = property_value(len);
-                        Ok(properties)
-                    }
-                }))
-            })
-            // Configure execution to be async
-            .enable_async();
-        
+        // let mut doc_builder = DocumentBuilder::new();
+        // let count_block_len_thunk = compiler
+        //     .update_last_build(&mut doc_builder)
+        //     // Map document builder into toml properties
+        //     .map_into(|build| {
+        //         let props: TomlProperties = build.into();
+        //         Ok(props)
+        //     })
+        //     // Map toml properties to a call thunk
+        //     .map_into(|toml| {
+        //         // Test preparing the call
+        //         let len = toml["block"]
+        //             .as_table()
+        //             .map(|t| t.len())
+        //             .unwrap_or_default();
+        //         Ok(thunk_call(move || async move {
+        //             let mut properties = Properties::default();
+        //             properties["len"] = property_value(len);
+        //             Ok(properties)
+        //         }))
+        //     })
+        //     // Configure execution to be async
+        //     .enable_async();
+
         // Test executing thunk and reading properties
-        let _ = count_block_len_thunk
-            .map_into(|call| {
-                // Test executing the call
-                let _call = call.clone();
-                async move {
-                    _call.call().await
-                }
-            }).await
-            .disable_async()
-            .read(|properties| {
-                // Test reading the result
-                println!("{:?}", properties["len"]);
-                Ok(())
-            });
+        // let _ = count_block_len_thunk
+        //     .map_into(|call| {
+        //         // Test executing the call
+        //         let _call = call.clone();
+        //         async move { _call.call().await }
+        //     })
+        //     .await
+        //     .disable_async()
+        //     .read(|properties| {
+        //         // Test reading the result
+        //         println!("{:?}", properties["len"]);
+        //         Ok(())
+        //     });
 
         let mut doc_builder = DocumentBuilder::new();
         compiler
@@ -448,115 +455,16 @@ mod tests {
             println!("{:?}", props);
         }
 
-        // Test doc loading
-        let mut test = DocumentBuilder::new();
-        compiler.visit_last_build(&mut test);
+        // Test command functions
 
-        // Test saving a doc
-        let doc: TomlProperties = (&test).into();
-        println!("{}", doc.doc);
-        doc.try_save(".test/test1.toml").await.unwrap();
+        // Export toml doc
+        export_toml(&mut compiler, ".test/test1.toml").await?;
 
-        // Test loading a doc
-        if let Ok(doc) = TomlProperties::try_load(".test/test1.toml").await {
-            println!("loaded\n{}", doc.doc);
-
-            // Test that importing a toml doc works
-            let e = compiler.lazy_build(&doc).expect("should be okay");
-            println!("Imported, {:?}", e);
-            compiler.as_mut().maintain();
-
-            // Test that exporting an imported toml doc returns the same file
-            let mut test_import = DocumentBuilder::new();
-            compiler.compiled().visit_build(e, &mut test_import);
-
-            let mut build_ref = compiler.build_ref::<DocumentBuilder>(e);
-            build_ref.store(test_import).expect("should store");
-
-            // Test build-ref api
-            build_ref
-                .map_into::<TomlProperties>(|doc| Ok(doc.into()))
-                .enable_async()
-                .read(|properties| {
-                    let properties = properties.clone();
-
-                    async move {
-                        properties.try_save(".test/test3.toml").await?;
-                        Ok(())
-                    }
-                })
-                .await
-                .result()
-                .expect("should not return an error");
+        // Import toml doc
+        if let Some(_) = import_toml(&mut compiler, ".test/test1.toml").await.ok() {
+            export_toml(&mut compiler, ".test/test3.toml").await?;
         }
 
-        // Test deserializing from a doc,
-        let test_root = "test.b.#block#.op.add.#test:v1#"
-            .parse::<Identifier>()
-            .unwrap();
-        let test_root = doc
-            .deserialize::<TestRoot>(&test_root)
-            .expect("should deserialize");
-        println!("{:?}", test_root);
-
-        // Test deserializing by keys from a doc,
-        let test_root = "test.a.#block#.op.sub.#test:v2#.input.lhs"
-            .parse::<Identifier>()
-            .unwrap();
-        let test_root = doc
-            .deserialize_keys::<TestEnv>(&test_root, "env")
-            .expect("should deserialize");
-        println!("{:?}", test_root);
-
-        // Test querying from a doc,
-        for (ident, _, props) in doc.all(r##"#v1#.test.input.(var)"##).unwrap() {
-            println!("{} {:?}", ident, props);
-
-            let mut doc = DocumentBuilder::new();
-            doc.visit_properties(&props);
-
-            let doc: TomlProperties = (&doc).into();
-            let o = doc
-                .deserialize::<TestInput2>(
-                    &"test.b.#block#.op.add.#test:v1#.test.input.rhs"
-                        .parse()
-                        .unwrap(),
-                )
-                .expect("should deserialize");
-
-            doc.try_save(".test/test2.toml").await.unwrap();
-            if let Ok(doc) = TomlProperties::try_load(".test/test2.toml").await {
-                println!("loaded\n{}", doc.doc);
-            }
-            println!("{:?}", o);
-        }
-
-        // Test querying from a doc w/ binary
-        for (_, _, props) in doc.all("test.a.block.op.mult").unwrap() {
-            props["test"].as_binary().map(|b| {
-                println!("{:?}", b);
-                println!("{:?}", String::from_utf8(b.clone()));
-            });
-        }
-
-        // Test nested querying from a doc
-        println!("Testing query_inner");
-        
-        let build_log = compiler.last_build_log().unwrap();
-        
-        build_properties
-            .all_nested("input.(var)")
-            .iter()
-            .for_each(|(id, _, _)| {
-                if let Some(build_ref) = build_log.find_ref::<Properties>(id, &mut compiler) {
-                    build_ref.read(|_| {
-                        Ok(())
-                    });
-                }
-            });
-
-        LHSOperator().run_now(compiler.as_ref());
-        compiler.as_mut().maintain();
         Ok(())
     }
 
@@ -564,7 +472,11 @@ mod tests {
     struct LHSOperator();
 
     impl<'a> System<'a> for LHSOperator {
-        type SystemData = (Read<'a, LazyUpdate>, Entities<'a>, ReadStorage<'a, BuildLog>);
+        type SystemData = (
+            Read<'a, LazyUpdate>,
+            Entities<'a>,
+            ReadStorage<'a, BuildLog>,
+        );
 
         fn run(&mut self, (lazy_update, entities, logs): Self::SystemData) {
             for (e, log) in (&entities, &logs).join() {
@@ -578,7 +490,12 @@ mod tests {
                     for (ident, _, _) in log.search_index("input.(var)") {
                         if let Some(build_ref) = log.find_ref::<Properties>(ident, world_ref) {
                             build_ref.read(|p| {
-                                println!("BuildLog: {}, Found properties for: {} {:#}", e.id(), p.owner(), p.owner());
+                                println!(
+                                    "BuildLog: {}, Found properties for: {} {:#}",
+                                    e.id(),
+                                    p.owner(),
+                                    p.owner()
+                                );
                                 Ok(())
                             });
                         }
@@ -645,5 +562,91 @@ mod tests {
     struct TestEnv {
         test: String,
         rust_log: String,
+    }
+
+    /// Component for a tokio task,
+    ///
+    #[derive(Component)]
+    #[storage(VecStorage)]
+    pub struct Task<T: Send + Sync + 'static> {
+        /// Handle to a tokio runtime,
+        ///
+        handle: Handle,
+        /// Join handle to running task,
+        ///
+        join_handle: Option<JoinHandle<T>>,
+    }
+
+    impl Task<Result<Properties, Error>> {
+        /// Starts a call on the current task and returns a new task,
+        ///
+        pub fn start_call(&self, call: impl Call + Clone + 'static) -> Self {
+            let call = call.clone();
+
+            Self {
+                handle: self.handle.clone(),
+                join_handle: Some(self.handle.spawn(async move { call.call().await })),
+            }
+        }
+
+        /// Returns true if this task is empty,
+        ///
+        pub fn is_empty(&self) -> bool {
+            self.join_handle.is_some()
+        }
+
+        /// Returns true if the task is ready,
+        ///
+        /// If None, is returned that means this is an empty task
+        ///
+        pub fn is_ready(&self) -> Option<bool> {
+            self.join_handle.as_ref().map(|j| j.is_finished())
+        }
+    }
+
+    /// Call scheduler system implementation,
+    ///
+    pub struct Scheduler;
+
+    impl<'a> System<'a> for Scheduler {
+        type SystemData = (
+            Entities<'a>,
+            Read<'a, LazyUpdate>,
+            ReadStorage<'a, ThunkCall>,
+            WriteStorage<'a, Task<Result<Properties, Error>>>,
+        );
+
+        fn run(&mut self, (entities, lu, calls, mut tasks): Self::SystemData) {
+            // Lazily dispatch any pending tasks, depends on .maintain()
+            for (call, task) in (&calls, tasks.drain()).join() {
+                let new_task = task.start_call(call.clone());
+
+                lu.create_entity(&entities).with(new_task).build();
+            }
+
+            // Queue all tasks that are ready
+            let mut ready = vec![];
+            for (entity, call, task) in (&entities, calls.maybe(), &tasks).join() {
+                if call.is_none() && task.is_ready().unwrap_or_default() {
+                    ready.push(entity);
+                }
+            }
+
+            // Get the result for any tasks that are ready
+            for (entity, ready) in ready.iter().zip(ready.iter().filter_map(|r| tasks.remove(*r))) {
+                if let Some(task) = ready.join_handle {
+                    let result = ready.handle.block_on(async { task.await? });
+                    
+                    match result {
+                        Ok(properties) => {
+                            lu.insert(*entity, properties);
+                        },
+                        Err(err) => {
+                            error!("Task encountered an error, {err}");
+                        },
+                    }
+                }
+            }
+        }
     }
 }

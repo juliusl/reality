@@ -84,7 +84,7 @@ where
 
 /// Super-trait for a type that implements Listen + Accept + Build,
 ///
-pub trait Listener: Listen + Accept + Build {}
+pub trait Listener: Listen + Accept + Build  + Send + Sync {}
 
 /// Error returned when identifier is not accepted,
 ///

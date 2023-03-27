@@ -126,6 +126,12 @@ impl Compiler {
         self.builds.last()
     }
 
+    /// Pushes a new build entity,
+    /// 
+    pub fn push_build(&mut self, entity: Entity) {
+        self.builds.push(entity);
+    }
+
     /// Returns a clone of the last build log,
     ///
     pub fn last_build_log(&self) -> Option<BuildLog> {
@@ -206,7 +212,7 @@ impl Compiler {
 
     /// Returns a build ref for a given entity,
     ///
-    pub fn build_ref<'a, T>(&'a mut self, entity: Entity) -> BuildRef<'a, T> {
+    pub fn build_ref<'a, T: Send + Sync + 'a>(&'a mut self, entity: Entity) -> BuildRef<'a, T> {
         BuildRef::<'a, T> {
             world_ref: Some(self),
             entity: Some(entity),

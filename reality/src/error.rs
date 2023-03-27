@@ -1,6 +1,8 @@
 use std::fmt::Display;
 use std::sync::Arc;
 
+use tokio::task::JoinError;
+
 /// Struct for build errors,
 ///
 #[derive(Clone, Debug, Default)]
@@ -79,5 +81,11 @@ impl From<specs::error::Error> for Error {
             error: Some(Arc::new(value)),
             message: None
         }
+    }
+}
+
+impl From<JoinError> for Error {
+    fn from(value: JoinError) -> Self {
+        Self { error: Some(Arc::new(value)), message: None }
     }
 }

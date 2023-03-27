@@ -1,6 +1,5 @@
 use std::ops::Deref;
 use std::sync::Arc;
-
 use specs::world::LazyBuilder;
 use specs::Entity;
 

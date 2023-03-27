@@ -14,48 +14,26 @@ use crate::Error;
 /// Provides an API for working with the Component created from a compiled build w/o the storage boilerplate,
 ///
 #[derive(Default)]
-pub struct BuildRef<'a, T: 'a, const ENABLE_ASYNC: bool = false> {
+pub struct BuildRef<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool = false> {
     /// The compiler that owns the entity being referenced,
     ///
-    pub(super) world_ref: Option<&'a mut dyn WorldRef>,
+    pub(super) world_ref: Option<&'a mut (dyn WorldRef + Send + Sync)>,
     /// The entity built by the reality compiler,
     ///
-    pub(super) entity: Option<Entity>,
+    pub(crate) entity: Option<Entity>,
     /// Current error,
     ///
     pub(super) error: Option<Arc<Error>>,
-    /// (unused) Alignment + Phantom
+    /// Unused
     ///
     pub(super) _u: PhantomData<T>,
 }
 
+/// Super trait to get a reference to world,
+/// 
 pub trait WorldRef: AsMut<World> + AsRef<World> {}
 
-pub struct WorldWrapper<'a>(&'a mut World);
-
-impl<'a> AsRef<World> for WorldWrapper<'a> {
-    fn as_ref(&self) -> &World {
-        self.0
-    }
-}
-
-impl<'a> AsMut<World> for WorldWrapper<'a> {
-    fn as_mut(&mut self) -> &mut World {
-        self.0
-    }
-}
-
-impl<'a> WorldRef for WorldWrapper<'a> {}
-
-/// Returns a wrapper over world that implements WorldRef
-/// 
-impl<'a> From<&'a mut World> for WorldWrapper<'a> {
-    fn from(value: &'a mut World) -> Self {
-        Self(value)
-    }
-}
-
-impl<'a, T: 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
+impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
     /// Returns the self as Result,
     ///
     /// Note: Can be used to check for errors before moving to the next function in the chain,
@@ -90,7 +68,6 @@ impl<'a, T: 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
             if let Some(result) = self.world_ref.as_mut().map(|c| {
                 let world = c.as_mut();
                 world.register::<C>();
-
                 world.write_component().insert(entity, comp)
             }) {
                 result?;
@@ -103,7 +80,7 @@ impl<'a, T: 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
 
 /// (Internal) Common Component storage-access functions
 ///
-impl<'a, T: Component + 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
+impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
     /// Map a component T to C w/ read access to T
     ///
     fn map_entity<C>(&self, map: impl FnOnce(&T) -> C) -> Option<C> {
@@ -133,7 +110,7 @@ impl<'a, T: Component + 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASY
 
 /// API's to work with specs storage through the build ref,
 ///
-impl<'a, T: Component + 'a> BuildRef<'a, T> {
+impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T> {
     /// Write the Component from the build reference, chainable
     ///
     pub fn write(mut self, d: impl FnOnce(&mut T) -> Result<(), Error>) -> Self {
@@ -179,7 +156,7 @@ impl<'a, T: Component + 'a> BuildRef<'a, T> {
     ///
     /// Returns the transmutation of this build reference into a BuildRef<C>,
     ///
-    pub fn map_into<C: Component + 'a>(
+    pub fn map_into<C: Send + Sync + Component + 'a>(
         self,
         d: impl FnOnce(&T) -> Result<C, Error>,
     ) -> BuildRef<'a, C>
@@ -191,7 +168,7 @@ impl<'a, T: Component + 'a> BuildRef<'a, T> {
 
     /// Transmutes this build reference from BuildRef<T> to BuildRef<C>,
     ///
-    pub fn transmute<C: Component + 'a>(self) -> BuildRef<'a, C> {
+    pub fn transmute<C: Send + Sync + Component + 'a>(self) -> BuildRef<'a, C> {
         BuildRef {
             world_ref: self.world_ref,
             entity: self.entity,
@@ -214,7 +191,7 @@ impl<'a, T: Component + 'a> BuildRef<'a, T> {
 
 /// Async-version of API's to work with specs storage through the build ref,
 ///
-impl<'a, T: Component + 'a> BuildRef<'a, T, true> {
+impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
     /// Write the Component from the build reference, chainable
     ///
     pub async fn write<F>(mut self, d: impl FnOnce(&mut T) -> F) -> BuildRef<'a, T, true>
@@ -275,7 +252,7 @@ impl<'a, T: Component + 'a> BuildRef<'a, T, true> {
     ///
     /// Returns the transmutation of this build reference into a BuildRef<C>,
     ///
-    pub async fn map_into<C: Component + 'a, F>(
+    pub async fn map_into<C: Send + Sync + Component + 'a, F>(
         self,
         d: impl FnOnce(&T) -> F,
     ) -> BuildRef<'a, C, true>
@@ -288,7 +265,7 @@ impl<'a, T: Component + 'a> BuildRef<'a, T, true> {
 
     /// Transmutes this build reference from BuildRef<T> to BuildRef<C>,
     ///
-    pub fn transmute<C: Component + 'a>(self) -> BuildRef<'a, C, true> {
+    pub fn transmute<C: Send + Sync + Component + 'a>(self) -> BuildRef<'a, C, true> {
         BuildRef {
             world_ref: self.world_ref,
             entity: self.entity,
@@ -309,7 +286,7 @@ impl<'a, T: Component + 'a> BuildRef<'a, T, true> {
     }
 }
 
-impl<T, const ENABLE_ASYNC: bool> From<Error> for BuildRef<'_, T, ENABLE_ASYNC> {
+impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> From<Error> for BuildRef<'a, T, ENABLE_ASYNC> {
     fn from(value: Error) -> Self {
         Self {
             world_ref: None,
@@ -317,5 +294,39 @@ impl<T, const ENABLE_ASYNC: bool> From<Error> for BuildRef<'_, T, ENABLE_ASYNC> 
             error: Some(Arc::new(value)),
             _u: PhantomData,
         }
+    }
+}
+
+/// Wrapper-struct for implementing WorldRef trait,
+/// 
+pub struct WorldWrapper<'a>(&'a mut World);
+
+impl<'a> WorldWrapper<'a> {
+    /// Returns a build ref for an entity,
+    /// 
+    pub fn get_ref<T: Component + Sync + Send>(&'a mut self, entity: Entity) -> BuildRef<'a, T> {
+        BuildRef { world_ref: Some(self), entity: Some(entity), error: None, _u: PhantomData }
+    }
+}
+
+impl<'a> AsRef<World> for WorldWrapper<'a> {
+    fn as_ref(&self) -> &World {
+        self.0
+    }
+}
+
+impl<'a> AsMut<World> for WorldWrapper<'a> {
+    fn as_mut(&mut self) -> &mut World {
+        self.0
+    }
+}
+
+impl<'a> WorldRef for WorldWrapper<'a> {}
+
+/// Returns a wrapper over world that implements WorldRef
+/// 
+impl<'a> From<&'a mut World> for WorldWrapper<'a> {
+    fn from(value: &'a mut World) -> Self {
+        Self(value)
     }
 }

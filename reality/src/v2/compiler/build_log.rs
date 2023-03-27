@@ -91,7 +91,7 @@ impl BuildLog {
 
     /// Returns a build ref if the identifier resolves to an entity,
     /// 
-    pub fn find_ref<'a, T>(&self, ident: &Identifier, world_ref: &'a mut impl WorldRef) -> Option<BuildRef<'a, T>> {
+    pub fn find_ref<'a, T: Send + Sync + 'a>(&self, ident: &Identifier, world_ref: &'a mut (impl WorldRef + Send + Sync)) -> Option<BuildRef<'a, T>> {
         self.try_get(ident).ok().map(|e| BuildRef {
             world_ref: Some(world_ref),
             entity: Some(e),

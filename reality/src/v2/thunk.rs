@@ -1,10 +1,13 @@
-use std::sync::Arc;
+use super::compiler::BuildRef;
 use super::Properties;
 use crate::Error;
 use async_trait::async_trait;
+use specs::world::LazyBuilder;
 use specs::Component;
+use specs::Entity;
 use specs::LazyUpdate;
 use specs::VecStorage;
+use std::sync::Arc;
 
 mod call;
 pub use call::Call;
@@ -12,52 +15,49 @@ pub use call::Call;
 mod build;
 pub use build::Build;
 
+mod compile;
+pub use compile::Compile;
+
 mod update;
 pub use update::Update;
 
 /// Auto thunk trait implementations for common types,
-/// 
+///
 pub mod auto {
+    use crate::v2::compiler::WorldWrapper;
     use crate::Error;
     use specs::Component;
     use specs::Entity;
     use specs::LazyUpdate;
-    use specs::WorldExt;
     use std::fmt::Debug;
-    use tracing::debug;
     use tracing::error;
 
     use self::existing_impl::UPDATE;
-
     use super::Update;
 
     /// Flags to indicate the behavior in cases when the type being automated already implements some thunks,
-    /// 
+    ///
     #[allow(dead_code)]
     pub(super) mod existing_impl {
         /// Existing Update trait implementation,
-        /// 
+        ///
         pub const UPDATE: usize = 0x01;
-        
-        /// Existing Build trait implementation,
-        /// 
-        pub const BUILD: usize = 0x02;
     }
 
     /// Pointer struct for providing overloaded thunk implementations for certain trait types,
-    /// 
+    ///
     /// By default, the overloading behavior assumes that the type does not already implement any thunk traits,
-    /// 
+    ///
     pub struct Auto<const FLAGS: usize = 0>;
 
     /// The type being automated has an existing implementation,
-    /// 
+    ///
     pub type AutoWithExistingUpdateImpl = Auto<UPDATE>;
 
     /// Update implementation for Components that do not implement Update,
-    /// 
+    ///
     /// Will ensure the component is registered and add the component to the entity being updated,
-    /// 
+    ///
     impl<T> Update<Auto> for T
     where
         T: Component + Clone + Debug + Send + Sync,
@@ -66,14 +66,11 @@ pub mod auto {
         fn update(&self, updating: Entity, lazy_update: &LazyUpdate) -> Result<(), Error> {
             let next = self.clone();
             lazy_update.exec_mut(move |w| {
-                w.register::<T>();
-
-                match w.write_component::<T>().insert(updating, next) {
-                    Ok(last) => {
-                        last.map(|l| debug!("Component updated, last: {:?}", l));
-                    }
-                    Err(err) => error!("Error inserting component, {err}"),
-                }
+                WorldWrapper::from(w)
+                    .get_ref::<T>(updating)
+                    .store(next)
+                    .map_err(|e| error!("Error storing component, {e}"))
+                    .ok();
             });
 
             Ok(())
@@ -81,10 +78,10 @@ pub mod auto {
     }
 
     /// Update implementation for Components that implement Update,
-    /// 
+    ///
     /// Will ensure the component is registered, and if the self.update is successful, will update the entity being updated,
     /// w/ a clone of self.
-    /// 
+    ///
     impl<T> Update<AutoWithExistingUpdateImpl> for T
     where
         T: Update + Component + Clone + Debug + Send + Sync,
@@ -132,6 +129,10 @@ pub type ThunkUpdate = Thunk<Arc<dyn Update>>;
 ///
 pub type ThunkListen = Thunk<Arc<dyn Listen>>;
 
+/// Type-alias for a thunk compile component,
+///
+pub type ThunkCompile = Thunk<Arc<dyn Compile>>;
+
 /// Creates a thunk call from a type that implements Call,
 ///
 pub fn thunk_call(call: impl Call + 'static) -> ThunkCall {
@@ -164,6 +165,14 @@ pub fn thunk_listen(listen: impl Listen + 'static) -> ThunkListen {
     }
 }
 
+/// Creates a thunk compile from a type that implements Compile,
+///
+pub fn thunk_compile<C: Compile + 'static>(compile: C) -> ThunkCompile {
+    Thunk {
+        thunk: Arc::new(compile),
+    }
+}
+
 #[async_trait]
 impl<T: Call + Send + Sync> Call for Thunk<T> {
     async fn call(&self) -> Result<Properties, Error> {
@@ -178,8 +187,15 @@ impl<T: Listen + Send + Sync> Listen for Thunk<T> {
     }
 }
 
+#[async_trait]
+impl<T: Compile + Send + Sync> Compile for Thunk<T> {
+    async fn compile<'a>(&self, build_ref: BuildRef<'a, Properties>) -> Result<(), Error> {
+        self.thunk.compile(build_ref).await
+    }
+}
+
 impl<T: Build + Send + Sync> Build for Thunk<T> {
-    fn build(&self, lazy_builder: specs::world::LazyBuilder) -> Result<specs::Entity, Error> {
+    fn build(&self, lazy_builder: LazyBuilder) -> Result<Entity, Error> {
         self.thunk.build(lazy_builder)
     }
 }
@@ -197,18 +213,32 @@ impl<T: Update + Send + Sync> Update for Thunk<T> {
 #[allow(unused_imports)]
 mod tests {
     use std::ops::Deref;
+    use std::pin::Pin;
+    use std::sync::Arc;
 
     use super::thunk_build;
+    use super::thunk_compile;
     use super::Build;
+    use super::Compile;
+    use super::ThunkCompile;
+    use crate::v2::compiler::BuildLog;
+    use crate::v2::compiler::BuildRef;
+    use crate::v2::compiler::WorldWrapper;
     use crate::v2::property_value;
     use crate::v2::thunk_call;
     use crate::v2::thunk_listen;
     use crate::v2::Call;
     use crate::v2::Listen;
     use crate::v2::Properties;
+    use crate::Error;
+    use crate::Identifier;
+    use async_trait::async_trait;
     use specs::world::LazyBuilder;
     use specs::Builder;
+    use specs::Component;
     use specs::LazyUpdate;
+    use specs::Read;
+    use specs::VecStorage;
     use specs::World;
     use specs::WorldExt;
 
@@ -265,5 +295,68 @@ mod tests {
             .await
             .expect_err("should return an error");
         assert_eq!("test_error", result.to_string());
+    }
+
+    #[derive(Component)]
+    #[storage(VecStorage)]
+    struct TestCompile;
+
+    #[async_trait]
+    impl Compile for TestCompile {
+        async fn compile<'a>(&self, build_ref: BuildRef<'a, Properties>) -> Result<(), Error> {
+            build_ref
+                .enable_async()
+                .read(|_| async {
+                    println!("test_compile");
+                    Ok(())
+                })
+                .await
+                .disable_async()
+                .read(|props| {
+                    let test_value = props["test_value"].as_int().unwrap();
+                    assert_eq!(99, test_value);
+                    println!("reading value {test_value}");
+                    Ok(())
+                })
+                .result()?;
+
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_compile_thunk() {
+        // Create an object
+        let mut world = World::new();
+        world.register::<Properties>();
+        world.register::<Identifier>();
+
+        let mut props = Properties::default();
+        props["test_value"] = property_value(99);
+        let e = world
+            .create_entity()
+            .with(props)
+            .with(Identifier::default())
+            .build();
+
+        // Add it to our mock build log
+        let mut log = BuildLog::default();
+        log.index_mut().insert(Identifier::default(), e);
+
+        // Create a world wrapper
+        let mut wrapper = WorldWrapper::from(&mut world);
+        if let Some(mut r) = log.find_ref::<Properties>(&Identifier::default(), &mut wrapper) {
+            // Test mapping a thunk compile
+            r.store(thunk_compile(TestCompile)).expect("should work");
+        }
+
+        // Remove compile thunk
+        let tc = wrapper
+            .as_mut()
+            .write_component::<ThunkCompile>()
+            .remove(e)
+            .unwrap();
+
+        tc.compile(wrapper.get_ref(e)).await.unwrap();
     }
 }
