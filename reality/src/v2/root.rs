@@ -23,7 +23,7 @@ pub struct Root {
     pub value: Value,
     /// Stack of actions that will be applied to this attribute during it's transient phase,
     ///
-    action_stack: Vec<Action>,
+    initialize: Vec<Action>,
 }
 
 impl Root {
@@ -33,7 +33,7 @@ impl Root {
         Self {
             ident,
             value: value.into(),
-            action_stack: vec![],
+            initialize: vec![],
         }
     }
 
@@ -71,26 +71,26 @@ impl Root {
     /// Returns an iterator over the action stack,
     ///
     pub fn action_stack(&self) -> impl Iterator<Item = &Action> {
-        self.action_stack.iter()
+        self.initialize.iter()
     }
 
     /// Pushes an action on the stack,
     ///
     pub fn push(&mut self, action: Action) {
-        self.action_stack.push(action);
+        self.initialize.push(action);
     }
 
     /// Returns self with a `with` action,
     ///
     pub fn with(mut self, name: impl Into<String>, value: impl Into<Value>) -> Self {
-        self.action_stack.push(action::with(name, value));
+        self.initialize.push(action::with(name, value));
         self
     }
 
     /// Returns self with an `expand` action,
     ///
     pub fn extend(mut self, ident: &Identifier) -> Self {
-        self.action_stack.push(action::extend(ident));
+        self.initialize.push(action::extend(ident));
         self
     }
 }
@@ -102,7 +102,7 @@ impl Build for Root {
     ) -> Result<specs::Entity, crate::Error> {
         let mut properties = Properties::new(self.ident.clone());
 
-        for a in self.action_stack.iter() {
+        for a in self.initialize.iter() {
             if let Action::With(name, value) = a {
                 properties.add(name, value.clone());
             }

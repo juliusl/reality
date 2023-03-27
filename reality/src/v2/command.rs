@@ -24,7 +24,7 @@ pub async fn import_toml(compiler: &mut Compiler, path: impl AsRef<Path>) -> Res
     Ok(build)
 }
 
-/// Exports world state as a toml document,
+/// Exports world state of the last build as a toml document,
 /// 
 pub async fn export_toml(compiler: &mut Compiler, path: impl Into<PathBuf>) -> Result<(), Error> {
     let path = path.into();

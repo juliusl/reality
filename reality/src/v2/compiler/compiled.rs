@@ -1,8 +1,11 @@
 // use std::collections::BTreeMap;
 use super::BuildLog;
+use super::BuildRef;
 use crate::state::Load;
 use crate::state::Provider;
+use crate::v2::Compile;
 use crate::v2::Listen;
+use crate::v2::ThunkCompile;
 use crate::v2::ThunkListen;
 use crate::v2::thunk::ThunkUpdate;
 use crate::v2::thunk::Update;
@@ -58,6 +61,9 @@ pub struct Compiled<'a> {
     /// Thunk listen storage,
     /// 
     thunk_listens: ReadStorage<'a, ThunkListen>,
+    /// Thunk listen storage,
+    /// 
+    thunk_compiles: ReadStorage<'a, ThunkCompile>,
     /// Build log storage,
     ///
     build_logs: ReadStorage<'a, BuildLog>,
@@ -218,6 +224,9 @@ pub struct ObjectData<'a> {
     /// Thunk'ed listen fn,
     /// 
     listen: Option<&'a ThunkListen>,
+    /// Thunk'ed compile fn,
+    /// 
+    compile: Option<&'a ThunkCompile>,
 }
 
 /// Enumeration of compiled object hierarchy,
@@ -348,6 +357,14 @@ impl<'a> Object<'a> {
         }
     }
 
+    /// Returns the thunk compile if one exists,
+    /// 
+    pub fn as_compile(&self) -> Option<&ThunkCompile> {
+        match self {
+            Object::Block(d) | Object::Root(d) | Object::Extension(d) => d.compile,
+        }
+    }
+
     /// If object has a Thunk call and listen component, will execute the call thunk and pass the result to the
     /// listen thunk
     /// 
@@ -360,6 +377,19 @@ impl<'a> Object<'a> {
             },
             _ => {
                 Err("Object does not have a call and listen thunk".into())
+            }
+        }
+    }
+
+    /// If object has a compile thunk - compiles a build reference,
+    /// 
+    pub async fn compile(&self, build_ref: BuildRef<'_, Properties>) -> Result<(), Error> {
+        match self.as_compile() {
+            Some(compile) => {
+                compile.compile(build_ref).await
+            },
+            _ => {
+                Err("Object does not have a compile thunk".into())
             }
         }
     }
@@ -376,13 +406,14 @@ pub type ObjectFormat<'a> = (
     MaybeJoin<&'a ReadStorage<'a, ThunkBuild>>,
     MaybeJoin<&'a ReadStorage<'a, ThunkUpdate>>,
     MaybeJoin<&'a ReadStorage<'a, ThunkListen>>,
+    MaybeJoin<&'a ReadStorage<'a, ThunkCompile>>,
 );
 
 impl<'a> Load for Object<'a> {
     type Layout = ObjectFormat<'a>;
 
     fn load(
-        (identifier, properties, block, root, call, build, update, listen): <Self::Layout as Join>::Type,
+        (identifier, properties, block, root, call, build, update, listen, compile): <Self::Layout as Join>::Type,
     ) -> Self {
         let object_data = ObjectData {
             identifier,
@@ -393,6 +424,7 @@ impl<'a> Load for Object<'a> {
             build,
             update,
             listen,
+            compile,
         };
 
         if block.is_some() {
@@ -402,6 +434,37 @@ impl<'a> Load for Object<'a> {
         } else {
             Object::<'a>::Extension(object_data)
         }
+    }
+}
+
+/// Struct to load a view of a build,
+/// 
+#[derive(Clone)]
+pub struct Build<'a> {
+    /// Log of entities created by this build,
+    /// 
+    pub build_log: &'a BuildLog,
+    /// Optional, identifier naming this build,
+    /// 
+    pub identifier: Option<&'a Identifier>,
+    /// Optional, readonly, properties which contain properties for each entity created by this build,
+    /// 
+    pub properties: Option<&'a Properties>,
+}
+
+/// Type-alias for storage format of a single build,
+/// 
+pub type BuildFormat<'a> = (
+    &'a ReadStorage<'a, BuildLog>,
+    MaybeJoin<&'a ReadStorage<'a, Identifier>>,
+    MaybeJoin<&'a ReadStorage<'a, Properties>>,
+);
+
+impl<'a> Load for Build<'a> {
+    type Layout = BuildFormat<'a>;
+
+    fn load((build_log, identifier, properties): <Self::Layout as Join>::Type) -> Self {
+        Build { build_log, identifier, properties }
     }
 }
 
@@ -416,6 +479,17 @@ impl<'a> Provider<'a, ObjectFormat<'a>> for Compiled<'a> {
             self.thunk_builds.maybe(),
             self.thunk_updates.maybe(),
             self.thunk_listens.maybe(),
+            self.thunk_compiles.maybe(),
+        )
+    }
+}
+
+impl<'a> Provider<'a, BuildFormat<'a>> for Compiled<'a> {
+    fn provide(&'a self) -> BuildFormat<'a> {
+        (
+            &self.build_logs,
+            self.identifier.maybe(),
+            self.properties.maybe(),
         )
     }
 }

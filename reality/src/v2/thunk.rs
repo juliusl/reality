@@ -167,7 +167,8 @@ pub fn thunk_listen(listen: impl Listen + 'static) -> ThunkListen {
 
 /// Creates a thunk compile from a type that implements Compile,
 ///
-pub fn thunk_compile<C: Compile + 'static>(compile: C) -> ThunkCompile {
+pub fn thunk_compile<C: Compile + 'static>(compile: C) -> ThunkCompile 
+{
     Thunk {
         thunk: Arc::new(compile),
     }
@@ -189,7 +190,7 @@ impl<T: Listen + Send + Sync> Listen for Thunk<T> {
 
 #[async_trait]
 impl<T: Compile + Send + Sync> Compile for Thunk<T> {
-    async fn compile<'a>(&self, build_ref: BuildRef<'a, Properties>) -> Result<(), Error> {
+    async fn compile<'a, 'b>(&'a self, build_ref: BuildRef<'b, Properties>) -> Result<(), Error> {
         self.thunk.compile(build_ref).await
     }
 }
@@ -241,6 +242,7 @@ mod tests {
     use specs::VecStorage;
     use specs::World;
     use specs::WorldExt;
+    use tracing::trace;
 
     #[test]
     fn test_build_thunk() {
@@ -303,15 +305,29 @@ mod tests {
 
     #[async_trait]
     impl Compile for TestCompile {
-        async fn compile<'a>(&self, build_ref: BuildRef<'a, Properties>) -> Result<(), Error> {
-            build_ref
+        async fn compile<'a, 'b>(&'a self, build_ref: BuildRef<'b, Properties>) -> Result<(), Error> {
+            let mut build_ref = build_ref
                 .enable_async()
                 .read(|_| async {
                     println!("test_compile");
                     Ok(())
                 })
-                .await
-                .disable_async()
+                .await;
+            
+            build_ref.async_dispatch(|props, lu| {
+                let owner = props.owner().clone();
+                let fut = async move {
+                    println!("Tested compile {:#}", owner);
+                    Ok(())
+                };
+
+                lu.exec_mut(|_| {
+                });
+
+                fut
+            }).await?;
+
+            build_ref.disable_async()
                 .read(|props| {
                     let test_value = props["test_value"].as_int().unwrap();
                     assert_eq!(99, test_value);

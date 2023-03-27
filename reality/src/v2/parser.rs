@@ -232,6 +232,7 @@ impl Parser {
 }
 
 #[allow(unused_imports)]
+#[allow(dead_code)]
 mod tests {
     use std::{collections::BTreeMap, sync::Arc};
 
@@ -445,6 +446,8 @@ mod tests {
         });
         compiler.as_mut().maintain();
 
+        LHSOperator().run_now(compiler.as_mut());
+
         // Test query api
         for (ident, _, props) in compiler
             .compiled()
@@ -489,7 +492,7 @@ mod tests {
 
                     for (ident, _, _) in log.search_index("input.(var)") {
                         if let Some(build_ref) = log.find_ref::<Properties>(ident, world_ref) {
-                            build_ref.read(|p| {
+                            let mut build_ref = build_ref.read(|p| {
                                 println!(
                                     "BuildLog: {}, Found properties for: {} {:#}",
                                     e.id(),
@@ -498,6 +501,19 @@ mod tests {
                                 );
                                 Ok(())
                             });
+
+                            build_ref.dispatch(|properties, lu| {
+                                let ident = properties.owner().clone();
+                                lu.exec_mut(move |world| {
+                                    let mut test_props = Properties::default();
+                                    test_props["nested_lazy_update"] = property_value(true);
+
+                                    let next = world.create_entity().with(test_props).build();
+                                    println!("Creating entity w/ nested lazy update {:?}, src: {:#}", next, ident);
+                                });
+
+                                Ok(())
+                            }).ok();
                         }
                     }
                 });

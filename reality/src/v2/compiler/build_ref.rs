@@ -1,6 +1,7 @@
 use futures::Future;
 use specs::Component;
 use specs::Entity;
+use specs::LazyUpdate;
 use specs::World;
 use specs::WorldExt;
 use std::marker::PhantomData;
@@ -30,7 +31,7 @@ pub struct BuildRef<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool = false> {
 }
 
 /// Super trait to get a reference to world,
-/// 
+///
 pub trait WorldRef: AsMut<World> + AsRef<World> {}
 
 impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
@@ -60,7 +61,7 @@ impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_A
     ///
     /// Note: Ensures that the component being stored is registered first
     ///
-    pub fn store<C: Component + 'a>(&mut self, comp: C) -> Result<(), Error>
+    pub fn store<C: Component>(&mut self, comp: C) -> Result<(), Error>
     where
         <C as specs::Component>::Storage: std::default::Default,
     {
@@ -81,6 +82,35 @@ impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_A
 /// (Internal) Common Component storage-access functions
 ///
 impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
+    /// Dispatches changes to world storage via lazy-update and calls .maintain(),
+    ///
+    pub fn dispatch(
+        &mut self,
+        map: impl FnOnce(&T, &LazyUpdate) -> Result<(), Error>,
+    ) -> Result<(), Error> 
+    where
+        <T as specs::Component>::Storage: std::default::Default,
+    {
+        if let (Some(world), Some(entity)) = (self.world_ref.as_mut(), self.entity) {
+            world.as_mut().register::<T>();
+            {
+                world
+                    .as_ref()
+                    .read_component::<T>()
+                    .get(entity)
+                    .map(|c| {
+                        let lazy_update = world.as_ref().read_resource::<LazyUpdate>();
+                        map(c, &lazy_update)
+                    })
+                    .unwrap_or(Ok(()))?;
+            }
+            world.as_mut().maintain();
+            Ok(())
+        } else {
+            Err(format!("Could not dispatch changes, {:?}", self.error).into())
+        }
+    }
+
     /// Map a component T to C w/ read access to T
     ///
     fn map_entity<C>(&self, map: impl FnOnce(&T) -> C) -> Option<C> {
@@ -284,9 +314,42 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
             _u: PhantomData,
         }
     }
+
+    /// (Async) Dispatches changes to world storage via lazy-update and calls .maintain(),
+    /// 
+    pub async fn async_dispatch<F>(
+        &mut self,
+        map: impl FnOnce(&T, &LazyUpdate) -> F,
+    ) -> Result<(), Error> 
+    where
+        <T as specs::Component>::Storage: std::default::Default,
+        F: Future<Output = Result<(), Error>> + Send,
+    {
+        if let (Some(world), Some(entity)) = (self.world_ref.as_mut(), self.entity) {
+            world.as_mut().register::<T>();
+            {
+                if let Some(f) = world
+                    .as_ref()
+                    .read_component::<T>()
+                    .get(entity)
+                    .map(|c| {
+                        let lazy_update = world.as_ref().read_resource::<LazyUpdate>();
+                        map(c, &lazy_update)
+                    }) {
+                        f.await?;
+                    }
+            }
+            world.as_mut().maintain();
+            Ok(())
+        } else {
+            Err(format!("Could not dispatch changes, {:?}", self.error).into())
+        }
+    }
 }
 
-impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> From<Error> for BuildRef<'a, T, ENABLE_ASYNC> {
+impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> From<Error>
+    for BuildRef<'a, T, ENABLE_ASYNC>
+{
     fn from(value: Error) -> Self {
         Self {
             world_ref: None,
@@ -298,14 +361,19 @@ impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> From<Error> for BuildRef
 }
 
 /// Wrapper-struct for implementing WorldRef trait,
-/// 
+///
 pub struct WorldWrapper<'a>(&'a mut World);
 
 impl<'a> WorldWrapper<'a> {
     /// Returns a build ref for an entity,
-    /// 
+    ///
     pub fn get_ref<T: Component + Sync + Send>(&'a mut self, entity: Entity) -> BuildRef<'a, T> {
-        BuildRef { world_ref: Some(self), entity: Some(entity), error: None, _u: PhantomData }
+        BuildRef {
+            world_ref: Some(self),
+            entity: Some(entity),
+            error: None,
+            _u: PhantomData,
+        }
     }
 }
 
@@ -324,7 +392,7 @@ impl<'a> AsMut<World> for WorldWrapper<'a> {
 impl<'a> WorldRef for WorldWrapper<'a> {}
 
 /// Returns a wrapper over world that implements WorldRef
-/// 
+///
 impl<'a> From<&'a mut World> for WorldWrapper<'a> {
     fn from(value: &'a mut World) -> Self {
         Self(value)

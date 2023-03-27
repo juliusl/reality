@@ -8,6 +8,7 @@ use super::Properties;
 use super::ThunkBuild;
 use super::ThunkCall;
 use super::ThunkListen;
+use super::ThunkCompile;
 use super::Visitor;
 use crate::v2::Block;
 use crate::v2::BlockList;
@@ -67,6 +68,7 @@ impl Compiler {
         world.register::<ThunkCall>();
         world.register::<ThunkUpdate>();
         world.register::<ThunkListen>();
+        world.register::<ThunkCompile>();
         world.register::<Links>();
         world.insert(None::<tokio::runtime::Handle>);
         Compiler {
