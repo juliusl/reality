@@ -577,6 +577,12 @@ impl FromStr for Identifier {
     }
 }
 
+impl AsRef<Identifier> for Identifier {
+    fn as_ref(&self) -> &Identifier {
+        self
+    }
+}
+
 #[allow(unused_imports)]
 mod tests {
     use std::sync::Arc;

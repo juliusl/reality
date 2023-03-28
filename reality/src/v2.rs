@@ -66,17 +66,28 @@ pub mod command;
 #[allow(unused_imports)]
 #[allow(dead_code)]
 mod tests {
-    use crate::v2::{
-        data::{
-            query::{all, Predicate, Query},
-            toml::TomlProperties,
+    use crate::{
+        v2::{
+            data::{
+                query::{all, Predicate, Query},
+                toml::TomlProperties,
+            },
+            toml::DocumentBuilder,
+            Compiler, Parser, Properties,
         },
-        toml::DocumentBuilder,
-        Compiler, Parser,
+        Identifier,
     };
+
+    use super::Visitor;
 
     const EXAMPLE_PLUGIN: &'static str = r##"
 ```runmd
++ .plugin                               # Extensions that can be used when defining a plugin
+<> .path                                # Indicates that the variable should be a path
+: canonical .bool                       # If set to true, will check if the value is a canonical path
+<> .map                                 # Indicates that the variable will have key-value pairs within the root
+<> .list                                # Indicates that the variable can be a list of values
+
 + .plugin Process                       # Plugin that executes a child process
 : cache_output 	.bool 	                # Caches output from process to a property
 : silent		.bool 	                # Silences stdout/stderror from process to parent
@@ -87,13 +98,14 @@ mod tests {
 : arg			.symbol	                # List of arguments to pass to the process
 : flag		    .symbol	                # List of flags to pass to the process
 
-# Extensions
-<path>  .redirect : canonical .true     # Must be a canonical path
-<path>  .cd                             # Optionally a canonical path
-<map>   .env                            # Name is the environment variable name and the value is the environment variable value
-<list>  .arg                            # List of arguments to pass
-<list>  .flag                           # List of flags to pass
+<path>  .redirect : canonical .true
+<path>  .cd                             
+<map>   .env                            
+<list>  .arg                            
+<list>  .flag                           
+```
 
+```runmd app
 + .runtime
 <plugin> 	.process    cargo test
 : RUST_LOG 	.env        reality=trace
@@ -113,6 +125,36 @@ mod tests {
 
         let _ = compiler.compile().expect("should compile");
 
+        let log = compiler.last_build_log().unwrap();
+
+        // compiler
+        //     .compiled()
+        //     .all("plugin.(Name).path.(key)");
+
+        log.find_ref::<Properties>(
+            ".plugin.Process.path.redirect"
+                .parse::<Identifier>()
+                .unwrap(),
+            &mut compiler,
+        )
+        .unwrap()
+        .read(|props| {
+            assert!(props["canonical"].is_enabled());
+            Ok(())
+        });
+
+        log.find_ref::<Properties>(
+            ".plugin.Process.path.cd"
+                .parse::<Identifier>()
+                .unwrap(),
+            &mut compiler,
+        )
+        .unwrap()
+        .read(|props| {
+            assert!(!props["canonical"].is_enabled());
+            Ok(())
+        });
+
         let mut doc = DocumentBuilder::new();
         compiler
             .update_last_build(&mut doc)
@@ -121,14 +163,28 @@ mod tests {
                 println!("{}", props.doc);
 
                 for (ident, map, _) in props
-                    .all("plugin.process.(cmd)")
+                    .all("runtime.plugin.(plugin).(input)")
                     .expect("should be able to query")
                 {
                     println!("{:#}", ident);
-                    println!("{:?}", map.get("cmd"));
+                    println!("Plugin: {:?}", map.get("plugin"));
+                    println!("Input:  {:?}", map.get("input"));
                 }
 
                 Ok(())
             });
+    }
+
+
+    struct PluginExtensions; 
+
+    impl Visitor for PluginExtensions {
+        fn visit_root(&mut self, root: &super::Root) {
+            for path_rule in root.extensions().filter_map(|i| {
+                i.interpolate("plugin.(Name).path.(Var)")
+            }) {
+
+            }
+        }
     }
 }

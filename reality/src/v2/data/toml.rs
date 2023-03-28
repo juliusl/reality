@@ -627,7 +627,7 @@ impl<'a> toml_edit::visit::Visit<'a> for TomlImporter<'_> {
                     }
 
                     build_log
-                        .find_ref::<Identifier>(&ident, self)
+                        .find_ref::<Identifier>(ident, self)
                         .map(|build_ref| {
                             let _ = build_ref.map(|_| Ok(_properties)).result().map_err(|e| {
                                 error!("Could not map properties {e}");
