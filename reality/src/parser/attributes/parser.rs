@@ -3,7 +3,7 @@ use std::ops::Range;
 use std::str::FromStr;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{Attribute, Keywords, Value, Identifier};
+use crate::{Attribute, Identifier, Keywords, Value};
 use logos::Logos;
 use logos::{Lexer, Span};
 use specs::{Entity, LazyUpdate, World, WorldExt};
@@ -52,23 +52,32 @@ pub struct AttributeParser {
     ///
     keyword: Option<Keywords>,
     /// Current block identifier,
-    /// 
+    ///
     block_identifier: Identifier,
     /// Implicit identifier to use as the base identifier,
-    /// 
+    ///
     implicit_identifier: Option<Identifier>,
     /// The current identifier being built,
-    /// 
+    ///
     current_identifier: Identifier,
     /// Line count
     ///
     line_count: usize,
     /// Whenever parse identifier is called this is updated,
-    /// 
+    ///
     parsed_idents: Vec<String>,
+    /// Current comments,
+    /// 
+    comments: Vec<String>,
 }
 
 impl AttributeParser {
+    /// Current comments
+    /// 
+    pub fn comments(&self) -> &Vec<String> {
+        &self.comments
+    }
+
     /// Sets the default custom attribute,
     ///
     /// If no custom attribute is found this will be called,
@@ -86,13 +95,13 @@ impl AttributeParser {
     }
 
     /// Sets the current block identifierm
-    /// 
+    ///
     pub fn set_block_identifier(&mut self, ident: &Identifier) {
         self.block_identifier = ident.clone();
     }
 
     /// Sets the implicit identifier, chainable
-    /// 
+    ///
     pub fn with_implicit_identifier(&mut self, ident: Option<&Identifier>) -> &mut Self {
         if let Some(replaced) = self.implicit_identifier.take() {
             trace!("Replacing implicit identifier {:#}", replaced);
@@ -103,13 +112,13 @@ impl AttributeParser {
     }
 
     /// Returns the current identifier,
-    /// 
+    ///
     pub fn current_identifier(&self) -> &Identifier {
         &self.current_identifier
     }
 
     /// Returns the current block identifier,
-    /// 
+    ///
     pub fn block_identifier(&self) -> &Identifier {
         &self.block_identifier
     }
@@ -122,7 +131,7 @@ impl AttributeParser {
     }
 
     /// Initializes self w/ content,
-    /// 
+    ///
     pub fn init(&mut self, content: impl AsRef<str>) -> &mut Self {
         self.parse(content);
         self
@@ -431,8 +440,12 @@ impl AttributeParser {
                     .map(|suffix| {
                         if suffix != &name {
                             format!("{name}.{suffix}.{}", value.symbol().unwrap_or_default())
+                                .trim_end_matches(".")
+                                .to_string()
                         } else {
                             format!("{name}.{}", value.symbol().unwrap_or_default())
+                                .trim_end_matches(".")
+                                .to_string()
                         }
                     })
                     .unwrap_or(name);
@@ -454,8 +467,12 @@ impl AttributeParser {
                     .map(|suffix| {
                         if suffix != &name {
                             format!("{name}.{suffix}.{}", value.symbol().unwrap_or_default())
+                                .trim_end_matches(".")
+                                .to_string()
                         } else {
                             format!("{name}.{}", value.symbol().unwrap_or_default())
+                                .trim_end_matches(".")
+                                .to_string()
                         }
                     })
                     .unwrap_or(name);
@@ -699,23 +716,32 @@ pub fn on_custom_attr(lexer: &mut Lexer<Attributes>) {
             if let Some(implicit_identifier) = lexer.extras.implicit_identifier.as_mut() {
                 implicit_identifier.join(custom_attr_type).ok();
             } else {
-                lexer.extras.with_implicit_identifier(Identifier::default().join(custom_attr_type).ok().as_deref());
+                lexer.extras.with_implicit_identifier(
+                    Identifier::default().join(custom_attr_type).ok().as_deref(),
+                );
             }
 
             if !input.value().is_empty() {
-                lexer.extras.implicit_identifier.as_mut().map(|i| i.join(input.value()).ok());
+                lexer
+                    .extras
+                    .implicit_identifier
+                    .as_mut()
+                    .map(|i| i.join(input.value()).ok());
             }
 
             for tag in lexer.extras.parsed_idents.drain(..) {
                 trace!("setting tag {tag}");
-                lexer.extras.implicit_identifier.as_mut().map(|i| i.add_tag(&tag));
+                lexer
+                    .extras
+                    .implicit_identifier
+                    .as_mut()
+                    .map(|i| i.add_tag(&tag));
                 lexer.extras.current_identifier.add_tag(tag);
             }
 
             lexer.extras.current_identifier.join(custom_attr_type).ok();
         }
-        _ => {
-        }
+        _ => {}
     }
 
     lexer.extras.attr_ident = Some(custom_attr_type.to_string());
@@ -771,7 +797,7 @@ where
 }
 
 fn handle_input_extraction(lexer: &mut Lexer<Attributes>) -> ParserInputInfo {
-    let mut input = lexer.remainder().to_string();
+    let input = lexer.remainder().to_string();
 
     let scanning = input.to_string();
     let mut comment_lexer = Elements::lexer(&scanning);
@@ -781,12 +807,9 @@ fn handle_input_extraction(lexer: &mut Lexer<Attributes>) -> ParserInputInfo {
         match token {
             Elements::NewLine | Elements::InlineOperator | Elements::Error => {
                 parser_input_info.set_end_pos(comment_lexer.span().start);
-                lexer.bump(parser_input_info.end_pos);
-
-                return parser_input_info;
+                break;
             }
-            Elements::Comment(comment) => {
-                input = input.replace(&format!("<{comment}>"), "");
+            Elements::Comment(_) => {
                 parser_input_info.add_comment(comment_lexer.span());
             }
             _ => {}
@@ -794,6 +817,7 @@ fn handle_input_extraction(lexer: &mut Lexer<Attributes>) -> ParserInputInfo {
     }
 
     lexer.bump(parser_input_info.end_pos);
+    lexer.extras.comments = parser_input_info.comments();
     parser_input_info
 }
 
@@ -817,9 +841,7 @@ impl ParserInputInfo {
     fn add_comment(&mut self, span: Span) {
         let start = if span.start > 0 { span.start - 1 } else { 0 };
 
-        let end = if span.end > 0 { span.end - 1 } else { 0 };
-
-        self.comments.push(start..end);
+        self.comments.push(start..span.end);
     }
 
     fn set_end_pos(&mut self, pos: usize) {
@@ -839,7 +861,7 @@ impl ParserInputInfo {
                     "{}",
                     &self.original[..self.end_pos][start_pos..comment.start]
                 ) {
-                    start_pos = comment.end + 1;
+                    start_pos = comment.end;
                 }
             }
 
@@ -850,11 +872,20 @@ impl ParserInputInfo {
             self.original[..self.end_pos].trim().to_string()
         }
     }
+
+    /// Returns a vector of comments,
+    /// 
+    fn comments(&self) -> Vec<String> {
+        self.comments
+            .iter()
+            .map(|s| self.original[s.start..s.end].to_string())
+            .collect()
+    }
 }
 
 #[allow(unused_imports)]
 mod tests {
-    use crate::{Attribute, AttributeParser, Attributes, SpecialAttribute, Value, Keywords};
+    use crate::{Attribute, AttributeParser, Attributes, Keywords, SpecialAttribute, Value};
     use logos::Logos;
 
     #[test]
@@ -890,6 +921,26 @@ mod tests {
         assert_eq!(attr.value, Value::Empty);
         assert_eq!(
             Value::TextBuffer("cool_name".to_string()),
+            attr.transient.unwrap().1
+        );
+
+        let parser = AttributeParser::default();
+        let mut lexer = Attributes::lexer_with_extras(
+            "connection name .symbol --cool_name # This sets the connection name to a cool name",
+            parser,
+        );
+        assert_eq!(lexer.next(), Some(Attributes::Identifier));
+        assert_eq!(lexer.next(), Some(Attributes::Whitespace));
+        assert_eq!(lexer.next(), Some(Attributes::Identifier));
+        assert_eq!(lexer.next(), Some(Attributes::Whitespace));
+        assert_eq!(lexer.next(), Some(Attributes::Symbol));
+        lexer.extras.parse_attribute();
+
+        let attr = lexer.extras.next().expect("parses");
+        assert_eq!(attr.name, "connection::name");
+        assert_eq!(attr.value, Value::Empty);
+        assert_eq!(
+            Value::Symbol("--cool_name".to_string()),
             attr.transient.unwrap().1
         );
     }

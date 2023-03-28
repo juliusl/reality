@@ -1,3 +1,4 @@
+use super::Documentation;
 use super::parser::Packet;
 use super::parser::PacketHandler;
 use super::thunk::ThunkUpdate;
@@ -52,6 +53,9 @@ pub struct Compiler {
     /// Builds,
     ///
     builds: Vec<Entity>,
+    /// Documentation,
+    /// 
+    documentation: Option<Documentation>,
 }
 
 impl Compiler {
@@ -76,7 +80,15 @@ impl Compiler {
             block_list: BlockList::default(),
             build_log: BuildLog::default(),
             builds: vec![],
+            documentation: None,
         }
+    }
+
+    /// Returns self w/ documentation enabled,
+    /// 
+    pub fn with_docs(mut self) -> Self {
+        self.documentation = Some(Documentation::default());
+        self
     }
 
     /// Runs a lazy build,
@@ -226,6 +238,10 @@ impl Compiler {
 
 impl PacketHandler for Compiler {
     fn on_packet(&mut self, packet: Packet) -> Result<(), crate::Error> {
+        if let Some(docs) = self.documentation.as_mut() {
+            docs.on_packet(packet.clone())?;
+        }
+
         self.block_list.on_packet(packet.clone())?;
 
         // Ignoring errors since at this level we only care about the extension keyword,

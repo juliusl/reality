@@ -165,7 +165,7 @@ impl Parser {
                         self.route_packet(next, dest)?;
                     }
                     interop::MergeRejectedReason::UnrelatedPacket(unrelated) => {
-                        unreachable!("If a packet is rejected for this reason it indicates a packet creation error, {:?}", unrelated)
+                        unreachable!("If a packet is rejected for this reason it indicates a packet creation error, {:#?} {:#?}", cached.identifier, unrelated)
                     }
                 }
             }
@@ -335,6 +335,7 @@ mod tests {
 + .host
 : RUST_LOG  .env reality=trace
 : HOST      .env test.io
+<test> .input lhs2 : debug .bool true
 ```
 "#;
         std::fs::create_dir_all(".test").expect("should be able to create test dir");

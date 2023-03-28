@@ -3,10 +3,10 @@ use specs::Component;
 use specs::VecStorage;
 use tracing::trace;
 
-use crate::v2::Properties;
 use crate::v2::action;
 use crate::v2::Action;
 use crate::v2::Build;
+use crate::v2::Properties;
 use crate::AttributeParser;
 use crate::Error;
 use crate::Identifier;
@@ -132,6 +132,13 @@ impl MakePacket for AttributeParser {
         let block_identifier = self.block_identifier();
         let identifier = self.current_identifier();
         self.attr_ident().map(|a| trace!("Custom attr {a}"));
+
+        let mut docs = self
+            .comments()
+            .iter()
+            .map(|c| action::doc(c))
+            .collect::<Vec<_>>();
+
         match self.keyword().unwrap_or(&Keywords::Error) {
             Keywords::Add => {
                 let mut packet = Packet {
@@ -144,10 +151,11 @@ impl MakePacket for AttributeParser {
                     )],
                 };
 
-                if let Some(name) = self.value().symbol() {
+                if let Some(name) = self.value().symbol().filter(|s| !s.is_empty()) {
                     packet.identifier.join(name)?;
                 }
 
+                packet.actions.append(&mut docs);
                 Ok(packet)
             }
             Keywords::Define => {
@@ -181,6 +189,7 @@ impl MakePacket for AttributeParser {
                         .push(action::with(attr_ident, Value::Symbol(value)));
                 }
 
+                packet.actions.append(&mut docs);
                 Ok(packet)
             }
             Keywords::Extension => {
@@ -191,10 +200,15 @@ impl MakePacket for AttributeParser {
                     actions: vec![],
                 };
 
-                if let Some(input) = self.edit_value().and_then(|v| v.symbol()) {
+                if let Some(input) = self
+                    .edit_value()
+                    .and_then(|v| v.symbol())
+                    .filter(|s| !s.is_empty())
+                {
                     packet.identifier.join(input)?;
                 }
 
+                packet.actions.append(&mut docs);
                 Ok(packet)
             }
             _ => Err("Could not make packet".into()),
@@ -208,12 +222,16 @@ impl Build for Packet {
             Keywords::Extension => {
                 let mut properties = Properties::new(self.identifier.clone());
                 for a in self.actions.iter() {
-                    if let Action::With(name, value) = a {
-                        properties.add(name, value.clone());
+                    match a {
+                        Action::With(name, value) => properties.add(name, value.clone()),
+                        _ => {}
                     }
                 }
-                
-                Ok(lazy_builder.with(properties).with(self.identifier.clone()).build())
+
+                Ok(lazy_builder
+                    .with(properties)
+                    .with(self.identifier.clone())
+                    .build())
             }
             _ => Err("not implemented".into()),
         }

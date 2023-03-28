@@ -38,6 +38,7 @@ pub enum Elements {
     /// Comment,
     /// 
     #[token("/*", on_comment_start)]
+    #[token("#", on_doc_comment_start)]
     Comment(String),
     /// New line,
     /// 
@@ -45,6 +46,10 @@ pub enum Elements {
     #[token("\n")]
     #[token("\r\n")]
     NewLine,
+    /// Valid token elements,
+    /// 
+    #[token("-")]
+    Valid,
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.
     #[error]
@@ -69,11 +74,7 @@ impl Elements {
 }
 
 fn on_identifier(lexer: &mut Lexer<Elements>) -> Option<String> {
-    let mut slice = lexer.slice();
-    if slice.starts_with('#') {
-        slice = &slice[1..];
-    }
-
+    let slice = lexer.slice();
     Some(slice.to_string())
 }
 
@@ -92,6 +93,25 @@ fn on_comment_start(lexer: &mut Lexer<Elements>) -> Option<String> {
     Some(result.to_string())
 }
 
+fn on_doc_comment_start(lexer: &mut Lexer<Elements>) -> Option<String> {
+    let end_pos = lexer.remainder()
+        .lines()
+        .take(1)
+        .next()
+        .map(|l| l.len())
+        .unwrap_or_default();
+
+    if end_pos > 0 {
+        let result = &lexer.remainder()[..end_pos];
+        lexer.bump(end_pos);
+        Some(result.to_string())
+    } else {
+        let result = &lexer.remainder();
+        lexer.bump(result.len());
+        Some(result.to_string())
+    }
+}
+
 #[test]
 fn test_elements() {
     let test_str = ".Custom test value";
@@ -101,11 +121,12 @@ fn test_elements() {
         Elements::Identifier(".Custom".to_string())
     );
 
-    let test_str = "test, one, two, three /* test one two three */";
+    let test_str = "test, one, two, three /* test one two three */ # this is a doc comment";
     let mut lexer = Elements::lexer(test_str);
     assert_eq!(lexer.next(), Elements::ident("test"));
     assert_eq!(lexer.next(), Elements::ident("one"));
     assert_eq!(lexer.next(), Elements::ident("two"));
     assert_eq!(lexer.next(), Elements::ident("three"));
     assert_eq!(lexer.next(), Some(Elements::Comment(" test one two three ".to_string())));
+    assert_eq!(lexer.next(), Some(Elements::Comment(" this is a doc comment".to_string())));
 }

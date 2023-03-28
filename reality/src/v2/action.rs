@@ -12,6 +12,9 @@ pub enum Action {
     /// Extends the current namespace,
     /// 
     Extend(Identifier),
+    /// Doc comment,
+    /// 
+    Doc(String),
 }
 
 /// Returns an action that will apply a property,
@@ -24,4 +27,10 @@ pub fn with(name: impl Into<String>, value: impl Into<Value>) -> Action {
 ///
 pub fn extend(ident: &Identifier) -> Action {
     Action::Extend(ident.clone())
+}
+
+/// Returns a doc comment action,
+/// 
+pub fn doc(comment: impl Into<String>) -> Action {
+    Action::Doc(comment.into().trim().to_string())
 }

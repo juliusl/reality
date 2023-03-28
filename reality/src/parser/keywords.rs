@@ -23,6 +23,7 @@ pub enum Keywords {
     #[token("```", on_block_delimitter)]
     #[token("<```", on_block_delimitter)]
     #[token("<```>", on_block_delimitter)]
+    #[token("```runmd", on_block_delimitter)]
     BlockDelimitter = 0x0B,
 
     /// Comments are skipped, usually .md list element or header so that the .runmd can be
@@ -33,9 +34,8 @@ pub enum Keywords {
     #[token("-", on_comment)]
     #[token("//", on_comment)]
     #[token("``` md", on_comment)]
-    #[token("``` runmd", on_comment)]
     #[token("```md", on_comment)]
-    #[token("```runmd", on_comment)]
+    #[token("``` runmd", on_comment)]
     #[token("/*", on_inline_comment)]
     Comment = 0x0C,
 

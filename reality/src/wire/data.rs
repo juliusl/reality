@@ -137,6 +137,7 @@ impl From<Elements> for Data {
             Elements::Error => {
                 panic!("error is not encoded to frame")
             }
+            Elements::Valid => panic!("valid is not encoded to frame"),
         }
     }
 }

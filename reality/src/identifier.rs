@@ -636,12 +636,12 @@ mod tests {
         assert_eq!("part3", branch.pos(3).expect("should have a part"));
         assert_eq!(2, root.len);
         assert_eq!(
-            r##"test.part1.part2.part3."#test:v1#""##,
+            r##"test.part1.part2.part3.#test:v1#"##,
             format!("{:#}", branch)
         );
 
         let truncated = branch.truncate(2).expect("should truncate");
-        assert_eq!(r##"test.part1."#test:v1#""##, format!("{:#}", truncated));
+        assert_eq!(r##"test.part1.#test:v1#"##, format!("{:#}", truncated));
 
         let branch = branch
             .branch("testing.branch")
@@ -747,14 +747,14 @@ mod tests {
         root.join("test").expect("should join");
         root.add_tag("test");
         root.add_tag("v1");
-        assert_eq!(r#".test."test:v1""#, format!("{:#}", root).as_str());
+        assert_eq!(r##".test.#test:v1#"##, format!("{:#}", root).as_str());
         assert_eq!(
             "test,v1",
             root.tags().cloned().collect::<Vec<_>>().join(",")
         );
 
         let comitted = root.commit().expect("should be able to commit");
-        assert_eq!(r#".test."test:v1""#, format!("{comitted}").as_str());
+        assert_eq!(r##".test.#test:v1#"##, format!("{:#}", comitted).as_str());
 
         let ident: Identifier = ".input".parse().expect("should parse");
         assert_eq!("input", ident.pos(1).expect("should exist").as_str());
