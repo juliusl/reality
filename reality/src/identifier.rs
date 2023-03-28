@@ -32,6 +32,35 @@ pub struct Identifier {
 }
 
 impl Identifier {
+    /// Returns a new empty identifier,
+    ///
+    pub const fn new() -> Self {
+        Identifier {
+            buf: String::new(),
+            tags: BTreeSet::new(),
+            len: 0,
+            parent: None,
+        }
+    }
+
+    /// Returns a new identifier w/ root,
+    ///
+    pub fn new_root(root: impl Into<String>) -> Self {
+        let root = root.into();
+        let root = if root.contains(".") && !root.starts_with(r#"""#) && !root.ends_with(r#"""#) {
+            format!(r#""{}""#, root)
+        } else {
+            format!("{root}")
+        };
+
+        Self {
+            buf: root,
+            len: 0,
+            tags: BTreeSet::new(),
+            parent: None,
+        }
+    }
+
     /// Adds a tag to the identifier,
     ///
     pub fn add_tag(&mut self, tag: impl Into<String>) {
@@ -96,24 +125,6 @@ impl Identifier {
     ///
     pub fn len(&self) -> usize {
         self.len
-    }
-
-    /// Returns a new identifier w/ root,
-    ///
-    pub fn new(root: impl Into<String>) -> Self {
-        let root = root.into();
-        let root = if root.contains(".") && !root.starts_with(r#"""#) && !root.ends_with(r#"""#) {
-            format!(r#""{}""#, root)
-        } else {
-            format!("{root}")
-        };
-
-        Self {
-            buf: root,
-            len: 0,
-            tags: BTreeSet::default(),
-            parent: Default::default(),
-        }
     }
 
     /// Joins the next part of the identifier,
@@ -271,8 +282,10 @@ impl Identifier {
                     let mut found = false;
                     while let Some(token) = _lex.next() {
                         match token {
-                            StringInterpolationTokens::MatchTags(_tags) if tags.is_subset(&_tags) => {
-                                let remaining =_lex.remainder().to_string();
+                            StringInterpolationTokens::MatchTags(_tags)
+                                if tags.is_subset(&_tags) =>
+                            {
+                                let remaining = _lex.remainder().to_string();
                                 buf = remaining;
                                 found = true;
                                 break;
@@ -565,14 +578,14 @@ impl FromStr for Identifier {
         let parts = parts(s)?;
         let mut parts = parts.iter();
 
-        if let Some(mut root) = parts.next().map(|p| Self::new(p)) {
+        if let Some(mut root) = parts.next().map(|p| Self::new_root(p)) {
             for p in parts {
                 root.join(p)?;
             }
 
             Ok(root)
         } else {
-            Ok(Self::new(""))
+            Ok(Self::new())
         }
     }
 }
@@ -615,7 +628,7 @@ mod tests {
 
     #[test]
     fn test_identifier() {
-        let mut root = Identifier::new("test");
+        let mut root = Identifier::new_root("test");
 
         root.join("part1")
             .expect("should be part1")
@@ -627,7 +640,7 @@ mod tests {
         assert_eq!("part2", root.pos(2).expect("should have a part"));
         root.pos(3).expect_err("should be an error");
 
-        let root = Identifier::new("");
+        let root = Identifier::new();
         assert_eq!("", root.root());
 
         let mut root: Identifier = "test.part1.part2".parse().expect("should be able to parse");

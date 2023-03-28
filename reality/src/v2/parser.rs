@@ -238,7 +238,7 @@ mod tests {
 
     use super::Parser;
     use crate::{
-        state::Provider,
+        state::{Provider, Load},
         v2::{
             command::{export_toml, import_toml},
             compiler::{BuildLog, Compiled, WorldWrapper},
@@ -345,46 +345,6 @@ mod tests {
         let parser = Parser::new();
         let _parser = parser.parse_file(".test/test.runmd", &mut compiler);
         let _ = compiler.compile().expect("should be able to build self");
-
-        // Test building state document
-        // let mut doc_builder = DocumentBuilder::new();
-        // let count_block_len_thunk = compiler
-        //     .update_last_build(&mut doc_builder)
-        //     // Map document builder into toml properties
-        //     .map_into(|build| {
-        //         let props: TomlProperties = build.into();
-        //         Ok(props)
-        //     })
-        //     // Map toml properties to a call thunk
-        //     .map_into(|toml| {
-        //         // Test preparing the call
-        //         let len = toml["block"]
-        //             .as_table()
-        //             .map(|t| t.len())
-        //             .unwrap_or_default();
-        //         Ok(thunk_call(move || async move {
-        //             let mut properties = Properties::default();
-        //             properties["len"] = property_value(len);
-        //             Ok(properties)
-        //         }))
-        //     })
-        //     // Configure execution to be async
-        //     .enable_async();
-
-        // Test executing thunk and reading properties
-        // let _ = count_block_len_thunk
-        //     .map_into(|call| {
-        //         // Test executing the call
-        //         let _call = call.clone();
-        //         async move { _call.call().await }
-        //     })
-        //     .await
-        //     .disable_async()
-        //     .read(|properties| {
-        //         // Test reading the result
-        //         println!("{:?}", properties["len"]);
-        //         Ok(())
-        //     });
 
         let mut doc_builder = DocumentBuilder::new();
         compiler

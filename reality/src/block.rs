@@ -18,6 +18,7 @@ pub use block_properties::Documentation;
 
 mod block_object;
 pub use block_object::BlockObject;
+use tracing::trace;
 
 pub mod wire;
 /// Data structure parsed from .runmd, 
@@ -53,10 +54,9 @@ impl Block {
     pub fn new(entity: Entity, name: impl Into<String>, symbol: impl Into<String>) -> Self {
         let name = name.into();
         let symbol = symbol.into();
-        let mut ident = Identifier::default();
-        // trace!("Creating new block name: {name} symbol: {symbol}");
+        let mut ident = Identifier::new();
         if !symbol.is_empty() {
-            ident = Identifier::new(&symbol);
+            ident = Identifier::new_root(&symbol);
 
             if !name.is_empty() {
                 if let Err(err) = ident.join(&name) {
@@ -67,6 +67,7 @@ impl Block {
 
         ident.add_tag("block");
 
+        trace!("Creating new block: {:?}", ident);
         Self {
             entity: entity.id(),
             name,

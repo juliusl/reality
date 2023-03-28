@@ -196,7 +196,7 @@ fn on_extension(lexer: &mut Lexer<Keywords>) -> Filter<()> {
     // Set a new extension symbol in the parser,
     if lexer.slice().len() > 2 {
         let extension_namespace = lexer.slice()[1..lexer.slice().len() - 1].to_string();
-        lexer.extras.parse_property().with_implicit_identifier(Some(&Identifier::new(extension_namespace)));
+        lexer.extras.parse_property().with_implicit_identifier(Some(&Identifier::new_root(extension_namespace)));
     } else {
         lexer.extras.parse_property().with_implicit_identifier(None);
     }
