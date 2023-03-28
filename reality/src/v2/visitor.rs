@@ -99,8 +99,6 @@ pub trait Visitor {
         for (idx, v) in values.iter().enumerate() {
             self.visit_value(name, Some(idx), v);
         }
-
-        self.alternate().map(|a| a.visit_list(name, values));
     }
 
     /// Visits a property value,
@@ -125,8 +123,6 @@ pub trait Visitor {
             Value::Reference(r) => self.visit_reference(name, idx, *r),
             Value::Complex(c) => self.visit_complex(name, idx, c),
         }
-
-        self.alternate().map(|a| a.visit_value(name, idx, value));
     }
 
     /// Visits an object,
@@ -140,8 +136,6 @@ pub trait Visitor {
         object.as_root().map(|b| self.visit_root(b));
         self.visit_identifier(object.ident());
         self.visit_properties(object.properties());
-
-        self.alternate().map(|a| a.visit_object(object));
     }
 
     /// Visits a block,
@@ -154,8 +148,6 @@ pub trait Visitor {
         for root in block.roots() {
             self.visit_root(root);
         }
-
-        self.alternate().map(|a| a.visit_block(block));
     }
 
     /// Visits a root,
@@ -168,8 +160,6 @@ pub trait Visitor {
         for ext in root.extensions() {
             self.visit_extension(ext);
         }
-
-        self.alternate().map(|a| a.visit_root(root));
     }
 
     /// Visits a properties map,
@@ -182,8 +172,6 @@ pub trait Visitor {
         for (name, property) in properties.iter_properties() {
             self.visit_property(name, property);
         }
-
-        self.alternate().map(|a| a.visit_properties(properties));
     }
 
     /// Visits a property,
@@ -202,18 +190,6 @@ pub trait Visitor {
             Property::Properties(properties) => self.visit_readonly(properties.clone()),
             Property::Empty => self.visit_empty(name),
         }
-
-        self.alternate().map(|a| a.visit_property(name, property));
-    }
-
-    /// Alternate visitor,
-    /// 
-    /// # Background
-    /// Allows for a two-tiered visitor approach, where the primary visitor implements this fn, and the secondary visitor overrides 
-    /// defaults.
-    /// 
-    fn alternate(&mut self) -> Option<&mut (dyn Visitor + 'static)> {
-        None
     }
 }
 
