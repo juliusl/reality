@@ -180,8 +180,7 @@ impl Parser {
             if incoming.is_add() {
                 let block = Arc::new(incoming.block_identifier.clone());
                 incoming.identifier.set_parent(block.clone());
-                let mut next_root = incoming.identifier.clone();
-                next_root.set_parent(block);
+                let next_root = incoming.identifier.clone();
                 self.root_identifier = Some(Arc::new(next_root));
             }
 
