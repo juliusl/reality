@@ -71,7 +71,7 @@ impl Block {
             entity: entity.id(),
             name,
             symbol,
-            identifier: ident.commit().expect("should be able to commit identifier"),
+            identifier: ident.commit().expect("should be able to commit identifier").flatten(),
             attributes: vec![],
         }
     }

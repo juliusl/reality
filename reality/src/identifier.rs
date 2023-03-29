@@ -28,6 +28,7 @@ pub struct Identifier {
     ///
     len: usize,
     /// Parent identifier,
+    /// 
     parent: Option<Arc<Identifier>>,
 }
 
@@ -199,6 +200,24 @@ impl Identifier {
         let c = self.clone();
 
         format!("{:#}", c).parse()
+    }
+
+    /// Flattens the current identifier if the current identifier is empty, 
+    /// the parent is Some, and the grandparent is None,
+    /// 
+    pub fn flatten(self) -> Self {
+        if let Some(parent) = self.parent() { 
+            if parent.parent().is_none() && self.len == 0 && self.tags.is_empty() {
+                return Self {
+                    buf: parent.buf.clone(),
+                    len: parent.len,
+                    tags: parent.tags.clone(),
+                    parent: None
+                };
+            }
+        }
+
+        self
     }
 
     /// Returns a merged identifier,
