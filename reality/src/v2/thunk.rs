@@ -167,7 +167,7 @@ pub fn thunk_listen(listen: impl Listen + 'static) -> ThunkListen {
 
 /// Creates a thunk compile from a type that implements Compile,
 ///
-pub fn thunk_compile<C: Compile + 'static>(compile: C) -> ThunkCompile 
+pub fn thunk_compile(compile: impl Compile + 'static) -> ThunkCompile
 {
     Thunk {
         thunk: Arc::new(compile),

@@ -1,4 +1,3 @@
-// use std::collections::BTreeMap;
 use super::BuildLog;
 use super::BuildRef;
 use crate::state::Load;
@@ -24,16 +23,13 @@ use specs::ReadStorage;
 use specs::SystemData;
 use tracing::trace;
 
-/// Compiled runmd data,
+/// Compiled data,
 ///
 #[derive(SystemData)]
 pub struct Compiled<'a> {
     /// Entity storage,
     ///
     entities: Entities<'a>,
-    /// Tokio runtime handle,
-    ///
-    // tokio_handle: Read<'a, Option<tokio::runtime::Handle>>,
     /// Lazy update resource,
     ///
     lazy_updates: Read<'a, LazyUpdate>,
@@ -104,98 +100,12 @@ impl<'a> Compiled<'a> {
         update.update(updating, self.lazy_update())
     }
 
-    /// Looks for an indexed object compiled from a build by identifier.
-    /// If found and a ThunkCall component exists, the component will be cloned and invoked, returning the result.
-    ///
-    /// Otherwise, if the object/build/thunk component do not exist, an error w/ message is returned.
-    ///
-    /// # Notes on identifier
-    /// An object identifier is committed before being inserted into a build log index. Which means the full identifier
-    /// must be specified in order for it to be found in the build log.
-    ///
-    /// One tiny detail is that the identifier component stored w/ the object maintains the hierarchy,
-    /// which means identifiers gathered w/ a visitor have not yet been committed. Using this method address that issue, since the
-    /// search_index fn will call commit before trying to get the entity from the index.
-    ///
-    // pub async fn call_from(&self, build: Entity, ident: &Identifier) -> Result<Properties, Error> {
-    //     if let Some(thunk) = self.find_build(build).map(|log| log.try_get(ident)) {
-    //         let thunk = thunk?;
-    //         self.call(thunk).await.map_err(|_| {
-    //             format!(
-    //                 "Either the object, or thunk do not exist w/ identifier {:?}",
-    //                 ident
-    //             )
-    //             .into()
-    //         })
-    //     } else {
-    //         Err(format!("Build {:?} no longer exists", build).into())
-    //     }
-    // }
-
-    /// Searches for call thunks from a build log w/ string interpolation pattern and prepares a batch call joinset,
-    ///
-    /// The join set will return results in the order tasks complete,
-    ///
-    // pub fn batch_call_matches(
-    //     &self,
-    //     build: Entity,
-    //     pat: impl Into<String>,
-    // ) -> Result<BatchCallJoinSet, Error> {
-    //     if let Some((build_log, handle)) = self.find_build(build).zip(self.tokio_handle.as_ref()) {
-    //         let mut joinset = tokio::task::JoinSet::<
-    //             Result<(Identifier, BTreeMap<String, String>, Properties), Error>,
-    //         >::new();
-
-    //         for (ident, map, e) in build_log.search_index(pat) {
-    //             let thunk = self.state::<Object>(*e).and_then(|o| o.as_call().cloned());
-    //             if let Some(thunk) = thunk {
-    //                 let ident = ident.clone();
-    //                 joinset.spawn_on(
-    //                     async move {
-    //                         let result = thunk.call().await?;
-
-    //                         Ok((ident, map, result))
-    //                     },
-    //                     handle,
-    //                 );
-    //             }
-    //         }
-
-    //         Ok(joinset)
-    //     } else {
-    //         Err("Could not find existing build or tokio runtime handle".into())
-    //     }
-    // }
-
-    /// Returns the result of a thunk call component stored on thunk_entity,
-    ///
-    // pub async fn call(&self, thunk_entity: Entity) -> Result<Properties, Error> {
-    //     let thunk = self
-    //         .state::<Object>(thunk_entity)
-    //         .and_then(|o| o.as_call().cloned());
-
-    //     if let Some(thunk) = thunk {
-    //         thunk.call().await
-    //     } else {
-    //         Err(format!(
-    //             "Either the object, or thunk do not exist on entity {:?}",
-    //             thunk_entity
-    //         )
-    //         .into())
-    //     }
-    // }
-
     /// Returns a reference to lazy update resource,
     ///
     pub fn lazy_update(&self) -> &LazyUpdate {
         &self.lazy_updates
     }
 }
-
-/// Type-alias for a batch call join-set,
-///
-// pub type BatchCallJoinSet =
-//     tokio::task::JoinSet<Result<(Identifier, BTreeMap<String, String>, Properties), Error>>;
 
 /// Compiled object struct,
 ///
