@@ -1,8 +1,7 @@
 use super::BuildLog;
-use super::BuildRef;
 use crate::state::Load;
 use crate::state::Provider;
-use crate::v2::Compile;
+use crate::state::iter_state;
 use crate::v2::Listen;
 use crate::v2::ThunkCompile;
 use crate::v2::ThunkListen;
@@ -21,7 +20,6 @@ use specs::join::MaybeJoin;
 use specs::prelude::*;
 use specs::ReadStorage;
 use specs::SystemData;
-use tracing::trace;
 
 /// Compiled data,
 ///
@@ -72,12 +70,23 @@ impl<'a> Compiled<'a> {
         self.build_logs.get(build)
     }
 
-    /// Visits the objects created by a build,
-    ///
+    /// Visits objects in each build,
+    /// 
+    pub fn visit_builds(&self, visitor: &mut impl Visitor) {
+        for (_, build) in iter_state::<Build, _>(self) {
+            let build_log = build.build_log;
+            for (_, entity) in build_log.index().iter() {
+                self.visit_object(*entity, visitor);
+            }
+        }
+    }
+
+    /// Visits objects for a specific build,
+    /// 
     pub fn visit_build(&self, build: Entity, visitor: &mut impl Visitor) {
-        if let Some(build_log) = self.find_build(build) {
-            for (ident, entity) in build_log.index().iter() {
-                trace!("Visiting {:#}", ident);
+        if let Some(build) = self.state::<Build>(build) {
+            let build_log = build.build_log;
+            for (_, entity) in build_log.index().iter() {
                 self.visit_object(*entity, visitor);
             }
         }
@@ -287,19 +296,6 @@ impl<'a> Object<'a> {
             },
             _ => {
                 Err("Object does not have a call and listen thunk".into())
-            }
-        }
-    }
-
-    /// If object has a compile thunk - compiles a build reference,
-    /// 
-    pub async fn compile(&self, build_ref: BuildRef<'_, Properties>) -> Result<(), Error> {
-        match self.as_compile() {
-            Some(compile) => {
-                compile.compile(build_ref).await
-            },
-            _ => {
-                Err("Object does not have a compile thunk".into())
             }
         }
     }

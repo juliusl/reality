@@ -145,6 +145,7 @@ where
 
     /// Decodes and reads wire objects,
     ///
+    #[allow(deprecated)]
     pub async fn read<F, T>(&self, handle: impl Fn(&[Frame], T) -> F, complete: impl Fn(T) -> ())
     where
         T: WireObject,
@@ -165,6 +166,7 @@ where
 
     /// Decodes objects by resource id
     ///
+    #[allow(deprecated)]
     pub fn decode<T>(&self) -> Vec<T>
     where
         T: WireObject,

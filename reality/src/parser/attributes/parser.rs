@@ -586,10 +586,14 @@ pub fn on_bool_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_bool_enable(lexer: &mut Lexer<Attributes>) {
+    handle_input_extraction(lexer);
+
     lexer.extras.parse_value(Value::Bool(true));
 }
 
 pub fn on_bool_disable(lexer: &mut Lexer<Attributes>) {
+    handle_input_extraction(lexer);
+
     lexer.extras.parse_value(Value::Bool(false));
 }
 
@@ -674,8 +678,9 @@ pub fn on_symbol_attr(lexer: &mut Lexer<Attributes>) {
 }
 
 pub fn on_empty_attr(lexer: &mut Lexer<Attributes>) {
+    handle_input_extraction(lexer);
+
     lexer.extras.parse_value(Value::Empty);
-    lexer.bump(lexer.remainder().len());
 }
 
 pub fn on_complex_attr(lexer: &mut Lexer<Attributes>) {

@@ -63,6 +63,7 @@ pub mod toml {
 
 pub mod command;
 
+#[allow(unused_variables)]
 #[allow(unused_imports)]
 #[allow(dead_code)]
 mod tests {
@@ -84,11 +85,12 @@ mod tests {
 ```runmd
 + .plugin                               # Extensions that can be used when defining a plugin
 <> .path                                # Indicates that the variable should be a path
-: canonical .bool                       # If set to true, will check if the value is a canonical path
+: canonical .bool                       # If enabled, will check if the value is a canonical path
+: cache     .bool                       # If enabled, indicates that the file at path should be read
 <> .map                                 # Indicates that the variable will have key-value pairs within the root
 <> .list                                # Indicates that the variable can be a list of values
 
-+ .plugin Process                       # Plugin that executes a child process
++ .plugin process                       # Plugin that executes a child process
 : cache_output 	.bool 	                # Caches output from process to a property
 : silent		.bool 	                # Silences stdout/stderror from process to parent
 : inherit		.bool	                # Inherits any arg/env values from parent's properties
@@ -98,11 +100,11 @@ mod tests {
 : arg			.symbol	                # List of arguments to pass to the process
 : flag		    .symbol	                # List of flags to pass to the process
 
-<path>  .redirect : canonical .true
-<path>  .cd                             
-<map>   .env                            
-<list>  .arg                            
-<list>  .flag                           
+<path>  .redirect : canonical .true     # Should be a canonical path
+<path>  .cd                             # Should be a path
+<map>   .env                            # Should be a map
+<list>  .arg                            # Should be a list
+<list>  .flag                           # Should be a list
 ```
 
 ```runmd app
@@ -127,12 +129,8 @@ mod tests {
 
         let log = compiler.last_build_log().unwrap();
 
-        // compiler
-        //     .compiled()
-        //     .all("plugin.(Name).path.(key)");
-
         log.find_ref::<Properties>(
-            ".plugin.Process.path.redirect"
+            ".plugin.process.path.redirect"
                 .parse::<Identifier>()
                 .unwrap(),
             &mut compiler,
@@ -144,7 +142,7 @@ mod tests {
         });
 
         log.find_ref::<Properties>(
-            ".plugin.Process.path.cd"
+            ".plugin.process.path.cd"
                 .parse::<Identifier>()
                 .unwrap(),
             &mut compiler,
@@ -173,18 +171,5 @@ mod tests {
 
                 Ok(())
             });
-    }
-
-
-    struct PluginExtensions; 
-
-    impl Visitor for PluginExtensions {
-        fn visit_root(&mut self, root: &super::Root) {
-            for path_rule in root.extensions().filter_map(|i| {
-                i.interpolate("plugin.(Name).path.(Var)")
-            }) {
-
-            }
-        }
     }
 }

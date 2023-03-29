@@ -346,6 +346,9 @@ mod tests {
         let _parser = parser.parse_file(".test/test.runmd", &mut compiler);
         let _ = compiler.compile().expect("should be able to build self");
 
+        let mut properties = Properties::default();
+        compiler.compiled().visit_builds(&mut properties);
+
         let mut doc_builder = DocumentBuilder::new();
         compiler
             .update_last_build(&mut doc_builder)
