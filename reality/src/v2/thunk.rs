@@ -16,6 +16,7 @@ mod build;
 pub use build::Build;
 
 mod compile;
+pub use compile::AsyncCompile;
 pub use compile::Compile;
 
 mod update;
@@ -131,7 +132,7 @@ pub type ThunkListen = Thunk<Arc<dyn Listen>>;
 
 /// Type-alias for a thunk compile component,
 ///
-pub type ThunkCompile = Thunk<Arc<dyn Compile>>;
+pub type ThunkCompile = Thunk<Arc<dyn AsyncCompile>>;
 
 /// Creates a thunk call from a type that implements Call,
 ///
@@ -167,7 +168,7 @@ pub fn thunk_listen(listen: impl Listen + 'static) -> ThunkListen {
 
 /// Creates a thunk compile from a type that implements Compile,
 ///
-pub fn thunk_compile(compile: impl Compile + 'static) -> ThunkCompile {
+pub fn thunk_compile(compile: impl AsyncCompile + 'static) -> ThunkCompile {
     Thunk {
         thunk: Arc::new(compile),
     }
@@ -188,7 +189,7 @@ impl<T: Listen + Send + Sync> Listen for Thunk<T> {
 }
 
 #[async_trait]
-impl<T: Compile + Send + Sync> Compile for Thunk<T> {
+impl<T: AsyncCompile + Send + Sync> AsyncCompile for Thunk<T> {
     async fn compile<'a, 'b>(&'a self, build_ref: BuildRef<'b, Properties>) -> Result<(), Error> {
         self.thunk.compile(build_ref).await
     }
@@ -219,7 +220,7 @@ mod tests {
     use super::thunk_build;
     use super::thunk_compile;
     use super::Build;
-    use super::Compile;
+    use super::AsyncCompile;
     use super::ThunkCompile;
     use crate::v2::compiler::BuildLog;
     use crate::v2::compiler::BuildRef;
@@ -303,7 +304,7 @@ mod tests {
     struct TestCompile;
 
     #[async_trait]
-    impl Compile for TestCompile {
+    impl AsyncCompile for TestCompile {
         async fn compile<'a, 'b>(&'a self, build_ref: BuildRef<'b, Properties>) -> Result<(), Error> {
             let mut build_ref = build_ref
                 .enable_async()

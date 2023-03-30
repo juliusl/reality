@@ -1,9 +1,9 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use crate::v2::states::Object;
 use crate::Identifier;
 use crate::Value;
-use super::Object;
 use super::Properties;
 use super::Property;
 use super::Root;

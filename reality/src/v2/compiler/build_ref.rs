@@ -35,6 +35,11 @@ pub struct BuildRef<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool = false> {
 pub trait WorldRef: AsMut<World> + AsRef<World> {}
 
 impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
+    /// Returns an empty build ref,
+    /// 
+    pub fn empty() -> Self {
+        Self { world_ref: None, entity: None, error: None, _u: PhantomData }
+    }
     /// Returns the self as Result,
     ///
     /// Note: Can be used to check for errors before moving to the next function in the chain,

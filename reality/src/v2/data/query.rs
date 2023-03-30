@@ -1,6 +1,6 @@
 use crate::state::iter_state;
 use crate::v2::compiler::Compiled;
-use crate::v2::Object;
+use crate::v2::states::Object;
 use crate::v2::Properties;
 use crate::Error;
 use crate::Identifier;

@@ -240,7 +240,7 @@ mod tests {
         state::{Provider, Load},
         v2::{
             command::{export_toml, import_toml},
-            compiler::{BuildLog, Compiled, WorldWrapper},
+            compiler::{BuildLog, Compiled, WorldWrapper, Object},
             data::{
                 query::{self, all, Predicate, Query},
                 toml::TomlProperties,
@@ -250,7 +250,7 @@ mod tests {
             thunk::{auto::Auto, Update},
             thunk_call,
             toml::DocumentBuilder,
-            BlockList, Call, Compiler, Interner, Object, Properties, ThunkCall, Visitor, Listener,
+            BlockList, Call, Compiler, Interner, Properties, ThunkCall, Visitor, Listener,
         },
         BlockProperties, Error, Identifier,
     };

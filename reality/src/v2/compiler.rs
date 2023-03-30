@@ -29,6 +29,7 @@ use tracing::trace;
 mod compiled;
 pub use compiled::Compiled;
 pub use compiled::Object;
+pub use compiled::Build as CompiledBuild;
 
 mod build_log;
 pub use build_log::BuildLog;
@@ -187,7 +188,7 @@ impl Compiler {
 
     /// Updates the last build, if successful returns the entity of the last build,
     ///
-    pub fn update_last_build<'a, T, C: Visitor + Update<T> + Default>(
+    pub fn update_last_build<'a, T, C: Visitor + Update<T>>(
         &'a mut self,
         updater: &mut C,
     ) -> BuildRef<'a, C> {
@@ -200,7 +201,7 @@ impl Compiler {
                 }
                 Err(err) => err.into(),
             })
-            .unwrap_or_default()
+            .unwrap_or(BuildRef::empty())
     }
 
     /// Visits and updates an object,

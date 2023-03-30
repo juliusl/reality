@@ -205,6 +205,12 @@ impl Identifier {
         self.pos(0).ok().unwrap_or_default()
     }
 
+    /// Returns the subject identifier,
+    /// 
+    pub fn subject(&self) -> String {
+        self.pos(self.len).ok().unwrap_or_default()
+    }
+
     /// Clones current identifier, consumes tags, and parses a new identifier,
     ///
     pub fn commit(&self) -> Result<Identifier, Error> {
@@ -216,15 +222,19 @@ impl Identifier {
     /// Flattens the current identifier if the current identifier is empty, 
     /// the parent is Some, and the grandparent is None,
     /// 
-    pub fn flatten(self) -> Self {
+    pub fn flatten(mut self) -> Self {
         if let Some(parent) = self.parent() { 
             if parent.parent().is_none() && self.len == 0 && self.tags.is_empty() {
+                // If the current parent isn't empty but the current identifier is empty
                 return Self {
                     buf: parent.buf.clone(),
                     len: parent.len,
                     tags: parent.tags.clone(),
                     parent: None
                 };
+            } else if parent.parent.is_none() && parent.len == 0 && parent.tags.is_empty() {
+                // If the current parent is empty but the current identifier isn't empty, remove parent 
+                self.parent.take();
             }
         }
 

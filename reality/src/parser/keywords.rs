@@ -46,7 +46,7 @@ pub enum Keywords {
 
     /// Apply extension logic
     /// 
-    #[regex(r"<[a-zA-Z0-9]+>", on_extension)]
+    #[regex(r"<[a-zA-Z0-9.]+>", on_extension)]
     #[token("<>", on_extension)]
     Extension = 0x0E,
 
@@ -196,7 +196,7 @@ fn on_extension(lexer: &mut Lexer<Keywords>) -> Filter<()> {
     // Set a new extension symbol in the parser,
     if lexer.slice().len() > 2 {
         let extension_namespace = lexer.slice()[1..lexer.slice().len() - 1].to_string();
-        lexer.extras.parse_property().with_implicit_identifier(Some(&Identifier::new_root(extension_namespace)));
+        lexer.extras.parse_property().with_implicit_identifier(extension_namespace.parse::<Identifier>().ok().as_ref());
     } else {
         lexer.extras.parse_property().with_implicit_identifier(None);
     }

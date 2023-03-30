@@ -12,8 +12,14 @@ pub use parser::Parser;
 
 mod compiler;
 pub use compiler::BuildRef;
+pub use compiler::BuildLog;
 pub use compiler::Compiler;
-pub use compiler::Object;
+pub use compiler::Compiled;
+pub use compiler::WorldWrapper;
+pub mod states {
+    pub use super::compiler::Object;
+    pub use super::compiler::CompiledBuild as Build;
+}
 
 mod block_list;
 pub use block_list::BlockList;
@@ -42,6 +48,7 @@ pub use thunk::thunk_update;
 pub use thunk::Accept;
 pub use thunk::Build;
 pub use thunk::Call;
+pub use thunk::AsyncCompile;
 pub use thunk::Compile;
 pub use thunk::Listen;
 pub use thunk::Listener;

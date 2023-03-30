@@ -7,7 +7,7 @@ use tracing::error;
 use crate::Error;
 use crate::Value;
 
-use super::Object;
+use crate::v2::states::Object;
 use super::Properties;
 use super::Visitor;
 
