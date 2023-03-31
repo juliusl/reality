@@ -132,9 +132,9 @@ impl Visitor for DocumentBuilder {
     fn visit_properties(&mut self, properties: &crate::v2::Properties) {
         let owner = Self::format_ident(properties.owner());
         self.doc["properties"][&owner] = table();
-        self.doc["properties"][&owner]
-            .as_table_mut()
-            .map(|t| t.set_implicit(true));
+        // self.doc["properties"][&owner]
+        //     .as_table_mut()
+        //     .map(|t| t.set_implicit(true));
         self.parsing = Some(owner);
 
         for (name, property) in properties.iter_properties() {

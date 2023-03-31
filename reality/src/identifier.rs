@@ -391,7 +391,7 @@ impl Identifier {
                     }
                     StringInterpolationTokens::Assignment(name)
                     | StringInterpolationTokens::OptionalSuffixAssignment(name) => {
-                        map.insert(name, part.to_string());
+                        map.insert(name, part.trim_matches('"').to_string());
                     }
                     StringInterpolationTokens::MatchTags(tags) => {
                         if !self.contains_tags(&tags) {
@@ -447,7 +447,7 @@ fn parts(buf: impl AsRef<str>) -> Result<Vec<String>, Error> {
     let mut parts = parts.peekable();
 
     while let Some(part) = parts.next() {
-        if part.starts_with(r#"""#) && !part.ends_with(r#"""#) {
+        if part == r#"""# || part.starts_with('"') && !part.ends_with('"') {
             let mut extracted = part.to_string();
             loop {
                 let peek = parts.peek();
@@ -455,7 +455,7 @@ fn parts(buf: impl AsRef<str>) -> Result<Vec<String>, Error> {
                     return Err("quoted segment does not terminate".into());
                 }
 
-                let found_terminator = peek.filter(|p| p.ends_with(r#"""#)).is_some();
+                let found_terminator = peek.filter(|p| p.ends_with('"')).is_some();
 
                 let other = parts.next();
                 if let Some(other) = other {
@@ -730,7 +730,7 @@ mod tests {
             .interpolate("blocks.(name).(symbol).roots.(root)")
             .expect("should interpolate");
         assert_eq!("test", map["name"].as_str());
-        assert_eq!(r#""https://test.test-symbol.com.""#, map["symbol"].as_str());
+        assert_eq!(r#"https://test.test-symbol.com."#, map["symbol"].as_str());
         assert_eq!("op", map["root"].as_str());
 
         // Test case where quotes preserves the whole parts,
@@ -744,7 +744,7 @@ mod tests {
             .interpolate("blocks.(name).(symbol).roots.(root)")
             .expect("should interpolate");
         assert_eq!("test", map["name"].as_str());
-        assert_eq!(r#""https://test-symbolcom""#, map["symbol"].as_str());
+        assert_eq!("https://test-symbolcom", map["symbol"].as_str());
         assert_eq!("op", map["root"].as_str());
 
         // Test case where spaces in the ident
@@ -758,7 +758,7 @@ mod tests {
             .interpolate("blocks.(name).(symbol).roots.(root)")
             .expect("should interpolate");
         assert_eq!("test", map["name"].as_str());
-        assert_eq!(r#""some spaces in the ident""#, map["symbol"].as_str());
+        assert_eq!("some spaces in the ident", map["symbol"].as_str());
         assert_eq!("op", map["root"].as_str());
         assert_eq!(
             None,
@@ -809,6 +809,18 @@ mod tests {
 
         let ident = ident.branch(" .").expect("should join");
         assert_eq!(r#".input." .""#, format!("{ident}").as_str());
+    }
+
+    #[test]
+    fn test_string_interpolate_edges() {
+        let ident = r#"plugin.process.redirect.".test/test.output""#;
+        let ident = ident.parse::<Identifier>().expect("should parse");
+
+        let parts = ident.parts().expect("should have parts");
+        assert_eq!(parts.len(), 4);
+
+        let map = ident.interpolate("redirect.(input)").expect("should interpolate");
+        assert_eq!(".test/test.output", map["input"]);
     }
 
     #[test]

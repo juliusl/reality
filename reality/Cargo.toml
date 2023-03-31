@@ -1,6 +1,6 @@
 [package]
 name = "reality"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -24,3 +24,9 @@ async-compression = { version = "0.3.15", features = ["tokio", "gzip"] }
 toml_edit = "0.19.3"
 async-trait = "0.1.64"
 toml = "0.7.2"
+
+[dev-dependencies]
+tracing-subscriber = "0.3.16"
+
+[[example]]
+name = "plugin_framework"
