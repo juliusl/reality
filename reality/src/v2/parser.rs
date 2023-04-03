@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tracing::trace;
 
 use self::interop::MakePacket;
+use crate::AttributeParser;
 use crate::parser::PropertyAttribute;
 use crate::CustomAttribute;
 use crate::Error;
@@ -114,7 +115,7 @@ impl Parser {
                 Ok::<(), Error>(())
             })?;
 
-            // Ensure existing parser is removed
+            // Ensure existing parser is removed and the packet_cache was routed
             if let Some(existing) = world.remove::<Self>() {
                 debug_assert!(
                     existing.packet_cache.is_none(),
@@ -124,6 +125,20 @@ impl Parser {
 
             // Update v1_parser
             self.v1_parser = Some(Self::new_v1_parser(Some(world)));
+            Ok(self)
+        } else {
+            Err("Trying to parse w/ an unintialized parser".into())
+        }
+    }
+
+    /// Parses a single line, 
+    /// 
+    /// Caveat: A final parse() will need to be called,
+    /// 
+    pub fn parse_line(mut self, line: impl AsRef<str>) -> Result<Self, Error> {
+        if let Some(parser) = self.v1_parser.take() {
+            let parser = parser.parse(format!("{}\n", line.as_ref()));
+            self.v1_parser = Some(parser);
             Ok(self)
         } else {
             Err("Trying to parse w/ an unintialized parser".into())

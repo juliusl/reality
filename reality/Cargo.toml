@@ -24,6 +24,7 @@ async-compression = { version = "0.3.15", features = ["tokio", "gzip"] }
 toml_edit = "0.19.3"
 async-trait = "0.1.64"
 toml = "0.7.2"
+reality_derive = { path = "../reality_derive" }
 
 [dev-dependencies]
 tracing-subscriber = "0.3.16"

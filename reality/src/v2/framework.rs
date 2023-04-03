@@ -1,11 +1,12 @@
 use std::collections::BTreeSet;
 use std::collections::VecDeque;
 use std::ops::Deref;
+use std::sync::Arc;
 
-use specs::Entities;
-use specs::HashMapStorage;
-use specs::Entity;
 use specs::Component;
+use specs::Entities;
+use specs::Entity;
+use specs::HashMapStorage;
 use specs::Join;
 use specs::LazyUpdate;
 use specs::Read;
@@ -13,19 +14,19 @@ use specs::ReadStorage;
 use specs::World;
 use specs::WorldExt;
 use specs::WriteStorage;
-
 use tracing::trace;
 
+use crate::v2::Property;
+use crate::v2::WorldWrapper;
 use crate::Error;
 use crate::Identifier;
-use crate::v2::WorldWrapper;
 
+use super::compiler::Object;
 use super::BuildLog;
 use super::BuildRef;
 use super::Compile;
 use super::Properties;
 use super::Visitor;
-use super::compiler::Object;
 
 mod config;
 pub use config::Config;
@@ -34,7 +35,8 @@ pub use config::Config;
 ///
 #[derive(Component, Debug, Clone)]
 #[storage(HashMapStorage)]
-pub struct Framework {
+pub struct Framework
+{
     /// Original build entity,
     ///
     entity: Entity,
@@ -54,7 +56,7 @@ pub struct Framework {
 
 impl Framework {
     /// Returns a new empty framework,
-    /// 
+    ///
     pub const fn new(entity: Entity) -> Self {
         Self {
             entity,
@@ -66,41 +68,35 @@ impl Framework {
     }
 
     /// Returns the root interpolation patterns,
-    /// 
+    ///
     fn patterns(&self) -> impl Iterator<Item = &String> {
         self.patterns.iter()
     }
 
     /// Returns the config interpolation patterns,
-    /// 
+    ///
     fn config_patterns(&self) -> impl Iterator<Item = &(String, ConfigPattern)> {
         self.config_patterns.iter()
     }
 
     /// Checks an identifier w/ root interpolation patterns,
-    /// 
+    ///
     fn check(&self, other: &Identifier) -> Option<(String, ConfigPattern)> {
-        for (p, map) in self
-            .patterns()
-            .map(|p| (p, other.interpolate(p)))
-            .filter(|(_, b)| b.is_some())
-        {
-            if let Some(map) = map {
-                let name = &map["name"].to_lowercase();
-                let property = &map["property"];
-                // If the name is the same as the property, it's implied that its referencing itself
-                if name == property {
-                    return Some((
-                        format!("{:#}", other),
-                        ConfigPattern::NameInput(format!(".{}.(input)", name)),
-                    ));
-                } else {
-                    // Otherwise, the pattern is {name}.{pattern}.(input)
-                    return Some((
-                        format!("{:#}", other),
-                        ConfigPattern::NamePropertyInput(format!(".{}.{}.(input)", name, property)),
-                    ));
-                }
+        for map in self.patterns().filter_map(|p| other.interpolate(p)) {
+            let name = &map["name"].to_lowercase();
+            let property = &map["property"];
+            // If the name is the same as the property, it's implied that its referencing itself
+            if name == property {
+                return Some((
+                    format!("{:#}", other),
+                    ConfigPattern::NameInput(format!(".{}.(input)", name)),
+                ));
+            } else {
+                // Otherwise, the pattern is {name}.{pattern}.(input)
+                return Some((
+                    format!("{:#}", other),
+                    ConfigPattern::NamePropertyInput(format!(".{}.{}.(input)", name, property)),
+                ));
             }
         }
 
@@ -109,14 +105,14 @@ impl Framework {
 }
 
 /// Enumeration of config patterns,
-/// 
+///
 #[derive(Debug, Clone)]
 enum ConfigPattern {
     /// Pattern of {name}.(input)
-    /// 
+    ///
     NameInput(String),
     /// Pattern of {name}.{property}.(input)
-    /// 
+    ///
     NamePropertyInput(String),
 }
 
@@ -174,18 +170,32 @@ impl Compile for Framework {
 
                 let mut found = vec![];
 
+                let read_only = Arc::new(r.clone());
+
                 // Check identifier of owner,
                 for (pattern, ext_config_pattern) in self.config_patterns() {
                     match ext_config_pattern {
                         ConfigPattern::NameInput(config_pattern) => {
                             if let Some(map) = owner.interpolate(config_pattern) {
-                                found.push((owner.clone(), pattern, config_pattern, map["input"].clone()));
+                                found.push((
+                                    Property::Properties(read_only.clone()),
+                                    owner.clone(),
+                                    pattern,
+                                    config_pattern,
+                                    map["input"].clone(),
+                                ));
                                 owner = owner.truncate(1)?;
                             }
-                        },
+                        }
                         ConfigPattern::NamePropertyInput(config_pattern) => {
                             if let Some(map) = owner.interpolate(config_pattern) {
-                                found.push((owner.clone(), pattern, config_pattern, map["input"].clone()));
+                                found.push((
+                                    Property::Properties(read_only.clone()),
+                                    owner.clone(),
+                                    pattern,
+                                    config_pattern,
+                                    map["input"].clone(),
+                                ));
                             }
                         }
                     }
@@ -202,7 +212,13 @@ impl Compile for Framework {
                                     for message in messages.iter() {
                                         let ident = ident.branch(message)?;
                                         if let Some(map) = ident.interpolate(config_pattern) {
-                                            found.push((ident.clone(), pattern, config_pattern, map["input"].clone()));
+                                            found.push((
+                                                prop.clone(),
+                                                ident.clone(),
+                                                pattern,
+                                                config_pattern,
+                                                map["input"].clone(),
+                                            ));
                                         }
                                     }
                                 }
@@ -212,9 +228,13 @@ impl Compile for Framework {
                     }
                 }
 
-                for (ident, pattern, config_pattern, input) in found {
-                    // TODO -- 
-                    trace!("Found config {:#} -- {pattern} --> {config_pattern} --> {input}", ident);
+                for (property, ident, pattern, config_pattern, input) in found {
+                    // TODO -- Once we've found input that needs configuration, we need to schedule that somehow
+                    trace!(
+                        "Found config {:?} {:#} -- {pattern} --> {config_pattern} --> {input}",
+                        property,
+                        ident
+                    );
                 }
 
                 Ok(())
@@ -224,7 +244,7 @@ impl Compile for Framework {
 }
 
 /// Configures the framework for each build,
-/// 
+///
 pub fn configure(world: &mut World) {
     world.exec(
         |(lazy_update, entities, logs, mut frameworks): (
@@ -248,6 +268,10 @@ pub fn configure(world: &mut World) {
                         let mut wrapper = WorldWrapper::from(world);
                         log.find_ref(config, &mut wrapper).map(|r| {
                             framework.compile(r).ok().map(|_| {
+                                // TODO -- 
+                                /*
+                                Results will be a config map
+                                 */
                             });
                         });
                     });

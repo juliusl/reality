@@ -1,3 +1,5 @@
+pub use reality_derive::*;
+
 mod block;
 pub use block::Block;
 pub use block::BlockIndex;

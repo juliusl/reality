@@ -1,11 +1,18 @@
-use reality::v2::Framework;
+use reality::state::Load;
+use reality::state::Provider;
+use reality::v2::command::export_toml;
+use reality::v2::framework::configure;
 use reality::v2::Compiler;
+use reality::v2::Framework;
 use reality::v2::Parser;
 use reality::v2::Properties;
-use reality::v2::framework::configure;
-use reality::v2::command::export_toml;
 use reality::Error;
+use reality::Identifier;
+use reality::Load;
+use specs::prelude::*;
 use specs::Entity;
+use specs::ReadStorage;
+use specs::SystemData;
 use tracing_subscriber::EnvFilter;
 
 /// Example of a plugin framework compiler,
@@ -17,13 +24,29 @@ async fn main() -> Result<(), Error> {
             EnvFilter::builder()
                 .from_env()
                 .expect("should be able to build from env variables")
-                .add_directive("reality::v2::framework=trace".parse().expect("should be able to parse tracing settings"))
+                .add_directive(
+                    "reality::v2::framework=trace"
+                        .parse()
+                        .expect("should be able to parse tracing settings"),
+                ),
         )
         .compact()
         .init();
 
     // Compile the example framework runmd
     let mut compiler = Compiler::new().with_docs();
+    let testent = compiler
+        .as_mut()
+        .create_entity()
+        .with(Identifier::new())
+        .with(Properties::default())
+        .build();
+    let state = compiler
+        .as_mut()
+        .system_data::<TestSystemData>()
+        .state::<Test>(testent)
+        .expect("should exist");
+
     let framework = compile_example_framework(&mut compiler)?;
     println!("Compiled framework: {:?}", framework);
 
@@ -42,7 +65,7 @@ async fn main() -> Result<(), Error> {
 
     // Configure to digest frameworks
     configure(compiler.as_mut());
-    
+
     export_toml(&mut compiler, ".test/usage_example.toml").await?;
     Ok(())
 }
@@ -51,6 +74,13 @@ async fn main() -> Result<(), Error> {
 ///
 fn compile_example_framework(compiler: &mut Compiler) -> Result<Entity, Error> {
     let _ = Parser::new().parse(ROOT_RUNMD, compiler)?;
+
+    // let _ = Parser::new()
+    //     .parse_line("```runmd")?
+    //     .parse_line("+  .plugin # A plugin root w/ common extensions for expressing a plugin")?
+    //     .parse_line("<> .path   # Indicates that a property will be a path")?
+    //     .parse_line("```")?
+    //     .parse("", compiler);
 
     compiler.compile()
 }
@@ -113,3 +143,28 @@ const EXAMPLE_USAGE: &'static str = r##"
 <plugin.readln>         .stdin      name                # This will read stdin and save the value to the property name
 ```
 "##;
+
+#[derive(SystemData)]
+pub struct TestSystemData<'a> {
+    entities: Entities<'a>,
+    identifiers: ReadStorage<'a, Identifier>,
+    properties: ReadStorage<'a, Properties>,
+}
+
+#[derive(Load)]
+pub struct Test<'a> {
+    identifier: &'a Identifier,
+    properties: &'a Properties,
+}
+
+impl<'a> AsRef<Entities<'a>> for TestSystemData<'a> {
+    fn as_ref(&self) -> &Entities<'a> {
+        &self.entities
+    }
+}
+
+impl<'a> Provider<'a, TestFormat<'a>> for TestSystemData<'a> {
+    fn provide(&'a self) -> TestFormat<'a> {
+        (&self.identifiers, &self.properties)
+    }
+}

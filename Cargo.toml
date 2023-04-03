@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "reality",
+    "reality_derive",
     "reality_azure",
     "reality_tar",
 ]
