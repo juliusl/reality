@@ -22,6 +22,9 @@ pub use compile::Compile;
 mod update;
 pub use update::Update;
 
+mod config;
+pub use config::Config;
+
 /// Auto thunk trait implementations for common types,
 ///
 pub mod auto {

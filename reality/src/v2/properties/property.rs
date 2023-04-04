@@ -1,7 +1,7 @@
 use crate::Value;
+use std::fmt::Display;
 use std::ops::Index;
 use std::sync::Arc;
-use std::fmt::Display;
 
 use super::Properties;
 
@@ -10,16 +10,16 @@ use super::Properties;
 #[derive(Default, Debug, Hash, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Property {
     /// Property is a single value,
-    /// 
+    ///
     Single(Value),
     /// Property is a list of values,
-    /// 
+    ///
     List(Vec<Value>),
     /// Property is a read-only reference to block properties,
-    /// 
+    ///
     Properties(Arc<Properties>),
     /// Indicates that this block property is currently empty,
-    /// 
+    ///
     #[default]
     Empty,
 }
@@ -53,7 +53,7 @@ impl Property {
     }
 
     /// Returns a &str if the property is a single symbol,
-    /// 
+    ///
     pub fn as_symbol_str(&self) -> Option<&str> {
         self.as_symbol().map(|s| s.as_str())
     }
@@ -73,12 +73,9 @@ impl Property {
     pub fn as_text_vec(&self) -> Option<Vec<String>> {
         match self {
             Property::Single(Value::TextBuffer(text)) => Some(vec![text.to_string()]),
-            Property::List(values) => Some(
-                values
-                    .iter()
-                    .filter_map(Value::text)
-                    .collect::<Vec<_>>(),
-            ),
+            Property::List(values) => {
+                Some(values.iter().filter_map(Value::text).collect::<Vec<_>>())
+            }
             _ => None,
         }
     }
@@ -89,12 +86,9 @@ impl Property {
     pub fn as_symbol_vec(&self) -> Option<Vec<String>> {
         match self {
             Property::Single(Value::Symbol(text)) => Some(vec![text.to_string()]),
-            Property::List(values) => Some(
-                values
-                    .iter()
-                    .filter_map(Value::symbol)
-                    .collect::<Vec<_>>(),
-            ),
+            Property::List(values) => {
+                Some(values.iter().filter_map(Value::symbol).collect::<Vec<_>>())
+            }
             _ => None,
         }
     }
@@ -105,12 +99,9 @@ impl Property {
     pub fn as_int_vec(&self) -> Option<Vec<i32>> {
         match self {
             Property::Single(Value::Int(int)) => Some(vec![*int]),
-            Property::List(values) => Some(
-                values
-                    .iter()
-                    .filter_map(Value::int)
-                    .collect::<Vec<_>>(),
-            ),
+            Property::List(values) => {
+                Some(values.iter().filter_map(Value::int).collect::<Vec<_>>())
+            }
             _ => None,
         }
     }
@@ -121,50 +112,37 @@ impl Property {
     pub fn as_float_vec(&self) -> Option<Vec<f32>> {
         match self {
             Property::Single(Value::Float(float)) => Some(vec![*float]),
-            Property::List(values) => Some(
-                values
-                    .iter()
-                    .filter_map(Value::float)
-                    .collect::<Vec<_>>(),
-            ),
+            Property::List(values) => {
+                Some(values.iter().filter_map(Value::float).collect::<Vec<_>>())
+            }
             _ => None,
         }
     }
 
     /// Returns a vector of values,
-    /// 
+    ///
     pub fn as_value_vec(&self) -> Option<&Vec<Value>> {
         match self {
-            Property::List(list) => {
-                Some(list)
-            },
-            _ => {
-                None
-            }
+            Property::List(list) => Some(list),
+            _ => None,
         }
     }
 
     /// Returns a binary vector,
-    /// 
+    ///
     pub fn as_binary(&self) -> Option<&Vec<u8>> {
         match self {
-            Property::Single(Value::BinaryVector(bin)) => {
-                Some(bin)
-            },
-            _ => {
-                None
-            }
+            Property::Single(Value::BinaryVector(bin)) => Some(bin),
+            _ => None,
         }
     }
 
     /// Returns as properties,
-    /// 
+    ///
     pub fn as_properties(&self) -> Option<Arc<Properties>> {
         match self {
             Property::Properties(properties) => Some(properties.clone()),
-            _ => {
-                None
-            }
+            _ => None,
         }
     }
 
@@ -202,7 +180,7 @@ impl Display for Property {
                 }
                 Ok(())
             }
-            Property::Properties(_) =>  write!(f, "properties - todo display"),
+            Property::Properties(_) => write!(f, "properties - todo display"),
             Property::Empty => write!(f, "empty value"),
         }
     }
@@ -234,7 +212,7 @@ impl<'a> Index<&'a str> for Property {
     fn index(&self, index: &'a str) -> &Self::Output {
         match self {
             Property::Properties(props) => props.property(index).unwrap_or(&Property::Empty),
-            _ => &Property::Empty
+            _ => &Property::Empty,
         }
     }
 }
@@ -245,7 +223,7 @@ impl<'a> Index<usize> for Property {
     fn index(&self, index: usize) -> &Self::Output {
         match self {
             Property::List(values) => values.get(index).unwrap_or(&Value::Empty),
-            _ => &Value::Empty
+            _ => &Value::Empty,
         }
     }
 }
@@ -268,15 +246,37 @@ impl From<Vec<Value>> for Property {
     }
 }
 
+impl From<Property> for String {
+    fn from(value: Property) -> Self {
+        value.as_symbol().map(|s| s.to_string()).unwrap_or_default()
+    }
+}
+
+impl From<usize> for Property {
+    fn from(value: usize) -> Self {
+        Property::Single(Value::Int(value as i32))
+    }
+}
 /// Returns a property from a value,
-/// 
+///
 pub fn property_value(value: impl Into<Value>) -> Property {
     Property::Single(value.into())
 }
 
 /// Returns a property list from an iterator,
-/// 
+///
 pub fn property_list(list: impl IntoIterator<Item = impl Into<Value>>) -> Property {
     let list = list.into_iter().map(|l| l.into()).collect();
     Property::List(list)
+}
+
+mod tests {
+    use super::{Property, property_value};
+
+    #[test]
+    fn test() {
+        let t: String;
+        let tp = property_value("test");
+        t = tp.into();
+    }
 }

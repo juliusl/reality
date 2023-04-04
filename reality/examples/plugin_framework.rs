@@ -1,18 +1,17 @@
-use reality::state::Load;
 use reality::state::Provider;
 use reality::v2::command::export_toml;
 use reality::v2::framework::configure;
+use reality::v2::property_value;
 use reality::v2::Compiler;
 use reality::v2::Framework;
 use reality::v2::Parser;
 use reality::v2::Properties;
 use reality::Error;
 use reality::Identifier;
-use reality::Load;
-use specs::prelude::*;
+use reality_derive::Load;
+use specs::Builder;
 use specs::Entity;
-use specs::ReadStorage;
-use specs::SystemData;
+use specs::WorldExt;
 use tracing_subscriber::EnvFilter;
 
 /// Example of a plugin framework compiler,
@@ -35,17 +34,23 @@ async fn main() -> Result<(), Error> {
 
     // Compile the example framework runmd
     let mut compiler = Compiler::new().with_docs();
+    let mut properties = Properties::default();
+    properties["test"] = property_value(true);
     let testent = compiler
         .as_mut()
         .create_entity()
         .with(Identifier::new())
-        .with(Properties::default())
+        .with(properties)
         .build();
+    
     let state = compiler
         .as_mut()
         .system_data::<TestSystemData>()
         .state::<Test>(testent)
-        .expect("should exist");
+        .expect("should exist")
+        .properties["test"]
+        .is_enabled();
+    assert!(state);
 
     let framework = compile_example_framework(&mut compiler)?;
     println!("Compiled framework: {:?}", framework);
@@ -144,27 +149,9 @@ const EXAMPLE_USAGE: &'static str = r##"
 ```
 "##;
 
-#[derive(SystemData)]
-pub struct TestSystemData<'a> {
-    entities: Entities<'a>,
-    identifiers: ReadStorage<'a, Identifier>,
-    properties: ReadStorage<'a, Properties>,
-}
-
+#[allow(dead_code)]
 #[derive(Load)]
 pub struct Test<'a> {
     identifier: &'a Identifier,
     properties: &'a Properties,
-}
-
-impl<'a> AsRef<Entities<'a>> for TestSystemData<'a> {
-    fn as_ref(&self) -> &Entities<'a> {
-        &self.entities
-    }
-}
-
-impl<'a> Provider<'a, TestFormat<'a>> for TestSystemData<'a> {
-    fn provide(&'a self) -> TestFormat<'a> {
-        (&self.identifiers, &self.properties)
-    }
 }
