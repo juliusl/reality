@@ -246,17 +246,48 @@ impl From<Vec<Value>> for Property {
     }
 }
 
+impl From<usize> for Property {
+    fn from(value: usize) -> Self {
+        Property::Single(Value::Int(value as i32))
+    }
+}
+
+impl From<&Property> for String {
+    fn from(value: &Property) -> Self {
+        value.as_symbol().map(|s| s.to_string()).unwrap_or_default()
+    }
+}
+
 impl From<Property> for String {
     fn from(value: Property) -> Self {
         value.as_symbol().map(|s| s.to_string()).unwrap_or_default()
     }
 }
 
-impl From<usize> for Property {
-    fn from(value: usize) -> Self {
-        Property::Single(Value::Int(value as i32))
+impl From<Property> for usize {
+    fn from(value: Property) -> Self {
+        value.as_int().map(|s| s as usize).unwrap_or_default()
     }
 }
+
+impl From<&Property> for usize {
+    fn from(value: &Property) -> Self {
+        value.as_int().map(|s| s as usize).unwrap_or_default()
+    }
+}
+
+impl From<Property> for bool {
+    fn from(value: Property) -> Self {
+        value.is_enabled()
+    }
+}
+
+impl From<&Property> for bool {
+    fn from(value: &Property) -> Self {
+        value.is_enabled()
+    }
+}
+
 /// Returns a property from a value,
 ///
 pub fn property_value(value: impl Into<Value>) -> Property {
