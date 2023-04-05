@@ -8,8 +8,8 @@ use std::ops::IndexMut;
 use std::sync::Arc;
 
 mod property;
-pub use property::property_value;
 pub use property::property_list;
+pub use property::property_value;
 pub use property::Property;
 
 use super::data::query::Predicate;
@@ -118,6 +118,21 @@ impl Properties {
         self.map.get_mut(name.as_ref())
     }
 
+    /// Returns a property as a Properties map, can be used to extend a property
+    ///
+    pub fn extend_property(&mut self, name: impl AsRef<str>) -> Option<Properties> {
+        self.owner()
+            .branch(name.as_ref())
+            .ok()
+            .and_then(|owner| {
+                self.map.get(name.as_ref()).map(move |p| {
+                    let mut properties = Properties::new(owner);
+                    properties[name.as_ref()] = p.clone();
+                    properties
+                })
+            })
+    }
+
     /// Takes a property from this collection, replaces with `Empty`
     ///
     pub fn take(&mut self, name: impl AsRef<str>) -> Option<Property> {
@@ -144,7 +159,7 @@ impl Properties {
     }
 
     /// Queries all nested properties, non-recursive
-    /// 
+    ///
     pub fn query_nested(
         &self,
         pat: impl Into<String>,
@@ -164,16 +179,13 @@ impl Properties {
     }
 
     /// Shortcut for query_nested(.., all)
-    /// 
-    pub fn all_nested(
-        &self,
-        pat: impl Into<String>,
-    ) -> Vec<QueryResult> {
+    ///
+    pub fn all_nested(&self, pat: impl Into<String>) -> Vec<QueryResult> {
         self.query_nested(pat, super::data::query::all)
     }
 
     /// Returns the number of properties contained in the property map,
-    /// 
+    ///
     pub fn len(&self) -> usize {
         self.map.len()
     }
@@ -235,6 +247,15 @@ mod tests {
         assert_eq!(
             "test-mut-value",
             properties["test-mut"].as_symbol().unwrap()
+        );
+
+        // Test an extended property can still be used like a normal property
+        let extended = properties.extend_property("test-mut").unwrap();
+        properties.add_readonly_properties(&extended);
+
+        assert_eq!(
+            "test-mut-value",
+            properties[".test-mut"].as_symbol().unwrap()
         );
     }
 }

@@ -1,4 +1,5 @@
 use crate::Value;
+use crate::v2::Visitor;
 use std::fmt::Display;
 use std::ops::Index;
 use std::sync::Arc;
@@ -30,6 +31,10 @@ impl Property {
     pub fn is_enabled(&self) -> bool {
         match self {
             Property::Single(Value::Bool(enabled)) => *enabled,
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties[&key].is_enabled()
+            }
             _ => false,
         }
     }
@@ -39,6 +44,10 @@ impl Property {
     pub fn as_text(&self) -> Option<&String> {
         match self {
             Property::Single(Value::TextBuffer(text)) => Some(text),
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties[&key].as_text()
+            }
             _ => None,
         }
     }
@@ -48,6 +57,10 @@ impl Property {
     pub fn as_symbol(&self) -> Option<&String> {
         match self {
             Property::Single(Value::Symbol(symbol)) => Some(symbol),
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties[&key].as_symbol()
+            }
             _ => None,
         }
     }
@@ -63,6 +76,10 @@ impl Property {
     pub fn as_int(&self) -> Option<i32> {
         match self {
             Property::Single(Value::Int(i)) => Some(*i),
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties[&key].as_int()
+            }
             _ => None,
         }
     }
@@ -72,6 +89,10 @@ impl Property {
     pub fn as_float(&self) -> Option<f32> {
         match self {
             Property::Single(Value::Float(f)) => Some(*f),
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties[&key].as_float()
+            }
             _ => None,
         }
     }
@@ -81,6 +102,10 @@ impl Property {
     pub fn as_float2(&self) -> Option<[f32; 2]> {
         match self {
             Property::Single(Value::FloatPair(f1, f2)) => Some([*f1, *f2]),
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties[&key].as_float2()
+            }
             _ => None,
         }
     }
@@ -90,6 +115,10 @@ impl Property {
     pub fn as_int2(&self) -> Option<[i32; 2]> {
         match self {
             Property::Single(Value::IntPair(i1, i2)) => Some([*i1, *i2]),
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties[&key].as_int2()
+            }
             _ => None,
         }
     }
@@ -99,6 +128,10 @@ impl Property {
     pub fn as_float3(&self) -> Option<[f32; 3]> {
         match self {
             Property::Single(Value::FloatRange(f1, f2, f3)) => Some([*f1, *f2, *f3]),
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties[&key].as_float3()
+            }
             _ => None,
         }
     }
@@ -108,6 +141,10 @@ impl Property {
     pub fn as_int3(&self) -> Option<[i32; 3]> {
         match self {
             Property::Single(Value::IntRange(i1, i2, i3)) => Some([*i1, *i2, *i3]),
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties[&key].as_int3()
+            }
             _ => None,
         }
     }
@@ -120,6 +157,10 @@ impl Property {
             Property::Single(Value::TextBuffer(text)) => Some(vec![text.to_string()]),
             Property::List(values) => {
                 Some(values.iter().filter_map(Value::text).collect::<Vec<_>>())
+            }
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties[&key].as_text_vec()
             }
             _ => None,
         }
@@ -134,6 +175,10 @@ impl Property {
             Property::List(values) => {
                 Some(values.iter().filter_map(Value::symbol).collect::<Vec<_>>())
             }
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties[&key].as_symbol_vec()
+            }
             _ => None,
         }
     }
@@ -146,6 +191,10 @@ impl Property {
             Property::Single(Value::Int(int)) => Some(vec![*int]),
             Property::List(values) => {
                 Some(values.iter().filter_map(Value::int).collect::<Vec<_>>())
+            }
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties[&key].as_int_vec()
             }
             _ => None,
         }
@@ -160,6 +209,10 @@ impl Property {
             Property::List(values) => {
                 Some(values.iter().filter_map(Value::float).collect::<Vec<_>>())
             }
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties[&key].as_float_vec()
+            }
             _ => None,
         }
     }
@@ -169,6 +222,10 @@ impl Property {
     pub fn as_value_vec(&self) -> Option<&Vec<Value>> {
         match self {
             Property::List(list) => Some(list),
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties[&key].as_value_vec()
+            }
             _ => None,
         }
     }
@@ -178,6 +235,10 @@ impl Property {
     pub fn as_binary(&self) -> Option<&Vec<u8>> {
         match self {
             Property::Single(Value::BinaryVector(bin)) => Some(bin),
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties[&key].as_binary()
+            }
             _ => None,
         }
     }

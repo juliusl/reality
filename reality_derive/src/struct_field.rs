@@ -158,6 +158,50 @@ impl StructField {
         }
     }
 
+    pub(crate) fn config_root_expr(&self, ty: &Ident) -> TokenStream {
+        assert!(self.root);
+
+        let name = &self.name;
+
+        let property_name = self.root_property_name_ident();
+        
+        let interpolate_lit = LitStr::new(
+            &format!("{}.{}.(ext).(prop)", name, ty),
+            Span::call_site(),
+        );
+
+        let interpolate_format_lit = LitStr::new(
+            &format!("{}.{}.{{ext}}.{{prop}}", name, ty),
+            Span::call_site(),
+        );
+
+        quote! {
+            let #property_name = if let Some(map) = ident.interpolate(#interpolate_lit) {
+                let ext = &map["ext"];
+                let prop = &map["prop"];
+
+                let root_properties = format!(#interpolate_format_lit).parse::<reality::Identifier>()?;
+                println!("{}", root_properties);
+                // let _p = property.as_properties().map(|p| {
+                //     p[&key]
+                // }).unwrap_or_default();
+
+                // self.#name.config()
+
+                self.#name.apply(ext, property)?
+            } else {
+                reality::v2::Property::Empty
+            };
+        }
+    }
+
+    pub(crate) fn root_property_name_ident(&self) -> Ident {
+        assert!(self.root);
+
+        let root_ident = &self.ty;
+        format_ident!("property_{}", root_ident)
+    }
+
     pub(crate) fn name_str_literal(&self) -> LitStr {
         LitStr::new(&self.name.to_string(), Span::call_site())
     }

@@ -48,7 +48,7 @@ impl Parse for StructData {
 
 impl StructData {
     /// Returns token stream of impl for the Apply trait
-    /// 
+    ///
     pub(crate) fn apply_trait(&self) -> TokenStream {
         let name = &self.name;
 
@@ -73,35 +73,49 @@ impl StructData {
     }
 
     /// Returns token stream of impl for the Config trait,
-    /// 
+    ///
     pub(crate) fn config_trait(&self) -> TokenStream {
         let name = &self.name;
-        let map = self.fields.iter().map(|f| f.config_assign_property_expr());
+        let map = self.fields.iter().filter(|f| !f.root).map(|f| f.config_assign_property_expr());
         let fields = quote! {
             #( #map ),*
         };
 
-        if let Some(root_ident) = self.root_ident.as_ref() {
-            let interpolate_lit = LitStr::new(
-                &format!("{}.{}.(ext).(prop)", root_ident.name, name),
-                Span::call_site(),
-            );
+        let root_fields = self
+            .fields
+            .iter()
+            .filter(|f| f.root)
+            .map(|f| (f.root_property_name_ident(), f.config_root_expr(name)))
+            .collect::<Vec<_>>();
 
-            let root_name = &root_ident.name;
+        let root_apply = root_fields.iter().map(|(_, a)|{ a});
+        let root_apply = quote! {
+            #( #root_apply )*
+        };
 
-            // TODO: fix .clone()
+        let root_select = root_fields.iter().map(|(i, _)| {
             quote! {
+                if #i != reality::v2::Property::Empty {
+                    break &#i;
+                }
+            }
+        });
+        let root_select = quote! {
+            #( #root_select )*
+        };
+
+        if !root_fields.is_empty() {
+            quote! {
+                #[allow(non_snake_case)]
                 impl reality::v2::Config for #name {
                     fn config(&mut self, ident: &reality::Identifier, property: &reality::v2::Property) -> Result<(), reality::Error> {
-                        let property = if let Some(map) = ident.interpolate(#interpolate_lit) {
-                            let ext = &map["ext"];
+                        #root_apply
 
-                            self.#root_name.apply(ext, property)?
-                        } else {
-                            property.clone()
+                        let property = loop {
+                            #root_select
+
+                            break property;
                         };
-
-                        let property = &property;
 
                         match ident.subject().as_str() {
                             #fields
@@ -127,4 +141,17 @@ impl StructData {
             }
         }
     }
+}
+
+#[test]
+fn test() {
+    let mut counter = 0;
+    let test = loop {
+        if counter > 3 {
+            break counter;
+        }
+        counter += 1;
+    };
+
+    assert_eq!(4, test);
 }

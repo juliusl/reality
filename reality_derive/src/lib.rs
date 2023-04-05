@@ -321,6 +321,8 @@ mod tests {
         rules: Vec<String>,
         #[root]
         plugin: Plugin,
+        #[root]
+        event: Event,
     }
     "#,
         )
