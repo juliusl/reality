@@ -62,6 +62,7 @@ pub use thunk::ThunkCompile;
 pub use thunk::ThunkListen;
 pub use thunk::Update;
 pub use thunk::Config;
+pub use thunk::Apply;
 
 mod links;
 pub use links::Link;

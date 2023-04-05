@@ -24,6 +24,7 @@ pub use update::Update;
 
 mod config;
 pub use config::Config;
+pub use config::Apply;
 
 /// Auto thunk trait implementations for common types,
 ///

@@ -28,9 +28,6 @@ use super::Compile;
 use super::Properties;
 use super::Visitor;
 
-mod config;
-pub use config::Config;
-
 /// Struct for implementing a config framework,
 ///
 #[derive(Component, Debug, Clone)]
@@ -210,8 +207,8 @@ impl Compile for Framework {
                                 // Promote properties into an extension
                                 if let Some(messages) = prop.as_symbol_vec() {
                                     for message in messages.iter() {
-                                        let ident = ident.branch(message)?;
-                                        if let Some(map) = ident.interpolate(config_pattern) {
+                                        let _ident = ident.branch(message)?;
+                                        if let Some(map) = _ident.interpolate(config_pattern) {
                                             found.push((
                                                 prop.clone(),
                                                 ident.clone(),
@@ -268,10 +265,7 @@ pub fn configure(world: &mut World) {
                         let mut wrapper = WorldWrapper::from(world);
                         log.find_ref(config, &mut wrapper).map(|r| {
                             framework.compile(r).ok().map(|_| {
-                                // TODO -- 
-                                /*
-                                Results will be a config map
-                                 */
+                                
                             });
                         });
                     });

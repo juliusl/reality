@@ -67,6 +67,51 @@ impl Property {
         }
     }
 
+    /// Returns a float if the property is a float,
+    ///
+    pub fn as_float(&self) -> Option<f32> {
+        match self {
+            Property::Single(Value::Float(f)) => Some(*f),
+            _ => None,
+        }
+    }
+
+    /// Returns an array of two floats if property is a float pair,
+    /// 
+    pub fn as_float2(&self) -> Option<[f32; 2]> {
+        match self {
+            Property::Single(Value::FloatPair(f1, f2)) => Some([*f1, *f2]),
+            _ => None,
+        }
+    }
+
+    /// Returns an array 
+    /// 
+    pub fn as_int2(&self) -> Option<[i32; 2]> {
+        match self {
+            Property::Single(Value::IntPair(i1, i2)) => Some([*i1, *i2]),
+            _ => None,
+        }
+    }
+
+    /// Returns an array of three floats if property is a float range,
+    /// 
+    pub fn as_float3(&self) -> Option<[f32; 3]> {
+        match self {
+            Property::Single(Value::FloatRange(f1, f2, f3)) => Some([*f1, *f2, *f3]),
+            _ => None,
+        }
+    }
+
+    /// Returns an array of three integers if property is a int range,
+    /// 
+    pub fn as_int3(&self) -> Option<[i32; 3]> {
+        match self {
+            Property::Single(Value::IntRange(i1, i2, i3)) => Some([*i1, *i2, *i3]),
+            _ => None,
+        }
+    }
+
     /// Returns a vector of strings if the property is a single text buffer,
     /// or if the property is a list of values, filters all text buffers
     ///
@@ -246,12 +291,6 @@ impl From<Vec<Value>> for Property {
     }
 }
 
-impl From<usize> for Property {
-    fn from(value: usize) -> Self {
-        Property::Single(Value::Int(value as i32))
-    }
-}
-
 impl From<&Property> for String {
     fn from(value: &Property) -> Self {
         value.as_symbol().map(|s| s.to_string()).unwrap_or_default()
@@ -285,6 +324,102 @@ impl From<Property> for bool {
 impl From<&Property> for bool {
     fn from(value: &Property) -> Self {
         value.is_enabled()
+    }
+}
+
+impl From<Property> for i32 {
+    fn from(value: Property) -> Self {
+        value.as_int().unwrap_or_default()
+    }
+}
+
+impl From<&Property> for i32 {
+    fn from(value: &Property) -> Self {
+        value.as_int().unwrap_or_default()
+    }
+}
+
+impl From<Property> for f32 {
+    fn from(value: Property) -> Self {
+        value.as_float().unwrap_or_default()
+    }
+}
+
+impl From<&Property> for f32 {
+    fn from(value: &Property) -> Self {
+        value.as_float().unwrap_or_default()
+    }
+}
+
+impl From<Property> for [f32; 2] {
+    fn from(value: Property) -> Self {
+        value.as_float2().unwrap_or_default()
+    }
+}
+
+impl From<&Property> for [f32; 2] {
+    fn from(value: &Property) -> Self {
+        value.as_float2().unwrap_or_default()
+    }
+}
+
+impl From<Property> for [i32; 2] {
+    fn from(value: Property) -> Self {
+        value.as_int2().unwrap_or_default()
+    }
+}
+
+impl From<&Property> for [i32; 2] {
+    fn from(value: &Property) -> Self {
+        value.as_int2().unwrap_or_default()
+    }
+}
+
+impl From<Property> for [i32; 3] {
+    fn from(value: Property) -> Self {
+        value.as_int3().unwrap_or_default()
+    }
+}
+
+impl From<&Property> for [i32; 3] {
+    fn from(value: &Property) -> Self {
+        value.as_int3().unwrap_or_default()
+    }
+}
+
+impl From<Property> for [f32; 3] {
+    fn from(value: Property) -> Self {
+        value.as_float3().unwrap_or_default()
+    }
+}
+
+impl From<&Property> for [f32; 3] {
+    fn from(value: &Property) -> Self {
+        value.as_float3().unwrap_or_default()
+    }
+}
+
+impl From<Property> for Vec<String> {
+    fn from(value: Property) -> Self {
+        value.as_symbol_vec().unwrap_or_default()
+    }
+}
+
+impl From<&Property> for Vec<String> {
+    fn from(value: &Property) -> Self {
+        value.as_symbol_vec().unwrap_or_default()
+    }
+}
+
+impl From<Property> for () {
+    fn from(_: Property) -> Self {
+        ()
+    }
+}
+
+impl From<&Property> for () {
+    fn from(_: &Property) -> Self {
+        ()
     }
 }
 

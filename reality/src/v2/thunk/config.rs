@@ -5,49 +5,30 @@ use crate::{v2::Property, Identifier, Error};
 pub trait Config {
     /// Configures self w/ an identifier and property,
     /// 
-    fn config(&mut self, ident: &Identifier, property: &Property);
+    fn config(&mut self, ident: &Identifier, property: &Property) -> Result<(), Error>;
 }
 
-#[allow(unused_imports)]
-#[allow(dead_code)]
-mod tests {
-    use reality_derive::Config;
+impl<T> Config for T 
+where
+    for<'a> T: From<&'a Property>,
+{
+    fn config(&mut self, _: &Identifier, property: &Property) -> Result<(), Error> {
+        *self = property.into();
 
-    use crate::{Identifier, v2::{Property, property_value}};
-
-    use super::Config;
-
-    #[derive(Config)]
-    struct Test {
-        name: String,
-        is_test: bool,
-        n: usize,
+        Ok(())
     }
+}
 
-    impl Test {
-        const fn new() -> Self {
-            Self { name: String::new(), is_test: false, n: 0 }
-        }
-    }
+/// Implement to apply a rule to a property,
+/// 
+pub trait Apply {
+    /// Applies rule w/ rule_name to property and returns the result,
+    /// 
+    fn apply(&self, rule_name: impl AsRef<str>, property: &Property) -> Result<Property, Error>;
+}
 
-    #[test]
-    fn test_config() {
-        let mut test = Test::new();
-        
-        let ident = "test.a.b.name".parse::<Identifier>().unwrap();
-        let property = property_value("test_name");
-        test.config(&ident, &property);
-
-        let ident = "test.a.b.is_test".parse::<Identifier>().unwrap();
-        let property = property_value(true);
-        test.config(&ident, &property);
-
-        let ident = "test.a.b.n".parse::<Identifier>().unwrap();
-        let property = property_value(100);
-        test.config(&ident, &property);
-
-        assert_eq!("test_name", test.name.as_str());
-        assert_eq!(true, test.is_test);
-        assert_eq!(100, test.n);
+impl Apply for () {
+    fn apply(&self, _: impl AsRef<str>, property: &Property) -> Result<Property, Error> {
+        Ok(property.clone())
     }
 }
