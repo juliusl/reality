@@ -114,7 +114,7 @@ pub fn derive_config(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
 }
 
 /// Derives Apply trait,
-/// 
+///
 #[proc_macro_derive(Apply)]
 pub fn derive_apply(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let struct_data = parse_macro_input!(input as StructData);
@@ -170,10 +170,14 @@ mod tests {
             r#"
     #[compile(ThunkCompile, ThunkCall)]
     struct Test {
+        /// This is a name
         name: String,
+        /// These are rules
         rules: Vec<String>,
+        /// This is a plugin
         #[root]
         plugin: Plugin,
+        /// This is an event
         #[root]
         event: Event,
     }
@@ -182,8 +186,8 @@ mod tests {
         .unwrap();
 
         let input = parse2::<StructData>(ts).unwrap();
-
         println!("{:#}", input.config_trait());
+        println!("{:#}", input.runmd_trait());
     }
 
     #[test]
@@ -225,7 +229,7 @@ mod tests {
 
         let input = parse2::<StructData>(ts).unwrap();
 
-       let ts = input.load_trait();
+        let ts = input.load_trait();
 
         assert_eq!("use specs :: prelude :: * ; pub type TestFormat < 'a > = (& 'a specs :: ReadStorage < 'a , Identifier > , & 'a specs :: ReadStorage < 'a , Properties > , specs :: join :: MaybeJoin < & 'a specs :: ReadStorage < 'a , Block >> , specs :: join :: MaybeJoin < & 'a specs :: ReadStorage < 'a , Root >> , specs :: join :: MaybeJoin < & 'a specs :: ReadStorage < 'a , ThunkCall >> , specs :: join :: MaybeJoin < & 'a specs :: ReadStorage < 'a , ThunkBuild >> , specs :: join :: MaybeJoin < & 'a specs :: ReadStorage < 'a , ThunkUpdate >> , specs :: join :: MaybeJoin < & 'a specs :: ReadStorage < 'a , ThunkListen >> , specs :: join :: MaybeJoin < & 'a specs :: ReadStorage < 'a , ThunkCompile >>) ; # [derive (specs :: SystemData)] pub struct TestSystemData < 'a > { entities : specs :: Entities < 'a > , identifier_storage : specs :: ReadStorage < 'a , Identifier > , properties_storage : specs :: ReadStorage < 'a , Properties > , block_storage : specs :: ReadStorage < 'a , Block > , root_storage : specs :: ReadStorage < 'a , Root > , call_storage : specs :: ReadStorage < 'a , ThunkCall > , build_storage : specs :: ReadStorage < 'a , ThunkBuild > , update_storage : specs :: ReadStorage < 'a , ThunkUpdate > , listen_storage : specs :: ReadStorage < 'a , ThunkListen > , compile_storage : specs :: ReadStorage < 'a , ThunkCompile > } impl < 'a > reality :: state :: Load for Test < 'a > { type Layout = TestFormat < 'a > ; fn load ((identifier , properties , block , root , call , build , update , listen , compile) : < Self :: Layout as specs :: Join > :: Type) -> Self { Self { identifier , properties , block , root , call , build , update , listen , compile } } } impl < 'a > reality :: state :: Provider < 'a , TestFormat < 'a >> for TestSystemData < 'a > { fn provide (& 'a self) -> TestFormat < 'a > { (& self . identifier_storage , & self . properties_storage , self . block_storage . maybe () , self . root_storage . maybe () , self . call_storage . maybe () , self . build_storage . maybe () , self . update_storage . maybe () , self . listen_storage . maybe () , self . compile_storage . maybe ()) } } impl < 'a > AsRef < specs :: Entities < 'a >> for TestSystemData < 'a > { fn as_ref (& self) -> & specs :: Entities < 'a > { & self . entities } }", ts.to_string().as_str());
     }

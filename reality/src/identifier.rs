@@ -625,6 +625,22 @@ impl AsRef<Identifier> for Identifier {
     }
 }
 
+impl TryFrom<&str> for Identifier {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        value.parse::<Identifier>()
+    }
+}
+
+impl TryFrom<&Identifier> for Identifier {
+    type Error = Error;
+
+    fn try_from(value: &Identifier) -> Result<Self, Self::Error> {
+        Ok(value.clone())
+    }
+}
+
 #[allow(unused_imports)]
 mod tests {
     use std::sync::Arc;

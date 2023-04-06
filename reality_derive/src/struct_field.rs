@@ -1,10 +1,12 @@
 use proc_macro2::Ident;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
+use quote::ToTokens;
 use quote::format_ident;
 use quote::quote;
 use syn::ext::IdentExt;
 use syn::parse::Parse;
+use syn::parse2;
 use syn::token::Mut;
 use syn::Attribute;
 use syn::Generics;
@@ -49,6 +51,9 @@ pub(crate) struct StructField {
     /// True if this field has a #[root] attribute,
     ///
     pub(crate) root: bool,
+    /// Sets the first doc comment from in the struct
+    /// 
+    pub(crate) doc: Option<LitStr>,
 }
 
 impl StructField {
@@ -184,6 +189,20 @@ impl StructField {
     pub(crate) fn name_str_literal(&self) -> LitStr {
         LitStr::new(&self.name.to_string(), Span::call_site())
     }
+
+    pub(crate) fn runmd_root_expr(&self) -> TokenStream {
+        let runmd = if let Some(runmd_doc) = self.doc.as_ref() {
+            let lit_str = format!("+ {} .symbol # {}", self.ty, runmd_doc.value());
+            LitStr::new(&lit_str, Span::call_site())
+        } else {
+            let lit_str = format!("+ {} .symbol", self.ty);
+            LitStr::new(&lit_str, Span::call_site())
+        };
+
+        quote! {
+            .parse_line(#runmd)?
+        }
+    }
 }
 
 impl Parse for StructField {
@@ -191,6 +210,7 @@ impl Parse for StructField {
         // Parse attributes
         let attributes = Attribute::parse_outer(input)?;
         let mut config_attr = None::<Ident>;
+        let mut doc = None::<LitStr>;
         let mut root = false;
 
         for attribute in attributes {
@@ -201,6 +221,17 @@ impl Parse for StructField {
 
             if attribute.path().is_ident("root") {
                 root = true;
+            }
+
+            if attribute.path().is_ident("doc") {
+                if doc.is_none() {
+                    // doc = Some(attribute.parse_args()?);
+                    let name_value = attribute.meta.require_name_value()?;
+                    if name_value.path.is_ident("doc") {
+                        let lit_str = parse2::<LitStr>(name_value.value.to_token_stream())?;
+                        doc = Some(lit_str);
+                    }
+                }
             }
         }
 
@@ -231,6 +262,7 @@ impl Parse for StructField {
                 ignore: false,
                 root,
                 config: config_attr,
+                doc
             })
         } else if input.peek(Ident::peek_any) {
             let ident = input.parse::<Ident>()?;
@@ -255,6 +287,7 @@ impl Parse for StructField {
                     ignore: false,
                     root,
                     config: config_attr,
+                    doc
                 })
             } else {
                 let ty = ident;
@@ -269,6 +302,7 @@ impl Parse for StructField {
                     ignore: false,
                     root,
                     config: config_attr,
+                    doc
                 })
             }
         } else {
@@ -283,6 +317,7 @@ impl Parse for StructField {
                 ignore: true,
                 root,
                 config: config_attr,
+                doc
             })
         }
     }

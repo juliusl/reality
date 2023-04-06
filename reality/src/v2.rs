@@ -71,6 +71,15 @@ pub mod toml {
 }
 
 pub mod command;
+pub mod prelude;
+
+/// Trait to implement to extend a runmd compiler,
+/// 
+pub trait Runmd {
+    /// Configures the compiler for a runmd-based project,
+    /// 
+    fn runmd(compiler: &mut Compiler) -> Result<(), crate::Error>;
+}
 
 #[allow(unused_variables)]
 #[allow(unused_imports)]
@@ -139,9 +148,7 @@ mod tests {
         let log = compiler.last_build_log().unwrap();
 
         log.find_ref::<Properties>(
-            ".plugin.process.path.redirect"
-                .parse::<Identifier>()
-                .unwrap(),
+            ".plugin.process.path.redirect",
             &mut compiler,
         )
         .unwrap()
@@ -151,9 +158,7 @@ mod tests {
         });
 
         log.find_ref::<Properties>(
-            ".plugin.process.path.cd"
-                .parse::<Identifier>()
-                .unwrap(),
+            ".plugin.process.path.cd",
             &mut compiler,
         )
         .unwrap()

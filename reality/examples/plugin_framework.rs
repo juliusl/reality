@@ -2,11 +2,11 @@ use reality::state::Provider;
 use reality::v2::command::export_toml;
 use reality::v2::framework::configure;
 use reality::v2::property_value;
-use reality::v2::ActionBuffer;
 use reality::v2::Compiler;
 use reality::v2::Framework;
 use reality::v2::Parser;
 use reality::v2::Properties;
+use reality::v2::Compile;
 use reality::Error;
 use reality::Identifier;
 use reality_derive::Load;
@@ -72,38 +72,18 @@ async fn main() -> Result<(), Error> {
     configure(compiler.as_mut());
 
     // Test using configure result
-    compiler.last_build_log().map(|log| {
-        log.find_ref::<Identifier>(
-            "app.#block#.usage.plugin.process.cargo"
-                .parse::<Identifier>()
-                .unwrap(),
+    if let Some(log) = compiler.last_build_log() {
+        if let Some(idref) = log.find_ref::<Properties>(
+            "app.#block#.usage.plugin.process.cargo",
             &mut compiler,
-        )
-        .map(|b| {
-            let _ = b
-                .read(|id| {
-                    println!("Checking {:#}", id);
-                    Ok(())
-                })
-                .transmute::<ActionBuffer>()
-                .read(|b| {
-                    println!("{:#?}", b);
-
-                    let mut process = test_framework::Process::new();
-                    b.config(&mut process)?;
-                    println!("{:?}", process);
-
-                    Ok(())
-                })
-                .transmute::<Properties>()
-                .read(|p| {
-                    println!("{}", p);
-                    Ok(())
-                })
-                .result()
-                .map_err(|e| println!("error: {e}"));
-        });
-    });
+        ) {
+            let build_ref = test_framework::Process::new().compile(idref)?;
+            build_ref.transmute::<test_framework::Process>().read(|p| {
+                println!("{:?}", p);
+                Ok(())
+            });
+        }
+    }
 
     export_toml(&mut compiler, ".test/usage_example.toml").await?;
     Ok(())
@@ -191,17 +171,7 @@ pub struct Test<'a> {
 }
 
 pub mod test_framework {
-    use async_trait::async_trait;
-    use reality::v2::ActionBuffer;
-    use reality::v2::Apply;
-    use reality::v2::Call;
-    use reality::v2::Compile;
-    use reality::v2::Properties;
-    use reality::v2::Property;
-    use reality::Error;
-    use reality_derive::Apply;
-    use reality_derive::Config;
-    use specs::Component;
+    use reality::v2::prelude::*;
     use std::path::PathBuf;
 
     #[derive(Config, Clone, Apply, Debug, Default)]

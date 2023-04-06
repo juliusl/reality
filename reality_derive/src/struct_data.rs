@@ -308,6 +308,22 @@ impl StructData {
         }
     }
 
+    pub fn runmd_trait(&self) -> TokenStream {
+        let name = &self.name;
+        let name = format_ident!("runmd_{}", name.to_string().to_lowercase());
+        let map = self.fields.iter().filter(|f| f.root).map(|f| f.runmd_root_expr());
+        let map = quote! {
+            #( #map )*
+        };
+
+        quote! {
+            pub fn #name() {
+                parser
+                #map;
+            }
+        }
+    }
+
     fn reference_fields(&self) -> impl Iterator<Item = &StructField> {
         self.fields.iter().filter(|f| f.reference)
     }
