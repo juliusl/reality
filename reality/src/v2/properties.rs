@@ -3,6 +3,7 @@ use crate::Value;
 use specs::Component;
 use specs::VecStorage;
 use std::collections::BTreeMap;
+use std::fmt::Display;
 use std::ops::Index;
 use std::ops::IndexMut;
 use std::sync::Arc;
@@ -120,7 +121,7 @@ impl Properties {
 
     /// Returns a property as a Properties map, can be used to extend a property
     ///
-    pub fn extend_property(&mut self, name: impl AsRef<str>) -> Option<Properties> {
+    pub fn extend_property(&self, name: impl AsRef<str>) -> Option<Properties> {
         self.owner()
             .branch(name.as_ref())
             .ok()
@@ -212,6 +213,21 @@ impl<'a> IndexMut<&'a str> for Properties {
 impl Visitor for Properties {
     fn visit_properties(&mut self, properties: &Properties) {
         self.add_readonly_properties(properties);
+    }
+}
+
+impl Display for Properties {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Properties: {:#}", self.owner())?;
+        for (name, property) in self.iter_properties() {
+            if let Some(props) = property.as_properties() {
+                writeln!(f, "\t{name}: {}", props)?;
+            } else {
+                writeln!(f, "\t{name}: {:?}", property)?;
+            }
+        }
+
+        Ok(())
     }
 }
 

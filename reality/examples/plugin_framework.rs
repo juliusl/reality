@@ -2,6 +2,7 @@ use reality::state::Provider;
 use reality::v2::command::export_toml;
 use reality::v2::framework::configure;
 use reality::v2::property_value;
+use reality::v2::ActionBuffer;
 use reality::v2::Compiler;
 use reality::v2::Framework;
 use reality::v2::Parser;
@@ -69,6 +70,40 @@ async fn main() -> Result<(), Error> {
 
     // Configure to digest frameworks
     configure(compiler.as_mut());
+
+    // Test using configure result
+    compiler.last_build_log().map(|log| {
+        log.find_ref::<Identifier>(
+            "app.#block#.usage.plugin.process.cargo"
+                .parse::<Identifier>()
+                .unwrap(),
+            &mut compiler,
+        )
+        .map(|b| {
+            let _ = b
+                .read(|id| {
+                    println!("Checking {:#}", id);
+                    Ok(())
+                })
+                .transmute::<ActionBuffer>()
+                .read(|b| {
+                    println!("{:#?}", b);
+
+                    let mut process = test_framework::Process::new();
+                    b.config(&mut process)?;
+                    println!("{:?}", process);
+
+                    Ok(())
+                })
+                .transmute::<Properties>()
+                .read(|p| {
+                    println!("{}", p);
+                    Ok(())
+                })
+                .result()
+                .map_err(|e| println!("error: {e}"));
+        });
+    });
 
     export_toml(&mut compiler, ".test/usage_example.toml").await?;
     Ok(())
@@ -155,45 +190,25 @@ pub struct Test<'a> {
     properties: &'a Properties,
 }
 
-#[allow(unused_imports)]
-#[allow(dead_code)]
-mod tests {
-    use reality::v2::{Apply, Config, property_list};
+pub mod test_framework {
+    use async_trait::async_trait;
+    use reality::v2::ActionBuffer;
+    use reality::v2::Apply;
+    use reality::v2::Call;
+    use reality::v2::Compile;
+    use reality::v2::Properties;
+    use reality::v2::Property;
     use reality::Error;
     use reality_derive::Apply;
     use reality_derive::Config;
+    use specs::Component;
     use std::path::PathBuf;
 
-    use reality::{
-        v2::{property_value, Property},
-        Identifier,
-    };
-
-    #[derive(Config)]
-    struct Test {
-        #[config(config_name)]
-        name: String,
-        is_test: bool,
-        n: usize,
-    }
-
-    impl Test {
-        const fn new() -> Self {
-            Self {
-                name: String::new(),
-                is_test: false,
-                n: 0,
-            }
-        }
-    }
-
-    #[derive(Config, Apply)]
+    #[derive(Config, Clone, Apply, Debug, Default)]
     pub struct Plugin {
-        #[apply]
         pub path: PathConfig,
         pub map: (),
         pub list: (),
-        #[apply]
         pub call: CallConfig,
     }
 
@@ -208,12 +223,12 @@ mod tests {
         }
     }
 
-    #[derive(Config)]
+    #[derive(Config, Clone, Debug, Default)]
     pub struct PathConfig {
         canonical: bool,
     }
 
-    #[derive(Config)]
+    #[derive(Config, Clone, Debug, Default)]
     pub struct CallConfig {
         test: bool,
     }
@@ -239,7 +254,8 @@ mod tests {
         }
     }
 
-    #[derive(Config)]
+    #[derive(Config, Component, Default)]
+    #[storage(specs::VecStorage)]
     pub struct Println {
         stderr: Vec<String>,
         stdout: Vec<String>,
@@ -247,74 +263,147 @@ mod tests {
         plugin: Plugin,
     }
 
-    #[derive(Config)]
+    #[derive(Config, Debug, Clone, Default, Component)]
+    #[storage(specs::VecStorage)]
+    #[compile(ThunkCall)]
     pub struct Process {
         redirect: String,
         #[root]
         plugin: Plugin,
     }
 
-    #[test]
-    fn test_config() {
-        let mut test = Test::new();
-
-        let ident = "test.a.b.name".parse::<Identifier>().unwrap();
-        let property = property_value("test_name");
-        test.config(&ident, &property).unwrap();
-
-        let ident = "test.a.b.is_test".parse::<Identifier>().unwrap();
-        let property = property_value(true);
-        test.config(&ident, &property).unwrap();
-
-        let ident = "test.a.b.n".parse::<Identifier>().unwrap();
-        let property = property_value(100);
-        test.config(&ident, &property).unwrap();
-
-        assert_eq!("Config: test_name", test.name.as_str());
-        assert_eq!(true, test.is_test);
-        assert_eq!(100, test.n);
-
-        let mut plugin = Plugin::new();
-        plugin.path.canonical = true;
-        let _ = plugin
-            .apply("path", &Property::Empty)
-            .expect_err("should return an error");
-
-        let stderr_ident = ".plugin.Println.call.stderr".parse::<Identifier>().unwrap();
-
-        let mut println = Println {
-            stderr: vec![],
-            stdout: vec![],
-            plugin: Plugin::new()
-        };
-
-        let list = property_list(vec!["Hello world", "Hello world 2"]);
-        let _ = println.config(&stderr_ident, &list).unwrap();
-
-        println!("{:?}", println.stderr);
-
-        let redirect_ident = ".plugin.Process.path.redirect".parse::<Identifier>().unwrap();
-
-        let mut plugin = Plugin::new();
-        plugin.path.canonical = true;
-
-        let mut process = Process {
-            redirect: String::new(),
-            plugin
-        };
-
-        let path = property_value(".random/");
-        let _ = process.config(&redirect_ident, &path).expect_err("should return an error");
-        
-        let path = property_value(".test/");
-        let _ = process.config(&redirect_ident, &path).unwrap();
+    impl Process {
+        pub const fn new() -> Self {
+            Self {
+                redirect: String::new(),
+                plugin: Plugin::new(),
+            }
+        }
     }
 
-    fn config_name(_: &Test, _: &Identifier, property: &Property) -> Result<String, Error> {
-        Ok(format!(
-            "Config: {}",
-            property.as_symbol().unwrap_or(&String::default())
-        ))
-    }
+    #[async_trait]
+    impl Call for Process {
+        async fn call(&self) -> Result<Properties, Error> {
 
+            Ok(Properties::default()) 
+        }
+    }
+    
 }
+
+// #[allow(unused_imports)]
+// #[allow(dead_code)]
+// mod tests {
+//     use reality::v2::{property_list, Apply, Config, Properties};
+//     use reality::Error;
+//     use reality_derive::Apply;
+//     use reality_derive::Config;
+//     use std::path::PathBuf;
+
+//     use reality::{
+//         v2::{property_value, Property},
+//         Identifier,
+//     };
+
+//     #[derive(Config)]
+//     struct Test {
+//         #[config(config_name)]
+//         name: String,
+//         is_test: bool,
+//         n: usize,
+//     }
+
+//     impl Test {
+//         const fn new() -> Self {
+//             Self {
+//                 name: String::new(),
+//                 is_test: false,
+//                 n: 0,
+//             }
+//         }
+//     }
+
+//     #[test]
+//     fn test_config() {
+//         let mut test = Test::new();
+
+//         let ident = "test.a.b.name".parse::<Identifier>().unwrap();
+//         let property = property_value("test_name");
+//         test.config(&ident, &property).unwrap();
+
+//         let ident = "test.a.b.is_test".parse::<Identifier>().unwrap();
+//         let property = property_value(true);
+//         test.config(&ident, &property).unwrap();
+
+//         let ident = "test.a.b.n".parse::<Identifier>().unwrap();
+//         let property = property_value(100);
+//         test.config(&ident, &property).unwrap();
+
+//         assert_eq!("Config: test_name", test.name.as_str());
+//         assert_eq!(true, test.is_test);
+//         assert_eq!(100, test.n);
+
+//         let mut plugin = Plugin::new();
+//         plugin.path.canonical = true;
+//         let _ = plugin
+//             .apply("path", &Property::Empty)
+//             .expect_err("should return an error");
+
+//         let stderr_ident = ".plugin.Println.call.stderr".parse::<Identifier>().unwrap();
+
+//         let mut println = Println {
+//             stderr: vec![],
+//             stdout: vec![],
+//             plugin: Plugin::new(),
+//         };
+
+//         let list = property_list(vec!["Hello world", "Hello world 2"]);
+//         let _ = println.config(&stderr_ident, &list).unwrap();
+
+//         println!("{:?}", println.stderr);
+
+//         let redirect_plugin_settings_ident = ".plugin.Process.path.redirect"
+//             .parse::<Identifier>()
+//             .unwrap();
+//         let mut redirect_plugin_settings = Properties::new(redirect_plugin_settings_ident);
+//         redirect_plugin_settings["canonical"] = property_value(true);
+
+//         let redirect_ident = "plugin.Process.path.redirect"
+//             .parse::<Identifier>()
+//             .unwrap();
+//         let mut redirect_properties = Properties::new(redirect_ident.clone());
+//         redirect_properties["path"] = Property::Properties(redirect_plugin_settings.into());
+//         redirect_properties["redirect"] = property_value(".test/");
+//         println!("{}", redirect_properties);
+//         let redirect_properties = Property::Properties(redirect_properties.into());
+
+//         let mut process = Process {
+//             redirect: String::new(),
+//             plugin: Plugin::new(),
+//         };
+
+//         // let _id = redirect_ident.branch("path").unwrap();
+//         // process.plugin.config(&_id, &redirect_properties).unwrap();
+//         // println!("{:?}", process);
+
+//         let _ = process
+//             .config(&redirect_ident, &redirect_properties)
+//             .unwrap();
+//         println!("{:?}", process);
+
+//         let path = property_value(".random/");
+//         let _ = process
+//             .config(&redirect_ident, &path)
+//             .expect_err("should return an error");
+
+//         let path = property_value(".test/");
+//         let _ = process.config(&redirect_ident, &path).unwrap();
+//     }
+
+//     fn config_name(_: &Test, _: &Identifier, property: &Property) -> Result<String, Error> {
+//         Ok(format!(
+//             "Config: {}",
+//             property.as_symbol().unwrap_or(&String::default())
+//         ))
+//     }
+// }

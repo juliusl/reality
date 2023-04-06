@@ -9,7 +9,6 @@ use std::sync::Arc;
 use tracing::trace;
 
 use self::interop::MakePacket;
-use crate::AttributeParser;
 use crate::parser::PropertyAttribute;
 use crate::CustomAttribute;
 use crate::Error;

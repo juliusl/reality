@@ -49,9 +49,6 @@ pub(crate) struct StructField {
     /// True if this field has a #[root] attribute,
     ///
     pub(crate) root: bool,
-    /// True if this field has a #[apply] attribute,
-    ///
-    pub(crate) apply: bool,
 }
 
 impl StructField {
@@ -119,31 +116,19 @@ impl StructField {
                     self.#name = #config_attr(&self, ident, property)?;
                 }
             }
-        } else if self.apply {
-            let rule_name = LitStr::new("", Span::call_site());
-            let apply_expr = self.config_apply_expr(&rule_name);
-            quote! {
-                #name_lit => {
-                    #apply_expr
-
-                    reality::v2::Config::config(&mut self.#name, ident, &property)?;
-                }
-            }
         } else {
             quote! {
                 #name_lit => {
-                    reality::v2::Config::config(&mut self.#name, ident, property)?;
+                    if let Some(properties) = property.as_properties().and_then(|props| props[#name_lit].as_properties()) {
+                        for (name, prop) in properties.iter_properties() {
+                            let ident = properties.owner().branch(name)?;
+                            reality::v2::Config::config(&mut self.#name, &ident, prop)?;
+                        }
+                    } else {
+                        reality::v2::Config::config(&mut self.#name, ident, property)?;
+                    }
                 }
             }
-        }
-    }
-
-    pub(crate) fn config_apply_expr(&self, rule_name: &LitStr) -> TokenStream {
-        let name = &self.name;
-        assert!(self.apply);
-
-        quote! {
-            let property = self.#name.apply(#rule_name, property)?;
         }
     }
 
@@ -170,24 +155,18 @@ impl StructField {
             Span::call_site(),
         );
 
-        let interpolate_format_lit = LitStr::new(
-            &format!("{}.{}.{{ext}}.{{prop}}", name, ty),
-            Span::call_site(),
-        );
+        // let interpolate_format_lit = LitStr::new(
+        //     &format!("{}.{}.{{ext}}.{{prop}}", name, ty),
+        //     Span::call_site(),
+        // );
 
         quote! {
             let #property_name = if let Some(map) = ident.interpolate(#interpolate_lit) {
                 let ext = &map["ext"];
                 let prop = &map["prop"];
 
-                let root_properties = format!(#interpolate_format_lit).parse::<reality::Identifier>()?;
-                println!("{}", root_properties);
-                // let _p = property.as_properties().map(|p| {
-                //     p[&key]
-                // }).unwrap_or_default();
-
-                // self.#name.config()
-
+                let ext_ident = ident.branch(ext)?;
+                self.#name.config(&ext_ident, property)?;
                 self.#name.apply(ext, property)?
             } else {
                 reality::v2::Property::Empty
@@ -213,7 +192,6 @@ impl Parse for StructField {
         let attributes = Attribute::parse_outer(input)?;
         let mut config_attr = None::<Ident>;
         let mut root = false;
-        let mut apply = false;
 
         for attribute in attributes {
             if attribute.path().is_ident("config") {
@@ -223,10 +201,6 @@ impl Parse for StructField {
 
             if attribute.path().is_ident("root") {
                 root = true;
-            }
-
-            if attribute.path().is_ident("apply") {
-                apply = true;
             }
         }
 
@@ -256,7 +230,6 @@ impl Parse for StructField {
                 option: false,
                 ignore: false,
                 root,
-                apply,
                 config: config_attr,
             })
         } else if input.peek(Ident::peek_any) {
@@ -281,7 +254,6 @@ impl Parse for StructField {
                     option: true,
                     ignore: false,
                     root,
-                    apply,
                     config: config_attr,
                 })
             } else {
@@ -296,7 +268,6 @@ impl Parse for StructField {
                     option: false,
                     ignore: false,
                     root,
-                    apply,
                     config: config_attr,
                 })
             }
@@ -311,7 +282,6 @@ impl Parse for StructField {
                 option: false,
                 ignore: true,
                 root,
-                apply,
                 config: config_attr,
             })
         }

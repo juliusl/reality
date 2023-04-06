@@ -286,7 +286,7 @@ impl Display for Property {
                 }
                 Ok(())
             }
-            Property::Properties(_) => write!(f, "properties - todo display"),
+            Property::Properties(props) => write!(f, "{}", props),
             Property::Empty => write!(f, "empty value"),
         }
     }

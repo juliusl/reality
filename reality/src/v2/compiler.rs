@@ -3,7 +3,6 @@ use super::parser::Packet;
 use super::parser::PacketHandler;
 use super::thunk::ThunkUpdate;
 use super::thunk::Update;
-use super::Links;
 use super::Listen;
 use super::Properties;
 use super::ThunkBuild;
@@ -74,7 +73,6 @@ impl Compiler {
         world.register::<ThunkUpdate>();
         world.register::<ThunkListen>();
         world.register::<ThunkCompile>();
-        world.register::<Links>();
         world.insert(None::<tokio::runtime::Handle>);
         Compiler {
             world,

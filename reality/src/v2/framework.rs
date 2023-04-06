@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::VecDeque;
 use std::ops::Deref;
@@ -16,6 +17,7 @@ use specs::WorldExt;
 use specs::WriteStorage;
 use tracing::trace;
 
+use crate::v2::ActionBuffer;
 use crate::v2::Property;
 use crate::v2::WorldWrapper;
 use crate::Error;
@@ -32,8 +34,7 @@ use super::Visitor;
 ///
 #[derive(Component, Debug, Clone)]
 #[storage(HashMapStorage)]
-pub struct Framework
-{
+pub struct Framework {
     /// Original build entity,
     ///
     entity: Entity,
@@ -46,6 +47,9 @@ pub struct Framework
     /// Config identifier patterns to query for,
     ///
     config_patterns: Vec<(String, ConfigPattern)>,
+    /// Config properties,
+    ///
+    config_properties: BTreeMap<String, Arc<Properties>>,
     /// Queue for configuring extensions,
     ///
     config_queue: VecDeque<Identifier>,
@@ -60,6 +64,7 @@ impl Framework {
             roots: BTreeSet::new(),
             patterns: vec![],
             config_patterns: vec![],
+            config_properties: BTreeMap::new(),
             config_queue: VecDeque::new(),
         }
     }
@@ -115,9 +120,38 @@ enum ConfigPattern {
 
 impl Visitor for Framework {
     fn visit_object(&mut self, object: &Object) {
-        object.as_root().map(|r| {
-            self.visit_root(r);
-        });
+        // Skip blocks,
+        if object.is_block() {
+            return;
+        }
+
+        // Scan roots for additional rules to configure
+        if object
+            .as_root()
+            .map(|r| {
+                self.visit_root(r);
+            })
+            .is_some()
+        {
+            // If a root was visited then skip visiting properties,
+            return;
+        }
+
+        self.visit_properties(object.properties());
+    }
+
+    fn visit_properties(&mut self, properties: &Properties) {
+        if properties.len() == 0 {
+            return;
+        }
+
+        // 
+        let key = format!("{:#}", properties.owner());
+
+        if !self.config_properties.contains_key(&key) {
+            self.config_properties
+                .insert(key, Arc::new(properties.clone()));
+        }
     }
 
     fn visit_extension(&mut self, identifier: &Identifier) {
@@ -161,7 +195,7 @@ impl Compile for Framework {
         build_ref: BuildRef<'a, Properties>,
     ) -> Result<BuildRef<'a, Properties>, Error> {
         build_ref
-            .read(|r| {
+            .map(|r| {
                 let mut owner = r.owner().clone();
                 trace!("Configuring  -- {:#}", owner);
 
@@ -174,6 +208,10 @@ impl Compile for Framework {
                     match ext_config_pattern {
                         ConfigPattern::NameInput(config_pattern) => {
                             if let Some(map) = owner.interpolate(config_pattern) {
+                                if let Some(properties) = self.config_properties.get(pattern) {
+                                    trace!("{pattern} {:?}", properties);
+                                }
+
                                 found.push((
                                     Property::Properties(read_only.clone()),
                                     owner.clone(),
@@ -186,6 +224,10 @@ impl Compile for Framework {
                         }
                         ConfigPattern::NamePropertyInput(config_pattern) => {
                             if let Some(map) = owner.interpolate(config_pattern) {
+                                if let Some(properties) = self.config_properties.get(pattern) {
+                                    trace!("{pattern} {:?}", properties);
+                                }
+
                                 found.push((
                                     Property::Properties(read_only.clone()),
                                     owner.clone(),
@@ -201,6 +243,7 @@ impl Compile for Framework {
                 // Otherwise, check properties
                 for (name, prop) in r.iter_properties() {
                     let ident = owner.branch(name)?;
+
                     for (pattern, config_pattern) in self.config_patterns() {
                         match config_pattern {
                             ConfigPattern::NamePropertyInput(config_pattern) => {
@@ -209,6 +252,21 @@ impl Compile for Framework {
                                     for message in messages.iter() {
                                         let _ident = ident.branch(message)?;
                                         if let Some(map) = _ident.interpolate(config_pattern) {
+                                            let mut prop = prop.clone();
+
+                                            // If this config has additional properties then extend the existing property and merge the additional properties
+                                            if let Some(properties) =
+                                                self.config_properties.get(pattern)
+                                            {
+                                                if let Some(mut extprop) = r.extend_property(name) {
+                                                    let key = pattern.replace(&ident.subject(), "");
+                                                    let key = key.trim_matches('.').parse::<Identifier>()?;
+                                                    let key = key.subject();
+                                                    extprop[&key] =  Property::Properties(properties.clone());
+                                                    prop = Property::Properties(Arc::new(extprop));
+                                                }
+                                            }
+
                                             found.push((
                                                 prop.clone(),
                                                 ident.clone(),
@@ -225,16 +283,27 @@ impl Compile for Framework {
                     }
                 }
 
+                let mut action_buffer = ActionBuffer::new();
                 for (property, ident, pattern, config_pattern, input) in found {
-                    // TODO -- Once we've found input that needs configuration, we need to schedule that somehow
-                    trace!(
-                        "Found config {:?} {:#} -- {pattern} --> {config_pattern} --> {input}",
-                        property,
-                        ident
-                    );
+                    if let Some(properties) = property.as_properties() {
+                        trace!(
+                            "Found config \n{} {:#} -- {pattern} --> {config_pattern} --> {input}",
+                            properties,
+                            ident
+                        );
+                    } else {
+                        // TODO -- Once we've found input that needs configuration, we need to schedule that somehow
+                        trace!(
+                            "Found config {:?} {:#} -- {pattern} --> {config_pattern} --> {input}",
+                            property,
+                            ident
+                        );
+                    }
+                    let config_ident = pattern.parse::<Identifier>()?;
+                    action_buffer.push_config(&config_ident, &property);
                 }
 
-                Ok(())
+                Ok(action_buffer)
             })
             .result()
     }
@@ -264,9 +333,7 @@ pub fn configure(world: &mut World) {
                     lazy_update.exec_mut(move |world| {
                         let mut wrapper = WorldWrapper::from(world);
                         log.find_ref(config, &mut wrapper).map(|r| {
-                            framework.compile(r).ok().map(|_| {
-                                
-                            });
+                            framework.compile(r).ok().map(|_| {});
                         });
                     });
                 }
