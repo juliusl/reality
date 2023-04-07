@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::VecDeque;
-use std::ops::Deref;
 use std::sync::Arc;
 
 use specs::Component;
@@ -16,6 +15,7 @@ use specs::World;
 use specs::WorldExt;
 use specs::WriteStorage;
 use tracing::trace;
+use tracing::warn;
 
 use crate::v2::property_value;
 use crate::v2::ActionBuffer;
@@ -157,18 +157,19 @@ impl Visitor for Framework {
 
     fn visit_extension(&mut self, identifier: &Identifier) {
         // This means this extension needs to be configured
-        if let Some(map) = identifier.commit().unwrap().interpolate("#block#.#root#.(name).(ext).(property)") {
+        if let Some(map) = identifier.commit().unwrap().interpolate("#block#.#root#.(name).(ext_root).(ext_name)") {
             trace!("Queueing config -- {:?}", map);
-            if self.roots.contains(&map["ext"]) {
+            if self.roots.contains(&map["ext_root"]) {
                 self.config_queue.push_back(identifier.clone());
                 return;
             }
         }
 
-        trace!("Adding new config to framework -- {:#}", identifier);
+        // Only roots defined in the root block can apply config to the framework
+        trace!("Scanning for new config for framework -- {:#}", identifier);
 
         if let Some(map) = identifier.commit().unwrap().interpolate("!#block#.#root#.(root).(ext).(?property)") {
-            trace!("!!!!!!! -----> {:?}", map);
+            trace!("!!!!!!!!!!!!!!!! -----> {:?}", map);
             if let Some(pattern) = map.get("property").and_then(|_| self.check(identifier) ) {
                 trace!("Adding new config pattern      -- {:?}", pattern);
                 self.config_patterns.push(pattern);
@@ -183,34 +184,11 @@ impl Visitor for Framework {
                 trace!("Adding new root pattern        -- {root}/{pattern}");
                 self.patterns.push(pattern);
             }
+            trace!("!!!!!!!!!!!!!!!");
             return;
         } else {
-            trace!("Didn't interpolate, {:?}", identifier.clone().flatten());
-        }
-
-        // This will update the identifier interpolation patterns to look for when applying extensions
-        if let Some(root) = identifier
-            .parent()
-            // We just want the root
-            .map(|p| p.deref().clone().flatten())
-            // Since this is a framework, this root definition should be in the root block
-            .filter(|p| p.parent().is_none())
-        {
-            if root.len() == 1 {
-                let root = format!("{root}").trim_matches('.').to_string();
-                let extension = format!("{identifier}");
-                let pattern = format!("!#block#.#root#.{root}.(name){extension}.(property)");
-                if self.roots.insert(root.to_string()) {
-                    trace!("Adding new root                -- {root}");
-                }
-                trace!("Adding new root pattern        -- {root}/{pattern}");
-                self.patterns.push(pattern);
-            } else if let Some(pattern) = self.check(identifier) {
-                trace!("Adding new config pattern      -- {:?}", pattern);
-                self.config_patterns.push(pattern);
-            }
-        } else {
-            trace!("No parent");
+            warn!("Skipping, Didn't interpolate, {:#}", identifier);
+            trace!("-- Framework only recognizes the pattern !#block#.#root#.(root).(ext).(?property)");
         }
     }
 }
@@ -222,9 +200,10 @@ impl Compile for Framework {
     ) -> Result<BuildRef<'a, Properties>, Error> {
         build_ref
             .map(|r| {
-                let mut owner = r.owner().clone();
-                trace!("Configuring  -- {:#}", owner);
-
+                let owner = format!("{:#}", r.owner());
+                trace!("Configuring  -- {}", owner);
+                
+                let mut owner = owner.parse::<Identifier>()?;
                 let mut found = vec![];
 
                 let read_only = Arc::new(r.clone());
@@ -245,9 +224,10 @@ impl Compile for Framework {
                                     config_pattern,
                                     map["input"].clone(),
                                 ));
+                                trace!("Truncating --> {:?}", owner);
                                 owner = owner.truncate(1)?;
                                 owner.add_tag("root");
-                                trace!("Truncated --> {:#}", owner);
+                                trace!("Truncated  --> {:#}", owner);
                             }
                         }
                         ConfigPattern::NamePropertyInput(config_pattern) => {

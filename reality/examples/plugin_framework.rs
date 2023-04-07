@@ -1,5 +1,6 @@
 use reality::apply_framework;
 use reality::v2::command::export_toml;
+use reality::v2::command::import_toml;
 use reality::v2::BuildRef;
 use reality::v2::Call;
 use reality::v2::Compiler;
@@ -10,7 +11,6 @@ use reality::v2::Runmd;
 use reality::v2::ThunkCall;
 use reality::Error;
 use reality::Identifier;
-use reality::v2::command::import_toml;
 use reality_derive::Load;
 use specs::Entity;
 use tracing_subscriber::EnvFilter;
@@ -32,39 +32,20 @@ async fn main() -> Result<(), Error> {
         )
         .init();
 
-    // Compile the example framework runmd
-    let mut compiler = Compiler::new().with_docs();
-
-    let framework = import_toml(&mut compiler, ".test/plugin_framework.toml").await?;
-    let mut framework = Framework::new(framework);
-    compiler.visit_last_build(&mut framework);
-
-    let _ = import_toml(&mut compiler, ".test/usage_example.toml").await?;
-    compiler.update_last_build(&mut framework);
-    println!("{:#?}", framework);
-    apply_framework!(compiler, test_framework::Process, test_framework::Println);
-
-    // let framework = compile_example_framework(&mut compiler)?;
-    // println!("Compiled framework: {:?}", framework);
-
-    // // Configure framework from build
-    // let mut framework = Framework::new(framework);
-    // compiler.visit_last_build(&mut framework);
-    // println!("Configuring framework {:#?}", framework);
-    // export_toml(&mut compiler, ".test/plugin_framework.toml").await?;
-
-    // // Compile example usage runmd
-    // let framework_usage = compile_example_usage(&mut compiler)?;
-    // println!("Compiled example usage: {:?}", framework_usage);
-
-    // // Apply framework to last build
-    // compiler.update_last_build(&mut framework);
-
-    // println!("{:#?}", framework);
-    // // Configure to ingest and configure frameworks
-    // apply_framework!(compiler, test_framework::Process, test_framework::Println);
-    // compiler.as_mut().maintain();
-    // export_toml(&mut compiler, ".test/usage_example.toml").await?;
+    let mut args = std::env::args();
+    let mut compiler = loop {
+        if let Some(argument) = args.next() {
+            match argument.as_str() {
+                "toml" => {
+                    break from_fs().await?;
+                }
+                _ => {
+                    break from_runmd().await?;
+                    // break from_fs().await?;
+                }
+            }
+        }
+    };
 
     let log = compiler.last_build_log().unwrap();
 
@@ -99,6 +80,46 @@ async fn main() -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+async fn from_runmd() -> Result<Compiler, Error> {
+    let mut compiler = Compiler::new().with_docs();
+    let framework = compile_example_framework(&mut compiler)?;
+    println!("Compiled framework: {:?}", framework);
+
+    // Configure framework from build
+    let mut framework = Framework::new(framework);
+    compiler.visit_last_build(&mut framework);
+    println!("Configuring framework {:#?}", framework);
+    export_toml(&mut compiler, ".test/plugin_framework.toml").await?;
+
+    // Compile example usage runmd
+    let framework_usage = compile_example_usage(&mut compiler)?;
+    println!("Compiled example usage: {:?}", framework_usage);
+
+    // Apply framework to last build
+    compiler.update_last_build(&mut framework);
+
+    println!("{:#?}", framework);
+    // Configure to ingest and configure frameworks
+    apply_framework!(compiler, test_framework::Process, test_framework::Println);
+    compiler.as_mut().maintain();
+    export_toml(&mut compiler, ".test/usage_example.toml").await?;
+    Ok(compiler)
+}
+
+async fn from_fs() -> Result<Compiler, Error> {
+    let mut compiler = Compiler::new().with_docs();
+
+    let framework = import_toml(&mut compiler, ".test/plugin_framework.toml").await?;
+    let mut framework = Framework::new(framework);
+    compiler.visit_last_build(&mut framework);
+
+    let _ = import_toml(&mut compiler, ".test/usage_example.toml").await?;
+    compiler.update_last_build(&mut framework);
+    println!("{:#?}", framework);
+    apply_framework!(compiler, test_framework::Process, test_framework::Println);
+    Ok(compiler)
 }
 
 /// Compiles the initial framework,
@@ -193,7 +214,7 @@ pub struct Test<'a> {
 
 pub mod test_framework {
     use reality::{
-        v2::{prelude::*, BuildLog, BuildRef, ThunkCall, WorldWrapper, property_value},
+        v2::{prelude::*, property_value, BuildLog, BuildRef, ThunkCall, WorldWrapper},
         Identifier, Runmd,
     };
     use specs::{Entities, Join, LazyUpdate, Read, ReadStorage, WorldExt, WriteStorage};

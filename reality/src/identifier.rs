@@ -551,11 +551,11 @@ enum StringInterpolationTokens {
     NotMatchTags(BTreeSet<String>),
     /// Assign the value from the identifier,
     ///
-    #[regex("[(][a-zA-Z-0-9]+[)]", on_assignment)]
+    #[regex("[(][^()]+[)]", on_assignment)]
     Assignment(String),
     /// Optionally assign a suffix,
     ///
-    #[regex("[(][?][a-zA-Z0-9]+[)]", on_optional_suffix_assignment)]
+    #[regex("[(][?][^()]+[)]", on_optional_suffix_assignment)]
     OptionalSuffixAssignment(String),
     #[error]
     #[regex("[.]", logos::skip)]
@@ -932,5 +932,15 @@ mod tests {
             "tests.block.test_display_format.name",
             format!("{:#}", a).as_str()
         );
+    }
+
+    #[test]
+    fn test_assignment_interpolation() {
+        let test = "a.b.#block#.c.d.#root#.e.f.g".parse::<Identifier>().unwrap();
+
+        let map = test.interpolate("#block#.(..a..).(..b..)").unwrap();
+
+        assert_eq!("a", map["..a.."]);
+        assert_eq!("b", map["..b.."]);
     }
 }
