@@ -178,6 +178,8 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T> {
     where
         <C as specs::Component>::Storage: std::default::Default,
     {
+        self.world_ref.as_mut().map(|w| w.as_mut().register::<C>());
+
         match self.map_entity(d) {
             Some(Ok(next)) => {
                 if let Err(error) = self.store(next) {
@@ -273,6 +275,8 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
         <C as specs::Component>::Storage: std::default::Default,
         F: Future<Output = Result<C, Error>>,
     {
+        self.world_ref.as_mut().map(|w| w.as_mut().register::<C>());
+        
         if let Some(next) = self.map_entity(d) {
             match next.await {
                 Ok(next) => {

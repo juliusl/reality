@@ -1,5 +1,5 @@
 use reality::apply_framework;
-use reality::v2::command::export_toml;
+use reality::v2::command::import_toml;
 use reality::v2::BuildRef;
 use reality::v2::Call;
 use reality::v2::Compiler;
@@ -31,32 +31,39 @@ async fn main() -> Result<(), Error> {
         )
         .init();
 
-    // Compile the example framework runmd
-    let mut compiler = Compiler::new().with_docs();
+    let mut compiler = from_fs().await?;
 
-    let framework = compile_example_framework(&mut compiler)?;
-    println!("Compiled framework: {:?}", framework);
+    // // Compile the example framework runmd
+    // let mut compiler = Compiler::new().with_docs();
 
-    // Configure framework from build
-    let mut framework = Framework::new(framework);
-    compiler.visit_last_build(&mut framework);
-    println!("Configuring framework {:#?}", framework);
-    export_toml(&mut compiler, ".test/plugin_framework.toml").await?;
+    // let framework = compile_example_framework(&mut compiler)?;
+    // println!("Compiled framework: {:?}", framework);
 
-    // Compile example usage runmd
-    let framework_usage = compile_example_usage(&mut compiler)?;
-    println!("Compiled example usage: {:?}", framework_usage);
+    // // Configure framework from build
+    // let mut framework = Framework::new(framework);
+    // compiler.visit_last_build(&mut framework);
+    // println!("Configuring framework {:#?}", framework);
+    // export_toml(&mut compiler, ".test/plugin_framework.toml").await?;
 
-    // Apply framework to last build
-    compiler.update_last_build(&mut framework.clone());
+    // // Compile example usage runmd
+    // let framework_usage = compile_example_usage(&mut compiler)?;
+    // println!("Compiled example usage: {:?}", framework_usage);
 
-    // Configure to ingest and configure frameworks
-    apply_framework!(compiler, test_framework::Process, test_framework::Println);
-    compiler.as_mut().maintain();
+    // // Apply framework to last build
+    // compiler.update_last_build(&mut framework.clone());
+
+    // export_toml(&mut compiler, ".test/usage_example.toml").await?;
+
+    // // Configure to ingest and configure frameworks
+    // apply_framework!(compiler, test_framework::Process, test_framework::Println);
 
     let log = compiler.last_build_log().unwrap();
 
-    for (_, _, e) in log.search_index("plugin.process") {
+    for (id, _, e) in log.search_index("plugin.process") {
+        println!("{:#}", id);
+        println!("exists: {}", compiler.as_ref().read_component::<Properties>().contains(*e));
+        println!("exists: {}", compiler.as_ref().read_component::<ThunkCall>().contains(*e));
+        println!("exists: {}", compiler.as_ref().read_component::<test_framework::Process>().contains(*e));
         let build_ref = BuildRef::<ThunkCall>::new(*e, &mut compiler);
         build_ref
             .enable_async()
@@ -70,7 +77,11 @@ async fn main() -> Result<(), Error> {
             .await;
     }
 
-    for (_, _, e) in log.search_index("plugin.println") {
+    for (id, _, e) in log.search_index("plugin.println") {
+        println!("{:#}", id);
+        println!("exists: {}", compiler.as_ref().read_component::<Properties>().contains(*e));
+        println!("exists: {}", compiler.as_ref().read_component::<ThunkCall>().contains(*e));
+        println!("exists: {}", compiler.as_ref().read_component::<test_framework::Println>().contains(*e));
         let build_ref = BuildRef::<ThunkCall>::new(*e, &mut compiler);
         build_ref
             .enable_async()
@@ -84,8 +95,28 @@ async fn main() -> Result<(), Error> {
             .await;
     }
 
-    export_toml(&mut compiler, ".test/usage_example.toml").await?;
     Ok(())
+}
+
+async fn from_fs() -> Result<Compiler, Error> {
+    let mut compiler = Compiler::new().with_docs();
+    let framework = import_toml(&mut compiler, ".test/plugin_framework.toml").await?;
+
+    let mut framework = Framework::new(framework);
+    compiler.visit_last_build(&mut framework);
+    println!("{:#?}", framework);
+
+    let framework_usage = import_toml(&mut compiler, ".test/usage_example.toml").await?;
+    println!("Compiled example usage: {:?}", framework_usage);
+    compiler.update_last_build(&mut framework.clone());
+    println!("{:#?}", framework);
+
+    compiler.as_mut().maintain();
+
+    apply_framework!(compiler, test_framework::Process, test_framework::Println);
+    compiler.as_mut().maintain();
+
+    Ok(compiler)
 }
 
 /// Compiles the initial framework,

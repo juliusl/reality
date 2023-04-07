@@ -156,8 +156,39 @@ impl Visitor for Framework {
     }
 
     fn visit_extension(&mut self, identifier: &Identifier) {
+        trace!("Visiting -- {:?}", identifier);
+        if identifier
+            .parent()
+            .map(|p| p.contains_tag("root"))
+            .unwrap_or_default()
+        {
+            if identifier.len() == 1 {
+                trace!("Adding new config to framework -- {:#}", identifier);
+                println!("{:?}", identifier.parent());
+                let root = identifier.parent().unwrap_or_default().root();
+                println!("{}", root);
+                if self.roots.insert(root.to_string()) {
+                    trace!("Adding new root                -- {root}");
+                }
+                let ext = identifier.pos(1).expect("should have a value at pos(1)");
+                let pattern = format!("{root}.(name).{ext}.(property)");
+                trace!("Adding new root pattern        -- {root}/{pattern}");
+                self.patterns.push(pattern);
+                return;
+            } else if let Some(pattern) = self.check(&identifier.parent().unwrap()) {
+                trace!("Adding new config pattern      -- {:?}", pattern);
+                self.config_patterns.push(pattern);
+                return;
+            }
+        }
+
         // This means this extension needs to be configured
-        if self.roots.contains(&identifier.root()) {
+        if (self.roots.contains(&identifier.root())
+            || self
+                .roots
+                .contains(identifier.pos(1).unwrap_or_default().trim_matches('.')))
+            && identifier.parent().is_some()
+        {
             self.config_queue.push_back(identifier.clone());
             return;
         }
