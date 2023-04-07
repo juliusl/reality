@@ -17,6 +17,7 @@ use specs::WorldExt;
 use specs::WriteStorage;
 use tracing::trace;
 
+use crate::v2::property_value;
 use crate::v2::ActionBuffer;
 use crate::v2::Property;
 use crate::v2::WorldWrapper;
@@ -145,7 +146,7 @@ impl Visitor for Framework {
             return;
         }
 
-        // 
+        //
         let key = format!("{:#}", properties.owner());
 
         if !self.config_properties.contains_key(&key) {
@@ -208,12 +209,12 @@ impl Compile for Framework {
                     match ext_config_pattern {
                         ConfigPattern::NameInput(config_pattern) => {
                             if let Some(map) = owner.interpolate(config_pattern) {
-                                if let Some(properties) = self.config_properties.get(pattern) {
-                                    trace!("{pattern} {:?}", properties);
-                                }
+                                let properties = read_only
+                                    .clone()
+                                    .branch(pattern, Some(property_value(&map["input"])))?;
 
                                 found.push((
-                                    Property::Properties(read_only.clone()),
+                                    Property::Properties(properties.into()),
                                     owner.clone(),
                                     pattern,
                                     config_pattern,
@@ -224,12 +225,12 @@ impl Compile for Framework {
                         }
                         ConfigPattern::NamePropertyInput(config_pattern) => {
                             if let Some(map) = owner.interpolate(config_pattern) {
-                                if let Some(properties) = self.config_properties.get(pattern) {
-                                    trace!("{pattern} {:?}", properties);
-                                }
+                                let properties = read_only
+                                    .clone()
+                                    .branch(pattern, Some(property_value(&map["input"])))?;
 
                                 found.push((
-                                    Property::Properties(read_only.clone()),
+                                    Property::Properties(properties.into()),
                                     owner.clone(),
                                     pattern,
                                     config_pattern,
@@ -260,9 +261,12 @@ impl Compile for Framework {
                                             {
                                                 if let Some(mut extprop) = r.extend_property(name) {
                                                     let key = pattern.replace(&ident.subject(), "");
-                                                    let key = key.trim_matches('.').parse::<Identifier>()?;
+                                                    let key = key
+                                                        .trim_matches('.')
+                                                        .parse::<Identifier>()?;
                                                     let key = key.subject();
-                                                    extprop[&key] =  Property::Properties(properties.clone());
+                                                    extprop[&key] =
+                                                        Property::Properties(properties.clone());
                                                     prop = Property::Properties(Arc::new(extprop));
                                                 }
                                             }

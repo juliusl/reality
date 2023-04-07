@@ -625,6 +625,14 @@ impl AsRef<Identifier> for Identifier {
     }
 }
 
+impl TryFrom<&String> for Identifier {
+    type Error = Error;
+
+    fn try_from(value: &String) -> Result<Self, Self::Error> {
+        value.parse::<Identifier>()
+    }
+}
+
 impl TryFrom<&str> for Identifier {
     type Error = Error;
 

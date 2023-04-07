@@ -3,6 +3,7 @@ use proc_macro2::TokenStream;
 use quote::format_ident;
 use quote::quote;
 use quote::ToTokens;
+use quote::quote_spanned;
 use syn::parse::Parse;
 use syn::parse2;
 use syn::Data;
@@ -291,15 +292,15 @@ impl StructData {
                     &self,
                     build_ref: reality::v2::BuildRef<'a, reality::v2::Properties>,
                 ) -> Result<reality::v2::BuildRef<'a, reality::v2::Properties>, Error> {
+                    let clone = self.clone();
                     build_ref
                         .transmute::<ActionBuffer>()
-                        .map_into(|b| {
-                            let mut default = Self::default();
-
-                            b.config(&mut default)?;
-
-                            Ok(default)
+                        .map_into(move |b| {
+                            let mut clone = clone;
+                            b.config(&mut clone)?;
+                            Ok(clone)
                         })
+                        .result()?
                         #additional_compile
                         .transmute::<Properties>()
                         .result()
@@ -310,18 +311,37 @@ impl StructData {
 
     pub fn runmd_trait(&self) -> TokenStream {
         let name = &self.name;
-        let name = format_ident!("runmd_{}", name.to_string().to_lowercase());
-        let map = self.fields.iter().filter(|f| f.root).map(|f| f.runmd_root_expr());
-        let map = quote! {
-            #( #map )*
+
+        // Mapping compile
+        let compile_map = self.root_fields().map(|f| { 
+            let pattern = f.root_ext_input_pattern_lit_str(name);
+            quote_spanned! {f.span=> 
+                if let Some(log) = compiler.last_build_log() {
+                    for (_, _, entity) in log.search_index(#pattern) {
+                        let build_ref = BuildRef::<Properties>::new(*entity, compiler);
+            
+                        reality::v2::Compile::compile(self, build_ref)?;
+                    }
+                }
+            }
+        });
+        let compile_map = quote! {
+            #( #compile_map )*
         };
 
         quote! {
-            pub fn #name() {
-                parser
-                #map;
+            impl reality::v2::Runmd for #name {
+                fn runmd(&self, compiler: &mut reality::v2::Compiler) -> Result<(), reality::Error> {
+                    #compile_map
+
+                    Ok(())
+                }
             }
         }
+    }
+
+    fn root_fields(&self) -> impl Iterator<Item = &StructField> {
+        self.fields.iter().filter(|f| f.root)
     }
 
     fn reference_fields(&self) -> impl Iterator<Item = &StructField> {

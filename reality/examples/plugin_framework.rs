@@ -1,18 +1,17 @@
-use reality::state::Provider;
+use reality::apply_framework;
 use reality::v2::command::export_toml;
-use reality::v2::framework::configure;
-use reality::v2::property_value;
+use reality::v2::BuildRef;
+use reality::v2::Call;
 use reality::v2::Compiler;
 use reality::v2::Framework;
 use reality::v2::Parser;
 use reality::v2::Properties;
-use reality::v2::Compile;
+use reality::v2::Runmd;
+use reality::v2::ThunkCall;
 use reality::Error;
 use reality::Identifier;
 use reality_derive::Load;
-use specs::Builder;
 use specs::Entity;
-use specs::WorldExt;
 use tracing_subscriber::EnvFilter;
 
 /// Example of a plugin framework compiler,
@@ -34,23 +33,6 @@ async fn main() -> Result<(), Error> {
 
     // Compile the example framework runmd
     let mut compiler = Compiler::new().with_docs();
-    let mut properties = Properties::default();
-    properties["test"] = property_value(true);
-    let testent = compiler
-        .as_mut()
-        .create_entity()
-        .with(Identifier::new())
-        .with(properties)
-        .build();
-
-    let state = compiler
-        .as_mut()
-        .system_data::<TestSystemData>()
-        .state::<Test>(testent)
-        .expect("should exist")
-        .properties["test"]
-        .is_enabled();
-    assert!(state);
 
     let framework = compile_example_framework(&mut compiler)?;
     println!("Compiled framework: {:?}", framework);
@@ -68,21 +50,38 @@ async fn main() -> Result<(), Error> {
     // Apply framework to last build
     compiler.update_last_build(&mut framework.clone());
 
-    // Configure to digest frameworks
-    configure(compiler.as_mut());
+    // Configure to ingest and configure frameworks
+    apply_framework!(compiler, test_framework::Process, test_framework::Println);
+    compiler.as_mut().maintain();
 
-    // Test using configure result
-    if let Some(log) = compiler.last_build_log() {
-        if let Some(idref) = log.find_ref::<Properties>(
-            "app.#block#.usage.plugin.process.cargo",
-            &mut compiler,
-        ) {
-            let build_ref = test_framework::Process::new().compile(idref)?;
-            build_ref.transmute::<test_framework::Process>().read(|p| {
-                println!("{:?}", p);
-                Ok(())
-            });
-        }
+    let log = compiler.last_build_log().unwrap();
+
+    for (_, _, e) in log.search_index("plugin.process") {
+        let build_ref = BuildRef::<ThunkCall>::new(*e, &mut compiler);
+        build_ref
+            .enable_async()
+            .read(|tc| {
+                let tc = tc.clone();
+                async move {
+                    tc.call().await?;
+                    Ok(())
+                }
+            })
+            .await;
+    }
+
+    for (_, _, e) in log.search_index("plugin.println") {
+        let build_ref = BuildRef::<ThunkCall>::new(*e, &mut compiler);
+        build_ref
+            .enable_async()
+            .read(|tc| {
+                let tc = tc.clone();
+                async move {
+                    tc.call().await?;
+                    Ok(())
+                }
+            })
+            .await;
     }
 
     export_toml(&mut compiler, ".test/usage_example.toml").await?;
@@ -126,6 +125,7 @@ const ROOT_RUNMD: &'static str = r##"
 + .plugin    Println                        # A plugin that prints text
 <call>      .stdout                         # The plugin will print the value of the property to stdout
 <call>      .stderr                         # The plugin will print the value of the property to stderr
+<call>      .println                        # The plugin can be called on lists
 
 + .plugin    Process                        # A plugin that starts a program
 : env       .symbol                         # Environment variables
@@ -150,15 +150,22 @@ const EXAMPLE_USAGE: &'static str = r##"
 
 ```runmd app
 + .usage
-<plugin> .println
-: .stdout Hello World                                   # This message will be printed
-: .stdout Hello World 2
-: .stderr Hello Error World
-: .stderr Hello Error World 2
 <plugin.println>        .stdout     World Hello         # Can also be activated in one line
+<plugin.println>        .stderr     World Hello Error   # Can also be activated in one line
+<plugin>    .println
+: .stdout   Hello World
+: .stdout   Goodbye World
+: .stderr   Hello World Error
+: .stderr   Goodbye World Error
 <plugin>                .process    cargo               # This process will be started
 : RUST_LOG              .env        reality=trace
 :                       .redirect   .test/test.output
+<plugin>                .process    python              # This process will be started
+<plugin> .println pt2
+: .stdout   Hello World 2
+: .stdout   Goodbye World 2 
+: .stderr   Hello World Error 2 
+: .stderr   Goodbye World Error 2
 <plugin.readln>         .stdin      name                # This will read stdin and save the value to the property name
 ```
 "##;
@@ -171,8 +178,13 @@ pub struct Test<'a> {
 }
 
 pub mod test_framework {
-    use reality::v2::prelude::*;
+    use reality::{
+        v2::{prelude::*, BuildLog, BuildRef, ThunkCall, WorldWrapper},
+        Identifier, Runmd,
+    };
+    use specs::{Entities, Join, LazyUpdate, Read, ReadStorage, WorldExt, WriteStorage};
     use std::path::PathBuf;
+    use tokio::task::JoinHandle;
 
     #[derive(Config, Clone, Apply, Debug, Default)]
     pub struct Plugin {
@@ -224,19 +236,49 @@ pub mod test_framework {
         }
     }
 
-    #[derive(Config, Component, Default)]
+    #[derive(Runmd, Config, Debug, Clone, Component)]
     #[storage(specs::VecStorage)]
+    #[compile(Call)]
     pub struct Println {
+        println: String,
         stderr: Vec<String>,
         stdout: Vec<String>,
         #[root]
         plugin: Plugin,
     }
 
-    #[derive(Config, Debug, Clone, Default, Component)]
+    #[async_trait]
+    impl Call for Println {
+        async fn call(&self) -> Result<Properties, Error> {
+            println!("{:?}", self);
+            for out in self.stdout.iter() {
+                println!("{out}");
+            }
+
+            for err in self.stderr.iter() {
+                println!("{err}")
+            }
+
+            Ok(Properties::new(Identifier::new()))
+        }
+    }
+
+    impl Println {
+        pub const fn new() -> Self {
+            Self {
+                println: String::new(),
+                stderr: vec![],
+                stdout: vec![],
+                plugin: Plugin::new(),
+            }
+        }
+    }
+
+    #[derive(Runmd, Config, Debug, Clone, Component)]
     #[storage(specs::VecStorage)]
     #[compile(ThunkCall)]
     pub struct Process {
+        process: String,
         redirect: String,
         #[root]
         plugin: Plugin,
@@ -245,6 +287,7 @@ pub mod test_framework {
     impl Process {
         pub const fn new() -> Self {
             Self {
+                process: String::new(),
                 redirect: String::new(),
                 plugin: Plugin::new(),
             }
@@ -254,126 +297,92 @@ pub mod test_framework {
     #[async_trait]
     impl Call for Process {
         async fn call(&self) -> Result<Properties, Error> {
-
-            Ok(Properties::default()) 
+            println!("Calling {}", self.process);
+            Ok(Properties::default())
         }
     }
-    
+
+    struct CompileSystem<T: Compile + Clone>(T);
+    impl<'a> specs::System<'a> for CompileSystem<Process> {
+        type SystemData = (
+            Entities<'a>,
+            Read<'a, LazyUpdate>,
+            ReadStorage<'a, BuildLog>,
+        );
+
+        fn run(&mut self, (entities, lazy_update, logs): Self::SystemData) {
+            for (_, log) in (&entities, &logs).join() {
+                let log = log.clone();
+                let clone = self.0.clone();
+                lazy_update.exec_mut(move |world| {
+                    let mut wrapper = WorldWrapper::from(world);
+
+                    for (id, _, entity) in log.search_index("plugin.process.(input)") {
+                        let build_ref = BuildRef::<Properties>::new(*entity, &mut wrapper);
+
+                        if let Ok(_) = clone.compile(build_ref) {
+                            println!("plugin.process, {:#}, {:?}", id, entity);
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    struct ProcessCall;
+
+    #[derive(Component)]
+    #[storage(specs::VecStorage)]
+    struct ProcessCallTask(JoinHandle<Result<Properties, Error>>);
+
+    #[derive(Component)]
+    #[storage(specs::VecStorage)]
+    struct ProcessCallResult(Result<Properties, Error>);
+
+    impl<'a> specs::System<'a> for ProcessCall {
+        type SystemData = (
+            Entities<'a>,
+            Read<'a, LazyUpdate>,
+            Read<'a, Option<tokio::runtime::Handle>>,
+            ReadStorage<'a, Process>,
+            ReadStorage<'a, ThunkCall>,
+            WriteStorage<'a, ProcessCallTask>,
+            WriteStorage<'a, ProcessCallResult>,
+        );
+
+        fn run(
+            &mut self,
+            (entities, lazy_update, handle, processes, calls, mut tasks, mut results): Self::SystemData,
+        ) {
+            if let Some(handle) = handle.as_ref() {
+                for (e, _, call) in (&entities, &processes, &calls).join() {
+                    if results.contains(e) {
+                        continue;
+                    }
+
+                    if let Some(task) = tasks.remove(e) {
+                        if task.0.is_finished() {
+                            let handle = handle.clone();
+                            results
+                                .insert(
+                                    e,
+                                    ProcessCallResult(handle.block_on(async { task.0.await? })),
+                                )
+                                .ok();
+                        } else {
+                            tasks.insert(e, task).ok();
+                        }
+                    } else {
+                        let handle = handle.clone();
+                        let call = call.clone();
+                        lazy_update.exec_mut(move |world| {
+                            let task = handle.spawn(async move { call.call().await });
+                            let task = ProcessCallTask(task);
+                            world.write_component().insert(e, task).ok();
+                        });
+                    }
+                }
+            }
+        }
+    }
 }
-
-// #[allow(unused_imports)]
-// #[allow(dead_code)]
-// mod tests {
-//     use reality::v2::{property_list, Apply, Config, Properties};
-//     use reality::Error;
-//     use reality_derive::Apply;
-//     use reality_derive::Config;
-//     use std::path::PathBuf;
-
-//     use reality::{
-//         v2::{property_value, Property},
-//         Identifier,
-//     };
-
-//     #[derive(Config)]
-//     struct Test {
-//         #[config(config_name)]
-//         name: String,
-//         is_test: bool,
-//         n: usize,
-//     }
-
-//     impl Test {
-//         const fn new() -> Self {
-//             Self {
-//                 name: String::new(),
-//                 is_test: false,
-//                 n: 0,
-//             }
-//         }
-//     }
-
-//     #[test]
-//     fn test_config() {
-//         let mut test = Test::new();
-
-//         let ident = "test.a.b.name".parse::<Identifier>().unwrap();
-//         let property = property_value("test_name");
-//         test.config(&ident, &property).unwrap();
-
-//         let ident = "test.a.b.is_test".parse::<Identifier>().unwrap();
-//         let property = property_value(true);
-//         test.config(&ident, &property).unwrap();
-
-//         let ident = "test.a.b.n".parse::<Identifier>().unwrap();
-//         let property = property_value(100);
-//         test.config(&ident, &property).unwrap();
-
-//         assert_eq!("Config: test_name", test.name.as_str());
-//         assert_eq!(true, test.is_test);
-//         assert_eq!(100, test.n);
-
-//         let mut plugin = Plugin::new();
-//         plugin.path.canonical = true;
-//         let _ = plugin
-//             .apply("path", &Property::Empty)
-//             .expect_err("should return an error");
-
-//         let stderr_ident = ".plugin.Println.call.stderr".parse::<Identifier>().unwrap();
-
-//         let mut println = Println {
-//             stderr: vec![],
-//             stdout: vec![],
-//             plugin: Plugin::new(),
-//         };
-
-//         let list = property_list(vec!["Hello world", "Hello world 2"]);
-//         let _ = println.config(&stderr_ident, &list).unwrap();
-
-//         println!("{:?}", println.stderr);
-
-//         let redirect_plugin_settings_ident = ".plugin.Process.path.redirect"
-//             .parse::<Identifier>()
-//             .unwrap();
-//         let mut redirect_plugin_settings = Properties::new(redirect_plugin_settings_ident);
-//         redirect_plugin_settings["canonical"] = property_value(true);
-
-//         let redirect_ident = "plugin.Process.path.redirect"
-//             .parse::<Identifier>()
-//             .unwrap();
-//         let mut redirect_properties = Properties::new(redirect_ident.clone());
-//         redirect_properties["path"] = Property::Properties(redirect_plugin_settings.into());
-//         redirect_properties["redirect"] = property_value(".test/");
-//         println!("{}", redirect_properties);
-//         let redirect_properties = Property::Properties(redirect_properties.into());
-
-//         let mut process = Process {
-//             redirect: String::new(),
-//             plugin: Plugin::new(),
-//         };
-
-//         // let _id = redirect_ident.branch("path").unwrap();
-//         // process.plugin.config(&_id, &redirect_properties).unwrap();
-//         // println!("{:?}", process);
-
-//         let _ = process
-//             .config(&redirect_ident, &redirect_properties)
-//             .unwrap();
-//         println!("{:?}", process);
-
-//         let path = property_value(".random/");
-//         let _ = process
-//             .config(&redirect_ident, &path)
-//             .expect_err("should return an error");
-
-//         let path = property_value(".test/");
-//         let _ = process.config(&redirect_ident, &path).unwrap();
-//     }
-
-//     fn config_name(_: &Test, _: &Identifier, property: &Property) -> Result<String, Error> {
-//         Ok(format!(
-//             "Config: {}",
-//             property.as_symbol().unwrap_or(&String::default())
-//         ))
-//     }
-// }

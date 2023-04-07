@@ -1,3 +1,4 @@
+use crate::Error;
 use crate::Identifier;
 use crate::Value;
 use specs::Component;
@@ -30,6 +31,22 @@ pub struct Properties {
 }
 
 impl Properties {
+    /// Branches this colelction w/ a new branch owner,
+    /// 
+    pub fn branch(self: Arc<Self>, branch_owner: impl TryInto<Identifier, Error = Error>, property: Option<Property>) -> Result<Self, Error> {
+        let mut properties = Properties::new(branch_owner.try_into()?);
+        if let Some(property) = property {
+            let subject = properties.owner().subject();
+            properties[&subject] = property;
+        }
+        
+        for (name, prop) in self.iter_properties() {
+            properties[name] = prop.clone();
+        }
+
+        Ok(properties)
+    }
+
     /// Creates a new set of properties w/ name
     ///
     pub fn new(owner: Identifier) -> Self {

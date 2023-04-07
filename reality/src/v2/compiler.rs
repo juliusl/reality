@@ -119,7 +119,7 @@ impl Compiler {
         };
 
         // Clear internal state,
-        self.build_log.index.clear();
+        self.build_log.index_mut().clear();
         self.block_list = BlockList::default();
         self.world.maintain();
         self.builds.push(build);
@@ -247,7 +247,7 @@ impl PacketHandler for Compiler {
         if let Some(built) = self.lazy_build(&packet).ok() {
             trace!("Built extension packet, {:?}", built);
             self.build_log
-                .index
+                .index_mut()
                 .insert(packet.identifier.commit()?, built);
         }
 
@@ -277,11 +277,11 @@ impl Build for Compiler {
         let mut log = self.build_log.clone();
         for (ident, block) in self.block_list.blocks() {
             let e = self.lazy_build(block)?;
-            log.index.insert(ident.commit()?, e);
+            log.index_mut().insert(ident.commit()?, e);
 
             for a in block.roots() {
                 let e = self.lazy_build(a)?;
-                log.index.insert(a.ident.commit()?, e);
+                log.index_mut().insert(a.ident.commit()?, e);
             }
         }
 

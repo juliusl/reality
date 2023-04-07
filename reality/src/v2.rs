@@ -78,7 +78,7 @@ pub mod prelude;
 pub trait Runmd {
     /// Configures the compiler for a runmd-based project,
     /// 
-    fn runmd(compiler: &mut Compiler) -> Result<(), crate::Error>;
+    fn runmd(&self, compiler: &mut Compiler) -> Result<(), crate::Error>;
 }
 
 #[allow(unused_variables)]

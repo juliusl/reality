@@ -3,7 +3,7 @@ use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
 use quote::format_ident;
-use quote::quote;
+use quote::quote_spanned;
 use syn::ext::IdentExt;
 use syn::parse::Parse;
 use syn::parse2;
@@ -27,6 +27,7 @@ use syn::Visibility;
 ///
 #[derive(Clone)]
 pub(crate) struct StructField {
+    pub(crate) span: Span,
     /// Name of the field,
     ///
     pub(crate) name: Ident,
@@ -60,19 +61,19 @@ impl StructField {
     pub(crate) fn join_tuple_storage_type_expr(&self) -> TokenStream {
         let ty = &self.ty;
         if self.mutable && !self.option {
-            quote! {
+            quote_spanned! {self.span=>
                 &'a mut specs::WriteStorage<'a, #ty>
             }
         } else if self.mutable && self.option {
-            quote! {
+            quote_spanned! {self.span=>
                 specs::join::MaybeJoin<&'a mut specs::WriteStorage<'a, #ty>>
             }
         } else if !self.mutable && self.option {
-            quote! {
+            quote_spanned! {self.span=>
                 specs::join::MaybeJoin<&'a specs::ReadStorage<'a, #ty>>
             }
         } else {
-            quote! {
+            quote_spanned! {self.span=>
                 &'a specs::ReadStorage<'a, #ty>
             }
         }
@@ -83,11 +84,11 @@ impl StructField {
         let name = format_ident!("{}_storage", name);
         let ty = &self.ty;
         if self.mutable {
-            quote! {
+            quote_spanned! {self.span=>
                 #name: specs::WriteStorage<'a, #ty>
             }
         } else {
-            quote! {
+            quote_spanned! {self.span=>
                 #name: specs::ReadStorage<'a, #ty>
             }
         }
@@ -97,15 +98,15 @@ impl StructField {
         let name = &self.name;
         let name = format_ident!("{}_storage", name);
         if self.mutable {
-            quote! {
+            quote_spanned! {self.span=>
                 &mut self.#name
             }
         } else if self.option {
-            quote! {
+            quote_spanned! {self.span=>
                 self.#name.maybe()
             }
         } else {
-            quote! {
+            quote_spanned! {self.span=>
                 &self.#name
             }
         }
@@ -116,13 +117,13 @@ impl StructField {
         let name_lit = self.name_str_literal();
 
         if let Some(config_attr) = self.config.as_ref() {
-            quote! {
+            quote_spanned! {self.span=>
                 #name_lit => {
                     self.#name = #config_attr(&self, ident, property)?;
                 }
             }
         } else {
-            quote! {
+            quote_spanned! {self.span=>
                 #name_lit => {
                     if let Some(properties) = property.as_properties().and_then(|props| props[#name_lit].as_properties()) {
                         for (name, prop) in properties.iter_properties() {
@@ -141,7 +142,7 @@ impl StructField {
         let name = &self.name;
         let name_lit = self.name_str_literal();
 
-        quote! {
+        quote_spanned! {self.span=>
             #name_lit => {
                 return self.#name.apply("", property);
             }
@@ -164,18 +165,30 @@ impl StructField {
         //     &format!("{}.{}.{{ext}}.{{prop}}", name, ty),
         //     Span::call_site(),
         // );
-
-        quote! {
+        
+        quote_spanned! {self.span=>
             let #property_name = if let Some(map) = ident.interpolate(#interpolate_lit) {
                 let ext = &map["ext"];
-                let prop = &map["prop"];
-
                 let ext_ident = ident.branch(ext)?;
                 self.#name.config(&ext_ident, property)?;
                 self.#name.apply(ext, property)?
             } else {
                 reality::v2::Property::Empty
             };
+        }
+    }
+
+    pub(crate) fn runmd_root_expr(&self) -> TokenStream {
+        let runmd = if let Some(runmd_doc) = self.doc.as_ref() {
+            let lit_str = format!("+ {} .symbol # {}", self.ty, runmd_doc.value());
+            LitStr::new(&lit_str, Span::call_site())
+        } else {
+            let lit_str = format!("+ {} .symbol", self.ty);
+            LitStr::new(&lit_str, Span::call_site())
+        };
+
+        quote_spanned! {self.span=>
+            .parse_line(#runmd)?
         }
     }
 
@@ -190,18 +203,9 @@ impl StructField {
         LitStr::new(&self.name.to_string(), Span::call_site())
     }
 
-    pub(crate) fn runmd_root_expr(&self) -> TokenStream {
-        let runmd = if let Some(runmd_doc) = self.doc.as_ref() {
-            let lit_str = format!("+ {} .symbol # {}", self.ty, runmd_doc.value());
-            LitStr::new(&lit_str, Span::call_site())
-        } else {
-            let lit_str = format!("+ {} .symbol", self.ty);
-            LitStr::new(&lit_str, Span::call_site())
-        };
-
-        quote! {
-            .parse_line(#runmd)?
-        }
+    pub(crate) fn root_ext_input_pattern_lit_str(&self, ext: &Ident) -> LitStr {
+        let format = format!("{}.{}.(?input)", &self.name.to_string().to_lowercase(), ext.to_string().to_lowercase());
+        LitStr::new(&format, Span::call_site())
     }
 }
 
@@ -212,6 +216,7 @@ impl Parse for StructField {
         let mut config_attr = None::<Ident>;
         let mut doc = None::<LitStr>;
         let mut root = false;
+        let span = input.span();
 
         for attribute in attributes {
             if attribute.path().is_ident("config") {
@@ -254,6 +259,7 @@ impl Parse for StructField {
 
             let ty = input.parse::<Ident>()?;
             Ok(Self {
+                span,
                 name,
                 ty,
                 reference: true,
@@ -279,6 +285,7 @@ impl Parse for StructField {
                 let ty = input.parse::<Ident>()?;
                 input.parse::<Token![>]>()?;
                 Ok(Self {
+                    span,
                     name,
                     ty,
                     reference: false,
@@ -294,6 +301,7 @@ impl Parse for StructField {
                 input.parse::<Generics>()?;
 
                 Ok(Self {
+                    span,
                     name,
                     ty,
                     reference: false,
@@ -309,6 +317,7 @@ impl Parse for StructField {
             let ty = name.clone();
             input.parse::<Type>()?;
             Ok(Self {
+                span,
                 name,
                 ty,
                 reference: false,

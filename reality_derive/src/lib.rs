@@ -2,6 +2,8 @@ use syn::parse_macro_input;
 mod struct_data;
 use struct_data::StructData;
 mod struct_field;
+mod apply_framework;
+use apply_framework::ApplyFrameworkMacro;
 
 /// Derives Load trait implementation as well as system data impl,
 ///
@@ -120,6 +122,24 @@ pub fn derive_apply(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let struct_data = parse_macro_input!(input as StructData);
 
     struct_data.apply_trait().into()
+}
+
+/// Derives Apply trait,
+///
+#[proc_macro_derive(Runmd)]
+pub fn derive_runmd(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let struct_data = parse_macro_input!(input as StructData);
+
+    struct_data.runmd_trait().into()
+}
+
+/// Applies config_queue of all framework components to all builds, generating an action buffer for each entity in the queue. 
+/// 
+#[proc_macro]
+pub fn apply_framework(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let apply_framework = parse_macro_input!(input as ApplyFrameworkMacro);
+    
+    apply_framework.apply_framework_expr().into()
 }
 
 #[allow(unused_imports)]

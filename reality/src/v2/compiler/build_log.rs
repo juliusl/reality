@@ -11,7 +11,6 @@ use specs::HashMapStorage;
 use specs::LazyUpdate;
 use specs::WorldExt;
 use std::collections::BTreeMap;
-use std::marker::PhantomData;
 
 /// Log of built entities,
 ///
@@ -20,7 +19,7 @@ use std::marker::PhantomData;
 pub struct BuildLog {
     /// Index mapping identifiers into their current entities,
     ///
-    pub(super) index: BTreeMap<Identifier, Entity>,
+    index: BTreeMap<Identifier, Entity>,
 }
 
 impl BuildLog {
@@ -93,12 +92,7 @@ impl BuildLog {
     /// 
     pub fn find_ref<'a, T: Send + Sync + 'a>(&self, ident: impl TryInto<Identifier>, world_ref: &'a mut (impl WorldRef + Send + Sync)) -> Option<BuildRef<'a, T>> {
         if let Ok(ident) = ident.try_into() {
-            self.try_get(&ident).ok().map(|e| BuildRef {
-                world_ref: Some(world_ref),
-                entity: Some(e),
-                error: None,
-                _u: PhantomData,
-            })
+            self.try_get(&ident).ok().map(|e| BuildRef::new(e, world_ref))
         } else {
             None
         }

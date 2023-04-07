@@ -237,6 +237,14 @@ impl From<&'static str> for Value {
     }
 }
 
+impl From<&String> for Value {
+    /// Symbols are typically declared in code
+    ///
+    fn from(s: &String) -> Self {
+        Value::Symbol(s.to_string())
+    }
+}
+
 impl From<usize> for Value {
     fn from(c: usize) -> Self {
         Value::Int(c as i32)
