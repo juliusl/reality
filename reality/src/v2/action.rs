@@ -1,5 +1,4 @@
 use specs::Component;
-use specs::HashMapStorage;
 use specs::VecStorage;
 
 use crate::Error;

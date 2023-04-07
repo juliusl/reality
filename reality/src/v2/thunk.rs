@@ -26,6 +26,9 @@ mod config;
 pub use config::Config;
 pub use config::Apply;
 
+mod select;
+pub use select::Select;
+
 /// Auto thunk trait implementations for common types,
 ///
 pub mod auto {

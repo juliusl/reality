@@ -65,6 +65,8 @@ pub use thunk::Update;
 pub use thunk::Config;
 pub use thunk::Apply;
 
+use crate::Error;
+
 mod data;
 pub mod toml {
     pub use crate::v2::data::toml::DocumentBuilder;
@@ -79,6 +81,19 @@ pub trait Runmd {
     /// Configures the compiler for a runmd-based project,
     /// 
     fn runmd(&self, compiler: &mut Compiler) -> Result<(), crate::Error>;
+}
+
+/// Configures T w/ the properties returned from the ThunkCall and returns the result,
+/// 
+pub async fn call_config_into<T>(call: ThunkCall, mut component: impl Config + Into<T>) -> Result<T, Error> {
+    let properties = call.call().await?;
+
+    for (name, property) in properties.iter_properties() {
+        let ident = properties.owner().branch(name)?;
+        component.config(&ident, property)?;
+    }
+
+    Ok(component.into())
 }
 
 #[allow(unused_variables)]

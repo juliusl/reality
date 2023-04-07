@@ -48,8 +48,9 @@ async fn main() -> Result<(), Error> {
     println!("Compiled example usage: {:?}", framework_usage);
 
     // Apply framework to last build
-    compiler.update_last_build(&mut framework.clone());
+    compiler.update_last_build(&mut framework);
 
+    println!("{:#?}", framework);
     // Configure to ingest and configure frameworks
     apply_framework!(compiler, test_framework::Process, test_framework::Println);
     compiler.as_mut().maintain();
@@ -74,14 +75,16 @@ async fn main() -> Result<(), Error> {
         let build_ref = BuildRef::<ThunkCall>::new(*e, &mut compiler);
         build_ref
             .enable_async()
-            .read(|tc| {
-                let tc = tc.clone();
-                async move {
-                    tc.call().await?;
-                    Ok(())
-                }
+            .map_with::<test_framework::Println, _>(|call, println| {
+                reality::v2::call_config_into(call.clone(), println.clone())
             })
-            .await;
+            .await
+            .disable_async()
+            .transmute::<test_framework::Println>()
+            .read(|p| {
+                println!("{:?}", p);
+                Ok(())
+            });
     }
 
     export_toml(&mut compiler, ".test/usage_example.toml").await?;
@@ -179,7 +182,7 @@ pub struct Test<'a> {
 
 pub mod test_framework {
     use reality::{
-        v2::{prelude::*, BuildLog, BuildRef, ThunkCall, WorldWrapper},
+        v2::{prelude::*, BuildLog, BuildRef, ThunkCall, WorldWrapper, property_value},
         Identifier, Runmd,
     };
     use specs::{Entities, Join, LazyUpdate, Read, ReadStorage, WorldExt, WriteStorage};
@@ -216,8 +219,8 @@ pub mod test_framework {
     }
 
     impl Apply for CallConfig {
-        fn apply(&self, _: impl AsRef<str>, property: &Property) -> Result<Property, Error> {
-            println!("Applying call config");
+        fn apply(&self, name: impl AsRef<str>, property: &Property) -> Result<Property, Error> {
+            println!("Applying call config: {} -- {:?}", name.as_ref(), property);
             Ok(property.clone())
         }
     }
@@ -243,6 +246,7 @@ pub mod test_framework {
         println: String,
         stderr: Vec<String>,
         stdout: Vec<String>,
+        test: String,
         #[root]
         plugin: Plugin,
     }
@@ -259,7 +263,9 @@ pub mod test_framework {
                 println!("{err}")
             }
 
-            Ok(Properties::new(Identifier::new()))
+            let mut props = Properties::new(Identifier::new());
+            props["test"] = property_value("test written");
+            Ok(props)
         }
     }
 
@@ -269,6 +275,7 @@ pub mod test_framework {
                 println: String::new(),
                 stderr: vec![],
                 stdout: vec![],
+                test: String::new(),
                 plugin: Plugin::new(),
             }
         }

@@ -92,13 +92,13 @@ impl Framework {
             if name == property {
                 return Some((
                     format!("{:#}", other),
-                    ConfigPattern::NameInput(format!(".{}.(input)", name)),
+                    ConfigPattern::NameInput(format!("#root#.{}.(input)", name)),
                 ));
             } else {
                 // Otherwise, the pattern is {name}.{pattern}.(input)
                 return Some((
                     format!("{:#}", other),
-                    ConfigPattern::NamePropertyInput(format!(".{}.{}.(input)", name, property)),
+                    ConfigPattern::NamePropertyInput(format!("#root#.{}.{}.(input)", name, property)),
                 ));
             }
         }
@@ -157,12 +157,21 @@ impl Visitor for Framework {
 
     fn visit_extension(&mut self, identifier: &Identifier) {
         // This means this extension needs to be configured
-        if self.roots.contains(&identifier.root()) {
-            self.config_queue.push_back(identifier.clone());
-            return;
+        if let Some(map) = identifier.commit().unwrap().interpolate("#block#.#root#.(name).(ext).(property)") {
+            trace!("Precheck -- {:?}", map);
+            if self.roots.contains(&map["ext"]) {
+                self.config_queue.push_back(identifier.clone());
+                return;
+            }
         }
 
         trace!("Adding new config to framework -- {:#}", identifier);
+
+        if let Some(map) = identifier.commit().unwrap().interpolate("#block#.#root#.(name).(ext).(property)") {
+            trace!("!!!!!!! -----> {:?}", map);
+        } else {
+            trace!("Didn't interpolate, {:?}", identifier.clone().flatten());
+        }
 
         // This will update the identifier interpolation patterns to look for when applying extensions
         if let Some(root) = identifier
@@ -173,12 +182,11 @@ impl Visitor for Framework {
             .filter(|p| p.parent().is_none())
         {
             if root.len() == 1 {
-                let root = format!("{root}");
+                let root = format!("{root}").trim_matches('.').to_string();
                 let extension = format!("{identifier}");
-                let pattern = format!("{root}.(name){extension}.(property)");
-                let ident_root = root.trim_matches('.');
-                if self.roots.insert(ident_root.to_string()) {
-                    trace!("Adding new root                -- {ident_root}");
+                let pattern = format!("!#block#.#root#.{root}.(name){extension}.(property)");
+                if self.roots.insert(root.to_string()) {
+                    trace!("Adding new root                -- {root}");
                 }
                 trace!("Adding new root pattern        -- {root}/{pattern}");
                 self.patterns.push(pattern);
@@ -186,6 +194,8 @@ impl Visitor for Framework {
                 trace!("Adding new config pattern      -- {:?}", pattern);
                 self.config_patterns.push(pattern);
             }
+        } else {
+            trace!("No parent");
         }
     }
 }

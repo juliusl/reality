@@ -241,17 +241,6 @@ impl Identifier {
         self
     }
 
-    /// Returns a merged identifier,
-    ///
-    /// The current identifier will be set as the parent of the other identifier (after the other identifier is committed).
-    /// The result is the committed merged identifier.
-    ///
-    pub fn merge(&self, other: &Identifier) -> Result<Identifier, Error> {
-        let mut merged = other.commit()?;
-        merged.set_parent(Arc::new(self.commit()?));
-        merged.commit()
-    }
-
     /// Truncates the identifier by count,
     ///
     pub fn truncate(&self, count: usize) -> Result<Identifier, Error> {
@@ -304,22 +293,30 @@ impl Identifier {
                         return None;
                     }
                 }
+                StringInterpolationTokens::NotMatchTags(ref tags) if sint.start.is_none() => {
+                    for ancestor in self.ancestors() {
+                        if tags.is_subset(&ancestor.tags) {
+                            return None;
+                        }
+                    }
+                }
                 // Skip ahead to the first tag match
-                StringInterpolationTokens::MatchTags(tags) if sint.start.is_none() => {
-                    let mut _lex = StringInterpolationTokens::lexer(&buf);
-
+                StringInterpolationTokens::MatchTags(ref tags) if sint.tokens.is_empty() => {
                     let mut found = false;
-                    while let Some(token) = _lex.next() {
-                        match token {
-                            StringInterpolationTokens::MatchTags(_tags)
-                                if tags.is_subset(&_tags) =>
-                            {
-                                let remaining = _lex.remainder().to_string();
-                                buf = remaining;
-                                found = true;
-                                break;
-                            }
-                            _ => {}
+                    buf = format!("{:#}", self);
+                    for ancestor in self.ancestors() {
+                        if tags.is_subset(&ancestor.tags) {
+                            // trace!("replacing {:?}", ancestor.tags);
+
+                            let mut cleared = ancestor.clone();
+                            cleared.clear_tags();
+                            let cleared = &format!("{}", cleared);
+                            let ancestor = &format!("{:#}", ancestor);
+                            buf = buf.replace(ancestor, cleared).trim_start_matches('.').to_string();
+                            // trace!("replaced {} --> {} --> {}", ancestor, cleared, buf);
+                            sint.start = buf.find(cleared);
+                            found = true;
+                            break;
                         }
                     }
 
@@ -348,7 +345,7 @@ impl Identifier {
             trace!("rest: {rest}");
             if let Some(ident) = rest.parse::<Identifier>().ok() {
                 trace!("ident: {:#}", ident);
-                format!("{:#}", ident)
+                format!("{:#}", ident).trim_start_matches("##").to_string()
             } else {
                 return None;
             }
@@ -393,6 +390,13 @@ impl Identifier {
                     | StringInterpolationTokens::OptionalSuffixAssignment(name) => {
                         map.insert(name, part.trim_matches('"').to_string());
                     }
+                    StringInterpolationTokens::NotMatchTags(tags) => {
+                        if self.contains_tags(&tags) {
+                            return None;
+                        } else {
+                            continue;
+                        }
+                    }
                     StringInterpolationTokens::MatchTags(tags) => {
                         if !self.contains_tags(&tags) {
                             return None;
@@ -429,6 +433,7 @@ impl Identifier {
             start = parent.deref().clone();
         }
 
+        parts.push(self.clone());
         parts
     }
 
@@ -526,7 +531,7 @@ struct StringInterpolation {
 ///
 /// String interpolation would return an empty result
 ///
-#[derive(Logos, Debug)]
+#[derive(Logos, Debug, Clone)]
 enum StringInterpolationTokens {
     /// Match this token, escaped w/ quotes,
     ///
@@ -538,8 +543,12 @@ enum StringInterpolationTokens {
     Match(String),
     /// Match tags,
     ///
-    #[regex("[.]?[#][a-zA-Z0-9:]+[#][.]?", on_match_tags)]
+    #[regex("[.]?[#][a-zA-Z0-9:]*[#][.]?", on_match_tags)]
     MatchTags(BTreeSet<String>),
+    /// Not match tags,
+    /// 
+    #[regex("[.]?[!][#][a-zA-Z0-9:]*[#][.]?", on_match_tags)]
+    NotMatchTags(BTreeSet<String>),
     /// Assign the value from the identifier,
     ///
     #[regex("[(][a-zA-Z-0-9]+[)]", on_assignment)]
@@ -583,7 +592,7 @@ fn on_match_tags(lex: &mut Lexer<StringInterpolationTokens>) -> BTreeSet<String>
     };
 
     let mut tags = BTreeSet::new();
-    for tag in lex.slice()[start..end].trim_matches('#').split(":") {
+    for tag in lex.slice()[start..end].trim_start_matches("!").trim_matches('#').split(":") {
         tags.insert(tag.to_string());
     }
 
@@ -674,9 +683,43 @@ mod tests {
         assert_eq!("c", map["let"]);
 
         let map = test
-            .interpolate("#debug#.(let)")
+            .interpolate("#debug#.(a).(b).(let)")
             .expect("should interpolate");
         assert_eq!("c", map["let"]);
+
+        let test = r##"a.b.#block#.c.d.#root#.e.f.g."test""##;
+        let test: Identifier = test.parse().expect("should be parsed");
+
+        let map = test
+            .interpolate("#root#.(c).(d).(e).(f).(g).(?value)")
+            .expect("should interpolate");
+        assert_eq!("g", map["g"], "{:?}", map);
+
+        assert!(test.interpolate("!#block#.#root#.e.f.(g).(?value)").is_none());
+
+
+        let test = r##"plugin.Process.#root#.path.redirect"##;
+        let test: Identifier = test.parse().expect("should be parsed");
+
+        let map = test
+            .interpolate("!#block#.#root#.plugin.(name).path.(property)")
+            .expect("should interpolate");
+        println!("{:?}", map);
+
+
+        let test = r##"a.app.#block#.plugin.Process.#root#.path.redirect"##;
+        let test: Identifier = test.parse().expect("should be parsed");
+
+        assert_eq!(None, test
+            .interpolate("!#block#.#root#.plugin.(name).path.(property)")
+            .map(|_| assert!(false, "should not interpolate")));
+
+        let test = r##".plugin.Println.#root#.call.stdout"##;        
+        let test: Identifier = test.parse().expect("should be parsed");
+        let map = test
+            .interpolate("!#block#.#root#.plugin.(name).call.(property)")
+            .expect("should interpolate");
+        println!("{:?}", map);
     }
 
     #[test]
@@ -870,16 +913,6 @@ mod tests {
         let ident: Identifier = "a.b.c".parse().expect("should parse");
 
         ident.truncate(3).expect("should error");
-    }
-
-    #[test]
-    fn test_merge() {
-        let a = "main.id".parse::<Identifier>().expect("should parse");
-        let b = "other.id".parse::<Identifier>().expect("should parse");
-
-        let ab = a.merge(&b).expect("should merge");
-
-        assert_eq!("main.id.other.id", ab.to_string().as_str());
     }
 
     /// Test expected formatting w/ parent set,

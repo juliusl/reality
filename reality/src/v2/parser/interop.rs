@@ -141,9 +141,11 @@ impl MakePacket for AttributeParser {
 
         match self.keyword().unwrap_or(&Keywords::Error) {
             Keywords::Add => {
+                let mut identifier = identifier.clone();
+                identifier.add_tag("root");
                 let mut packet = Packet {
                     block_identifier: block_identifier.clone(),
-                    identifier: identifier.clone(),
+                    identifier,
                     keyword: Keywords::Add,
                     actions: vec![action::with(
                         format!("{}", self.attr_ident().cloned().unwrap_or_default()),

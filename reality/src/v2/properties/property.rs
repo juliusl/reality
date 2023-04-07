@@ -1,5 +1,4 @@
 use crate::Value;
-use crate::v2::Visitor;
 use std::fmt::Display;
 use std::ops::Index;
 use std::sync::Arc;

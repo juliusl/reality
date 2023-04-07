@@ -132,6 +132,13 @@ impl StructField {
                         }
                     } else {
                         reality::v2::Config::config(&mut self.#name, ident, property)?;
+
+                        if let Some(properties) = property.as_properties() {
+                            for (name, prop) in properties.iter_properties().filter(|(name, _)| name.as_str() != #name_lit) {
+                                let ident = properties.owner().branch(name)?;
+                                self.config(&ident, prop)?;
+                            }
+                        }
                     }
                 }
             }
@@ -144,7 +151,7 @@ impl StructField {
 
         quote_spanned! {self.span=>
             #name_lit => {
-                return self.#name.apply("", property);
+                return self.#name.apply(#name_lit, property);
             }
         }
     }
@@ -157,7 +164,7 @@ impl StructField {
         let property_name = self.root_property_name_ident();
         
         let interpolate_lit = LitStr::new(
-            &format!("{}.{}.(ext).(prop)", name, ty),
+            &format!("#root#.{}.{}.(ext).(prop)", name, ty),
             Span::call_site(),
         );
 
