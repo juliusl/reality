@@ -165,7 +165,7 @@ impl StructField {
         let property_name = self.root_property_name_ident();
         
         let interpolate_lit = LitStr::new(
-            &format!("#root#.{}.{}.(ext).(prop)", name, ty),
+            &format!("#root#.{}.{}.(ext).(?prop)", name, ty),
             Span::call_site(),
         );
 

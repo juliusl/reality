@@ -158,7 +158,7 @@ impl Visitor for Framework {
     fn visit_extension(&mut self, identifier: &Identifier) {
         // This means this extension needs to be configured
         if let Some(map) = identifier.commit().unwrap().interpolate("#block#.#root#.(name).(ext).(property)") {
-            trace!("Precheck -- {:?}", map);
+            trace!("Queueing config -- {:?}", map);
             if self.roots.contains(&map["ext"]) {
                 self.config_queue.push_back(identifier.clone());
                 return;
@@ -167,8 +167,23 @@ impl Visitor for Framework {
 
         trace!("Adding new config to framework -- {:#}", identifier);
 
-        if let Some(map) = identifier.commit().unwrap().interpolate("#block#.#root#.(name).(ext).(property)") {
+        if let Some(map) = identifier.commit().unwrap().interpolate("!#block#.#root#.(root).(ext).(?property)") {
             trace!("!!!!!!! -----> {:?}", map);
+            if let Some(pattern) = map.get("property").and_then(|_| self.check(identifier) ) {
+                trace!("Adding new config pattern      -- {:?}", pattern);
+                self.config_patterns.push(pattern);
+            } else {
+                let root = &map["root"];
+                let extension = &map["ext"];
+                let root = format!("{root}").trim_matches('.').to_string();
+                let pattern = format!("!#block#.#root#.{root}.(name).{extension}.(property)");
+                if self.roots.insert(root.to_string()) {
+                        trace!("Adding new root                -- {root}");
+                }
+                trace!("Adding new root pattern        -- {root}/{pattern}");
+                self.patterns.push(pattern);
+            }
+            return;
         } else {
             trace!("Didn't interpolate, {:?}", identifier.clone().flatten());
         }
@@ -231,6 +246,8 @@ impl Compile for Framework {
                                     map["input"].clone(),
                                 ));
                                 owner = owner.truncate(1)?;
+                                owner.add_tag("root");
+                                trace!("Truncated --> {:#}", owner);
                             }
                         }
                         ConfigPattern::NamePropertyInput(config_pattern) => {
@@ -340,7 +357,7 @@ pub fn configure(world: &mut World) {
                 }
 
                 while let Some(config) = framework.config_queue.pop_front() {
-                    trace!("Searching build {:?} for {:#}", e, config);
+                    trace!("Lazily searching build {:?} for {:#}", e, config);
                     let log = log.clone();
                     let config = config.clone();
                     let framework = framework.clone();

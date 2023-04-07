@@ -10,6 +10,7 @@ use reality::v2::Runmd;
 use reality::v2::ThunkCall;
 use reality::Error;
 use reality::Identifier;
+use reality::v2::command::import_toml;
 use reality_derive::Load;
 use specs::Entity;
 use tracing_subscriber::EnvFilter;
@@ -34,26 +35,36 @@ async fn main() -> Result<(), Error> {
     // Compile the example framework runmd
     let mut compiler = Compiler::new().with_docs();
 
-    let framework = compile_example_framework(&mut compiler)?;
-    println!("Compiled framework: {:?}", framework);
-
-    // Configure framework from build
+    let framework = import_toml(&mut compiler, ".test/plugin_framework.toml").await?;
     let mut framework = Framework::new(framework);
     compiler.visit_last_build(&mut framework);
-    println!("Configuring framework {:#?}", framework);
-    export_toml(&mut compiler, ".test/plugin_framework.toml").await?;
 
-    // Compile example usage runmd
-    let framework_usage = compile_example_usage(&mut compiler)?;
-    println!("Compiled example usage: {:?}", framework_usage);
-
-    // Apply framework to last build
+    let _ = import_toml(&mut compiler, ".test/usage_example.toml").await?;
     compiler.update_last_build(&mut framework);
-
     println!("{:#?}", framework);
-    // Configure to ingest and configure frameworks
     apply_framework!(compiler, test_framework::Process, test_framework::Println);
-    compiler.as_mut().maintain();
+
+    // let framework = compile_example_framework(&mut compiler)?;
+    // println!("Compiled framework: {:?}", framework);
+
+    // // Configure framework from build
+    // let mut framework = Framework::new(framework);
+    // compiler.visit_last_build(&mut framework);
+    // println!("Configuring framework {:#?}", framework);
+    // export_toml(&mut compiler, ".test/plugin_framework.toml").await?;
+
+    // // Compile example usage runmd
+    // let framework_usage = compile_example_usage(&mut compiler)?;
+    // println!("Compiled example usage: {:?}", framework_usage);
+
+    // // Apply framework to last build
+    // compiler.update_last_build(&mut framework);
+
+    // println!("{:#?}", framework);
+    // // Configure to ingest and configure frameworks
+    // apply_framework!(compiler, test_framework::Process, test_framework::Println);
+    // compiler.as_mut().maintain();
+    // export_toml(&mut compiler, ".test/usage_example.toml").await?;
 
     let log = compiler.last_build_log().unwrap();
 
@@ -87,7 +98,6 @@ async fn main() -> Result<(), Error> {
             });
     }
 
-    export_toml(&mut compiler, ".test/usage_example.toml").await?;
     Ok(())
 }
 
@@ -164,6 +174,7 @@ const EXAMPLE_USAGE: &'static str = r##"
 : RUST_LOG              .env        reality=trace
 :                       .redirect   .test/test.output
 <plugin>                .process    python              # This process will be started
+:                       .redirect   .test/test.output   
 <plugin> .println pt2
 : .stdout   Hello World 2
 : .stdout   Goodbye World 2 
@@ -305,6 +316,7 @@ pub mod test_framework {
     impl Call for Process {
         async fn call(&self) -> Result<Properties, Error> {
             println!("Calling {}", self.process);
+            println!("{:?}", self);
             Ok(Properties::default())
         }
     }
