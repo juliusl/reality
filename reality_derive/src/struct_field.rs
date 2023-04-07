@@ -25,6 +25,7 @@ use syn::Visibility;
 /// - ignore
 /// - config(handler)
 ///
+#[allow(dead_code)]
 #[derive(Clone)]
 pub(crate) struct StructField {
     pub(crate) span: Span,
@@ -185,6 +186,7 @@ impl StructField {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn runmd_root_expr(&self) -> TokenStream {
         let runmd = if let Some(runmd_doc) = self.doc.as_ref() {
             let lit_str = format!("+ {} .symbol # {}", self.ty, runmd_doc.value());

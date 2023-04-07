@@ -496,13 +496,15 @@ pub fn property_list(list: impl IntoIterator<Item = impl Into<Value>>) -> Proper
     Property::List(list)
 }
 
+#[allow(unused_imports)]
 mod tests {
     use super::{Property, property_value};
 
     #[test]
-    fn test() {
+    fn test_into_string() {
         let t: String;
         let tp = property_value("test");
         t = tp.into();
+        assert_eq!("test", t.as_str());
     }
 }
