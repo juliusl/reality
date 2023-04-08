@@ -278,6 +278,14 @@ impl StructData {
                         Ok(reality::v2::thunk_listen(b.clone()))
                     })
                 })
+            } else if let Some(ident) = c.get_ident().filter(|i| i.to_string().starts_with("Thunk")) {
+                let name = ident.to_string().replace("Thunk", "");
+                let name = format_ident!("thunk_{}", name.to_lowercase());
+                Some(quote! {
+                    .map(|b|{
+                        Ok(#name(b.clone()))
+                    })
+                })
             } else {
                 None
             }

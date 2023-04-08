@@ -126,7 +126,7 @@ pub fn derive_apply(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     struct_data.apply_trait().into()
 }
 
-/// Derives Apply trait,
+/// Derives Runmd trait,
 ///
 #[proc_macro_derive(Runmd)]
 pub fn derive_runmd(input: proc_macro::TokenStream) -> proc_macro::TokenStream {

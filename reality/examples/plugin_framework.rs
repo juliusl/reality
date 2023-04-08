@@ -1,4 +1,5 @@
 use reality::v2::prelude::*;
+use test_framework::TestA;
 use tracing_subscriber::EnvFilter;
 
 /// Example of a plugin framework compiler,
@@ -52,6 +53,10 @@ async fn main() -> Result<(), Error> {
     for (_, _, e) in log.search_index("plugin.println") {
         let build_ref = BuildRef::<ThunkCall>::new(*e, &mut compiler);
         build_ref
+            .read_with::<test_framework::ThunkTestA>(|_, ta| {
+                ta.testa();
+                Ok(())
+            })
             .enable_async()
             .map_with::<test_framework::Println, _>(|call, println| {
                 reality::v2::call_config_into(call.clone(), println.clone())
@@ -255,9 +260,21 @@ pub mod test_framework {
         }
     }
 
+    thunk! {
+        pub trait TestA {
+            fn testa(&self);
+        }
+    }
+
+    impl TestA for Println {
+        fn testa(&self) {
+            println!("TestA impl for Println");
+        }
+    }
+
     #[derive(Runmd, Config, Debug, Clone, Component)]
     #[storage(specs::VecStorage)]
-    #[compile(Call)]
+    #[compile(Call, ThunkTestA)]
     pub struct Println {
         println: String,
         stderr: Vec<String>,
