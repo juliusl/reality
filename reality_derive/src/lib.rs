@@ -1,9 +1,11 @@
 use syn::parse_macro_input;
 mod struct_data;
 use struct_data::StructData;
-mod struct_field;
 mod apply_framework;
+mod struct_field;
 use apply_framework::ApplyFrameworkMacro;
+mod thunk;
+use thunk::ThunkMacroArguments;
 
 /// Derives Load trait implementation as well as system data impl,
 ///
@@ -133,17 +135,60 @@ pub fn derive_runmd(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     struct_data.runmd_trait().into()
 }
 
-/// Applies config_queue of all framework components to all builds, generating an action buffer for each entity in the queue. 
-/// 
+/// Applies config_queue of all framework components to all builds, generating an action buffer for each entity in the queue.
+///
 #[proc_macro]
 pub fn apply_framework(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let apply_framework = parse_macro_input!(input as ApplyFrameworkMacro);
-    
+
     apply_framework.apply_framework_expr().into()
+}
+
+/// Generates support code for a thunk type,
+///
+/// Example,
+///
+/// ```
+/// thunk! MyTrait {
+///     fn my_trait(&self) -> () {
+///         ()
+///     }
+/// }
+/// ```
+///
+/// Generates code like,
+///
+/// ```
+/// pub trait MyTrait {
+///     fn my_trait(&self) -> () {
+///         ()
+///     }
+/// }
+///
+/// pub type ThunkMyTrait = Thunk<Arc<dyn MyTrait>>;
+///
+/// pub thunk_mytrait(mytrait: impl MyTrait + 'static) -> ThunkMyTrait {
+///     ...
+/// }
+///
+/// impl<T: MyTrait + Send + Sync> MyTrait for Thunk<T> {
+///     fn my_trait(&self) -> () {
+///         &self.my_trait()
+///     }
+/// }
+/// ```
+///
+#[proc_macro]
+pub fn thunk(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let thunk_macro = parse_macro_input!(input as ThunkMacroArguments);
+
+    thunk_macro.trait_expr().into()
 }
 
 #[allow(unused_imports)]
 mod tests {
+    use crate::thunk::ThunkMacroArguments;
+    use crate::thunk::ThunkTraitFn;
     use crate::StructData;
     use proc_macro2::Ident;
     use proc_macro2::Span;
@@ -163,6 +208,28 @@ mod tests {
     use syn::LitStr;
     use syn::Token;
     use syn::Visibility;
+
+    #[test]
+    fn test_thunk_macro() {
+        let ts = <proc_macro2::TokenStream as std::str::FromStr>::from_str(
+            r#"
+            /// Doc comment
+            pub trait MyTrait {
+                /// test
+                fn test(&self, test: usize) -> String;
+
+                fn test2() -> String {
+                    String::new()
+                }
+            }
+    "#,
+        )
+        .unwrap();
+
+        let input = parse2::<ThunkMacroArguments>(ts).unwrap();
+
+        println!("{:#}", input.trait_expr());
+    }
 
     #[test]
     fn test_derive_apply() {

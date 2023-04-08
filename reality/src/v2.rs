@@ -55,15 +55,16 @@ pub use thunk::Call;
 pub use thunk::AsyncCompile;
 pub use thunk::Compile;
 pub use thunk::Listen;
+pub use thunk::Update;
+pub use thunk::Config;
+pub use thunk::Apply;
 pub use thunk::Listener;
 pub use thunk::Thunk;
 pub use thunk::ThunkBuild;
 pub use thunk::ThunkCall;
 pub use thunk::ThunkCompile;
 pub use thunk::ThunkListen;
-pub use thunk::Update;
-pub use thunk::Config;
-pub use thunk::Apply;
+pub use thunk::ThunkUpdate;
 
 use crate::Error;
 

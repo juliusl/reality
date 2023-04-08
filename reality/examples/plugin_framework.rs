@@ -1,18 +1,4 @@
-use reality::apply_framework;
-use reality::v2::command::export_toml;
-use reality::v2::command::import_toml;
-use reality::v2::BuildRef;
-use reality::v2::Call;
-use reality::v2::Compiler;
-use reality::v2::Framework;
-use reality::v2::Parser;
-use reality::v2::Properties;
-use reality::v2::Runmd;
-use reality::v2::ThunkCall;
-use reality::Error;
-use reality::Identifier;
-use reality_derive::Load;
-use specs::Entity;
+use reality::v2::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 /// Example of a plugin framework compiler,
@@ -214,12 +200,10 @@ pub struct Test<'a> {
 
 pub mod test_framework {
     use reality::{
-        v2::{prelude::*, property_value, BuildLog, BuildRef, ThunkCall, WorldWrapper},
+        v2::{prelude::*, property_value, BuildRef},
         Identifier, Runmd,
     };
-    use specs::{Entities, Join, LazyUpdate, Read, ReadStorage, WorldExt, WriteStorage};
     use std::path::PathBuf;
-    use tokio::task::JoinHandle;
 
     #[derive(Config, Clone, Apply, Debug, Default)]
     pub struct Plugin {
@@ -339,90 +323,6 @@ pub mod test_framework {
             println!("Calling {}", self.process);
             println!("{:?}", self);
             Ok(Properties::default())
-        }
-    }
-
-    struct CompileSystem<T: Compile + Clone>(T);
-    impl<'a> specs::System<'a> for CompileSystem<Process> {
-        type SystemData = (
-            Entities<'a>,
-            Read<'a, LazyUpdate>,
-            ReadStorage<'a, BuildLog>,
-        );
-
-        fn run(&mut self, (entities, lazy_update, logs): Self::SystemData) {
-            for (_, log) in (&entities, &logs).join() {
-                let log = log.clone();
-                let clone = self.0.clone();
-                lazy_update.exec_mut(move |world| {
-                    let mut wrapper = WorldWrapper::from(world);
-
-                    for (id, _, entity) in log.search_index("plugin.process.(input)") {
-                        let build_ref = BuildRef::<Properties>::new(*entity, &mut wrapper);
-
-                        if let Ok(_) = clone.compile(build_ref) {
-                            println!("plugin.process, {:#}, {:?}", id, entity);
-                        }
-                    }
-                });
-            }
-        }
-    }
-
-    struct ProcessCall;
-
-    #[derive(Component)]
-    #[storage(specs::VecStorage)]
-    struct ProcessCallTask(JoinHandle<Result<Properties, Error>>);
-
-    #[derive(Component)]
-    #[storage(specs::VecStorage)]
-    struct ProcessCallResult(Result<Properties, Error>);
-
-    impl<'a> specs::System<'a> for ProcessCall {
-        type SystemData = (
-            Entities<'a>,
-            Read<'a, LazyUpdate>,
-            Read<'a, Option<tokio::runtime::Handle>>,
-            ReadStorage<'a, Process>,
-            ReadStorage<'a, ThunkCall>,
-            WriteStorage<'a, ProcessCallTask>,
-            WriteStorage<'a, ProcessCallResult>,
-        );
-
-        fn run(
-            &mut self,
-            (entities, lazy_update, handle, processes, calls, mut tasks, mut results): Self::SystemData,
-        ) {
-            if let Some(handle) = handle.as_ref() {
-                for (e, _, call) in (&entities, &processes, &calls).join() {
-                    if results.contains(e) {
-                        continue;
-                    }
-
-                    if let Some(task) = tasks.remove(e) {
-                        if task.0.is_finished() {
-                            let handle = handle.clone();
-                            results
-                                .insert(
-                                    e,
-                                    ProcessCallResult(handle.block_on(async { task.0.await? })),
-                                )
-                                .ok();
-                        } else {
-                            tasks.insert(e, task).ok();
-                        }
-                    } else {
-                        let handle = handle.clone();
-                        let call = call.clone();
-                        lazy_update.exec_mut(move |world| {
-                            let task = handle.spawn(async move { call.call().await });
-                            let task = ProcessCallTask(task);
-                            world.write_component().insert(e, task).ok();
-                        });
-                    }
-                }
-            }
         }
     }
 }

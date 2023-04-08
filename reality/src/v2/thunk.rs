@@ -118,7 +118,7 @@ pub use listen::ERROR_NOT_ACCEPTED;
 pub struct Thunk<T: Send + Sync + 'static> {
     /// Thunk type,
     ///
-    thunk: T,
+    pub thunk: T,
 }
 
 /// Type-alias for a thunk call component,
