@@ -2,13 +2,14 @@ use proc_macro2::Ident;
 use proc_macro2::TokenStream;
 use quote::format_ident;
 use quote::quote;
-use quote::ToTokens;
 use quote::quote_spanned;
+use quote::ToTokens;
 use syn::parse::Parse;
 use syn::parse2;
 use syn::Data;
 use syn::DeriveInput;
 use syn::FieldsNamed;
+use syn::LitStr;
 use syn::Path;
 
 use crate::struct_field::StructField;
@@ -18,8 +19,14 @@ use crate::struct_field::StructField;
 /// Generates impl's for Load, Config, and Apply traits
 ///
 pub(crate) struct StructData {
+    /// Name of the struct,
+    ///
     name: Ident,
+    /// Parsed struct fields,
+    ///
     fields: Vec<StructField>,
+    /// Types to add to dispatch trait impl,
+    ///
     compile: Vec<Path>,
 }
 
@@ -98,37 +105,34 @@ impl StructData {
     ///
     pub(crate) fn config_trait(&self) -> TokenStream {
         let name = &self.name;
-        let map = self
+
+        let root_config_pattern_match = self
             .fields
             .iter()
-            .filter(|f| !f.root)
-            .map(|f| f.config_assign_property_expr());
-        let fields = quote! {
-            #( #map ),*
-        };
+            .filter(|f| f.root)
+            .map(|f| {
+                let name = f.root_name();
+                let lit = LitStr::new(&name.to_string(), f.span);
+                quote_spanned! {lit.span()=>
+                    #lit => {
+                        let ident = format!("{:#}", ident).replace(#lit, "").trim_matches('.').parse::<reality::Identifier>()?;
+                        reality::v2::Config::config(&mut self.#name, &ident, property)?;
+                        return Ok(());
+                    }
+                }
+            });
 
         let root_fields = self
             .fields
             .iter()
             .filter(|f| f.root)
-            .map(|f| (f.root_property_name_ident(), f.config_root_expr(name)))
-            .collect::<Vec<_>>();
+            .map(|f| (f.root_name()));
 
-        let root_apply = root_fields.iter().map(|(_, a)| a);
-        let root_apply = quote! {
-            #( #root_apply )*
-        };
-
-        let root_select = root_fields.iter().map(|(i, _)| {
-            quote! {
-                if #i != reality::v2::Property::Empty {
-                    break &#i;
-                }
-            }
-        });
-        let root_select = quote! {
-            #( #root_select )*
-        };
+        let ext_fields = self
+            .fields
+            .iter()
+            .filter(|f| !f.root)
+            .map(|f| f.config_apply_root_expr(root_fields.clone().collect()));
 
         let compile_trait = if !self.compile.is_empty() {
             self.compile_trait()
@@ -136,45 +140,27 @@ impl StructData {
             quote! {}
         };
 
-        if !root_fields.is_empty() {
-            quote! {
-                #[allow(non_snake_case)]
-                impl reality::v2::Config for #name {
-                    fn config(&mut self, ident: &reality::Identifier, property: &reality::v2::Property) -> Result<(), reality::Error> {
-                        #root_apply
-
-                        let property = loop {
-                            #root_select
-
-                            break property;
-                        };
-
-                        match ident.subject().as_str() {
-                            #fields
-                            _ => {}
+        quote! {
+            #[allow(non_snake_case)]
+            impl reality::v2::Config for #name {
+                fn config(&mut self, ident: &reality::Identifier, property: &reality::v2::Property) -> Result<(), reality::Error> {
+                    match ident.root().as_str() {
+                        #( #root_config_pattern_match ),*
+                        _ => {
                         }
-
-                        Ok(())
                     }
-                }
 
-                #compile_trait
-            }
-        } else {
-            quote! {
-                impl reality::v2::Config for #name {
-                    fn config(&mut self, ident: &reality::Identifier, property: &reality::v2::Property) -> Result<(), reality::Error> {
-                        match ident.subject().as_str() {
-                            #fields
-                            _ => {}
+                    match ident.subject().as_str() {
+                        #( #ext_fields ),*
+                        _ => {
                         }
-
-                        Ok(())
                     }
-                }
 
-                #compile_trait
+                    Ok(())
+                }
             }
+
+            #compile_trait
         }
     }
 
@@ -278,7 +264,8 @@ impl StructData {
                         Ok(reality::v2::thunk_listen(b.clone()))
                     })
                 })
-            } else if let Some(ident) = c.get_ident().filter(|i| i.to_string().starts_with("Thunk")) {
+            } else if let Some(ident) = c.get_ident().filter(|i| i.to_string().starts_with("Thunk"))
+            {
                 let name = ident.to_string().replace("Thunk", "");
                 let name = format_ident!("thunk_{}", name.to_lowercase());
                 Some(quote! {
@@ -321,13 +308,13 @@ impl StructData {
         let name = &self.name;
 
         // Mapping compile
-        let compile_map = self.root_fields().map(|f| { 
+        let compile_map = self.root_fields().map(|f| {
             let pattern = f.root_ext_input_pattern_lit_str(name);
-            quote_spanned! {f.span=> 
+            quote_spanned! {f.span=>
                 if let Some(log) = compiler.last_build_log() {
                     for (_, _, entity) in log.search_index(#pattern) {
                         let dispatch_ref = DispatchRef::<Properties>::new(*entity, compiler);
-            
+
                         reality::v2::Dispatch::dispatch(self, dispatch_ref)?;
                     }
                 }

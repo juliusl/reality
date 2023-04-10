@@ -124,7 +124,7 @@ pub fn derive_load(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// }
 /// ```
 ///
-#[proc_macro_derive(Config, attributes(config, root, compile))]
+#[proc_macro_derive(Config, attributes(config, root, ext, compile))]
 pub fn derive_config(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let struct_data = parse_macro_input!(input as StructData);
 
@@ -206,41 +206,43 @@ pub fn dispatch_signature(input: proc_macro::TokenStream) -> proc_macro::TokenSt
     let generics = &item_enum.generics;
     let vis = &item_enum.vis;
 
-    let interpolations = item_enum
-        .variants
-        .iter()
-        .filter_map(|variant| {
-            variant
-                .attrs
-                .iter()
-                .find(|a| a.path().is_ident("interpolate"))
-                .map(|a| (a, variant.clone()))
-        });
+    let interpolations = item_enum.variants.iter().filter_map(|variant| {
+        variant
+            .attrs
+            .iter()
+            .find(|a| a.path().is_ident("interpolate"))
+            .map(|a| (a, variant.clone()))
+    });
 
-    let variants = interpolations
-        .clone()
-        .filter_map(|(attr, variant)| {
-            if let Some(expr) = attr.parse_args::<LitStr>().ok() {
-                let name = variant.ident.clone();
-                let expr = InterpolationExpr { name, expr}.signature_struct();
-                Some( quote_spanned!{variant.span()=>
-                    #expr
-                })
-            } else {
-                None
-            }
-        });
-
-    let variant_matches = interpolations.clone().filter_map(|(attr, variant)| {
+    let variants = interpolations.clone().filter_map(|(attr, variant)| {
         if let Some(expr) = attr.parse_args::<LitStr>().ok() {
-            let expr = InterpolationExpr { name: variant.ident.clone(), expr}.impl_expr(name.clone());
-            Some( quote_spanned!{variant.span()=>
+            let name = variant.ident.clone();
+            let expr = InterpolationExpr { name, expr }.signature_struct();
+            Some(quote_spanned! {variant.span()=>
                 #expr
             })
         } else {
             None
         }
     });
+
+    let variant_matches = interpolations.clone().filter_map(|(attr, variant)| {
+        if let Some(expr) = attr.parse_args::<LitStr>().ok() {
+            let expr = InterpolationExpr {
+                name: variant.ident.clone(),
+                expr,
+            }
+            .impl_expr(name.clone());
+            Some(quote_spanned! {variant.span()=>
+                #expr
+            })
+        } else {
+            None
+        }
+    });
+    let variant_matches = quote::quote! {
+        #( #variant_matches )*
+    };
 
     quote::quote! {
         #[derive(Debug)]
@@ -252,9 +254,17 @@ pub fn dispatch_signature(input: proc_macro::TokenStream) -> proc_macro::TokenSt
             #vis fn get_matches(build_log: BuildLog) -> Vec<#name #generics> {
                 let mut matches = vec![];
 
-                for (ident, entity) in build_log.index().iter() { 
-                    #( #variant_matches )*
+                for (ident, entity) in build_log.index().iter() {
+                    #variant_matches
                 }
+
+                matches
+            }
+
+            #vis fn get_match(ident: &crate::Identifier) -> Vec<#name #generics> {
+                let mut matches = vec![];
+
+                #variant_matches
 
                 matches
             }

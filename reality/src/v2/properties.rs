@@ -254,7 +254,9 @@ impl Visitor for Properties {
 
 impl Display for Properties {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Properties: {:#}", self.owner())?;
+        writeln!(f, "Owner: {} -- {:#}", self.owner(), self.owner())?;
+        writeln!(f, "Root: {:#}", self.owner().root())?;
+        writeln!(f, "Subject: {:#}", self.owner().subject())?;
         for (name, property) in self.iter_properties() {
             if let Some(props) = property.as_properties() {
                 writeln!(f, "\t{name}: {}", props)?;

@@ -1,9 +1,9 @@
 use proc_macro2::Ident;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
-use quote::ToTokens;
 use quote::format_ident;
 use quote::quote_spanned;
+use quote::ToTokens;
 use syn::ext::IdentExt;
 use syn::parse::Parse;
 use syn::parse2;
@@ -53,8 +53,11 @@ pub(crate) struct StructField {
     /// True if this field has a #[root] attribute,
     ///
     pub(crate) root: bool,
-    /// Sets the first doc comment from in the struct
+    /// True if this field has a #[ext] attribute,
     /// 
+    pub(crate) ext: bool,
+    /// Sets the first doc comment from in the struct
+    ///
     pub(crate) doc: Option<LitStr>,
 }
 
@@ -113,39 +116,6 @@ impl StructField {
         }
     }
 
-    pub(crate) fn config_assign_property_expr(&self) -> TokenStream {
-        let name = &self.name;
-        let name_lit = self.name_str_literal();
-
-        if let Some(config_attr) = self.config.as_ref() {
-            quote_spanned! {self.span=>
-                #name_lit => {
-                    self.#name = #config_attr(&self, ident, property)?;
-                }
-            }
-        } else {
-            quote_spanned! {self.span=>
-                #name_lit => {
-                    if let Some(properties) = property.as_properties().and_then(|props| props[#name_lit].as_properties()) {
-                        for (name, prop) in properties.iter_properties() {
-                            let ident = properties.owner().branch(name)?;
-                            reality::v2::Config::config(&mut self.#name, &ident, prop)?;
-                        }
-                    } else {
-                        reality::v2::Config::config(&mut self.#name, ident, property)?;
-
-                        if let Some(properties) = property.as_properties() {
-                            for (name, prop) in properties.iter_properties().filter(|(name, _)| name.as_str() != #name_lit) {
-                                let ident = properties.owner().branch(name)?;
-                                self.config(&ident, prop)?;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     pub(crate) fn apply_expr(&self) -> TokenStream {
         let name = &self.name;
         let name_lit = self.name_str_literal();
@@ -157,32 +127,25 @@ impl StructField {
         }
     }
 
-    pub(crate) fn config_root_expr(&self, ty: &Ident) -> TokenStream {
-        assert!(self.root);
-
+    pub(crate) fn config_apply_root_expr(&self, roots: Vec<Ident>) -> TokenStream {
         let name = &self.name;
+        let name_lit = self.name_str_literal();
 
-        let property_name = self.root_property_name_ident();
-        
-        let interpolate_lit = LitStr::new(
-            &format!("#root#.{}.{}.(ext).(?prop)", name, ty.to_string().to_lowercase()),
-            Span::call_site(),
-        );
+        let root_apply = roots.iter().map(|r| {
+            quote_spanned! {r.span()=>
+                let ext = ident.pos(1)?;
+                let property = self.#r.apply(&ext, &property)?;
+            }
+        });
 
-        // let interpolate_format_lit = LitStr::new(
-        //     &format!("{}.{}.{{ext}}.{{prop}}", name, ty),
-        //     Span::call_site(),
-        // );
-        
         quote_spanned! {self.span=>
-            let #property_name = if let Some(map) = ident.interpolate(#interpolate_lit) {
-                let ext = &map["ext"];
-                let ext_ident = ident.branch(ext)?;
-                self.#name.config(&ext_ident, property)?;
-                self.#name.apply(ext, property)?
-            } else {
-                reality::v2::Property::Empty
-            };
+            #name_lit => {
+                // Apply all roots
+                #( #root_apply )*
+                let ident = format!("{:#}", ident).replace("plugin", "").trim_matches('.').parse::<reality::Identifier>()?;
+                reality::v2::Config::config(&mut self.#name, &ident, &property)?;
+                return Ok(());
+            }
         }
     }
 
@@ -201,11 +164,10 @@ impl StructField {
         }
     }
 
-    pub(crate) fn root_property_name_ident(&self) -> Ident {
+    pub(crate) fn root_name(&self) -> Ident {
         assert!(self.root);
-
-        let root_ident = &self.ty;
-        format_ident!("property_{}", root_ident)
+        let root_ident = &self.name;
+        format_ident!("{}", root_ident.to_string().to_lowercase())
     }
 
     pub(crate) fn name_str_literal(&self) -> LitStr {
@@ -213,7 +175,11 @@ impl StructField {
     }
 
     pub(crate) fn root_ext_input_pattern_lit_str(&self, ext: &Ident) -> LitStr {
-        let format = format!("{}.{}.(?input)", &self.name.to_string().to_lowercase(), ext.to_string().to_lowercase());
+        let format = format!(
+            "{}.{}.(?input)",
+            &self.name.to_string().to_lowercase(),
+            ext.to_string().to_lowercase()
+        );
         LitStr::new(&format, Span::call_site())
     }
 }
@@ -225,6 +191,7 @@ impl Parse for StructField {
         let mut config_attr = None::<Ident>;
         let mut doc = None::<LitStr>;
         let mut root = false;
+        let mut ext = false;
         let span = input.span();
 
         for attribute in attributes {
@@ -246,6 +213,10 @@ impl Parse for StructField {
                         doc = Some(lit_str);
                     }
                 }
+            }
+
+            if attribute.path().is_ident("ext") {
+                ext = true;
             }
         }
 
@@ -276,8 +247,9 @@ impl Parse for StructField {
                 option: false,
                 ignore: false,
                 root,
+                ext,
                 config: config_attr,
-                doc
+                doc,
             })
         } else if input.peek(Ident::peek_any) {
             let ident = input.parse::<Ident>()?;
@@ -302,8 +274,9 @@ impl Parse for StructField {
                     option: true,
                     ignore: false,
                     root,
+                    ext,
                     config: config_attr,
-                    doc
+                    doc,
                 })
             } else {
                 let ty = ident;
@@ -318,8 +291,9 @@ impl Parse for StructField {
                     option: false,
                     ignore: false,
                     root,
+                    ext,
                     config: config_attr,
-                    doc
+                    doc,
                 })
             }
         } else {
@@ -334,8 +308,9 @@ impl Parse for StructField {
                 option: false,
                 ignore: true,
                 root,
+                ext,
                 config: config_attr,
-                doc
+                doc,
             })
         }
     }

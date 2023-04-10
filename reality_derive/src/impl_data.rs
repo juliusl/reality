@@ -28,9 +28,8 @@ impl ImplData {
         let path = &self.path;
         quote! {
             impl #generics Dispatch for #path #generics {
-                pub fn dispatch(&self, dispatch_ref: &DispatchRef<Properties, Error>) -> Result<DispatchRef<Properties, Error>, Error> {
+                pub fn dispatch(&self, dispatch_ref: DispatchRef<Properties, Error>) -> Result<DispatchRef<Properties, Error>, Error> {
                     dispatch_ref
-                    
                 }
             }
         }
@@ -65,8 +64,6 @@ impl Parse for ImplData {
 /// fn #tags_#root_#ext(&self, with: &#With, lazy_builder: LazyBuilder) -> Result<specs::Entity, reality::Error>
 /// 
 /// fn #tags_#root_#ext(&self, with: &#With, listen: Properties, lazy_builder: LazyBuilder) -> Result<specs::Entity, reality::Error>
-/// 
-/// 
 /// 
 /// ```
 /// 

@@ -1,4 +1,4 @@
-use reality::v2::{prelude::*, Config};
+use reality::v2::{prelude::*, Config, Action};
 use test_framework::{Process, TestA};
 use tracing_subscriber::EnvFilter;
 
@@ -12,7 +12,7 @@ async fn main() -> Result<(), Error> {
                 .from_env()
                 .expect("should be able to build from env variables")
                 .add_directive(
-                    "reality::v2::framework=trace"
+                    "reality::v2::action=trace"
                         .parse()
                         .expect("should be able to parse tracing settings"),
                 ),
@@ -47,51 +47,58 @@ async fn main() -> Result<(), Error> {
     .unwrap()
     .read(|a| {
         println!("{:#?}", a);
+
+        if let Some(Action::Config(ident, prop)) = a.iter_actions().last() {
+            println!("Config: {:#}", ident);
+            println!("Properties: {}", prop);
+            println!("{:?}", prop.as_symbol());
+        }
+
         Ok(())
     });
 
-    for (_, _, e) in log.search_index("#block#.#root#.plugin.process") {
-        let build_ref = DispatchRef::<ThunkCall>::new(*e, &mut compiler);
-        build_ref
-            .enable_async()
-            .read(|tc| {
-                let tc = tc.clone();
-                async move {
-                    tc.call().await?;
-                    Ok(())
-                }
-            })
-            .await;
-    }
+    // for (_, _, e) in log.search_index("#block#.#root#.plugin.process") {
+    //     let build_ref = DispatchRef::<ThunkCall>::new(*e, &mut compiler);
+    //     build_ref
+    //         .enable_async()
+    //         .read(|tc| {
+    //             let tc = tc.clone();
+    //             async move {
+    //                 tc.call().await?;
+    //                 Ok(())
+    //             }
+    //         })
+    //         .await;
+    // }
 
-    /*
-       MUST_INITIALIZE => () {
-           self::new()
-       }
-       MUST_BRANCH => (self, lazy_update) {
-           .with(self.clone()).build()
-       }
-    */
+    // /*
+    //    MUST_INITIALIZE => () {
+    //        self::new()
+    //    }
+    //    MUST_BRANCH => (self, lazy_update) {
+    //        .with(self.clone()).build()
+    //    }
+    // */
 
-    for (_, _, e) in log.search_index("plugin.println") {
-        let build_ref = DispatchRef::<ThunkCall>::new(*e, &mut compiler);
-        build_ref
-            .read_with::<test_framework::ThunkTestA>(|_, ta| {
-                ta.testa();
-                Ok(())
-            })
-            .enable_async()
-            .map_with::<test_framework::Println, _>(|call, println| {
-                reality::v2::call_config_into(call.clone(), println.clone())
-            })
-            .await
-            .disable_async()
-            .transmute::<test_framework::Println>()
-            .read(|p| {
-                println!("{:?}", p);
-                Ok(())
-            });
-    }
+    // for (_, _, e) in log.search_index("plugin.println") {
+    //     let build_ref = DispatchRef::<ThunkCall>::new(*e, &mut compiler);
+    //     build_ref
+    //         .read_with::<test_framework::ThunkTestA>(|_, ta| {
+    //             ta.testa();
+    //             Ok(())
+    //         })
+    //         .enable_async()
+    //         .map_with::<test_framework::Println, _>(|call, println| {
+    //             reality::v2::call_config_into(call.clone(), println.clone())
+    //         })
+    //         .await
+    //         .disable_async()
+    //         .transmute::<test_framework::Println>()
+    //         .read(|p| {
+    //             println!("{:?}", p);
+    //             Ok(())
+    //         });
+    // }
 
     Ok(())
 }
@@ -243,19 +250,21 @@ pub mod test_framework {
 
     #[derive(Config, Clone, Apply, Debug, Default)]
     pub struct Plugin {
-        pub path: PathConfig,
+        #[root]
+        pub path: Path,
         pub map: (),
         pub list: (),
-        pub call: CallConfig,
+        #[root]
+        pub call: Call,
     }
 
     impl Plugin {
         const fn new() -> Self {
             Self {
-                path: PathConfig { canonical: false },
+                path: Path { canonical: false },
                 map: (),
                 list: (),
-                call: CallConfig { test: false },
+                call: Call { test: false },
             }
         }
 
@@ -267,23 +276,23 @@ pub mod test_framework {
     }
 
     #[derive(Config, Clone, Debug, Default)]
-    pub struct PathConfig {
+    pub struct Path {
         canonical: bool,
     }
 
     #[derive(Config, Clone, Debug, Default)]
-    pub struct CallConfig {
+    pub struct Call {
         test: bool,
     }
 
-    impl Apply for CallConfig {
+    impl Apply for Call {
         fn apply(&self, name: impl AsRef<str>, property: &Property) -> Result<Property, Error> {
             println!("Applying call config: {} -- {:?}", name.as_ref(), property);
             Ok(property.clone())
         }
     }
 
-    impl Apply for PathConfig {
+    impl Apply for Path {
         fn apply(&self, ext: impl AsRef<str>, property: &Property) -> Result<Property, Error> {
             println!("Applying path config {:?} {} -- {:?}", self, ext.as_ref(), property);
             if self.canonical {
@@ -323,7 +332,7 @@ pub mod test_framework {
     }
 
     #[async_trait]
-    impl Call for Println {
+    impl reality::v2::Call for Println {
         async fn call(&self) -> Result<Properties, Error> {
             trace!("{:?}", self);
             for out in self.stdout.iter() {
@@ -427,7 +436,7 @@ pub mod test_framework {
     }
 
     #[async_trait]
-    impl Call for Process {
+    impl reality::v2::Call for Process {
         async fn call(&self) -> Result<Properties, Error> {
             println!("Calling {}", self.process);
             println!("{:?}", self);

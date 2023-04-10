@@ -57,3 +57,6 @@ pub use specs::join::MaybeJoin;
 
 /// async_trait -- Async trait attribute
 pub use async_trait::async_trait;
+
+/// Logging 
+pub use tracing::trace;

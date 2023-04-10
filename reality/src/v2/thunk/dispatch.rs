@@ -10,11 +10,19 @@ dispatch_signature! {
     ///
     pub enum DispatchSignature {
         #[interpolate("!#block#.#root#.(config);")]
-        RootConfig, 
+        RootConfig,
         /// Dispatch would map to RootConfigExt signature --> .plugin.#root#.(ext),
         ///
         #[interpolate("!#block#.#root#.(config).(ext);")]
         RootConfigExt,
+        /// Signature of an indivisual property for configuring an extension of an extended property,
+        /// 
+        #[interpolate("!#block#.#root#.(config).(ext).(prop);")]
+        ExtendedPropertyConfig,
+        /// Signature of an extended property,
+        /// 
+        #[interpolate("#root#.(config).(name).(extension).(property);")]
+        ExtendedProperty,
         /// Given,
         ///
         /// ```
@@ -80,4 +88,16 @@ where
     /// Compiles the build ref and returns a result containing the build ref,
     ///
     fn dispatch<'a>(&self, dispatch_ref: DispatchRef<'a, Properties>) -> DispatchResult<'a>;
+}
+
+#[allow(unused_imports)]
+mod tests {
+    use crate::v2::prelude::*;
+
+    #[tracing_test::traced_test]
+    #[test]
+    fn test_dispatch_signature() {
+        let test =  r##".plugin.process.#root#.path.redirect"##.parse::<Identifier>().unwrap();
+        println!("{:?}", DispatchSignature::get_match(&test));
+    }
 }

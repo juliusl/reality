@@ -1075,5 +1075,9 @@ sint: StringInterpolation { start: None, tokens: [Assignment("root"), Assignment
         let test =  r##".plugin.process.redirect.".test/test.output".#root#"##.parse::<Identifier>().unwrap();
         let map = test.interpolate(r##"#root#.plugin.process.redirect.(input)""##).unwrap();
         println!("{:?}", map);
+
+        let test =  r##".plugin.process.#root#.path.redirect"##.parse::<Identifier>().unwrap();
+        let map = test.interpolate(r##"#root#.plugin.process.redirect.(input)""##).unwrap();
+        println!("{:?}", map);
     }
 }
