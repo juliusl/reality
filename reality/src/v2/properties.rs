@@ -14,9 +14,11 @@ pub use property::property_list;
 pub use property::property_value;
 pub use property::Property;
 
+use super::Framework;
 use super::data::query::Predicate;
 use super::data::query::Query;
 use super::data::query::QueryResult;
+use super::Config;
 use super::Visitor;
 
 /// Component for a map of property attributes
@@ -31,15 +33,23 @@ pub struct Properties {
 }
 
 impl Properties {
+    pub const fn empty() -> Self {
+        Self { owner: Identifier::new(), map: BTreeMap::new() }
+    }
+
     /// Branches this colelction w/ a new branch owner,
-    /// 
-    pub fn branch(self: Arc<Self>, branch_owner: impl TryInto<Identifier, Error = Error>, property: Option<Property>) -> Result<Self, Error> {
+    ///
+    pub fn branch(
+        self: Arc<Self>,
+        branch_owner: impl TryInto<Identifier, Error = Error>,
+        property: Option<Property>,
+    ) -> Result<Self, Error> {
         let mut properties = Properties::new(branch_owner.try_into()?);
         if let Some(property) = property {
             let subject = properties.owner().subject();
             properties[&subject] = property;
         }
-        
+
         for (name, prop) in self.iter_properties() {
             properties[name] = prop.clone();
         }
@@ -93,7 +103,7 @@ impl Properties {
         let properties = Arc::new(properties.clone());
 
         self.map.insert(
-            format!("{:#}", properties.owner()),
+            format!("{}", properties.owner().subject()),
             Property::Properties(properties),
         );
     }
@@ -112,7 +122,7 @@ impl Properties {
 
     /// Returns true if this map contains a property w/ name,
     ///
-    pub fn contains(&mut self, name: impl AsRef<str>) -> bool {
+    pub fn contains(&self, name: impl AsRef<str>) -> bool {
         self.map.contains_key(name.as_ref())
     }
 
@@ -139,16 +149,13 @@ impl Properties {
     /// Returns a property as a Properties map, can be used to extend a property
     ///
     pub fn extend_property(&self, name: impl AsRef<str>) -> Option<Properties> {
-        self.owner()
-            .branch(name.as_ref())
-            .ok()
-            .and_then(|owner| {
-                self.map.get(name.as_ref()).map(move |p| {
-                    let mut properties = Properties::new(owner);
-                    properties[name.as_ref()] = p.clone();
-                    properties
-                })
+        self.owner().branch(name.as_ref()).ok().and_then(|owner| {
+            self.map.get(name.as_ref()).map(move |p| {
+                let mut properties = Properties::new(owner);
+                properties[name.as_ref()] = p.clone();
+                properties
             })
+        })
     }
 
     /// Takes a property from this collection, replaces with `Empty`
@@ -206,6 +213,18 @@ impl Properties {
     ///
     pub fn len(&self) -> usize {
         self.map.len()
+    }
+
+    /// Iterates over properties to config,
+    ///
+    pub fn config<T: Config>(&self, config: &mut T) -> Result<(), Error> {
+        for (name, prop) in self.iter_properties() {
+            let ident = self.owner().branch(name)?;
+
+            config.config(&ident, prop)?;
+        }
+
+        Ok(())
     }
 }
 

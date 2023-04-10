@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::VecDeque;
+use std::ops::Deref;
 use std::sync::Arc;
 
 use specs::Component;
@@ -26,8 +27,8 @@ use crate::Identifier;
 
 use super::compiler::Object;
 use super::BuildLog;
-use super::BuildRef;
-use super::Compile;
+use super::DispatchRef;
+use super::Dispatch;
 use super::Properties;
 use super::Visitor;
 
@@ -105,6 +106,126 @@ impl Framework {
 
         None
     }
+
+    /// Analyzes and extracts actions from properties,
+    /// 
+    pub fn analyze(&self, properties: &Properties) -> Result<ActionBuffer, Error> {
+        let owner = format!("{:#}", properties.owner());
+        trace!("Analyzing  -- {}", owner);
+        trace!("           -- {}", properties);
+
+        let mut owner = owner.parse::<Identifier>()?;
+        let mut found = vec![];
+
+        let read_only = Arc::new(properties.clone());
+
+        // Check identifier of owner,
+        for (pattern, ext_config_pattern) in self.config_patterns() {
+            trace!("Pattern  -- {}/{:?}", pattern, ext_config_pattern);
+            match ext_config_pattern {
+                ConfigPattern::NameInput(config_pattern) => {
+                    if let Some(map) = owner.interpolate(config_pattern) {
+                        let properties = read_only
+                            .clone()
+                            .branch(pattern, Some(property_value(&map["input"])))?;
+
+                        found.push((
+                            Property::Properties(properties.into()),
+                            owner.clone(),
+                            pattern,
+                            config_pattern,
+                            map["input"].clone(),
+                        ));
+
+                        trace!("Truncating --> {:?}", owner);
+                        owner = owner.truncate(1)?;
+                        owner.add_tag("root");
+                        trace!("Truncated  --> {:#}", owner);
+                        break;
+                    }
+                }
+                ConfigPattern::NamePropertyInput(config_pattern) => {
+                    if let Some(map) = owner.interpolate(config_pattern) {
+                        if let Some(input) = map.get("input") {
+                            let properties = read_only
+                                .clone()
+                                .branch(pattern, Some(property_value(input)))?;
+                            
+                            found.push((
+                                Property::Properties(properties.into()),
+                                owner.clone(),
+                                pattern,
+                                config_pattern,
+                                map["input"].clone(),
+                            ));
+                        } else {
+
+                        }
+                    }
+                }
+            }
+        }
+
+        // Otherwise, check properties
+        for (name, prop) in properties.iter_properties() {
+            let ident = owner.branch(name)?;
+
+            for (pattern, config_pattern) in self.config_patterns() {
+                match config_pattern {
+                    ConfigPattern::NamePropertyInput(config_pattern) => {
+                        // Promote properties into an extension
+                        if let Some(messages) = prop.as_symbol_vec() {
+                            for message in messages.iter() {
+                                let _ident = ident.branch(message)?;
+                                trace!("Pattern  -- {:#} -- {}/{:?}", _ident, pattern, config_pattern);
+                                if let Some(map) = _ident.interpolate(config_pattern) {
+                                    let mut prop = prop.clone();
+                                    trace!("-- {:?}", map);
+                                    // If this config has additional properties then extend the existing property and merge the additional properties
+                                    if let Some(properties) = self.config_properties.get(pattern) {
+                                        trace!("existing config -- {}, {name}", properties);
+                                        let mut properties = properties.deref().clone();
+                                        properties[name] = property_value(message);
+                                        prop = Property::Properties(Arc::new(properties));
+                                    }
+
+                                    found.push((
+                                        prop.clone(),
+                                        ident.clone(),
+                                        pattern,
+                                        config_pattern,
+                                        map["input"].clone(),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    _ => continue,
+                }
+            }
+        }
+
+        let mut action_buffer = ActionBuffer::new();
+        for (property, ident, pattern, config_pattern, input) in found {
+            if let Some(properties) = property.as_properties() {
+                trace!(
+                    "Found config \n{} {:#} -- {pattern} --> {config_pattern} --> {input}",
+                    properties,
+                    ident
+                );
+            } else {
+                trace!(
+                    "Found config {:?} {:#} -- {pattern} --> {config_pattern} --> {input}",
+                    property,
+                    ident
+                );
+            }
+            let config_ident = pattern.parse::<Identifier>()?;
+            action_buffer.push_config(&config_ident, &property);
+        }
+
+        Ok(action_buffer)
+    }
 }
 
 /// Enumeration of config patterns,
@@ -157,7 +278,11 @@ impl Visitor for Framework {
 
     fn visit_extension(&mut self, identifier: &Identifier) {
         // This means this extension needs to be configured
-        if let Some(map) = identifier.commit().unwrap().interpolate("#block#.#root#.(name).(ext_root).(ext_name)") {
+        if let Some(map) = identifier
+            .commit()
+            .unwrap()
+            .interpolate("#block#.#root#.(name).(ext_root).(ext_name)")
+        {
             trace!("Queueing config -- {:?}", map);
             if self.roots.contains(&map["ext_root"]) {
                 self.config_queue.push_back(identifier.clone());
@@ -168,9 +293,13 @@ impl Visitor for Framework {
         // Only roots defined in the root block can apply config to the framework
         trace!("Scanning for new config for framework -- {:#}", identifier);
 
-        if let Some(map) = identifier.commit().unwrap().interpolate("!#block#.#root#.(root).(ext).(?property)") {
+        if let Some(map) = identifier
+            .commit()
+            .unwrap()
+            .interpolate("!#block#.#root#.(root).(ext).(?property)")
+        {
             trace!("!!!!!!!!!!!!!!!! -----> {:?}", map);
-            if let Some(pattern) = map.get("property").and_then(|_| self.check(identifier) ) {
+            if let Some(pattern) = map.get("property").and_then(|_| self.check(identifier)) {
                 trace!("Adding new config pattern      -- {:?}", pattern);
                 self.config_patterns.push(pattern);
             } else {
@@ -179,7 +308,7 @@ impl Visitor for Framework {
                 let root = format!("{root}").trim_matches('.').to_string();
                 let pattern = format!("!#block#.#root#.{root}.(name).{extension}.(property)");
                 if self.roots.insert(root.to_string()) {
-                        trace!("Adding new root                -- {root}");
+                    trace!("Adding new root                -- {root}");
                 }
                 trace!("Adding new root pattern        -- {root}/{pattern}");
                 self.patterns.push(pattern);
@@ -188,133 +317,21 @@ impl Visitor for Framework {
             return;
         } else {
             warn!("Skipping, Didn't interpolate, {:#}", identifier);
-            trace!("-- Framework only recognizes the pattern !#block#.#root#.(root).(ext).(?property)");
+            trace!(
+                "-- Framework only recognizes the pattern !#block#.#root#.(root).(ext).(?property)"
+            );
         }
     }
 }
 
-impl Compile for Framework {
-    fn compile<'a>(
+impl Dispatch for Framework {
+    fn dispatch<'a>(
         &self,
-        build_ref: BuildRef<'a, Properties>,
-    ) -> Result<BuildRef<'a, Properties>, Error> {
+        build_ref: DispatchRef<'a, Properties>,
+    ) -> Result<DispatchRef<'a, Properties>, Error> {
         build_ref
             .map(|r| {
-                let owner = format!("{:#}", r.owner());
-                trace!("Configuring  -- {}", owner);
-                
-                let mut owner = owner.parse::<Identifier>()?;
-                let mut found = vec![];
-
-                let read_only = Arc::new(r.clone());
-
-                // Check identifier of owner,
-                for (pattern, ext_config_pattern) in self.config_patterns() {
-                    match ext_config_pattern {
-                        ConfigPattern::NameInput(config_pattern) => {
-                            if let Some(map) = owner.interpolate(config_pattern) {
-                                let properties = read_only
-                                    .clone()
-                                    .branch(pattern, Some(property_value(&map["input"])))?;
-
-                                found.push((
-                                    Property::Properties(properties.into()),
-                                    owner.clone(),
-                                    pattern,
-                                    config_pattern,
-                                    map["input"].clone(),
-                                ));
-                                trace!("Truncating --> {:?}", owner);
-                                owner = owner.truncate(1)?;
-                                owner.add_tag("root");
-                                trace!("Truncated  --> {:#}", owner);
-                            }
-                        }
-                        ConfigPattern::NamePropertyInput(config_pattern) => {
-                            if let Some(map) = owner.interpolate(config_pattern) {
-                                let properties = read_only
-                                    .clone()
-                                    .branch(pattern, Some(property_value(&map["input"])))?;
-
-                                found.push((
-                                    Property::Properties(properties.into()),
-                                    owner.clone(),
-                                    pattern,
-                                    config_pattern,
-                                    map["input"].clone(),
-                                ));
-                            }
-                        }
-                    }
-                }
-
-                // Otherwise, check properties
-                for (name, prop) in r.iter_properties() {
-                    let ident = owner.branch(name)?;
-
-                    for (pattern, config_pattern) in self.config_patterns() {
-                        match config_pattern {
-                            ConfigPattern::NamePropertyInput(config_pattern) => {
-                                // Promote properties into an extension
-                                if let Some(messages) = prop.as_symbol_vec() {
-                                    for message in messages.iter() {
-                                        let _ident = ident.branch(message)?;
-                                        if let Some(map) = _ident.interpolate(config_pattern) {
-                                            let mut prop = prop.clone();
-
-                                            // If this config has additional properties then extend the existing property and merge the additional properties
-                                            if let Some(properties) =
-                                                self.config_properties.get(pattern)
-                                            {
-                                                if let Some(mut extprop) = r.extend_property(name) {
-                                                    let key = pattern.replace(&ident.subject(), "");
-                                                    let key = key
-                                                        .trim_matches('.')
-                                                        .parse::<Identifier>()?;
-                                                    let key = key.subject();
-                                                    extprop[&key] =
-                                                        Property::Properties(properties.clone());
-                                                    prop = Property::Properties(Arc::new(extprop));
-                                                }
-                                            }
-
-                                            found.push((
-                                                prop.clone(),
-                                                ident.clone(),
-                                                pattern,
-                                                config_pattern,
-                                                map["input"].clone(),
-                                            ));
-                                        }
-                                    }
-                                }
-                            }
-                            _ => continue,
-                        }
-                    }
-                }
-
-                let mut action_buffer = ActionBuffer::new();
-                for (property, ident, pattern, config_pattern, input) in found {
-                    if let Some(properties) = property.as_properties() {
-                        trace!(
-                            "Found config \n{} {:#} -- {pattern} --> {config_pattern} --> {input}",
-                            properties,
-                            ident
-                        );
-                    } else {
-                        // TODO -- Once we've found input that needs configuration, we need to schedule that somehow
-                        trace!(
-                            "Found config {:?} {:#} -- {pattern} --> {config_pattern} --> {input}",
-                            property,
-                            ident
-                        );
-                    }
-                    let config_ident = pattern.parse::<Identifier>()?;
-                    action_buffer.push_config(&config_ident, &property);
-                }
-
-                Ok(action_buffer)
+                self.analyze(r)
             })
             .result()
     }
@@ -344,7 +361,7 @@ pub fn configure(world: &mut World) {
                     lazy_update.exec_mut(move |world| {
                         let mut wrapper = WorldWrapper::from(world);
                         log.find_ref(config, &mut wrapper).map(|r| {
-                            framework.compile(r).ok().map(|_| {});
+                            framework.dispatch(r).ok().map(|_| {});
                         });
                     });
                 }

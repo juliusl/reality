@@ -1,5 +1,5 @@
-use reality::v2::prelude::*;
-use test_framework::TestA;
+use reality::v2::{prelude::*, Config};
+use test_framework::{Process, TestA};
 use tracing_subscriber::EnvFilter;
 
 /// Example of a plugin framework compiler,
@@ -28,7 +28,7 @@ async fn main() -> Result<(), Error> {
                 }
                 _ => {
                     break from_runmd().await?;
-                    // break from_fs().await?;
+                    //  break from_fs().await?;
                 }
             }
         }
@@ -36,8 +36,22 @@ async fn main() -> Result<(), Error> {
 
     let log = compiler.last_build_log().unwrap();
 
-    for (_, _, e) in log.search_index("plugin.process") {
-        let build_ref = BuildRef::<ThunkCall>::new(*e, &mut compiler);
+    let matches = DispatchSignature::get_matches(log.clone());
+
+    println!("{:#?}", matches);
+
+    log.find_ref::<ActionBuffer>(
+        "app.#block#.usage.#root#.plugin.process.cargo",
+        &mut compiler,
+    )
+    .unwrap()
+    .read(|a| {
+        println!("{:#?}", a);
+        Ok(())
+    });
+
+    for (_, _, e) in log.search_index("#block#.#root#.plugin.process") {
+        let build_ref = DispatchRef::<ThunkCall>::new(*e, &mut compiler);
         build_ref
             .enable_async()
             .read(|tc| {
@@ -50,8 +64,17 @@ async fn main() -> Result<(), Error> {
             .await;
     }
 
+    /*
+       MUST_INITIALIZE => () {
+           self::new()
+       }
+       MUST_BRANCH => (self, lazy_update) {
+           .with(self.clone()).build()
+       }
+    */
+
     for (_, _, e) in log.search_index("plugin.println") {
-        let build_ref = BuildRef::<ThunkCall>::new(*e, &mut compiler);
+        let build_ref = DispatchRef::<ThunkCall>::new(*e, &mut compiler);
         build_ref
             .read_with::<test_framework::ThunkTestA>(|_, ta| {
                 ta.testa();
@@ -109,6 +132,7 @@ async fn from_fs() -> Result<Compiler, Error> {
     let _ = import_toml(&mut compiler, ".test/usage_example.toml").await?;
     compiler.update_last_build(&mut framework);
     println!("{:#?}", framework);
+
     apply_framework!(compiler, test_framework::Process, test_framework::Println);
     Ok(compiler)
 }
@@ -140,7 +164,7 @@ fn compile_example_usage(compiler: &mut Compiler) -> Result<Entity, Error> {
 ///
 const ROOT_RUNMD: &'static str = r##"
 ```runmd
-+ .plugin                                   # A plugin root w/ common extensions for expressing a plugin
++ .symbol   Plugin                          # Defining a symbol root called Plugin w/ common extensions
 <> .path                                    # Indicates that a property will be a path
 : canonical .false                          # Indicates whether the property should be a canonical path
 <> .map                                     # Indicates that a property will be a list of property names
@@ -174,7 +198,7 @@ const EXAMPLE_USAGE: &'static str = r##"
 ```
 
 ```runmd app
-+ .usage
++                       .symbol     Usage               # Creating a simple root called Usage,
 <plugin.println>        .stdout     World Hello         # Can also be activated in one line
 <plugin.println>        .stderr     World Hello Error   # Can also be activated in one line
 <plugin>    .println
@@ -193,6 +217,8 @@ const EXAMPLE_USAGE: &'static str = r##"
 : .stderr   Hello World Error 2 
 : .stderr   Goodbye World Error 2
 <plugin.readln>         .stdin      name                # This will read stdin and save the value to the property name
+<> .start_usage  # Starts the usage example
+
 ```
 "##;
 
@@ -205,10 +231,15 @@ pub struct Test<'a> {
 
 pub mod test_framework {
     use reality::{
-        v2::{prelude::*, property_value, BuildRef},
+        v2::{
+            prelude::*, property_value, AsyncDispatch, BuildLog, Config, DispatchRef, Map, MapWith,
+        },
         Identifier, Runmd,
     };
-    use std::path::PathBuf;
+    use specs::{storage, DenseVecStorage, VecStorage};
+    use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+    use tracing::{trace, Id};
+    use tracing_test::traced_test;
 
     #[derive(Config, Clone, Apply, Debug, Default)]
     pub struct Plugin {
@@ -226,6 +257,12 @@ pub mod test_framework {
                 list: (),
                 call: CallConfig { test: false },
             }
+        }
+
+        ///
+        ///
+        fn path(&self, property: &Property) -> Result<(), Error> {
+            Ok(())
         }
     }
 
@@ -247,7 +284,8 @@ pub mod test_framework {
     }
 
     impl Apply for PathConfig {
-        fn apply(&self, _: impl AsRef<str>, property: &Property) -> Result<Property, Error> {
+        fn apply(&self, ext: impl AsRef<str>, property: &Property) -> Result<Property, Error> {
+            println!("Applying path config {:?} {} -- {:?}", self, ext.as_ref(), property);
             if self.canonical {
                 if let Some(path) = property.as_symbol().map(|s| PathBuf::from(s)) {
                     path.canonicalize()?;
@@ -287,13 +325,13 @@ pub mod test_framework {
     #[async_trait]
     impl Call for Println {
         async fn call(&self) -> Result<Properties, Error> {
-            println!("{:?}", self);
+            trace!("{:?}", self);
             for out in self.stdout.iter() {
                 println!("{out}");
             }
 
             for err in self.stderr.iter() {
-                println!("{err}")
+                eprintln!("{err}")
             }
 
             let mut props = Properties::new(Identifier::new());
@@ -302,7 +340,28 @@ pub mod test_framework {
         }
     }
 
+    /*
+    struct Println {
+       test_config --> test.config.#root#
+
+
+       ```
+       + .println test_config
+       + .println
+       ```
+    }
+     */
+
     impl Println {
+        /// Should generate code like this,
+        ///
+        /// ```
+        /// fn dispatch(&self, r...) -> ... {
+        ///     let s = Self::new();
+        ///     r.store(s)?;
+        /// }
+        /// ```
+        ///
         pub const fn new() -> Self {
             Self {
                 println: String::new(),
@@ -312,14 +371,47 @@ pub mod test_framework {
                 plugin: Plugin::new(),
             }
         }
+
+        /// Should generate code like this,
+        ///
+        /// ```
+        /// .read(|s| {
+        ///     self.test_config()
+        /// })
+        /// ```
+        ///
+        pub fn test_config(&self) -> Result<(), Error> {
+            Ok(())
+        }
+
+        /// Should generate code like this,
+        ///
+        /// ```
+        /// .write_with::<Properties>(|s, p| {
+        ///     s.config_path(p)
+        /// })
+        /// ```
+        ///
+        /// Called when,
+        ///
+        /// ```runmd
+        /// +       .plugin Process
+        /// <path>  .redirect
+        ///
+        /// +        .other
+        /// <plugin> .process test : .redirect test/test.out
+        /// ```
+        pub fn config_path(&mut self, properties: &Properties) -> Result<(), Error> {
+            todo!()
+        }
     }
 
     #[derive(Runmd, Config, Debug, Clone, Component)]
     #[storage(specs::VecStorage)]
     #[compile(ThunkCall)]
     pub struct Process {
-        process: String,
-        redirect: String,
+        pub process: String,
+        pub redirect: String,
         #[root]
         plugin: Plugin,
     }
@@ -340,6 +432,93 @@ pub mod test_framework {
             println!("Calling {}", self.process);
             println!("{:?}", self);
             Ok(Properties::default())
+        }
+    }
+
+    const DISPATCH_ROOT: &'static str = "#block#.#root#.(root).(ext).(name).(prop)";
+
+    const DISPATCH_ROOT_CONFIG: &'static str =
+        "#block#.#root#.(root).(config).(ext).(name).(?prop)";
+
+    const DISPATCH_ROOT_EXT: &'static str = "#block#.#root#.(root).(ext);";
+
+    #[derive(Component)]
+    #[storage(VecStorage)]
+    struct PluginFramework(DispatchSignature);
+
+    impl<'b> Dispatch for PluginFramework {
+        fn dispatch<'a>(&self, dispatch_ref: DispatchRef<'a, Properties>) -> DispatchResult<'a> {
+            dispatch_ref
+                .transmute::<BuildLog>()
+                .read(|p| {
+                    let matches = DispatchSignature::get_matches(p.clone());
+
+                    Ok(())
+                })
+                .transmute()
+                .result()
+        }
+    }
+
+    impl Test {}
+
+    struct Test;
+
+    impl Dispatch for Test {
+        fn dispatch<'a>(&self, dispatch_ref: DispatchRef<'a, Properties>) -> DispatchResult<'a> {
+            if let Ok(accepted) = dispatch_ref
+                .transmute::<Identifier>()
+                .read(|id| {
+                    if let Some(map) = id.interpolate("#block#.#root#.(root).Test.(ext).(?prop)") {
+                        Ok(())
+                    } else {
+                        Err(Error::skip())
+                    }
+                })
+                .result()
+            {
+                accepted.read(|_| Ok(()));
+                Err(Error::skip())
+            } else {
+                Err(Error::not_implemented())
+            }
+        }
+    }
+
+    #[async_trait]
+    impl AsyncDispatch for Test {
+        async fn async_dispatch<'a, 'b>(
+            &'a self,
+            dispatch_ref: DispatchRef<'b, Properties>,
+        ) -> DispatchResult<'b> {
+            Ok(dispatch_ref)
+        }
+    }
+
+    #[derive(Component)]
+    #[storage(VecStorage)]
+    struct Usage {}
+
+    impl Usage {
+        /// Dispatches on #block#.#root#.usage.start_usage,
+        ///
+        fn start_usage<'a>(&mut self) -> Result<(), Error> {
+            Ok(())
+        }
+
+        /// Dispatches on #block#.#root#.usage.read_usage,
+        ///
+        fn read_usage<'a>(&self) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn _dispatch_start_usage<'a>(
+            dispatch_ref: DispatchRef<'a, Properties>,
+        ) -> DispatchRef<'a, Properties> {
+            dispatch_ref
+                .transmute::<Self>()
+                .write(|s| s.start_usage())
+                .transmute()
         }
     }
 }

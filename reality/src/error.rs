@@ -33,6 +33,18 @@ impl Display for StaticError {
     }
 }
 
+impl AsRef<str> for Error {
+    fn as_ref(&self) -> &str {
+        self.static_error.as_ref().map(|s| s.message).unwrap_or("")
+    }
+}
+
+impl PartialEq for Error {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_ref() == other.as_ref()
+    }
+}
+
 impl Error {
     /// Returns a new static error,
     ///
@@ -56,6 +68,30 @@ impl Error {
     pub const fn skip() -> Self {
         const SKIP: Error = Error::new("Skip");
         SKIP
+    }
+
+    /// Returns a must branch error,
+    /// 
+    pub const fn must_branch() -> Self {
+        const MUST_BRANCH: Error = Error::new("Must branch");
+
+        MUST_BRANCH
+    }
+
+    /// Returns an exit ok error,
+    /// 
+    pub const fn exit_ok() -> Self {
+        const EXIT_OK: Error = Error::new("Exiting ok");
+
+        EXIT_OK
+    }
+
+    /// Returns an exit restart error,
+    /// 
+    pub const fn exit_restart() -> Self {
+        const EXIT_RESTART: Error = Error::new("Exit, restart");
+
+        EXIT_RESTART
     }
 }
 

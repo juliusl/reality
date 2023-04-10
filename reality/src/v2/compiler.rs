@@ -33,10 +33,10 @@ pub use compiled::Build as CompiledBuild;
 mod build_log;
 pub use build_log::BuildLog;
 
-mod build_ref;
-pub use build_ref::BuildRef;
-pub(crate) use build_ref::WorldRef;
-pub use build_ref::WorldWrapper;
+mod dispatch_ref;
+pub use dispatch_ref::DispatchRef;
+pub(crate) use dispatch_ref::WorldRef;
+pub use dispatch_ref::WorldWrapper;
 
 /// Struct to build a world from interop packets,
 ///
@@ -189,7 +189,7 @@ impl Compiler {
     pub fn update_last_build<'a, T, C: Visitor + Update<T>>(
         &'a mut self,
         updater: &mut C,
-    ) -> BuildRef<'a, C> {
+    ) -> DispatchRef<'a, C> {
         self.visit_last_build(updater)
             .map(|entity| self.compiled().update(entity, updater).map(|_| entity))
             .map(move |result| match result {
@@ -199,7 +199,7 @@ impl Compiler {
                 }
                 Err(err) => err.into(),
             })
-            .unwrap_or(BuildRef::empty())
+            .unwrap_or(DispatchRef::empty())
     }
 
     /// Visits and updates an object,
@@ -210,7 +210,7 @@ impl Compiler {
         &'a mut self,
         entity: Entity,
         updater: &mut C,
-    ) -> BuildRef<'a, C> {
+    ) -> DispatchRef<'a, C> {
         self.visit_object(entity, updater)
             .map(|_| self.compiled().update(entity, updater))
             .map(move |result| match result {
@@ -225,8 +225,8 @@ impl Compiler {
 
     /// Returns a build ref for a given entity,
     ///
-    pub fn build_ref<'a, T: Send + Sync + 'a>(&'a mut self, entity: Entity) -> BuildRef<'a, T> {
-        BuildRef::<'a, T> {
+    pub fn build_ref<'a, T: Send + Sync + 'a>(&'a mut self, entity: Entity) -> DispatchRef<'a, T> {
+        DispatchRef::<'a, T> {
             world_ref: Some(self),
             entity: Some(entity),
             error: None,

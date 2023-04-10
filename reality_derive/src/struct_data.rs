@@ -295,13 +295,13 @@ impl StructData {
         };
 
         quote! {
-            impl reality::v2::Compile for #name {
-                fn compile<'a>(
+            impl reality::v2::Dispatch for #name {
+                fn dispatch<'a>(
                     &self,
-                    build_ref: reality::v2::BuildRef<'a, reality::v2::Properties>,
-                ) -> Result<reality::v2::BuildRef<'a, reality::v2::Properties>, Error> {
+                    dispatch_ref: reality::v2::DispatchRef<'a, reality::v2::Properties>,
+                ) -> Result<reality::v2::DispatchRef<'a, reality::v2::Properties>, Error> {
                     let clone = self.clone();
-                    build_ref
+                    dispatch_ref
                         .transmute::<ActionBuffer>()
                         .map_into(move |b| {
                             let mut clone = clone;
@@ -326,9 +326,9 @@ impl StructData {
             quote_spanned! {f.span=> 
                 if let Some(log) = compiler.last_build_log() {
                     for (_, _, entity) in log.search_index(#pattern) {
-                        let build_ref = BuildRef::<Properties>::new(*entity, compiler);
+                        let dispatch_ref = DispatchRef::<Properties>::new(*entity, compiler);
             
-                        reality::v2::Compile::compile(self, build_ref)?;
+                        reality::v2::Dispatch::dispatch(self, dispatch_ref)?;
                     }
                 }
             }

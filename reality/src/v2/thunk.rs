@@ -1,4 +1,4 @@
-use super::compiler::BuildRef;
+use super::compiler::DispatchRef;
 use super::Properties;
 use crate::Error;
 use async_trait::async_trait;
@@ -15,9 +15,11 @@ pub use call::Call;
 mod build;
 pub use build::Build;
 
-mod compile;
-pub use compile::AsyncCompile;
-pub use compile::Compile;
+mod dispatch;
+pub use dispatch::AsyncDispatch;
+pub use dispatch::Dispatch;
+pub use dispatch::DispatchResult;
+pub use dispatch::DispatchSignature;
 
 mod update;
 pub use update::Update;
@@ -28,6 +30,10 @@ pub use config::Apply;
 
 mod select;
 pub use select::Select;
+
+mod map;
+pub use map::Map;
+pub use map::MapWith;
 
 /// Auto thunk trait implementations for common types,
 ///
@@ -139,7 +145,7 @@ pub type ThunkListen = Thunk<Arc<dyn Listen>>;
 
 /// Type-alias for a thunk compile component,
 ///
-pub type ThunkCompile = Thunk<Arc<dyn AsyncCompile>>;
+pub type ThunkCompile = Thunk<Arc<dyn AsyncDispatch>>;
 
 /// Creates a thunk call from a type that implements Call,
 ///
@@ -175,7 +181,7 @@ pub fn thunk_listen(listen: impl Listen + 'static) -> ThunkListen {
 
 /// Creates a thunk compile from a type that implements Compile,
 ///
-pub fn thunk_compile(compile: impl AsyncCompile + 'static) -> ThunkCompile {
+pub fn thunk_compile(compile: impl AsyncDispatch + 'static) -> ThunkCompile {
     Thunk {
         thunk: Arc::new(compile),
     }
@@ -196,9 +202,9 @@ impl<T: Listen + Send + Sync> Listen for Thunk<T> {
 }
 
 #[async_trait]
-impl<T: AsyncCompile + Send + Sync> AsyncCompile for Thunk<T> {
-    async fn compile<'a, 'b>(&'a self, build_ref: BuildRef<'b, Properties>) -> Result<(), Error> {
-        self.thunk.compile(build_ref).await
+impl<T: AsyncDispatch + Send + Sync> AsyncDispatch for Thunk<T> {
+    async fn async_dispatch<'a, 'b>(&'a self, build_ref: DispatchRef<'b, Properties>) -> DispatchResult<'b> {
+        self.thunk.async_dispatch(build_ref).await
     }
 }
 
@@ -224,13 +230,14 @@ mod tests {
     use std::pin::Pin;
     use std::sync::Arc;
 
+    use super::DispatchResult;
     use super::thunk_build;
     use super::thunk_compile;
     use super::Build;
-    use super::AsyncCompile;
+    use super::AsyncDispatch;
     use super::ThunkCompile;
     use crate::v2::compiler::BuildLog;
-    use crate::v2::compiler::BuildRef;
+    use crate::v2::compiler::DispatchRef;
     use crate::v2::compiler::WorldWrapper;
     use crate::v2::property_value;
     use crate::v2::thunk_call;
@@ -311,8 +318,8 @@ mod tests {
     struct TestCompile;
 
     #[async_trait]
-    impl AsyncCompile for TestCompile {
-        async fn compile<'a, 'b>(&'a self, build_ref: BuildRef<'b, Properties>) -> Result<(), Error> {
+    impl AsyncDispatch for TestCompile {
+        async fn async_dispatch<'a, 'b>(&'a self, build_ref: DispatchRef<'b, Properties>) -> DispatchResult<'b> {
             let mut build_ref = build_ref
                 .enable_async()
                 .read(|_| async {
@@ -334,7 +341,7 @@ mod tests {
                 fut
             }).await?;
 
-            build_ref.disable_async()
+            let build_ref = build_ref.disable_async()
                 .read(|props| {
                     let test_value = props["test_value"].as_int().unwrap();
                     assert_eq!(99, test_value);
@@ -343,7 +350,7 @@ mod tests {
                 })
                 .result()?;
 
-            Ok(())
+            Ok(build_ref)
         }
     }
 
@@ -380,6 +387,6 @@ mod tests {
             .remove(e)
             .unwrap();
 
-        tc.compile(wrapper.get_ref(e)).await.unwrap();
+        tc.async_dispatch(wrapper.get_ref(e)).await.unwrap();
     }
 }

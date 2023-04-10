@@ -2,7 +2,7 @@ use crate::{v2::Property, Identifier, Error};
 
 /// Implement to configure w/ identifier & property,
 /// 
-pub trait Config {
+pub trait Config<T=()> {
     /// Configures self w/ an identifier and property,
     /// 
     fn config(&mut self, ident: &Identifier, property: &Property) -> Result<(), Error>;
@@ -15,6 +15,16 @@ where
     fn config(&mut self, _: &Identifier, property: &Property) -> Result<(), Error> {
         *self = property.into();
 
+        Ok(())
+    }
+}
+
+impl<T> Config<Option<T>> for T
+where
+    for<'a> T: TryFrom<&'a Property, Error = Error>,
+{
+    fn config(&mut self, _: &Identifier, property: &Property) -> Result<(), Error> {
+        *self = property.try_into()?;
         Ok(())
     }
 }

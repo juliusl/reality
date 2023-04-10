@@ -1,11 +1,25 @@
+use quote::quote_spanned;
 use syn::parse_macro_input;
+use syn::DataEnum;
+use syn::Item;
+use syn::ItemEnum;
+use syn::LitStr;
+use syn::Path;
 mod struct_data;
 use struct_data::StructData;
 mod apply_framework;
 mod struct_field;
 use apply_framework::ApplyFrameworkMacro;
 mod thunk;
+use syn::spanned::Spanned;
 use thunk::ThunkMacroArguments;
+
+mod impl_data;
+use impl_data::ImplData;
+
+mod enum_data;
+use enum_data::EnumData;
+use enum_data::InterpolationExpr;
 
 /// Derives Load trait implementation as well as system data impl,
 ///
@@ -183,6 +197,70 @@ pub fn thunk(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let thunk_macro = parse_macro_input!(input as ThunkMacroArguments);
 
     thunk_macro.trait_expr().into()
+}
+
+#[proc_macro]
+pub fn dispatch_signature(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let item_enum = parse_macro_input!(input as ItemEnum);
+    let name = &item_enum.ident;
+    let generics = &item_enum.generics;
+    let vis = &item_enum.vis;
+
+    let interpolations = item_enum
+        .variants
+        .iter()
+        .filter_map(|variant| {
+            variant
+                .attrs
+                .iter()
+                .find(|a| a.path().is_ident("interpolate"))
+                .map(|a| (a, variant.clone()))
+        });
+
+    let variants = interpolations
+        .clone()
+        .filter_map(|(attr, variant)| {
+            if let Some(expr) = attr.parse_args::<LitStr>().ok() {
+                let name = variant.ident.clone();
+                let expr = InterpolationExpr { name, expr}.signature_struct();
+                Some( quote_spanned!{variant.span()=>
+                    #expr
+                })
+            } else {
+                None
+            }
+        });
+
+    let variant_matches = interpolations.clone().filter_map(|(attr, variant)| {
+        if let Some(expr) = attr.parse_args::<LitStr>().ok() {
+            let expr = InterpolationExpr { name: variant.ident.clone(), expr}.impl_expr(name.clone());
+            Some( quote_spanned!{variant.span()=>
+                #expr
+            })
+        } else {
+            None
+        }
+    });
+
+    quote::quote! {
+        #[derive(Debug)]
+        #vis enum #name #generics {
+            #( #variants ),*
+        }
+
+        impl #generics #name #generics {
+            #vis fn get_matches(build_log: BuildLog) -> Vec<#name #generics> {
+                let mut matches = vec![];
+
+                for (ident, entity) in build_log.index().iter() { 
+                    #( #variant_matches )*
+                }
+
+                matches
+            }
+        }
+    }
+    .into()
 }
 
 #[allow(unused_imports)]

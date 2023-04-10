@@ -51,6 +51,7 @@ impl Identifier {
         let root = if root.contains(".") && !root.starts_with(r#"""#) && !root.ends_with(r#"""#) {
             format!(r#""{}""#, root)
         } else {
+            let root = root.to_lowercase();
             format!("{root}")
         };
 
@@ -151,11 +152,14 @@ impl Identifier {
             return Ok(self.promote());
         }
 
-        if Self::should_escape_with_quotes(next)
+        if Self::should_escape_with_quotes(&next)
             && !next.starts_with(r#"""#)
             && !next.ends_with(r#"""#)
         {
             write!(self.buf, r#"."{}""#, next)?;
+        } else if !Self::should_escape_with_quotes(&next) {
+            let next = next.to_lowercase();
+            write!(self.buf, ".{next}")?;
         } else {
             write!(self.buf, ".{next}")?;
         }
@@ -282,6 +286,9 @@ impl Identifier {
 
         while let Some(token) = tokens.next() {
             match token {
+                StringInterpolationTokens::Break if !tokens.remainder().is_empty() => {
+                    return None;
+                }
                 // Skip ahead to the first match
                 StringInterpolationTokens::Match(match_ident)
                 | StringInterpolationTokens::EscapedMatch(match_ident)
@@ -306,15 +313,15 @@ impl Identifier {
                     buf = format!("{:#}", self);
                     for ancestor in self.ancestors() {
                         if tags.is_subset(&ancestor.tags) {
-                            // trace!("replacing {:?}", ancestor.tags);
+                            trace!("Match tags replacing {:?}", ancestor.tags);
 
                             let mut cleared = ancestor.clone();
                             cleared.clear_tags();
                             let cleared = &format!("{}", cleared);
                             let ancestor = &format!("{:#}", ancestor);
                             buf = buf.replace(ancestor, cleared).trim_start_matches('.').to_string();
-                            // trace!("replaced {} --> {} --> {}", ancestor, cleared, buf);
-                            sint.start = buf.find(cleared);
+                            trace!("replaced {} --> {} --> {}", ancestor, cleared, buf);
+                            sint.start = None;
                             found = true;
                             break;
                         }
@@ -328,6 +335,9 @@ impl Identifier {
                     if tokens.remainder().len() > 0 =>
                 {
                     panic!("Pattern error, optional suffix assignment can only be at the end")
+                }
+                StringInterpolationTokens::Error => {
+                    continue;
                 }
                 _ => {
                     sint.tokens.push(token);
@@ -355,6 +365,11 @@ impl Identifier {
 
         trace!("buf: {buf}\nsint: {:?}", sint);
 
+        let expected_assignments = sint.tokens.iter().filter(|t| match t {
+            StringInterpolationTokens::Assignment(_) => true,
+            _ => false,
+        }).count();
+
         if let Some(buf) = parts(buf).ok() {
             if buf.len() < sint.tokens.len()
                 && sint
@@ -362,6 +377,8 @@ impl Identifier {
                     .last()
                     .filter(|t| {
                         if let StringInterpolationTokens::OptionalSuffixAssignment(_) = t {
+                            true
+                        } else if let StringInterpolationTokens::Break = t {
                             true
                         } else {
                             false
@@ -372,7 +389,9 @@ impl Identifier {
                 return None;
             }
 
-            for (part, token) in buf.iter().zip(sint.tokens) {
+            let mut zipped = buf.iter().zip(sint.tokens);
+            while let Some((part, token)) = zipped.next() {
+                trace!("-- Interpolating: {:<20} {:>4?}", part, token);
                 match token {
                     StringInterpolationTokens::Match(matches)
                     | StringInterpolationTokens::EscapedMatch(matches)
@@ -388,7 +407,11 @@ impl Identifier {
                     }
                     StringInterpolationTokens::Assignment(name)
                     | StringInterpolationTokens::OptionalSuffixAssignment(name) => {
-                        map.insert(name, part.trim_matches('"').to_string());
+                        if part.starts_with('"') && part.ends_with('"') {
+                            map.insert(name.to_lowercase(), part.trim_matches('"').to_string());
+                        } else {
+                            map.insert(name.to_lowercase(), part.to_lowercase());
+                        }
                     }
                     StringInterpolationTokens::NotMatchTags(tags) => {
                         if self.contains_tags(&tags) {
@@ -404,14 +427,24 @@ impl Identifier {
                             continue;
                         }
                     }
+                    StringInterpolationTokens::Break => {
+                        trace!("-- Breaking");
+                        return None;
+                    }
                     _ => {
                         return None;
                     }
                 }
             }
+
+            if map.len() < expected_assignments {
+                trace!("-- Did not assign all keys, assigned: {}  expected: {}", map.len(), expected_assignments);
+                return None;
+            }
         } else {
             return None;
         }
+
 
         Some(map)
     }
@@ -553,6 +586,10 @@ enum StringInterpolationTokens {
     ///
     #[regex("[(][^()]+[)]", on_assignment)]
     Assignment(String),
+    /// Breaks if encountered,
+    /// 
+    #[token(";")]
+    Break,
     /// Optionally assign a suffix,
     ///
     #[regex("[(][?][^()]+[)]", on_optional_suffix_assignment)]
@@ -670,6 +707,71 @@ mod tests {
     #[test]
     #[traced_test]
     fn test_tags() {
+        // let test = r##"app.start.#block#.usage.test.#root#.plugin.process.cargo"##;
+        // let test = test.parse::<Identifier>().unwrap();
+        // let map = test.interpolate("#block#.#root#.(root).(ext).(name).(prop)").unwrap();
+        // assert_eq!("usage", map["root"]);
+        // assert_eq!("test", map["ext"]);
+        // assert_eq!("plugin", map["name"]);
+        // assert_eq!("process", map["prop"]);
+
+        // let map = test.interpolate("#block#.#root#.(root).(variant).(ext).(name).(?prop)").unwrap();
+        // assert_eq!("usage", map["root"]);
+        // assert_eq!("plugin", map["ext"]);
+        // assert_eq!("process", map["name"]);
+        // assert_eq!("cargo", map["prop"]);
+        // println!("{:#?}", map);
+
+        // let test = r##"app.start.#block#.usage.#root#.plugin.process.cargo"##;
+        // let test = test.parse::<Identifier>().unwrap();
+        // let map = test.interpolate("#block#.#root#.(root).(variant).(ext).(name).(prop)");
+        // println!("{:#?}", map);
+        // let map = test.interpolate("#block#.#root#.(root).(ext).(name).(prop)");
+        // println!("{:#?}", map);
+
+        // let test = r##"app.start.#block#.usage.#root#.plugin.println.stderr."World Hello""##;
+        // let test = test.parse::<Identifier>().unwrap();
+        // let map = test.interpolate("#block#.#root#.(root).(ext).(name).(prop)");
+        // println!("{:#?}", map);
+
+        // let test = r##"app.start.#block#.usage.#root#.plugin.println.stderr."World Hello""##;
+        // let test = test.parse::<Identifier>().unwrap();
+        // let map = test.interpolate("#block#.#root#.(root).(variant).(ext).(name).(prop).(input)").unwrap();
+        // println!("{:#?}", map);
+
+        let test = r##"app.start.#block#.usage.#root#.plugin.println.stderr."World Hello""##;
+        let test = test.parse::<Identifier>().unwrap();
+        let map = test.interpolate("#block#.#root#.(root).(config).(ext).(name).(prop).(?input)").unwrap();
+        println!("{:#?}", map);
+
+        // let test = r##"app.start.#block#.usage.test.#root#.plugin.process.cargo"##;
+        // let test = test.parse::<Identifier>().unwrap();
+        // let map = test.interpolate("#block#.#root#.(root).(variant).(ext).(name).(prop)").unwrap();
+        // println!("{:#?}", map);
+
+        // let test = r##"app.start.#block#.usage.test.#root#.plugin.process.cargo"##;
+        // let test = test.parse::<Identifier>().unwrap();
+        // let map = test.interpolate("#block#.#root#.(root).(ext).(name).(prop)");
+        // println!("{:#?}", map);
+        /*
+        { 
+            "block": "usage", 
+            "name": "process", 
+            "prop": "cargo", 
+            "root": "plugin"
+        }
+         */
+
+        /*
+2023-04-10T00:36:44.849861Z TRACE test_tags: reality::identifier: buf: usage.plugin.process.cargo
+sint: StringInterpolation { start: None, tokens: [Assignment("root"), Assignment("ext"), Assignment("name"), OptionalSuffixAssignment("prop")] }
+        {
+            "ext": "plugin", 
+            "name": "process", 
+            "prop": "cargo", 
+            "root": "usage"
+        }
+         */
         let test = r##"a.b.#test:debug#.c.d"##;
         let test: Identifier = test.parse().expect("should be parsed");
 
@@ -942,5 +1044,36 @@ mod tests {
 
         assert_eq!("a", map["..a.."]);
         assert_eq!("b", map["..b.."]);
+    }
+
+    #[traced_test]
+    #[test]
+    fn test_break_interpolation_token() {
+        let test = "a.b.#block#.c.d.#root#.e.f.g".parse::<Identifier>().unwrap();
+        let map = test.interpolate("#block#.#root#.c.;");
+        assert!(map.is_none());
+        println!("{:?}", map);
+
+        let test = "a.b.#block#.c.#root#.e".parse::<Identifier>().unwrap();
+        let map = test.interpolate("#block#.#root#.c.(ext);").unwrap();
+        assert_eq!("e", map["ext"]);
+        println!("{:?}", map);
+
+        let test = "a.b.#block#.c.#root#.e.a".parse::<Identifier>().unwrap();
+        let map = test.interpolate("#block#.#root#.(root).(ext);");
+        assert!(map.is_none());
+        println!("{:?}", map);
+
+        let test = "a.b.#block#.c.#root#".parse::<Identifier>().unwrap();
+        let map = test.interpolate("#block#.#root#.(root).(ext);");
+        println!("{:?}", map);
+
+        let test = "app.#block#.usage.#root#.plugin.process.cargo".parse::<Identifier>().unwrap();
+        let map = test.interpolate("#block#.#root#.plugin.process.(input)");
+        println!("{:?}", map);
+
+        let test =  r##".plugin.process.redirect.".test/test.output".#root#"##.parse::<Identifier>().unwrap();
+        let map = test.interpolate(r##"#root#.plugin.process.redirect.(input)""##).unwrap();
+        println!("{:?}", map);
     }
 }

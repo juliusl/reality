@@ -1,10 +1,12 @@
 pub use crate::v2::ActionBuffer;
 pub use crate::v2::Apply;
 pub use crate::v2::Call;
-pub use crate::v2::Compile;
+pub use crate::v2::Dispatch;
+pub use crate::v2::DispatchResult;
+pub use crate::v2::DispatchSignature;
 pub use crate::v2::Properties;
 pub use crate::v2::Property;
-pub use crate::v2::BuildRef;
+pub use crate::v2::DispatchRef;
 pub use crate::v2::Compiler;
 pub use crate::v2::Framework;
 pub use crate::v2::Parser;
@@ -38,6 +40,7 @@ pub use reality_derive::Load;
 pub use reality_derive::Runmd;
 pub use reality_derive::apply_framework;
 pub use reality_derive::thunk;
+pub use reality_derive::dispatch_signature;
 
 /// specs -- Entity Component System
 pub use specs::Component;

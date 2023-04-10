@@ -1,4 +1,5 @@
 use futures::Future;
+use specs::world::LazyBuilder;
 use specs::Component;
 use specs::Entity;
 use specs::Join;
@@ -16,7 +17,7 @@ use crate::Error;
 /// Provides an API for working with the Component created from a compiled build w/o the storage boilerplate,
 ///
 #[derive(Default)]
-pub struct BuildRef<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool = false> {
+pub struct DispatchRef<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool = false> {
     /// The compiler that owns the entity being referenced,
     ///
     pub(super) world_ref: Option<&'a mut (dyn WorldRef + Send + Sync)>,
@@ -35,17 +36,27 @@ pub struct BuildRef<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool = false> {
 ///
 pub trait WorldRef: AsMut<World> + AsRef<World> {}
 
-impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
+impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> DispatchRef<'a, T, ENABLE_ASYNC> {
     /// Returns a new build ref,
-    /// 
+    ///
     pub fn new(entity: Entity, world_ref: &'a mut (dyn WorldRef + Send + Sync)) -> Self {
-        Self { world_ref: Some(world_ref), entity: Some(entity), error: None, _u: PhantomData }
+        Self {
+            world_ref: Some(world_ref),
+            entity: Some(entity),
+            error: None,
+            _u: PhantomData,
+        }
     }
 
     /// Returns an empty build ref,
-    /// 
+    ///
     pub fn empty() -> Self {
-        Self { world_ref: None, entity: None, error: None, _u: PhantomData }
+        Self {
+            world_ref: None,
+            entity: None,
+            error: None,
+            _u: PhantomData,
+        }
     }
     /// Returns the self as Result,
     ///
@@ -62,10 +73,18 @@ impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_A
     /// Check if an error is set,
     ///
     fn check(mut self) -> Self {
-        if self.error.is_some() {
+        if self
+            .error
+            .as_ref()
+            .filter(|e| e.deref().deref().as_ref() != Error::skip().as_ref())
+            .is_some()
+        {
             self.world_ref.take();
             self.entity.take();
+        } else {
+            self.error.take();
         }
+        
         self
     }
 
@@ -93,13 +112,15 @@ impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_A
 
 /// (Internal) Common Component storage-access functions
 ///
-impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool> BuildRef<'a, T, ENABLE_ASYNC> {
+impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool>
+    DispatchRef<'a, T, ENABLE_ASYNC>
+{
     /// Dispatches changes to world storage via lazy-update and calls .maintain(),
     ///
     pub fn dispatch(
         &mut self,
         map: impl FnOnce(&T, &LazyUpdate) -> Result<(), Error>,
-    ) -> Result<(), Error> 
+    ) -> Result<(), Error>
     where
         <T as specs::Component>::Storage: std::default::Default,
     {
@@ -121,6 +142,90 @@ impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool> BuildRef<'a,
         } else {
             Err(format!("Could not dispatch changes, {:?}", self.error).into())
         }
+    }
+
+    /// Dispatches into a new build_ref of component C forking into a new entity returned from map,
+    ///
+    pub fn fork_into<C: Component + Send + Sync>(
+        mut self,
+        map: impl FnOnce(&T, LazyBuilder) -> Result<Entity, Error>,
+    ) -> Result<DispatchRef<'a, C, ENABLE_ASYNC>, Error>
+    where
+        <T as specs::Component>::Storage: std::default::Default,
+        <C as specs::Component>::Storage: std::default::Default,
+    {
+        {
+            if let Some(world) = self.world_ref.as_mut() {
+                world.as_mut().register::<T>();
+            }
+        }
+
+        if let (Some(world), Some(entity)) = (self.world_ref, self.entity) {
+            let next = world.as_ref().read_component::<T>().get(entity).map(|c| {
+                let lazy_update = world.as_ref().read_resource::<LazyUpdate>();
+                let lazy_builder = lazy_update.create_entity(&world.as_ref().entities());
+                map(c, lazy_builder)
+            });
+
+            match next {
+                Some(Ok(next)) => {
+                    return Ok(DispatchRef {
+                        world_ref: Some(world),
+                        entity: Some(next),
+                        error: None,
+                        _u: PhantomData,
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        Err("Could not fork_into new build ref".into())
+    }
+
+    /// Forks map(T, C) -> into C,
+    ///
+    pub fn fork_into_with<C: Component + Send + Sync>(
+        mut self,
+        map: impl FnOnce(&T, &C, LazyBuilder) -> Result<Entity, Error>,
+    ) -> Result<DispatchRef<'a, C, ENABLE_ASYNC>, Error>
+    where
+        <T as specs::Component>::Storage: std::default::Default,
+        <C as specs::Component>::Storage: std::default::Default,
+    {
+        {
+            if let Some(world) = self.world_ref.as_mut() {
+                world.as_mut().register::<T>();
+            }
+        }
+
+        if let (Some(world), Some(entity)) = (self.world_ref, self.entity) {
+            let next = (
+                &world.as_ref().read_component::<T>(),
+                &world.as_ref().read_component::<C>(),
+            )
+                .join()
+                .get(entity, &world.as_ref().entities())
+                .map(|(t, c)| {
+                    let lazy_update = world.as_ref().read_resource::<LazyUpdate>();
+                    let lazy_builder = lazy_update.create_entity(&world.as_ref().entities());
+                    map(t, c, lazy_builder)
+                });
+
+            match next {
+                Some(Ok(next)) => {
+                    return Ok(DispatchRef {
+                        world_ref: Some(world),
+                        entity: Some(next),
+                        error: None,
+                        _u: PhantomData,
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        Err("Could not fork_into_with new build ref".into())
     }
 
     /// Map a component T to C w/ read access to T
@@ -149,13 +254,22 @@ impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool> BuildRef<'a,
         }
     }
 
-     /// Map a component (&mut T, &C) w/ map returning R,
-    /// 
-    fn map_entity_with<C: Component + Send + Sync + 'a, R>(&self, map: impl FnOnce(&T, &C) -> R) -> Option<R>  {
+    /// Map a component (&mut T, &C) w/ map returning R,
+    ///
+    fn map_entity_with<C: Component + Send + Sync + 'a, R>(
+        &self,
+        map: impl FnOnce(&T, &C) -> R,
+    ) -> Option<R> {
         if let Some(entity) = self.entity {
             self.world_ref
                 .as_ref()
-                .map(|c| (c.as_ref().entities(), c.as_ref().read_component::<T>(), c.as_ref().read_component::<C>()))
+                .map(|c| {
+                    (
+                        c.as_ref().entities(),
+                        c.as_ref().read_component::<T>(),
+                        c.as_ref().read_component::<C>(),
+                    )
+                })
                 .and_then(|(a, b, c)| (&b, &c).join().get(entity, &a).map(|(a, b)| map(a, b)))
         } else {
             None
@@ -163,13 +277,24 @@ impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool> BuildRef<'a,
     }
 
     /// Map a component (&mut T, &C) w/ map returning R,
-    /// 
-    fn map_entity_mut_with<C: Component + Send + Sync + 'a, R>(&self, map: impl FnOnce(&mut T, &C) -> R) -> Option<R>  {
+    ///
+    fn map_entity_mut_with<C: Component + Send + Sync + 'a, R>(
+        &self,
+        map: impl FnOnce(&mut T, &C) -> R,
+    ) -> Option<R> {
         if let Some(entity) = self.entity {
             self.world_ref
                 .as_ref()
-                .map(|c| (c.as_ref().entities(), c.as_ref().write_component::<T>(), c.as_ref().read_component::<C>()))
-                .and_then(|(a, mut b, c)| (&mut b, &c).join().get(entity, &a).map(|(a, b)| map(a, b)))
+                .map(|c| {
+                    (
+                        c.as_ref().entities(),
+                        c.as_ref().write_component::<T>(),
+                        c.as_ref().read_component::<C>(),
+                    )
+                })
+                .and_then(|(a, mut b, c)| {
+                    (&mut b, &c).join().get(entity, &a).map(|(a, b)| map(a, b))
+                })
         } else {
             None
         }
@@ -178,7 +303,7 @@ impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool> BuildRef<'a,
 
 /// API's to work with specs storage through the build ref,
 ///
-impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T> {
+impl<'a, T: Send + Sync + Component + 'a> DispatchRef<'a, T> {
     /// Write the Component from the build reference, chainable
     ///
     pub fn write(mut self, d: impl FnOnce(&mut T) -> Result<(), Error>) -> Self {
@@ -201,7 +326,10 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T> {
 
     /// Write the Component from the build reference, chainable
     ///
-    pub fn write_with<C: Component + Send + Sync + 'a>(mut self, d: impl FnOnce(&mut T, &C) -> Result<(), Error>) -> Self {
+    pub fn write_with<C: Component + Send + Sync + 'a>(
+        mut self,
+        d: impl FnOnce(&mut T, &C) -> Result<(), Error>,
+    ) -> Self {
         if let Some(Err(error)) = self.map_entity_mut_with(d) {
             self.error = Some(error.into());
         }
@@ -211,7 +339,10 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T> {
 
     /// Read the Component from the build reference, chainable
     ///
-    pub fn read_with<C: Component + Send + Sync + 'a>(mut self, d: impl FnOnce(&T, &C) -> Result<(), Error>) -> Self {
+    pub fn read_with<C: Component + Send + Sync + 'a>(
+        mut self,
+        d: impl FnOnce(&T, &C) -> Result<(), Error>,
+    ) -> Self {
         if let Some(Err(error)) = self.map_entity_with(d) {
             self.error = Some(error.into());
         }
@@ -242,7 +373,10 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T> {
 
     /// Maps component (&T, &C) to component C and inserts C to storage, chainable
     ///
-    pub fn map_with<C: Component + Send + Sync + 'a>(mut self, d: impl FnOnce(&T, &C) -> Result<C, Error>) -> Self
+    pub fn map_with<C: Component + Send + Sync + 'a>(
+        mut self,
+        d: impl FnOnce(&T, &C) -> Result<C, Error>,
+    ) -> Self
     where
         <C as specs::Component>::Storage: std::default::Default,
     {
@@ -268,7 +402,7 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T> {
     pub fn map_into<C: Send + Sync + Component + 'a>(
         self,
         d: impl FnOnce(&T) -> Result<C, Error>,
-    ) -> BuildRef<'a, C>
+    ) -> DispatchRef<'a, C>
     where
         <C as specs::Component>::Storage: std::default::Default,
     {
@@ -282,7 +416,7 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T> {
     pub fn map_into_with<C: Send + Sync + Component + 'a>(
         self,
         d: impl FnOnce(&T, &C) -> Result<C, Error>,
-    ) -> BuildRef<'a, C>
+    ) -> DispatchRef<'a, C>
     where
         <C as specs::Component>::Storage: std::default::Default,
     {
@@ -291,8 +425,8 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T> {
 
     /// Transmutes this build reference from BuildRef<T> to BuildRef<C>,
     ///
-    pub fn transmute<C: Send + Sync + Component + 'a>(self) -> BuildRef<'a, C> {
-        BuildRef {
+    pub fn transmute<C: Send + Sync + Component + 'a>(self) -> DispatchRef<'a, C> {
+        DispatchRef {
             world_ref: self.world_ref,
             entity: self.entity,
             _u: PhantomData,
@@ -302,8 +436,8 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T> {
 
     /// Returns self with Async API enabled,
     ///
-    pub fn enable_async(self) -> BuildRef<'a, T, true> {
-        BuildRef {
+    pub fn enable_async(self) -> DispatchRef<'a, T, true> {
+        DispatchRef {
             world_ref: self.world_ref,
             entity: self.entity,
             _u: PhantomData,
@@ -314,10 +448,10 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T> {
 
 /// Async-version of API's to work with specs storage through the build ref,
 ///
-impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
+impl<'a, T: Send + Sync + Component + 'a> DispatchRef<'a, T, true> {
     /// Write the Component from the build reference, chainable
     ///
-    pub async fn write<F>(mut self, d: impl FnOnce(&mut T) -> F) -> BuildRef<'a, T, true>
+    pub async fn write<F>(mut self, d: impl FnOnce(&mut T) -> F) -> DispatchRef<'a, T, true>
     where
         F: Future<Output = Result<(), Error>>,
     {
@@ -332,7 +466,7 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
 
     /// Read the Component from the build reference, chainable
     ///
-    pub async fn read<F>(mut self, d: impl FnOnce(&T) -> F) -> BuildRef<'a, T, true>
+    pub async fn read<F>(mut self, d: impl FnOnce(&T) -> F) -> DispatchRef<'a, T, true>
     where
         F: Future<Output = Result<(), Error>>,
     {
@@ -345,9 +479,12 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
         self.check()
     }
 
-        /// Write the Component (&mut T, &C) from the build reference, chainable
+    /// Write the Component (&mut T, &C) from the build reference, chainable
     ///
-    pub async fn write_with<C: Component + Send + Sync + 'a, F>(mut self, d: impl FnOnce(&mut T, &C) -> F) -> BuildRef<'a, T, true>
+    pub async fn write_with<C: Component + Send + Sync + 'a, F>(
+        mut self,
+        d: impl FnOnce(&mut T, &C) -> F,
+    ) -> DispatchRef<'a, T, true>
     where
         F: Future<Output = Result<(), Error>>,
     {
@@ -362,7 +499,10 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
 
     /// Read the Component (T, C) from the build reference, chainable
     ///
-    pub async fn read_with<C: Component + Send + Sync + 'a, F>(mut self, d: impl FnOnce(&T, &C) -> F) -> BuildRef<'a, T, true>
+    pub async fn read_with<C: Component + Send + Sync + 'a, F>(
+        mut self,
+        d: impl FnOnce(&T, &C) -> F,
+    ) -> DispatchRef<'a, T, true>
     where
         F: Future<Output = Result<(), Error>>,
     {
@@ -380,7 +520,7 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
     pub async fn map<C: Component + Send + Sync + 'a, F>(
         mut self,
         d: impl FnOnce(&T) -> F,
-    ) -> BuildRef<'a, T, true>
+    ) -> DispatchRef<'a, T, true>
     where
         <C as specs::Component>::Storage: std::default::Default,
         F: Future<Output = Result<C, Error>>,
@@ -406,7 +546,7 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
     pub async fn map_with<C: Component + Send + Sync + 'a, F>(
         mut self,
         d: impl FnOnce(&T, &C) -> F,
-    ) -> BuildRef<'a, T, true>
+    ) -> DispatchRef<'a, T, true>
     where
         <C as specs::Component>::Storage: std::default::Default,
         F: Future<Output = Result<C, Error>>,
@@ -434,7 +574,7 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
     pub async fn map_into<C: Send + Sync + Component + 'a, F>(
         self,
         d: impl FnOnce(&T) -> F,
-    ) -> BuildRef<'a, C, true>
+    ) -> DispatchRef<'a, C, true>
     where
         <C as specs::Component>::Storage: std::default::Default,
         F: Future<Output = Result<C, Error>>,
@@ -449,7 +589,7 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
     pub async fn map_into_with<C: Send + Sync + Component + 'a, F>(
         self,
         d: impl FnOnce(&T, &C) -> F,
-    ) -> BuildRef<'a, C, true>
+    ) -> DispatchRef<'a, C, true>
     where
         <C as specs::Component>::Storage: std::default::Default,
         F: Future<Output = Result<C, Error>>,
@@ -459,8 +599,8 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
 
     /// Transmutes this build reference from BuildRef<T> to BuildRef<C>,
     ///
-    pub fn transmute<C: Send + Sync + Component + 'a>(self) -> BuildRef<'a, C, true> {
-        BuildRef {
+    pub fn transmute<C: Send + Sync + Component + 'a>(self) -> DispatchRef<'a, C, true> {
+        DispatchRef {
             world_ref: self.world_ref,
             entity: self.entity,
             error: self.error,
@@ -470,8 +610,8 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
 
     /// Returns self with async api disabled,
     ///
-    pub fn disable_async(self) -> BuildRef<'a, T> {
-        BuildRef {
+    pub fn disable_async(self) -> DispatchRef<'a, T> {
+        DispatchRef {
             world_ref: self.world_ref,
             entity: self.entity,
             error: self.error,
@@ -480,11 +620,11 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
     }
 
     /// (Async) Dispatches changes to world storage via lazy-update and calls .maintain(),
-    /// 
+    ///
     pub async fn async_dispatch<F>(
         &mut self,
         map: impl FnOnce(&T, &LazyUpdate) -> F,
-    ) -> Result<(), Error> 
+    ) -> Result<(), Error>
     where
         <T as specs::Component>::Storage: std::default::Default,
         F: Future<Output = Result<(), Error>> + Send,
@@ -492,16 +632,12 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
         if let (Some(world), Some(entity)) = (self.world_ref.as_mut(), self.entity) {
             world.as_mut().register::<T>();
             {
-                if let Some(f) = world
-                    .as_ref()
-                    .read_component::<T>()
-                    .get(entity)
-                    .map(|c| {
-                        let lazy_update = world.as_ref().read_resource::<LazyUpdate>();
-                        map(c, &lazy_update)
-                    }) {
-                        f.await?;
-                    }
+                if let Some(f) = world.as_ref().read_component::<T>().get(entity).map(|c| {
+                    let lazy_update = world.as_ref().read_resource::<LazyUpdate>();
+                    map(c, &lazy_update)
+                }) {
+                    f.await?;
+                }
             }
             world.as_mut().maintain();
             Ok(())
@@ -512,7 +648,7 @@ impl<'a, T: Send + Sync + Component + 'a> BuildRef<'a, T, true> {
 }
 
 impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> From<Error>
-    for BuildRef<'a, T, ENABLE_ASYNC>
+    for DispatchRef<'a, T, ENABLE_ASYNC>
 {
     fn from(value: Error) -> Self {
         Self {
@@ -531,8 +667,8 @@ pub struct WorldWrapper<'a>(&'a mut World);
 impl<'a> WorldWrapper<'a> {
     /// Returns a build ref for an entity,
     ///
-    pub fn get_ref<T: Component + Sync + Send>(&'a mut self, entity: Entity) -> BuildRef<'a, T> {
-        BuildRef {
+    pub fn get_ref<T: Component + Sync + Send>(&'a mut self, entity: Entity) -> DispatchRef<'a, T> {
+        DispatchRef {
             world_ref: Some(self),
             entity: Some(entity),
             error: None,

@@ -1,4 +1,4 @@
-use super::BuildRef;
+use super::DispatchRef;
 use super::Listen;
 use super::Properties;
 use super::WorldRef;
@@ -11,6 +11,7 @@ use specs::HashMapStorage;
 use specs::LazyUpdate;
 use specs::WorldExt;
 use std::collections::BTreeMap;
+use std::fmt::Display;
 
 /// Log of built entities,
 ///
@@ -37,7 +38,8 @@ impl BuildLog {
 
     /// Searches for an object by identifier,
     ///
-    pub fn try_get(&self, identifier: &Identifier) -> Result<Entity, Error> {
+    pub fn try_get(&self, identifier: impl TryInto<Identifier, Error = Error>) -> Result<Entity, Error> {
+        let identifier = identifier.try_into()?;
         let search = identifier.commit()?;
 
         self.index()
@@ -90,12 +92,21 @@ impl BuildLog {
 
     /// Returns a build ref if the identifier resolves to an entity,
     /// 
-    pub fn find_ref<'a, T: Send + Sync + 'a>(&self, ident: impl TryInto<Identifier>, world_ref: &'a mut (impl WorldRef + Send + Sync)) -> Option<BuildRef<'a, T>> {
+    pub fn find_ref<'a, T: Send + Sync + 'a>(&self, ident: impl TryInto<Identifier>, world_ref: &'a mut (impl WorldRef + Send + Sync)) -> Option<DispatchRef<'a, T>> {
         if let Ok(ident) = ident.try_into() {
-            self.try_get(&ident).ok().map(|e| BuildRef::new(e, world_ref))
+            self.try_get(&ident).ok().map(|e| DispatchRef::new(e, world_ref))
         } else {
             None
         }
+    }
+}
+
+impl Display for BuildLog {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (ident, e) in self.index.iter() {
+            writeln!(f, "{:?} --- {:#}", e, ident)?;
+        }
+        Ok(())
     }
 }
 
