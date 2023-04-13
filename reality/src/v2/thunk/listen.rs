@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::v2::Properties;
 use crate::Error;
+use crate::Result;
 use crate::Identifier;
 use async_trait::async_trait;
 use futures::Future;
@@ -24,7 +25,7 @@ where
 {
     /// Called on properties returned from a ThunkCall,
     ///
-    async fn listen(&self, properties: Properties, lazy_update: &LazyUpdate) -> Result<(), Error>;
+    async fn listen(&self, properties: Properties, lazy_update: &LazyUpdate) -> Result<()>;
 
     /// Called on identifiers and if accepted, lazily builds and returns an entity,
     ///
@@ -36,7 +37,7 @@ where
         &self,
         identifier: &Identifier,
         lazy_builder: LazyBuilder<'a>,
-    ) -> Result<Entity, Error>
+    ) -> Result<Entity>
     where
         Self: Build + Accept,
     {
@@ -50,7 +51,7 @@ where
 
 #[async_trait]
 impl Listen for Arc<dyn Listen> {
-    async fn listen(&self, properties: Properties, lazy_update: &LazyUpdate) -> Result<(), Error> {
+    async fn listen(&self, properties: Properties, lazy_update: &LazyUpdate) -> Result<()> {
         self.deref().listen(properties, lazy_update).await
     }
 }
@@ -59,11 +60,11 @@ impl Listen for Arc<dyn Listen> {
 ///
 #[async_trait]
 impl<
-        F: Future<Output = Result<(), Error>> + Send + Sync + 'static,
+        F: Future<Output = Result<()>> + Send + Sync + 'static,
         T: Fn(Properties, &LazyUpdate) -> F + Send + Sync + 'static,
     > Listen for T
 {
-    async fn listen(&self, properties: Properties, lazy_update: &LazyUpdate) -> Result<(), Error> {
+    async fn listen(&self, properties: Properties, lazy_update: &LazyUpdate) -> Result<()> {
         self(properties, lazy_update).await
     }
 }
@@ -79,7 +80,7 @@ where
     ///
     /// Note: return the error ERROR_NOT_ACCEPTED to indiciate that this type does not accept the identifier,
     ///
-    async fn accept(&self, identifier: &Identifier) -> Result<Self, Error>;
+    async fn accept(&self, identifier: &Identifier) -> Result<Self>;
 }
 
 /// Super-trait for a type that implements Listen + Accept + Build,

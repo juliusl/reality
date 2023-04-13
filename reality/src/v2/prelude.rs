@@ -41,6 +41,7 @@ pub use reality_derive::Runmd;
 pub use reality_derive::apply_framework;
 pub use reality_derive::thunk;
 pub use reality_derive::dispatch_signature;
+pub(super) use reality_derive::internal_use;
 
 /// specs -- Entity Component System
 pub use specs::Component;

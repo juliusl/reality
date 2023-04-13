@@ -1,6 +1,6 @@
 use crate::v2::compiler::DispatchRef;
 use crate::v2::{BuildLog, Properties};
-use crate::Error;
+use crate::Result;
 use async_trait::async_trait;
 use reality_derive::dispatch_signature;
 use std::sync::Arc;
@@ -55,7 +55,7 @@ pub trait AsyncDispatch
 where
     Self: Send + Sync,
 {
-    /// Compiles a built object,
+    /// Async dispatch fn,
     ///
     async fn async_dispatch<'a, 'b>(
         &'a self,
@@ -77,7 +77,7 @@ impl AsyncDispatch for Arc<dyn AsyncDispatch> {
 
 /// Type alias for a dispatch result,
 ///
-pub type DispatchResult<'a> = Result<DispatchRef<'a, Properties>, Error>;
+pub type DispatchResult<'a> = Result<DispatchRef<'a, Properties>>;
 
 /// Trait to dispatch changes to a world,
 ///

@@ -237,10 +237,12 @@ impl Compiler {
 
 impl PacketHandler for Compiler {
     fn on_packet(&mut self, packet: Packet) -> Result<(), crate::Error> {
+        // Ingest documentation from packets,
         if let Some(docs) = self.documentation.as_mut() {
             docs.on_packet(packet.clone())?;
         }
 
+        // Route packets to respective blocks,
         self.block_list.on_packet(packet.clone())?;
 
         // Ignoring errors since at this level we only care about the extension keyword,

@@ -2,9 +2,7 @@ use super::compiler::DispatchRef;
 use super::Properties;
 use crate::Error;
 use async_trait::async_trait;
-use specs::world::LazyBuilder;
 use specs::Component;
-use specs::Entity;
 use specs::LazyUpdate;
 use specs::VecStorage;
 use std::sync::Arc;
@@ -188,13 +186,6 @@ pub fn thunk_compile(compile: impl AsyncDispatch + 'static) -> ThunkCompile {
 }
 
 #[async_trait]
-impl<T: Call + Send + Sync> Call for Thunk<T> {
-    async fn call(&self) -> Result<Properties, Error> {
-        self.thunk.call().await
-    }
-}
-
-#[async_trait]
 impl<T: Listen + Send + Sync> Listen for Thunk<T> {
     async fn listen(&self, properties: Properties, lazy_update: &LazyUpdate) -> Result<(), Error> {
         self.thunk.listen(properties, lazy_update).await
@@ -205,12 +196,6 @@ impl<T: Listen + Send + Sync> Listen for Thunk<T> {
 impl<T: AsyncDispatch + Send + Sync> AsyncDispatch for Thunk<T> {
     async fn async_dispatch<'a, 'b>(&'a self, build_ref: DispatchRef<'b, Properties>) -> DispatchResult<'b> {
         self.thunk.async_dispatch(build_ref).await
-    }
-}
-
-impl<T: Build + Send + Sync> Build for Thunk<T> {
-    fn build(&self, lazy_builder: LazyBuilder) -> Result<Entity, Error> {
-        self.thunk.build(lazy_builder)
     }
 }
 

@@ -58,6 +58,7 @@ impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> DispatchRef<'a, T, ENABL
             _u: PhantomData,
         }
     }
+
     /// Returns the self as Result,
     ///
     /// Note: Can be used to check for errors before moving to the next function in the chain,
@@ -84,7 +85,7 @@ impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> DispatchRef<'a, T, ENABL
         } else {
             self.error.take();
         }
-        
+
         self
     }
 
@@ -108,6 +109,17 @@ impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> DispatchRef<'a, T, ENABL
 
         Ok(())
     }
+
+    /// Sets the entity and clears any errors,
+    ///
+    pub fn entity(self, entity: Entity) -> Self {
+        Self {
+            world_ref: self.world_ref,
+            entity: Some(entity),
+            error: None,
+            _u: PhantomData,
+        }
+    }
 }
 
 /// (Internal) Common Component storage-access functions
@@ -115,6 +127,20 @@ impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> DispatchRef<'a, T, ENABL
 impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool>
     DispatchRef<'a, T, ENABLE_ASYNC>
 {
+    /// Takes the component from storage
+    /// 
+    // pub fn take(self, map: impl FnOnce(T) -> Result<T, Error>) -> Result<Self, Error> {
+    //     if let (Some(wr), Some(e)) = (self.world_ref.as_ref(), self.entity.as_ref()) {
+    //         if let Some(w) = wr.as_ref().write_component::<T>().remove(*e) {
+    //             let w = map(w)?;
+
+    //             wr.as_ref().write_component::<T>().insert(*e, w)?;
+    //         }
+    //     }
+
+    //     Ok(self)
+    // }
+
     /// Dispatches changes to world storage via lazy-update and calls .maintain(),
     ///
     pub fn dispatch(
@@ -144,6 +170,70 @@ impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool>
         }
     }
 
+    pub fn dispatch_mut(
+        &mut self,
+        map: impl FnOnce(&mut T, &LazyUpdate) -> Result<(), Error>,
+    ) -> Result<(), Error>
+    where
+        <T as specs::Component>::Storage: std::default::Default,
+    {
+        if let (Some(world), Some(entity)) = (self.world_ref.as_mut(), self.entity) {
+            world.as_mut().register::<T>();
+            {
+                world
+                    .as_ref()
+                    .write_component::<T>()
+                    .get_mut(entity)
+                    .map(|c| {
+                        let lazy_update = world.as_ref().read_resource::<LazyUpdate>();
+                        map(c, &lazy_update)
+                    })
+                    .unwrap_or(Ok(()))?;
+            }
+            world.as_mut().maintain();
+            Ok(())
+        } else {
+            Err(format!("Could not dispatch changes, {:?}", self.error).into())
+        }
+    }
+
+    /// Dispatches a new entity to the world and calls .maintain(),
+    ///
+    pub fn dispatch_mut_with<C: Component + Send + Sync>(
+        &mut self,
+        map: impl FnOnce(&mut T, &C, LazyBuilder) -> Result<Entity, Error>,
+    ) -> Result<(), Error>
+    where
+        <T as specs::Component>::Storage: std::default::Default,
+        <C as specs::Component>::Storage: std::default::Default,
+    {
+        if let Some(world) = self.world_ref.as_mut() {
+            world.as_mut().register::<T>();
+            world.as_mut().register::<C>();
+        }
+
+        if let Some(world) = self.world_ref.as_ref() {
+            if let (Some(entity), entities, mut write_c, read_t, lazy_update) = (
+                self.entity,
+                world.as_ref().entities(),
+                world.as_ref().write_component::<T>(),
+                world.as_ref().read_component::<C>(),
+                world.as_ref().read_resource::<LazyUpdate>(),
+            ) {
+                if let Some((c, t)) = (&mut write_c, &read_t).join().get(entity, &entities) {
+                    let lazy_b = lazy_update.create_entity(&entities);
+                    map(c, t, lazy_b)?;
+                }
+            }
+        }
+
+        if let Some(world) = self.world_ref.as_mut() {
+            world.as_mut().maintain();
+        }
+
+        Ok(())
+    }
+
     /// Dispatches into a new build_ref of component C forking into a new entity returned from map,
     ///
     pub fn fork_into<C: Component + Send + Sync>(
@@ -157,6 +247,7 @@ impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool>
         {
             if let Some(world) = self.world_ref.as_mut() {
                 world.as_mut().register::<T>();
+                world.as_mut().register::<C>();
             }
         }
 
@@ -196,12 +287,59 @@ impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool>
         {
             if let Some(world) = self.world_ref.as_mut() {
                 world.as_mut().register::<T>();
+                world.as_mut().register::<C>();
             }
         }
 
         if let (Some(world), Some(entity)) = (self.world_ref, self.entity) {
             let next = (
                 &world.as_ref().read_component::<T>(),
+                &world.as_ref().read_component::<C>(),
+            )
+                .join()
+                .get(entity, &world.as_ref().entities())
+                .map(|(t, c)| {
+                    let lazy_update = world.as_ref().read_resource::<LazyUpdate>();
+                    let lazy_builder = lazy_update.create_entity(&world.as_ref().entities());
+                    map(t, c, lazy_builder)
+                });
+
+            match next {
+                Some(Ok(next)) => {
+                    return Ok(DispatchRef {
+                        world_ref: Some(world),
+                        entity: Some(next),
+                        error: None,
+                        _u: PhantomData,
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        Err("Could not fork_into_with new build ref".into())
+    }
+
+    /// Forks map(mut T, C) -> into C,
+    ///
+    pub fn fork_into_with_mut<C: Component + Send + Sync>(
+        mut self,
+        map: impl FnOnce(&mut T, &C, LazyBuilder) -> Result<Entity, Error>,
+    ) -> Result<DispatchRef<'a, C, ENABLE_ASYNC>, Error>
+    where
+        <T as specs::Component>::Storage: std::default::Default,
+        <C as specs::Component>::Storage: std::default::Default,
+    {
+        {
+            if let Some(world) = self.world_ref.as_mut() {
+                world.as_mut().register::<T>();
+                world.as_mut().register::<C>();
+            }
+        }
+
+        if let (Some(world), Some(entity)) = (self.world_ref, self.entity) {
+            let next = (
+                &mut world.as_ref().write_component::<T>(),
                 &world.as_ref().read_component::<C>(),
             )
                 .join()
@@ -567,6 +705,32 @@ impl<'a, T: Send + Sync + Component + 'a> DispatchRef<'a, T, true> {
         self.check()
     }
 
+    /// Maps component (&T, &C) to component C and inserts C to storage for this entity, chainable
+    ///
+    pub async fn map_mut_with<C: Component + Send + Sync + 'a, F>(
+        mut self,
+        d: impl FnOnce(&mut T, &C) -> F,
+    ) -> DispatchRef<'a, T, true>
+    where
+        <C as specs::Component>::Storage: std::default::Default,
+        F: Future<Output = Result<C, Error>>,
+    {
+        if let Some(next) = self.map_entity_mut_with(d) {
+            match next.await {
+                Ok(next) => {
+                    if let Err(err) = self.store(next) {
+                        self.error = Some(err.into());
+                    }
+                }
+                Err(err) => {
+                    self.error = Some(err.into());
+                }
+            }
+        }
+
+        self.check()
+    }
+
     /// Maps component T to component C and inserts C to storage, chainable
     ///
     /// Returns the transmutation of this build reference into a BuildRef<C>,
@@ -696,5 +860,95 @@ impl<'a> WorldRef for WorldWrapper<'a> {}
 impl<'a> From<&'a mut World> for WorldWrapper<'a> {
     fn from(value: &'a mut World) -> Self {
         Self(value)
+    }
+}
+
+#[allow(unused_imports)]
+mod tests {
+    use super::DispatchRef;
+    use crate::{
+        v2::{BuildLog, Properties},
+        Error, Identifier,
+    };
+    use specs::{storage, Builder, Component, DenseVecStorage, World};
+    use tokio::{sync::oneshot::error::RecvError, task::yield_now};
+
+    #[test]
+    fn test_dispatch_ref() {
+        DispatchRef::<BuildLog>::empty()
+            .dispatch_mut_with::<Properties>(|log, properties, builder| {
+                let entity = builder.with(properties.clone()).build();
+                log.index_mut().insert(properties.owner().clone(), entity);
+                Ok(entity)
+            })
+            .unwrap();
+    }
+
+    async fn test_async_disp(mut disp: DispatchRef<'_, Yield>) {
+        disp.read(|y| {
+            if y.0.is_none() {
+                Err(Error::skip())
+            } else {
+                Ok(())
+            }
+        })
+        .enable_async()
+        .write_with::<Properties, _>(|y, p| {
+            let Yield(rx) = y;
+            let rx = rx
+                .take()
+                .expect("should exist because previous step returned Ok(())");
+            async move {
+                let world = rx.await?;
+                Ok(())
+            }
+        })
+        .await;
+    }
+
+    async fn test_a(world: World) -> Result<World, Error> {
+        Ok(world)
+    }
+
+    fn test_dispatch<T, C>(mut disp: DispatchRef<T>)
+    where
+        T: Component + Send + Sync + Clone,
+        C: Component + Send + Sync + Clone,
+        <T as Component>::Storage: Default,
+        <C as Component>::Storage: Default,
+    {
+        disp.dispatch_mut_with::<C>(|t, c, builder| {
+            let entity = builder.with(c.clone()).with(t.clone()).build();
+
+            Ok(entity)
+        })
+        .unwrap();
+    }
+
+    #[derive(Component)]
+    #[storage(DenseVecStorage)]
+    pub struct Yield(Option<tokio::sync::oneshot::Receiver<World>>);
+
+    fn t() {
+        /*
+        -----------------------> World
+        */
+    }
+
+    /// 
+    /// 
+    struct Test;
+
+
+    impl Test {
+        /// Entry point,
+        /// 
+        /// ```runmd test
+        /// +  .main 
+        /// ```
+        /// 
+        async fn main(world: World) -> Result<(), Error> {
+            Ok(())
+        }
     }
 }

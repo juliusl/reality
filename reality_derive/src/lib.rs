@@ -21,6 +21,19 @@ mod enum_data;
 use enum_data::EnumData;
 use enum_data::InterpolationExpr;
 
+/// Allows macros to be used internally,
+/// 
+#[proc_macro]
+pub fn internal_use(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    quote::quote! {
+        mod reality {
+            pub mod v2 {
+                pub use crate::v2::*;
+            }
+        }
+    }.into()
+}
+
 /// Derives Load trait implementation as well as system data impl,
 ///
 /// Given a struct such as,

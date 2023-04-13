@@ -11,15 +11,15 @@ thunk! {
    }
 }
 
+fn main() {
+    let testa = thunk_testa(ATest{});
+    println!("{}", testa.testa(2039));
+}
+
 struct ATest;
 
 impl TestA for ATest {
     fn testa(&self, test: usize) -> String {
         format!("hello test a, {test}")
     }
-}
-
-fn main() {
-    let testa = thunk_testa(ATest{});
-    println!("{}", testa.testa(2039));
 }

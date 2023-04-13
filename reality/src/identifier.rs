@@ -28,11 +28,44 @@ pub struct Identifier {
     ///
     len: usize,
     /// Parent identifier,
-    /// 
+    ///
     parent: Option<Arc<Identifier>>,
 }
 
 impl Identifier {
+    /// Returns the absolute form of this identifier,
+    ///
+    /// An absolute identifier always has a non-empty identifier.
+    ///
+    /// Ex:
+    ///
+    /// .plugin => plugin
+    ///
+    /// plugin => plugin (no change)
+    ///
+    pub fn absolute(&self) -> Result<Self, Error> {
+        if self.root().is_empty() && self.len == 0 {
+            return Err("Empty identifier".into());
+        }
+
+        let mut bufs = vec![];
+        bufs.push(self.buf.trim_matches('.').to_string());
+        let mut cache = Arc::new(self.clone());
+        while let Some(parent) = cache.parent() {
+            bufs.push(parent.buf.trim_matches('.').to_string());
+            cache = parent.clone();
+        }
+
+        bufs.reverse();
+
+        Ok(Self {
+            buf: bufs.join("."),
+            tags: self.tags.clone(),
+            len: self.len - 1,
+            parent: None,
+        })
+    }
+
     /// Returns a new empty identifier,
     ///
     pub const fn new() -> Self {
@@ -210,7 +243,7 @@ impl Identifier {
     }
 
     /// Returns the subject identifier,
-    /// 
+    ///
     pub fn subject(&self) -> String {
         self.pos(self.len).ok().unwrap_or_default()
     }
@@ -223,21 +256,21 @@ impl Identifier {
         format!("{:#}", c).parse()
     }
 
-    /// Flattens the current identifier if the current identifier is empty, 
+    /// Flattens the current identifier if the current identifier is empty,
     /// the parent is Some, and the grandparent is None,
-    /// 
+    ///
     pub fn flatten(mut self) -> Self {
-        if let Some(parent) = self.parent() { 
+        if let Some(parent) = self.parent() {
             if parent.parent().is_none() && self.len == 0 && self.tags.is_empty() {
                 // If the current parent isn't empty but the current identifier is empty
                 return Self {
                     buf: parent.buf.clone(),
                     len: parent.len,
                     tags: parent.tags.clone(),
-                    parent: None
+                    parent: None,
                 };
             } else if parent.parent.is_none() && parent.len == 0 && parent.tags.is_empty() {
-                // If the current parent is empty but the current identifier isn't empty, remove parent 
+                // If the current parent is empty but the current identifier isn't empty, remove parent
                 self.parent.take();
             }
         }
@@ -319,7 +352,10 @@ impl Identifier {
                             cleared.clear_tags();
                             let cleared = &format!("{}", cleared);
                             let ancestor = &format!("{:#}", ancestor);
-                            buf = buf.replace(ancestor, cleared).trim_start_matches('.').to_string();
+                            buf = buf
+                                .replace(ancestor, cleared)
+                                .trim_start_matches('.')
+                                .to_string();
                             trace!("replaced {} --> {} --> {}", ancestor, cleared, buf);
                             sint.start = None;
                             found = true;
@@ -365,10 +401,14 @@ impl Identifier {
 
         trace!("buf: {buf}\nsint: {:?}", sint);
 
-        let expected_assignments = sint.tokens.iter().filter(|t| match t {
-            StringInterpolationTokens::Assignment(_) => true,
-            _ => false,
-        }).count();
+        let expected_assignments = sint
+            .tokens
+            .iter()
+            .filter(|t| match t {
+                StringInterpolationTokens::Assignment(_) => true,
+                _ => false,
+            })
+            .count();
 
         if let Some(buf) = parts(buf).ok() {
             if buf.len() < sint.tokens.len()
@@ -438,13 +478,16 @@ impl Identifier {
             }
 
             if map.len() < expected_assignments {
-                trace!("-- Did not assign all keys, assigned: {}  expected: {}", map.len(), expected_assignments);
+                trace!(
+                    "-- Did not assign all keys, assigned: {}  expected: {}",
+                    map.len(),
+                    expected_assignments
+                );
                 return None;
             }
         } else {
             return None;
         }
-
 
         Some(map)
     }
@@ -579,7 +622,7 @@ enum StringInterpolationTokens {
     #[regex("[.]?[#][a-zA-Z0-9:]*[#][.]?", on_match_tags)]
     MatchTags(BTreeSet<String>),
     /// Not match tags,
-    /// 
+    ///
     #[regex("[.]?[!][#][a-zA-Z0-9:]*[#][.]?", on_match_tags)]
     NotMatchTags(BTreeSet<String>),
     /// Assign the value from the identifier,
@@ -587,7 +630,7 @@ enum StringInterpolationTokens {
     #[regex("[(][^()]+[)]", on_assignment)]
     Assignment(String),
     /// Breaks if encountered,
-    /// 
+    ///
     #[token(";")]
     Break,
     /// Optionally assign a suffix,
@@ -629,7 +672,11 @@ fn on_match_tags(lex: &mut Lexer<StringInterpolationTokens>) -> BTreeSet<String>
     };
 
     let mut tags = BTreeSet::new();
-    for tag in lex.slice()[start..end].trim_start_matches("!").trim_matches('#').split(":") {
+    for tag in lex.slice()[start..end]
+        .trim_start_matches("!")
+        .trim_matches('#')
+        .split(":")
+    {
         tags.insert(tag.to_string());
     }
 
@@ -741,7 +788,9 @@ mod tests {
 
         let test = r##"app.start.#block#.usage.#root#.plugin.println.stderr."World Hello""##;
         let test = test.parse::<Identifier>().unwrap();
-        let map = test.interpolate("#block#.#root#.(root).(config).(ext).(name).(prop).(?input)").unwrap();
+        let map = test
+            .interpolate("#block#.#root#.(root).(config).(ext).(name).(prop).(?input)")
+            .unwrap();
         println!("{:#?}", map);
 
         // let test = r##"app.start.#block#.usage.test.#root#.plugin.process.cargo"##;
@@ -754,24 +803,24 @@ mod tests {
         // let map = test.interpolate("#block#.#root#.(root).(ext).(name).(prop)");
         // println!("{:#?}", map);
         /*
-        { 
-            "block": "usage", 
-            "name": "process", 
-            "prop": "cargo", 
+        {
+            "block": "usage",
+            "name": "process",
+            "prop": "cargo",
             "root": "plugin"
         }
          */
 
         /*
-2023-04-10T00:36:44.849861Z TRACE test_tags: reality::identifier: buf: usage.plugin.process.cargo
-sint: StringInterpolation { start: None, tokens: [Assignment("root"), Assignment("ext"), Assignment("name"), OptionalSuffixAssignment("prop")] }
-        {
-            "ext": "plugin", 
-            "name": "process", 
-            "prop": "cargo", 
-            "root": "usage"
-        }
-         */
+        2023-04-10T00:36:44.849861Z TRACE test_tags: reality::identifier: buf: usage.plugin.process.cargo
+        sint: StringInterpolation { start: None, tokens: [Assignment("root"), Assignment("ext"), Assignment("name"), OptionalSuffixAssignment("prop")] }
+                {
+                    "ext": "plugin",
+                    "name": "process",
+                    "prop": "cargo",
+                    "root": "usage"
+                }
+                 */
         let test = r##"a.b.#test:debug#.c.d"##;
         let test: Identifier = test.parse().expect("should be parsed");
 
@@ -797,8 +846,9 @@ sint: StringInterpolation { start: None, tokens: [Assignment("root"), Assignment
             .expect("should interpolate");
         assert_eq!("g", map["g"], "{:?}", map);
 
-        assert!(test.interpolate("!#block#.#root#.e.f.(g).(?value)").is_none());
-
+        assert!(test
+            .interpolate("!#block#.#root#.e.f.(g).(?value)")
+            .is_none());
 
         let test = r##"plugin.Process.#root#.path.redirect"##;
         let test: Identifier = test.parse().expect("should be parsed");
@@ -808,15 +858,16 @@ sint: StringInterpolation { start: None, tokens: [Assignment("root"), Assignment
             .expect("should interpolate");
         println!("{:?}", map);
 
-
         let test = r##"a.app.#block#.plugin.Process.#root#.path.redirect"##;
         let test: Identifier = test.parse().expect("should be parsed");
 
-        assert_eq!(None, test
-            .interpolate("!#block#.#root#.plugin.(name).path.(property)")
-            .map(|_| assert!(false, "should not interpolate")));
+        assert_eq!(
+            None,
+            test.interpolate("!#block#.#root#.plugin.(name).path.(property)")
+                .map(|_| assert!(false, "should not interpolate"))
+        );
 
-        let test = r##".plugin.Println.#root#.call.stdout"##;        
+        let test = r##".plugin.Println.#root#.call.stdout"##;
         let test: Identifier = test.parse().expect("should be parsed");
         let map = test
             .interpolate("!#block#.#root#.plugin.(name).call.(property)")
@@ -988,7 +1039,9 @@ sint: StringInterpolation { start: None, tokens: [Assignment("root"), Assignment
         let parts = ident.parts().expect("should have parts");
         assert_eq!(parts.len(), 4);
 
-        let map = ident.interpolate("redirect.(input)").expect("should interpolate");
+        let map = ident
+            .interpolate("redirect.(input)")
+            .expect("should interpolate");
         assert_eq!(".test/test.output", map["input"]);
     }
 
@@ -1038,7 +1091,9 @@ sint: StringInterpolation { start: None, tokens: [Assignment("root"), Assignment
 
     #[test]
     fn test_assignment_interpolation() {
-        let test = "a.b.#block#.c.d.#root#.e.f.g".parse::<Identifier>().unwrap();
+        let test = "a.b.#block#.c.d.#root#.e.f.g"
+            .parse::<Identifier>()
+            .unwrap();
 
         let map = test.interpolate("#block#.(..a..).(..b..)").unwrap();
 
@@ -1049,7 +1104,9 @@ sint: StringInterpolation { start: None, tokens: [Assignment("root"), Assignment
     #[traced_test]
     #[test]
     fn test_break_interpolation_token() {
-        let test = "a.b.#block#.c.d.#root#.e.f.g".parse::<Identifier>().unwrap();
+        let test = "a.b.#block#.c.d.#root#.e.f.g"
+            .parse::<Identifier>()
+            .unwrap();
         let map = test.interpolate("#block#.#root#.c.;");
         assert!(map.is_none());
         println!("{:?}", map);
@@ -1068,16 +1125,35 @@ sint: StringInterpolation { start: None, tokens: [Assignment("root"), Assignment
         let map = test.interpolate("#block#.#root#.(root).(ext);");
         println!("{:?}", map);
 
-        let test = "app.#block#.usage.#root#.plugin.process.cargo".parse::<Identifier>().unwrap();
+        let test = "app.#block#.usage.#root#.plugin.process.cargo"
+            .parse::<Identifier>()
+            .unwrap();
         let map = test.interpolate("#block#.#root#.plugin.process.(input)");
         println!("{:?}", map);
 
-        let test =  r##".plugin.process.redirect.".test/test.output".#root#"##.parse::<Identifier>().unwrap();
-        let map = test.interpolate(r##"#root#.plugin.process.redirect.(input)""##).unwrap();
+        let test = r##".plugin.process.redirect.".test/test.output".#root#"##
+            .parse::<Identifier>()
+            .unwrap();
+        let map = test
+            .interpolate(r##"#root#.plugin.process.redirect.(input)""##)
+            .unwrap();
         println!("{:?}", map);
 
-        let test =  r##".plugin.process.#root#.path.redirect"##.parse::<Identifier>().unwrap();
-        let map = test.interpolate(r##"#root#.plugin.process.redirect.(input)""##).unwrap();
+        let test = r##".plugin.process.#root#.path.redirect"##
+            .parse::<Identifier>()
+            .unwrap();
+        let map = test
+            .interpolate(r##"#root#.plugin.process.redirect.(input)""##)
+            .unwrap();
         println!("{:?}", map);
+    }
+
+    #[test]
+    fn test_absolute_ident() {
+        let test = r##".plugin.process.#root#.path.redirect"##
+            .parse::<Identifier>()
+            .unwrap();
+
+        println!("{:#}", test.absolute().unwrap());
     }
 }

@@ -1,5 +1,5 @@
 use specs::Component;
-use crate::Error;
+use crate::Result;
 
 /// Trait for map closure,
 ///
@@ -12,7 +12,7 @@ where
 {
     /// Maps a component from self,
     ///
-    fn map(&self) -> Result<C, Error>;
+    fn map(&self) -> Result<C>;
 }
 
 /// Trait for a map_with closure,
@@ -25,5 +25,5 @@ where
 {
     /// Maps a component from self with another Component,
     ///
-    fn map_with(&self, with: &C) -> Result<Self, Error>;
+    fn map_with(&self, with: &C) -> Result<Self>;
 }

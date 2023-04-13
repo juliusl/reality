@@ -136,8 +136,7 @@ impl Parser {
     /// 
     pub fn parse_line(mut self, line: impl AsRef<str>) -> Result<Self, Error> {
         if let Some(parser) = self.v1_parser.take() {
-            let parser = parser.parse(format!("{}\n", line.as_ref()));
-            self.v1_parser = Some(parser);
+            self.v1_parser = Some(parser.parse(format!("{}\n", line.as_ref())));
             Ok(self)
         } else {
             Err("Trying to parse w/ an unintialized parser".into())

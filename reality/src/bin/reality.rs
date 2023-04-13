@@ -26,10 +26,10 @@ async fn main() -> Result<(), Error> {
     println!("{:#?}", framework);
 
     log.find_ref::<framework::Shell>(
-        "examples.#block#.example.#root#.cli.shell.help",
+        "#block#.#root#.main",
         &mut compiler,
     )
-    .unwrap()
+    .expect("Should have a main root to start")
     .read(|b| {
         println!("{:#?}", b);
         Ok(())

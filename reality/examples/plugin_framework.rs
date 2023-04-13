@@ -104,7 +104,8 @@ async fn main() -> Result<(), Error> {
 }
 
 async fn from_runmd() -> Result<Compiler, Error> {
-    let mut compiler = Compiler::new().with_docs();
+    let mut compiler = Compiler::new()
+        .with_docs();
     let framework = compile_example_framework(&mut compiler)?;
     println!("Compiled framework: {:?}", framework);
 
@@ -528,6 +529,50 @@ pub mod test_framework {
                 .transmute::<Self>()
                 .write(|s| s.start_usage())
                 .transmute()
+        }
+    }
+}
+
+mod prototype {
+    use reality::{Error, dispatch_signature};
+
+
+    struct Example;
+
+    struct Test;
+
+    ///
+    /// ```
+    /// #[compile(Dispatch)] --> #[compile(Dispatch, pat="#block#.#root#.plugin.example;")]
+    /// fn config(&self, properties: Properties) -> Result<(), Error> {
+    ///     runmd!{
+    ///         /// Name of the config,
+    ///         self.name     =  ::symbol -->   self.name = properties["name"].as_symbol().into(); 
+    ///                                         emit!(|parser| {
+    ///                                             parser.parse_line(": name .symbol # Name of the config")
+    ///                                         };
+    ///         self.config   =  ::symbol
+    ///         self.log_file =  ::symbol
+    ///         ...
+    ///     }
+    /// }
+    /// 
+    /// #[compile(Dispatch)] --> #[compile(Dispatch, "#block#.#root#.plugin.example.create.root")]
+    /// fn plugin_create_root(&self, plugin: Plugin, lazy_builder: LazyBuilder) -> Result<(), Error> {
+    ///     
+    ///     
+    /// }
+    /// ```
+    /// 
+    impl Example {
+
+    }
+    use reality::v2::BuildLog;
+
+    dispatch_signature! {
+        pub enum Entrypoint {
+            #[interpolate("#block#.#root#.main;")]
+            Main,
         }
     }
 }

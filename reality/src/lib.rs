@@ -42,3 +42,7 @@ mod metadata;
 pub use metadata::Metadata;
 pub use metadata::Position;
 pub use metadata::Source;
+
+/// Return type alias,
+/// 
+pub type Result<T> = core::result::Result<T, Error>;

@@ -187,3 +187,9 @@ impl From<JoinError> for Error {
         }
     }
 }
+
+impl From<tokio::sync::oneshot::error::RecvError> for Error {
+    fn from(_: tokio::sync::oneshot::error::RecvError) -> Self {
+        Self::new("Sender cancelled")
+    }
+}

@@ -1,40 +1,56 @@
-use std::sync::Arc;
-use std::ops::Deref;
 use async_trait::async_trait;
 use futures::Future;
+use std::ops::Deref;
+use std::sync::Arc;
 
-use crate::Error;
+use crate::Result;
 
-use super::Properties;
+use super::{AsyncDispatch, Properties};
 
+use crate::v2::prelude::*;
+
+internal_use!();
+
+thunk! {
 /// Trait for a type to implement an async call function,
 ///
 #[async_trait]
 pub trait Call
-where
-    Self: Send + Sync,
 {
     /// Returns properties map,
     ///
-    async fn call(&self) -> Result<Properties, Error>;
+    async fn call(&self) -> Result<Properties>;
 }
-
-#[async_trait]
-impl Call for Arc<dyn Call> {
-    async fn call(&self) -> Result<Properties, Error> {
-        self.deref().call().await
-    }
 }
 
 /// This implementation is for functions w/o any state,
 ///
 #[async_trait]
-impl<
-        F: Future<Output = Result<Properties, Error>> + Send + Sync + 'static,
-        T: Fn() -> F + Send + Sync + 'static,
-    > Call for T
+impl<F, T> Call for T
+where
+    F: Future<Output = Result<Properties>> + Send + Sync + 'static,
+    T: Fn() -> F + Send + Sync + 'static,
 {
-    async fn call(&self) -> Result<Properties, Error> {
+    async fn call(&self) -> Result<Properties> {
         self().await
+    }
+}
+
+#[async_trait]
+impl<C: Call + Send + Sync> AsyncDispatch for Arc<C> {
+    async fn async_dispatch<'a, 'b>(
+        &'a self,
+        build_ref: DispatchRef<'b, Properties>,
+    ) -> DispatchResult<'b> {
+        build_ref
+            .enable_async()
+            .transmute::<ThunkCall>()
+            .map_into::<Properties, _>(|r| {
+                let r = r.clone();
+                async move { r.call().await }
+            })
+            .await
+            .disable_async()
+            .result()
     }
 }
