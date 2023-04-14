@@ -3,7 +3,7 @@ use reality::v2::prelude::*;
 /// Commands,
 ///
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<()> {
     let mut compiler = Compiler::new().with_docs();
     let parser = Parser::new();
     let parser = parser.parse(framework::ROOT, &mut compiler)?;
@@ -116,7 +116,7 @@ mod framework {
     }
 
     impl Apply for Command {
-        fn apply(&self, _: impl AsRef<str>, property: &Property) -> Result<Property, Error> {
+        fn apply(&self, _: impl AsRef<str>, property: &Property) -> Result<Property> {
             Ok(property.clone())
         }
     }
@@ -140,14 +140,14 @@ mod framework {
     }
 
     impl Apply for Shell {
-        fn apply(&self, _: impl AsRef<str>, property: &Property) -> Result<Property, Error> {
+        fn apply(&self, _: impl AsRef<str>, property: &Property) -> Result<Property> {
             Ok(property.clone())
         }
     }
 
     #[async_trait]
     impl Call for Shell {
-        async fn call(&self) -> Result<Properties, Error> {
+        async fn call(&self) -> Result<Properties> {
             todo!()
         }
     }

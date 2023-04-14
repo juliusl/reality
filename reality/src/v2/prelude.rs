@@ -32,6 +32,7 @@ pub use crate::state::iter_state;
 
 pub use crate::Identifier;
 pub use crate::Error;
+pub use crate::Result;
 
 /// reality_derive -- Derive traits for interfacing with runmd compiled data and macros for applying them
 pub use reality_derive::Apply;
@@ -55,6 +56,8 @@ pub use specs::WriteStorage;
 pub use specs::Write;
 pub use specs::Read;
 pub use specs::join::MaybeJoin;
+pub use specs::LazyUpdate;
+pub use specs::world::LazyBuilder;
 
 /// async_trait -- Async trait attribute
 pub use async_trait::async_trait;

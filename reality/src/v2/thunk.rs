@@ -12,6 +12,7 @@ pub use call::Call;
 
 mod build;
 pub use build::Build;
+pub use build::DispatchThunkBuild;
 
 mod dispatch;
 pub use dispatch::AsyncDispatch;

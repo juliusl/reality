@@ -1,11 +1,17 @@
-use reality::v2::Action;
 use reality::v2::prelude::*;
+use reality::v2::Action;
 use tracing_subscriber::EnvFilter;
+
+use test_framework::DispatchtestaExt;
+
+use crate::test_framework::dispatch_testa;
+use crate::test_framework::TestA;
+use crate::test_framework::ThunkTestA;
 
 /// Example of a plugin framework compiler,
 ///
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<()> {
     tracing_subscriber::fmt::Subscriber::builder()
         .with_env_filter(
             EnvFilter::builder()
@@ -40,22 +46,46 @@ async fn main() -> Result<(), Error> {
 
     println!("{:#?}", matches);
 
-    log.find_ref::<ActionBuffer>(
-        "app.#block#.usage.#root#.plugin.process.cargo",
-        &mut compiler,
-    )
-    .unwrap()
-    .read(|a| {
-        println!("{:#?}", a);
+    log.find_ref::<ActionBuffer>("app.#block#.usage.#root#.plugin.println", &mut compiler)
+        .unwrap()
+        .map(|_| Ok(dispatch_testa {}))
+        .transmute::<Properties>()
+        .testa()?;
 
-        if let Some(Action::Config(ident, prop)) = a.iter_actions().last() {
-            println!("Config: {:#}", ident);
-            println!("Properties: {}", prop);
-            println!("{:?}", prop.as_symbol());
-        }
+    for (id, _, e) in log.search_index("#block#.#root#.plugin.println") {
+        let exists = compiler
+            .as_mut()
+            .read_component::<ThunkTestA>()
+            .contains(*e);
+        println!("{:#} {}", id, exists);
+        let build_ref = DispatchRef::<ThunkTestA>::new(*e, &mut compiler);
+        build_ref
+            .map(|_| Ok(dispatch_testa {}))
+            .transmute::<Properties>()
+            .testa()?;
+        // .enable_async()
+        // .read(|tc| {
+        //     let tc = tc.clone();
+        //     async move {
+        //         tc.call().await?;
+        //         Ok(())
+        //     }
+        // })
+        // .await;
+    }
 
-        Ok(())
-    });
+    // .transmute::<ActionBuffer>()
+    // .read(|a| {
+    //     println!("{:#?}", a);
+
+    //     if let Some(Action::Config(ident, prop)) = a.iter_actions().last() {
+    //         println!("Config: {:#}", ident);
+    //         println!("Properties: {}", prop);
+    //         println!("{:?}", prop.as_symbol());
+    //     }
+
+    //     Ok(())
+    // });
 
     // for (_, _, e) in log.search_index("#block#.#root#.plugin.process") {
     //     let build_ref = DispatchRef::<ThunkCall>::new(*e, &mut compiler);
@@ -79,7 +109,6 @@ async fn main() -> Result<(), Error> {
     //        .with(self.clone()).build()
     //    }
     // */
-
     // for (_, _, e) in log.search_index("plugin.println") {
     //     let build_ref = DispatchRef::<ThunkCall>::new(*e, &mut compiler);
     //     build_ref
@@ -103,9 +132,8 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
-async fn from_runmd() -> Result<Compiler, Error> {
-    let mut compiler = Compiler::new()
-        .with_docs();
+async fn from_runmd() -> Result<Compiler> {
+    let mut compiler = Compiler::new().with_docs();
     let framework = compile_example_framework(&mut compiler)?;
     println!("Compiled framework: {:?}", framework);
 
@@ -130,7 +158,7 @@ async fn from_runmd() -> Result<Compiler, Error> {
     Ok(compiler)
 }
 
-async fn from_fs() -> Result<Compiler, Error> {
+async fn from_fs() -> Result<Compiler> {
     let mut compiler = Compiler::new().with_docs();
 
     let framework = import_toml(&mut compiler, ".test/plugin_framework.toml").await?;
@@ -147,7 +175,7 @@ async fn from_fs() -> Result<Compiler, Error> {
 
 /// Compiles the initial framework,
 ///
-fn compile_example_framework(compiler: &mut Compiler) -> Result<Entity, Error> {
+fn compile_example_framework(compiler: &mut Compiler) -> Result<Entity> {
     let _ = Parser::new().parse(ROOT_RUNMD, compiler)?;
 
     // let _ = Parser::new()
@@ -162,7 +190,7 @@ fn compile_example_framework(compiler: &mut Compiler) -> Result<Entity, Error> {
 
 /// Compiles the example usage of the framework,
 ///
-fn compile_example_usage(compiler: &mut Compiler) -> Result<Entity, Error> {
+fn compile_example_usage(compiler: &mut Compiler) -> Result<Entity> {
     let _ = Parser::new().parse(EXAMPLE_USAGE, compiler)?;
 
     compiler.compile()
@@ -271,7 +299,7 @@ pub mod test_framework {
 
         ///
         ///
-        fn path(&self, property: &Property) -> Result<(), Error> {
+        fn path(&self, property: &Property) -> Result<()> {
             Ok(())
         }
     }
@@ -287,15 +315,20 @@ pub mod test_framework {
     }
 
     impl Apply for Call {
-        fn apply(&self, name: impl AsRef<str>, property: &Property) -> Result<Property, Error> {
+        fn apply(&self, name: impl AsRef<str>, property: &Property) -> Result<Property> {
             println!("Applying call config: {} -- {:?}", name.as_ref(), property);
             Ok(property.clone())
         }
     }
 
     impl Apply for Path {
-        fn apply(&self, ext: impl AsRef<str>, property: &Property) -> Result<Property, Error> {
-            println!("Applying path config {:?} {} -- {:?}", self, ext.as_ref(), property);
+        fn apply(&self, ext: impl AsRef<str>, property: &Property) -> Result<Property> {
+            println!(
+                "Applying path config {:?} {} -- {:?}",
+                self,
+                ext.as_ref(),
+                property
+            );
             if self.canonical {
                 if let Some(path) = property.as_symbol().map(|s| PathBuf::from(s)) {
                     path.canonicalize()?;
@@ -315,7 +348,7 @@ pub mod test_framework {
 
     impl TestA for Println {
         fn testa(&self) -> reality::Result<()> {
-            println!("TestA impl for Println");
+            println!("TestA impl for Println, {:?}", self);
             Ok(())
         }
     }
@@ -334,7 +367,7 @@ pub mod test_framework {
 
     #[async_trait]
     impl reality::v2::Call for Println {
-        async fn call(&self) -> Result<Properties, Error> {
+        async fn call(&self) -> Result<Properties> {
             trace!("{:?}", self);
             for out in self.stdout.iter() {
                 println!("{out}");
@@ -390,7 +423,7 @@ pub mod test_framework {
         /// })
         /// ```
         ///
-        pub fn test_config(&self) -> Result<(), Error> {
+        pub fn test_config(&self) -> Result<()> {
             Ok(())
         }
 
@@ -411,7 +444,7 @@ pub mod test_framework {
         /// +        .other
         /// <plugin> .process test : .redirect test/test.out
         /// ```
-        pub fn config_path(&mut self, properties: &Properties) -> Result<(), Error> {
+        pub fn config_path(&mut self, properties: &Properties) -> Result<()> {
             todo!()
         }
     }
@@ -438,7 +471,7 @@ pub mod test_framework {
 
     #[async_trait]
     impl reality::v2::Call for Process {
-        async fn call(&self) -> Result<Properties, Error> {
+        async fn call(&self) -> Result<Properties> {
             println!("Calling {}", self.process);
             println!("{:?}", self);
             Ok(Properties::default())
@@ -512,13 +545,13 @@ pub mod test_framework {
     impl Usage {
         /// Dispatches on #block#.#root#.usage.start_usage,
         ///
-        fn start_usage<'a>(&mut self) -> Result<(), Error> {
+        fn start_usage<'a>(&mut self) -> Result<()> {
             Ok(())
         }
 
         /// Dispatches on #block#.#root#.usage.read_usage,
         ///
-        fn read_usage<'a>(&self) -> Result<(), Error> {
+        fn read_usage<'a>(&self) -> Result<()> {
             Ok(())
         }
 
@@ -534,8 +567,7 @@ pub mod test_framework {
 }
 
 mod prototype {
-    use reality::{Error, dispatch_signature};
-
+    use reality::{dispatch_signature, Error};
 
     struct Example;
 
@@ -547,7 +579,7 @@ mod prototype {
     /// fn config(&self, properties: Properties) -> Result<(), Error> {
     ///     runmd!{
     ///         /// Name of the config,
-    ///         self.name     =  ::symbol -->   self.name = properties["name"].as_symbol().into(); 
+    ///         self.name     =  ::symbol -->   self.name = properties["name"].as_symbol().into();
     ///                                         emit!(|parser| {
     ///                                             parser.parse_line(": name .symbol # Name of the config")
     ///                                         };
@@ -556,17 +588,15 @@ mod prototype {
     ///         ...
     ///     }
     /// }
-    /// 
+    ///
     /// #[compile(Dispatch)] --> #[compile(Dispatch, "#block#.#root#.plugin.example.create.root")]
     /// fn plugin_create_root(&self, plugin: Plugin, lazy_builder: LazyBuilder) -> Result<(), Error> {
     ///     
     ///     
     /// }
     /// ```
-    /// 
-    impl Example {
-
-    }
+    ///
+    impl Example {}
     use reality::v2::BuildLog;
 
     dispatch_signature! {

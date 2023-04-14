@@ -88,7 +88,7 @@ impl StructData {
 
         quote! {
             impl reality::v2::Apply for #name {
-                fn apply(&self, rule_name: impl AsRef<str>, property: &reality::v2::Property) -> Result<reality::v2::Property, reality::Error> {
+                fn apply(&self, rule_name: impl AsRef<str>, property: &reality::v2::Property) -> reality::Result<reality::v2::Property> {
                     let rule_name = rule_name.as_ref();
                     match rule_name {
                         #fields
@@ -143,7 +143,7 @@ impl StructData {
         quote! {
             #[allow(non_snake_case)]
             impl reality::v2::Config for #name {
-                fn config(&mut self, ident: &reality::Identifier, property: &reality::v2::Property) -> Result<(), reality::Error> {
+                fn config(&mut self, ident: &reality::Identifier, property: &reality::v2::Property) -> reality::Result<()> {
                     match ident.root().as_str() {
                         #( #root_config_pattern_match ),*
                         _ => {
@@ -264,7 +264,8 @@ impl StructData {
                         Ok(reality::v2::thunk_listen(b.clone()))
                     })
                 })
-            } else if let Some(ident) = c.get_ident().filter(|i| i.to_string().starts_with("Thunk"))
+            } 
+            else if let Some(ident) = c.get_ident().filter(|i| i.to_string().starts_with("Thunk"))
             {
                 let name = ident.to_string().replace("Thunk", "");
                 let name = format_ident!("thunk_{}", name.to_lowercase());
@@ -281,12 +282,14 @@ impl StructData {
             #( #map )*
         };
 
+        // TODO: Apply using statements
+
         quote! {
             impl reality::v2::Dispatch for #name {
                 fn dispatch<'a>(
                     &self,
                     dispatch_ref: reality::v2::DispatchRef<'a, reality::v2::Properties>,
-                ) -> Result<reality::v2::DispatchRef<'a, reality::v2::Properties>, Error> {
+                ) -> reality::v2::DispatchResult<'a> {
                     let clone = self.clone();
                     dispatch_ref
                         .transmute::<ActionBuffer>()
@@ -313,8 +316,8 @@ impl StructData {
             quote_spanned! {f.span=>
                 if let Some(log) = compiler.last_build_log() {
                     for (_, _, entity) in log.search_index(#pattern) {
-                        let dispatch_ref = DispatchRef::<Properties>::new(*entity, compiler);
-
+                        let dispatch_ref = reality::v2::DispatchRef::<reality::v2::Properties>::new(*entity, compiler);
+                        let dispatch_ref = 
                         reality::v2::Dispatch::dispatch(self, dispatch_ref)?;
                     }
                 }
@@ -326,7 +329,7 @@ impl StructData {
 
         quote! {
             impl reality::v2::Runmd for #name {
-                fn runmd(&self, compiler: &mut reality::v2::Compiler) -> Result<(), reality::Error> {
+                fn runmd(&self, compiler: &mut reality::v2::Compiler) -> reality::Result<()> {
                     #compile_map
 
                     Ok(())

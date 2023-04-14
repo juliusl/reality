@@ -51,7 +51,7 @@ dispatch_signature! {
 /// Trait to run async code and then dispatch actions to a world,
 ///
 #[async_trait]
-pub trait AsyncDispatch
+pub trait AsyncDispatch<const SLOT: usize = 0>
 where
     Self: Send + Sync,
 {
@@ -66,7 +66,7 @@ where
 /// Implementation to use as a Thunk component,
 ///
 #[async_trait]
-impl AsyncDispatch for Arc<dyn AsyncDispatch> {
+impl<const SLOT: usize> AsyncDispatch for Arc<dyn AsyncDispatch<SLOT>> {
     async fn async_dispatch<'a, 'b>(
         &'a self,
         build_ref: DispatchRef<'b, Properties>,
@@ -81,7 +81,7 @@ pub type DispatchResult<'a> = Result<DispatchRef<'a, Properties>>;
 
 /// Trait to dispatch changes to a world,
 ///
-pub trait Dispatch
+pub trait Dispatch<const SLOT: usize = 0>
 where
     Self: Send + Sync,
 {

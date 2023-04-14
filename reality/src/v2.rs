@@ -1,3 +1,6 @@
+mod using;
+pub use using::Using;
+
 mod action;
 pub use action::Action;
 pub use action::ActionBuffer;
@@ -65,6 +68,7 @@ pub use thunk::MapWith;
 pub use thunk::Listener;
 pub use thunk::Thunk;
 pub use thunk::ThunkBuild;
+pub use thunk::DispatchThunkBuild;
 pub use thunk::ThunkCall;
 pub use thunk::ThunkCompile;
 pub use thunk::ThunkListen;

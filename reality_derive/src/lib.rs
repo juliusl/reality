@@ -1,4 +1,7 @@
+use std::env::Args;
+
 use quote::quote_spanned;
+use syn::Attribute;
 use syn::parse_macro_input;
 use syn::ItemEnum;
 use syn::LitStr;

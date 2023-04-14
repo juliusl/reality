@@ -1,28 +1,21 @@
 use std::ops::Deref;
 
 use proc_macro2::TokenStream;
-use quote::__private::ext::RepToTokensExt;
 use quote::format_ident;
 use quote::quote;
 use quote::quote_spanned;
 use quote::ToTokens;
-use syn::ItemTrait;
 use syn::parse::Parse;
 use syn::parse2;
-use syn::parse_macro_input;
 use syn::spanned::Spanned;
 use syn::Attribute;
-use syn::Expr;
 use syn::FnArg;
 use syn::Generics;
 use syn::Ident;
+use syn::ItemTrait;
 use syn::PatType;
-use syn::Path;
 use syn::ReturnType;
-use syn::Token;
 use syn::Type;
-use syn::TypeParam;
-use syn::TypeTuple;
 use syn::Visibility;
 use syn::WhereClause;
 
@@ -66,9 +59,9 @@ impl ThunkMacroArguments {
             #vis trait #name
             where
                 Self: Send + Sync,
-            { 
-                #exprs 
-                
+            {
+                #exprs
+
                 #( #other_exprs )*
             }
 
@@ -77,6 +70,8 @@ impl ThunkMacroArguments {
             #thunk_trait_type_expr
 
             #thunk_trait_impl_expr
+
+            #dispatch_exprs
         }
     }
 
@@ -156,37 +151,118 @@ impl ThunkMacroArguments {
     pub(crate) fn impl_dispatch_exprs(&self) -> TokenStream {
         let name = &self.name;
         let thunk_type_name = format_ident!("Thunk{}", name);
+        let dispatch_thunk_struct_name = format_ident!("DispatchThunk{}", name);
 
-        let dispatch_exprs = self
+        let struct_def = quote! {
+            /// Pointer-struct for dispatching thunk,
+            ///
+            #[derive(specs::Component, Clone, Debug)]
+            #[storage(specs::DenseVecStorage)]
+            pub struct #dispatch_thunk_struct_name<const SLOT: usize = 0>;
+        };
+
+        let mut dispatch_exprs = vec![];
+        let mut using = vec![];
+
+        for (idx, e) in self
             .exprs
             .iter()
             .filter(|e| !e.skip && !e.default)
-            .map(|e| {
-                let fn_name = &e.name;
-                let fn_name = format_ident!("thunk_{}_dispatch_{}", name.to_string().to_lowercase(), fn_name);
-                let stmt = e.dispatch_stmt(&thunk_type_name);
+            .enumerate()
+        {
+            let stmt = e.dispatch_stmt(&thunk_type_name);
+            let idx_lit = syn::LitInt::new(format!("{}", idx).as_str(), e.name.span());
+            let ext_fn_name = &e.name;
+            let dispatch_thunk_struct_alias = format_ident!("dispatch_{}", e.name);
+            let dispatch_thunk_trait_ext_name = format_ident!("Dispatch{}Ext", e.name);
 
-                if e.is_async {
-                    let body = dispatch_ref_stmts::async_dispatch_seq(&thunk_type_name, Some(stmt).into_iter());
-                    quote! {
-                        pub(super) async fn #fn_name<'a>(dispatch_ref: reality::v2::DispatchRef<'a, Properties>) -> reality::v2::DispatchResult<'a> {
-                            dispatch_ref
-                            #body
-                        }
-                    }
-                } else {
-                    let body = dispatch_ref_stmts::dispatch_seq(&thunk_type_name, Some(stmt).into_iter());
-                    quote! {
-                        pub(super) fn #fn_name<'a>(dispatch_ref: reality::v2::DispatchRef<'a, Properties>) -> reality::v2::DispatchResult<'a> {
-                            dispatch_ref
-                            #body
-                        }
-                    }
-                }
+            using.push(quote! {
+                .map(|_| Ok(#dispatch_thunk_struct_alias {}))
             });
 
+            let ext_def = quote_spanned! {e.name.span()=>
+                /// Type-alias for dispatch thunk pointer type,
+                ///
+                #[allow(non_camel_case_types)]
+                pub type #dispatch_thunk_struct_alias = #dispatch_thunk_struct_name<#idx_lit>;
+            };
+
+            if e.is_async {
+                let body = dispatch_ref_stmts::async_dispatch_seq(
+                    &thunk_type_name,
+                    Some(stmt).into_iter(),
+                );
+
+                let expr = quote_spanned! {e.name.span()=>
+                    #ext_def
+
+                    #[async_trait]
+                    pub trait #dispatch_thunk_trait_ext_name<'a> {
+                        /// Extension function,
+                        ///
+                        async fn #ext_fn_name(self) -> reality::v2::DispatchResult<'a>;
+                    }
+
+                    #[async_trait]
+                    impl<'a> #dispatch_thunk_trait_ext_name<'a> for reality::v2::DispatchRef<'a, reality::v2::Properties, true> {
+                        async fn #ext_fn_name(self) -> reality::v2::DispatchResult<'a> {
+                            self.exec_slot::<#idx_lit, #dispatch_thunk_struct_alias>().await
+                        }
+                    }
+
+                    #[async_trait]
+                    impl reality::v2::AsyncDispatch<#idx_lit> for #dispatch_thunk_struct_name<#idx_lit> {
+                        async fn async_dispatch<'a, 'b>(
+                            &'a self,
+                            dispatch_ref: DispatchRef<'b, Properties>,
+                        ) -> DispatchResult<'b> {
+                            dispatch_ref
+                            #body
+                        }
+                    }
+                };
+                dispatch_exprs.push(expr);
+            } else {
+                let body =
+                    dispatch_ref_stmts::dispatch_seq(&thunk_type_name, Some(stmt).into_iter());
+
+                let expr = quote_spanned! {e.name.span()=>
+                    #ext_def
+
+                    pub trait #dispatch_thunk_trait_ext_name<'a> {
+                        /// Extension function,
+                        ///
+                        fn #ext_fn_name(self) -> reality::v2::DispatchResult<'a>;
+                    }
+                    
+                    impl<'a> #dispatch_thunk_trait_ext_name<'a> for reality::v2::DispatchRef<'a, reality::v2::Properties> {
+                        fn #ext_fn_name(self) -> reality::v2::DispatchResult<'a> {
+                            self.exec_slot::<#idx_lit, #dispatch_thunk_struct_alias>()
+                        }
+                    }
+
+                    impl reality::v2::Dispatch<#idx_lit> for #dispatch_thunk_struct_name<#idx_lit> {
+                        fn dispatch<'a>(&self, dispatch_ref: reality::v2::DispatchRef<'a, reality::v2::Properties>) -> reality::v2::DispatchResult<'a> {
+                            dispatch_ref
+                            #body
+                        }
+                    }
+                };
+                dispatch_exprs.push(expr);
+            }
+        }
+
         quote! {
+            #struct_def
+
             #( #dispatch_exprs )*
+
+            /// Applies thunk extensions to dispatch ref,
+            ///
+            pub fn using<'a>(d: reality::v2::DispatchRef<'a, Properties>) -> reality::v2::DispatchRef<'a, Properties> {
+                d
+                #( #using )*
+            }
         }
     }
 }
@@ -212,9 +288,8 @@ impl Parse for ThunkMacroArguments {
                         other_exprs.push(trait_fn.clone());
                         continue;
                     }
-                },
-                _ => {
-                },
+                }
+                _ => {}
             }
 
             let expr = parse2::<ThunkTraitFn>(trait_fn.to_token_stream())?;
@@ -247,6 +322,13 @@ pub(crate) struct ThunkTraitFn {
     default: bool,
     is_async: bool,
     skip: bool,
+    /// The position of a fn arg LazyUpdate
+    ///
+    lazy_update_pos: Option<usize>,
+
+    /// The position of a fn arg LazyBuilder
+    ///
+    lazy_builder_pos: Option<usize>,
 }
 
 impl ThunkTraitFn {
@@ -370,6 +452,52 @@ impl ThunkTraitFn {
             ThunkTraitFn {
                 name,
                 with_type: None,
+                mutable_recv,
+                is_async: false,
+                default: false,
+                lazy_builder_pos: Some(_),
+                ..
+            } => dispatch_ref_stmts::recv_build_closure(*mutable_recv, recv_type, name),
+            ThunkTraitFn {
+                name,
+                with_type: None,
+                mutable_recv,
+                is_async: false,
+                default: false,
+                lazy_update_pos: Some(_),
+                ..
+            } => dispatch_ref_stmts::recv_update_closure(*mutable_recv, recv_type, name),
+            ThunkTraitFn {
+                name,
+                with_type: Some(with_ty),
+                mutable_recv,
+                is_async: false,
+                default: false,
+                lazy_builder_pos: Some(_),
+                ..
+            } => dispatch_ref_stmts::recv_build_with_closure(
+                *mutable_recv,
+                recv_type,
+                &with_ty.ty,
+                name,
+            ),
+            ThunkTraitFn {
+                name,
+                with_type: Some(with_ty),
+                mutable_recv,
+                is_async: false,
+                default: false,
+                lazy_update_pos: Some(_),
+                ..
+            } => dispatch_ref_stmts::recv_update_with_closure(
+                *mutable_recv,
+                recv_type,
+                &with_ty.ty,
+                name,
+            ),
+            ThunkTraitFn {
+                name,
+                with_type: None,
                 is_async: true,
                 default: false,
                 ..
@@ -388,11 +516,7 @@ impl ThunkTraitFn {
                 is_async: true,
                 default: false,
                 ..
-            } => dispatch_ref_stmts::recv_with_async_closure(
-                recv_type,
-                with_ty.ty.deref(),
-                name,
-            ),
+            } => dispatch_ref_stmts::recv_with_async_closure(recv_type, with_ty.ty.deref(), name),
             ThunkTraitFn {
                 name,
                 with_type: Some(with_ty),
@@ -400,13 +524,54 @@ impl ThunkTraitFn {
                 is_async: false,
                 default: false,
                 ..
-            } => dispatch_ref_stmts::recv_with_closure(*mutable_recv, recv_type, with_ty.ty.deref(), name),
+            } => dispatch_ref_stmts::recv_with_closure(
+                *mutable_recv,
+                recv_type,
+                with_ty.ty.deref(),
+                name,
+            ),
             _ => {
                 quote! {}
             }
         };
 
         match &self {
+            ThunkTraitFn {
+                with_type: Some(w),
+                mutable_recv: true,
+                lazy_update_pos: Some(_),
+                ..
+            } => dispatch_ref_stmts::dispatch_mut_with_stmt(&closure, &w.ty),
+            ThunkTraitFn {
+                with_type: None,
+                mutable_recv: true,
+                lazy_update_pos: Some(_),
+                ..
+            } => dispatch_ref_stmts::dispatch_mut_stmt(&closure),
+            ThunkTraitFn {
+                with_type: None,
+                mutable_recv: false,
+                lazy_update_pos: Some(_),
+                ..
+            } => dispatch_ref_stmts::dispatch_stmt(&closure),
+            ThunkTraitFn {
+                with_type: Some(w),
+                mutable_recv: true,
+                lazy_builder_pos: Some(_),
+                ..
+            } => dispatch_ref_stmts::fork_into_with_mut(&closure, &w.ty),
+            ThunkTraitFn {
+                with_type: Some(w),
+                mutable_recv: false,
+                lazy_builder_pos: Some(_),
+                ..
+            } => dispatch_ref_stmts::fork_into_with(&closure, &w.ty),
+            ThunkTraitFn {
+                with_type: None,
+                mutable_recv: false,
+                lazy_builder_pos: Some(_),
+                ..
+            } => dispatch_ref_stmts::fork_into_stmt(&closure, &recv_type),
             ThunkTraitFn {
                 output_type,
                 with_type: None,
@@ -488,12 +653,17 @@ impl Parse for ThunkTraitFn {
                 mutable_recv = r.mutability.is_some();
             }
             _ if !default && !skip => {
-                return Err(input.error(format!("Trait fn's must have a receiver type, i.e. `fn (self)` skip: {} default: {}, {}", skip, default, traitfn.to_token_stream())))
+                return Err(input.error(format!(
+                "Trait fn's must have a receiver type, i.e. `fn (self)` skip: {} default: {}, {}",
+                skip,
+                default,
+                traitfn.to_token_stream()
+            )))
             }
             _ => {}
         }
 
-        let with_type = fields
+        let mut other_fields = fields
             .iter()
             .skip(1)
             .take(2)
@@ -501,8 +671,27 @@ impl Parse for ThunkTraitFn {
                 FnArg::Typed(with_fn_arg) => Some(with_fn_arg),
                 _ => None,
             })
-            .cloned()
-            .next();
+            .cloned();
+
+        let mut lazy_update_pos = None;
+        let mut lazy_builder_pos = None;
+        let with_type = match other_fields.next() {
+            Some(pat) => match pat.ty.deref() {
+                Type::Path(p) => {
+                    if p.path.is_ident("LazyUpdate") {
+                        lazy_update_pos = Some(0);
+                        None
+                    } else if p.path.is_ident("LazyBuilder") {
+                        lazy_builder_pos = Some(0);
+                        None
+                    } else {
+                        Some(pat)
+                    }
+                }
+                _ => Some(pat),
+            },
+            None => None,
+        };
 
         let output_type = match &return_type {
             ReturnType::Type(_, ty) if default || skip => ty.deref().clone(),
@@ -561,7 +750,18 @@ impl Parse for ThunkTraitFn {
             }
         };
 
-        // TODO: Handle LazyUpdate/LazyBuilder
+        if let Some(other_type) = other_fields.next() {
+            match other_type.ty.deref() {
+                Type::Path(p) => {
+                    if p.path.is_ident("LazyUpdate") {
+                        lazy_update_pos = Some(0);
+                    } else if p.path.is_ident("LazyBuilder") {
+                        lazy_builder_pos = Some(0);
+                    }
+                }
+                _ => {}
+            }
+        }
 
         return Ok(Self {
             name,
@@ -576,19 +776,19 @@ impl Parse for ThunkTraitFn {
             default,
             is_async,
             skip,
+            lazy_builder_pos,
+            lazy_update_pos,
         });
     }
 }
 
 /// This module is for generating dispatch sequences for thunk types,
 ///
-#[allow(dead_code)]
 pub mod dispatch_ref_stmts {
     use proc_macro2::Ident;
     use proc_macro2::TokenStream;
     use quote::quote;
     use quote::quote_spanned;
-    use syn::Path;
     use syn::Type;
 
     /// Returns an async dispatch sequence for stmts,
@@ -650,7 +850,86 @@ pub mod dispatch_ref_stmts {
         }
     }
 
-    pub fn recv_with_closure(is_mut: bool, recv: &Ident, with: &Type, fn_ident: &Ident) -> TokenStream {
+    /// Generates a closure for a `.fork_into_mut_with` statement,
+    ///
+    pub fn recv_build_with_closure(
+        is_mut: bool,
+        recv: &Ident,
+        with: &Type,
+        fn_ident: &Ident,
+    ) -> TokenStream {
+        let reference_ty = if is_mut {
+            quote! { &mut }
+        } else {
+            quote! { & }
+        };
+
+        quote_spanned! {fn_ident.span()=>
+            |recv: #reference_ty #recv, with: #with, lazy: LazyBuilder| {
+                recv.#fn_ident(with, lazy)
+            }
+        }
+    }
+
+    /// Generates a closure for a `.fork_into` statement,
+    ///
+    pub fn recv_build_closure(is_mut: bool, recv: &Ident, fn_ident: &Ident) -> TokenStream {
+        let reference_ty = if is_mut {
+            quote! { &mut }
+        } else {
+            quote! { & }
+        };
+
+        quote_spanned! {fn_ident.span()=>
+            |recv: #reference_ty #recv, lazy: LazyBuilder| {
+                recv.#fn_ident(lazy)
+            }
+        }
+    }
+
+    /// Generates a closure for a `dispatch_with` statement,
+    ///
+    pub fn recv_update_with_closure(
+        is_mut: bool,
+        recv: &Ident,
+        with: &Type,
+        fn_ident: &Ident,
+    ) -> TokenStream {
+        let reference_ty = if is_mut {
+            quote! { &mut }
+        } else {
+            quote! { & }
+        };
+
+        quote_spanned! {fn_ident.span()=>
+            |recv: #reference_ty #recv, with: #with, lazy: LazyUpdate| {
+                recv.#fn_ident(with, lazy)
+            }
+        }
+    }
+
+    ///  Generates a closure for a `dispatch` statement,
+    ///
+    pub fn recv_update_closure(is_mut: bool, recv: &Ident, fn_ident: &Ident) -> TokenStream {
+        let reference_ty = if is_mut {
+            quote! { &mut }
+        } else {
+            quote! { & }
+        };
+
+        quote_spanned! {fn_ident.span()=>
+            |recv: #reference_ty #recv, lazy: LazyUpdate| {
+                recv.#fn_ident(lazy)
+            }
+        }
+    }
+
+    pub fn recv_with_closure(
+        is_mut: bool,
+        recv: &Ident,
+        with: &Type,
+        fn_ident: &Ident,
+    ) -> TokenStream {
         let reference_ty = if is_mut {
             quote! { &mut }
         } else {
@@ -663,7 +942,6 @@ pub mod dispatch_ref_stmts {
             }
         }
     }
-
     pub fn recv_closure(is_mut: bool, recv: &Ident, fn_ident: &Ident) -> TokenStream {
         let reference_ty = if is_mut {
             quote! { &mut }
@@ -794,6 +1072,42 @@ pub mod dispatch_ref_stmts {
     pub fn write_with_stmt(closure: &TokenStream) -> TokenStream {
         quote! {
             .write_with(#closure)
+        }
+    }
+
+    pub fn dispatch_stmt(closure: &TokenStream) -> TokenStream {
+        quote! {
+            .dispatch(#closure)?
+        }
+    }
+
+    pub fn dispatch_mut_stmt(closure: &TokenStream) -> TokenStream {
+        quote! {
+            .dispatch_mut(#closure)?
+        }
+    }
+
+    pub fn dispatch_mut_with_stmt(closure: &TokenStream, with_ty: &Type) -> TokenStream {
+        quote! {
+            .dispatch_mut_with::<#with_ty>(#closure)?
+        }
+    }
+
+    pub fn fork_into_stmt(closure: &TokenStream, into_ty: &Ident) -> TokenStream {
+        quote! {
+            .fork_into::<#into_ty>(#closure)?
+        }
+    }
+
+    pub fn fork_into_with(closure: &TokenStream, with_ty: &Type) -> TokenStream {
+        quote! {
+            .fork_into_with::<#with_ty>(#closure)?
+        }
+    }
+
+    pub fn fork_into_with_mut(closure: &TokenStream, with_ty: &Type) -> TokenStream {
+        quote! {
+            .fork_into_with_mut::<#with_ty>(#closure)?
         }
     }
 }

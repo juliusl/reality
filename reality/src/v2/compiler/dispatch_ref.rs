@@ -10,6 +10,9 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use crate::v2::AsyncDispatch;
+use crate::v2::Dispatch;
+use crate::v2::Properties;
 use crate::Error;
 
 /// Struct for working w/ a compiler's build log,
@@ -128,7 +131,7 @@ impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool>
     DispatchRef<'a, T, ENABLE_ASYNC>
 {
     /// Takes the component from storage
-    /// 
+    ///
     // pub fn take(self, map: impl FnOnce(T) -> Result<T, Error>) -> Result<Self, Error> {
     //     if let (Some(wr), Some(e)) = (self.world_ref.as_ref(), self.entity.as_ref()) {
     //         if let Some(w) = wr.as_ref().write_component::<T>().remove(*e) {
@@ -442,6 +445,44 @@ impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool>
 /// API's to work with specs storage through the build ref,
 ///
 impl<'a, T: Send + Sync + Component + 'a> DispatchRef<'a, T> {
+    /// Executes slot 0 on dispatch D and returns a DispatchResult,
+    ///
+    pub fn exec<D: Dispatch + Clone + Component + Send + Sync>(
+        self,
+    ) -> crate::v2::DispatchResult<'a> 
+    where
+        <D as specs::Component>::Storage: std::default::Default {
+        self.exec_slot::<0, D>()
+    }
+
+    /// Executes a slot of dispatch D and returns a DispatchResult,
+    ///
+    pub fn exec_slot<const SLOT: usize, D: Dispatch<SLOT> + Clone + Component + Send + Sync>(
+        mut self,
+    ) -> crate::v2::DispatchResult<'a> 
+    where
+        <D as specs::Component>::Storage: std::default::Default
+    {
+        let mut d = None;
+        if let Some(w) = self.world_ref.as_mut() {
+            w.as_mut().register::<D>();
+        }
+
+        if let (Some(w), Some(e)) = (self.world_ref.as_ref(), self.entity) {
+            if let Some(_d) = w.as_ref().read_component::<D>().get(e) {
+                d = Some(_d.clone());
+            } else {
+                return Err(Error::not_implemented());
+            }
+        }
+
+        if let Some(d) = d.take() {
+            d.dispatch(self.transmute())
+        } else {
+            self.check().transmute().result()
+        }
+    }
+
     /// Write the Component from the build reference, chainable
     ///
     pub fn write(mut self, d: impl FnOnce(&mut T) -> Result<(), Error>) -> Self {
@@ -587,6 +628,45 @@ impl<'a, T: Send + Sync + Component + 'a> DispatchRef<'a, T> {
 /// Async-version of API's to work with specs storage through the build ref,
 ///
 impl<'a, T: Send + Sync + Component + 'a> DispatchRef<'a, T, true> {
+    /// Asynchronously executes async_dispatch for D and returns a DispatchResult,
+    ///
+    pub async fn exec<D: AsyncDispatch + Clone + Component + Send + Sync>(
+        self,
+    ) -> crate::v2::DispatchResult<'a> 
+    where
+        <D as specs::Component>::Storage: std::default::Default 
+    {
+        self.exec_slot::<0, D>().await
+    }
+
+    /// Executes a slot of dispatch D and returns a DispatchResult,
+    ///
+    pub async fn exec_slot<const SLOT: usize, D: AsyncDispatch<SLOT> + Clone + Component + Send + Sync>(
+        mut self,
+    ) -> crate::v2::DispatchResult<'a> 
+    where
+        <D as specs::Component>::Storage: std::default::Default
+    {
+        if let Some(w) = self.world_ref.as_mut() {
+            w.as_mut().register::<D>();
+        }
+
+        let mut d = None;
+        if let (Some(w), Some(e)) = (self.world_ref.as_ref(), self.entity) {
+            if let Some(_d) = w.as_ref().read_component::<D>().get(e) {
+                d = Some(_d.clone());
+            } else {
+                return Err(Error::not_implemented());
+            }
+        }
+
+        if let Some(d) = d.take() {
+            d.async_dispatch(self.disable_async().transmute()).await
+        } else {
+            self.check().disable_async().transmute().result()
+        }
+    }
+
     /// Write the Component from the build reference, chainable
     ///
     pub async fn write<F>(mut self, d: impl FnOnce(&mut T) -> F) -> DispatchRef<'a, T, true>
@@ -867,7 +947,7 @@ impl<'a> From<&'a mut World> for WorldWrapper<'a> {
 mod tests {
     use super::DispatchRef;
     use crate::{
-        v2::{BuildLog, Properties},
+        v2::{BuildLog, Properties, ThunkBuild, ThunkCall},
         Error, Identifier,
     };
     use specs::{storage, Builder, Component, DenseVecStorage, World};
@@ -884,7 +964,7 @@ mod tests {
             .unwrap();
     }
 
-    async fn test_async_disp(mut disp: DispatchRef<'_, Yield>) {
+    async fn test_async_disp(mut disp: DispatchRef<'_, Yield>) -> crate::Result<()> {
         disp.read(|y| {
             if y.0.is_none() {
                 Err(Error::skip())
@@ -892,7 +972,9 @@ mod tests {
                 Ok(())
             }
         })
+        .exec::<crate::v2::DispatchThunkBuild>()?
         .enable_async()
+        .transmute::<Yield>()
         .write_with::<Properties, _>(|y, p| {
             let Yield(rx) = y;
             let rx = rx
@@ -904,6 +986,8 @@ mod tests {
             }
         })
         .await;
+
+        Ok(())
     }
 
     async fn test_a(world: World) -> Result<World, Error> {
@@ -935,18 +1019,17 @@ mod tests {
         */
     }
 
-    /// 
-    /// 
+    ///
+    ///
     struct Test;
-
 
     impl Test {
         /// Entry point,
-        /// 
+        ///
         /// ```runmd test
-        /// +  .main 
+        /// +  .main
         /// ```
-        /// 
+        ///
         async fn main(world: World) -> Result<(), Error> {
             Ok(())
         }
