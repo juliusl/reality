@@ -6,18 +6,21 @@ use reality::v2::prelude::*;
 pub trait TestA {
     /// Tests test a,
     ///
-    fn testa(&self, test: usize) -> String;
+    fn testa(&self) -> reality::Result<()>;
 }
 
 fn main() {
-    let testa = thunk_testa(ATest {});
-    println!("{}", testa.testa(2039));
+    let testa = thunk_testa(ATest {param: 4096});
+    println!("{:?}", testa.testa());
 }
 
-struct ATest;
+struct ATest {
+    param: usize
+}
 
 impl TestA for ATest {
-    fn testa(&self, test: usize) -> String {
-        format!("hello test a, {test}")
+    fn testa(&self) -> reality::Result<()> {
+        println!("hello test a {}", self.param);
+        Ok(())
     }
 }

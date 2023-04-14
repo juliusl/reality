@@ -15,6 +15,7 @@ use syn::Expr;
 use syn::FnArg;
 use syn::Generics;
 use syn::Ident;
+use syn::PatType;
 use syn::Path;
 use syn::ReturnType;
 use syn::Token;
@@ -141,6 +142,21 @@ impl ThunkMacroArguments {
             }
         }
     }
+
+    /// Generates a dispatch expr for trait fn,
+    /// 
+    pub(crate) fn dispatch_expr(&self) -> TokenStream {
+        let name = &self.type_path;
+        let ident = name.get_ident().expect("should have an ident");
+        let thunk_type_name = format_ident!("Thunk{}", ident);
+        
+        let stmts = self.exprs.iter()
+            .filter(|e| !e.is_async && !e.skip)
+            .map(|e| e.dispatch_stmt(&self.type_path))
+            .take(1);
+        
+        dispatch_ref_stmts::dispatch_seq(&thunk_type_name, stmts)
+    }
 }
 
 impl Parse for ThunkMacroArguments {
@@ -159,7 +175,8 @@ impl Parse for ThunkMacroArguments {
                     .block
                     .stmts
                     .iter()
-                    .map(|s| parse2::<ThunkTraitFn>(s.to_token_stream())) {
+                    .map(|s| parse2::<ThunkTraitFn>(s.to_token_stream()))
+                {
                     let expr = expr.map_err(|e| input.error(e))?;
                     exprs.push(expr);
                 }
@@ -183,8 +200,12 @@ pub(crate) struct ThunkTraitFn {
     name: Ident,
     attributes: Vec<Attribute>,
     return_type: ReturnType,
+    output_type: Type,
+    with_type: Option<PatType>,
+    where_clause: Option<WhereClause>,
     fields: Vec<syn::FnArg>,
     traitfn: syn::TraitItemFn,
+    mutable_recv: bool,
     default: bool,
     is_async: bool,
     skip: bool,
@@ -236,16 +257,17 @@ impl ThunkTraitFn {
             };
 
             let return_type = &self.return_type;
+            let where_clause = &self.where_clause;
 
             if self.is_async {
                 quote! {
-                    async fn #name(#fields) #return_type {
+                    async fn #name(#fields) #return_type #where_clause {
                         self.thunk.#name(#input).await
                     }
                 }
             } else {
                 quote! {
-                    fn #name(#fields) #return_type {
+                    fn #name(#fields) #return_type #where_clause {
                         self.thunk.#name(#input)
                     }
                 }
@@ -302,6 +324,72 @@ impl ThunkTraitFn {
             quote! {}
         }
     }
+
+    /// Generates a dispatch expr for a thunk'ed fn,
+    /// 
+    pub(crate) fn dispatch_stmt(&self, recv_type_path: &Path) -> TokenStream {
+        let closure = match &self {
+            ThunkTraitFn { name, with_type: None, is_async: true, default: false, .. } => {
+                dispatch_ref_stmts::recv_async_closure(recv_type_path, name)
+            }
+            ThunkTraitFn { name, with_type: None, is_async: false, default: false, .. } => {
+                dispatch_ref_stmts::recv_closure(recv_type_path, name)
+            }
+            ThunkTraitFn { name, with_type: Some(with_ty), is_async: true, default: false, .. } => {
+                dispatch_ref_stmts::recv_with_async_closure(recv_type_path, with_ty.ty.deref(), name)
+            }
+            ThunkTraitFn { name, with_type: Some(with_ty), mutable_recv: false, is_async: false, default: false, .. } => {
+                dispatch_ref_stmts::recv_with_closure(recv_type_path, with_ty.ty.deref(), name)
+                
+            }
+            _ => {
+                quote!{}
+            }
+        };
+
+        match &self {
+            ThunkTraitFn { output_type, with_type: None, mutable_recv: true, .. } => {
+                match output_type {
+                    Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
+                        dispatch_ref_stmts::write_stmt(&closure)
+                    },
+                    _ => {
+                        dispatch_ref_stmts::map_stmt(&closure)
+                    },
+                }
+            }
+            ThunkTraitFn { output_type, with_type: None, mutable_recv: false, .. } => {
+                match output_type {
+                    Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
+                        dispatch_ref_stmts::read_stmt(&closure)
+                    },
+                    _ => {
+                        dispatch_ref_stmts::map_stmt(&closure)
+                    },
+                }
+            }
+            ThunkTraitFn { output_type, with_type: Some(..), mutable_recv: true, .. } => {
+                match output_type {
+                    Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
+                        dispatch_ref_stmts::write_with_stmt(&closure)
+                    },
+                    _ => {
+                        dispatch_ref_stmts::map_with_stmt(&closure)
+                    },
+                }
+            }
+            ThunkTraitFn { output_type, with_type: Some(..), mutable_recv: false, .. } => {
+                match output_type {
+                    Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
+                        dispatch_ref_stmts::read_with_stmt(&closure)
+                    },
+                    _ => {
+                        dispatch_ref_stmts::map_with_stmt(&closure)
+                    },
+                }
+            }
+        }
+    }
 }
 
 impl Parse for ThunkTraitFn {
@@ -320,167 +408,104 @@ impl Parse for ThunkTraitFn {
         let fields: Vec<FnArg> = traitfn.sig.inputs.iter().cloned().collect();
         let return_type = &traitfn.sig.output;
         let default = traitfn.default.is_some();
-        let where_clause = &traitfn.sig.generics.where_clause;
+        let where_clause = traitfn.sig.generics.where_clause.clone();
+        let mut mutable_recv = false;
 
         if !skip && fields.len() > 2 {
-            return Err(input.error( "Currently, only 2 inputs for thunk trait fn's are supported"));
+            return Err(input.error("Currently, only 2 inputs for thunk trait fn's are supported"));
         }
 
         match fields.first() {
             Some(FnArg::Receiver(r)) => {
                 assert!(r.reference.is_some(), "must be either &self or &mut self");
+                mutable_recv = r.mutability.is_some();
             }
             _ if !default && !skip => {
-                return Err(input.error(
-                    "Trait fn's must have a receiver type, i.e. `fn (self)`",
-                ))
+                return Err(input.error("Trait fn's must have a receiver type, i.e. `fn (self)`"))
             }
             _ => {}
         }
 
-        match fields.iter().skip(1).take(1).next() {
-            Some(f) => {
-                
-            },
-            None => {
-                
-            },
-        }
+        let with_type = fields
+            .iter()
+            .skip(1)
+            .take(2)
+            .filter_map(|f| match f {
+                FnArg::Typed(with_fn_arg) => Some(with_fn_arg),
+                _ => None,
+            })
+            .cloned()
+            .next();
 
-        match &return_type {
+        let output_type = match &return_type {
             ReturnType::Default if !skip => {
-                return Err(input.error(
-                    "Must return a reality::Result<T> from a thunk trait fn",
-                ));
+                return Err(input.error("Must return a reality::Result<T> from a thunk trait fn"));
             }
-            ReturnType::Type(_, ty) => {
-                match ty.deref() {
-                    Type::Path(p) => {
-                        let segments = &p.path.segments;
-
-                    },
-                    _ => return Err(input.error("Return type must be a variant of reality::Result<T>")),
+            ReturnType::Type(_, ty) => match ty.deref() {
+                Type::Path(p) => {
+                    match p
+                        .path
+                        .segments
+                        .iter()
+                        .filter(|s| s.ident.to_string().as_str() != "reality")
+                        .map(|s| match &s.arguments {
+                            syn::PathArguments::None
+                                if s.ident.to_string().as_str() != "reality" =>
+                            {
+                                Err(input.error("Must be in the format of reality::Result<T>"))
+                            }
+                            syn::PathArguments::AngleBracketed(args)
+                                if s.ident.to_string().starts_with("Result")
+                                    && args.args.len() == 1 =>
+                            {
+                                match &args.args.first() {
+                                    Some(arg) => match arg {
+                                        syn::GenericArgument::Type(ty) => Ok(ty),
+                                        _ => Err(input.error(
+                                            "Expecting a type for the return type of Result",
+                                        )),
+                                    },
+                                    _ => Err(input.error("Missing a type in result")),
+                                }
+                            }
+                            _ => Err(input.error(format!(
+                                "Must be in the format of reality::Result<T>, found: {}",
+                                s.ident
+                            ))),
+                        })
+                        .next()
+                    {
+                        Some(ty) => ty?.clone(),
+                        None => {
+                            return Err(
+                                input.error("Return type must be a variant of reality::Result<T>")
+                            );
+                        }
+                    }
                 }
-            }
+                _ => return Err(input.error("Return type must be a variant of reality::Result<T>")),
+            },
             _ => {
-
+                return Err(input.error("Return type must be a variant of reality::Result<T>"));
             }
-        }
+        };
+
+        // TODO: Handle LazyUpdate/LazyBuilder
 
         return Ok(Self {
             name,
             return_type: return_type.clone(),
+            mutable_recv,
+            with_type,
+            output_type,
             attributes: vec![],
+            where_clause,
             fields,
             traitfn,
             default,
             is_async,
             skip,
         });
-    }
-}
-
-/// Parses a return type for a thunk trait fn that match one of the following forms,
-///
-/// -  `reality::Result<()>`
-/// -  `reality::Result<Entity>`
-/// -  `reality::Result<T> where T: Component + Send + Sync`
-/// -  `reality::Result<T> where T: <Self::Layout as Join>::Type`
-///
-struct ThunkTraitFnReturnType {
-    /// Inner Type, i.e.
-    ///
-    ///  ```
-    /// Result<T>
-    ///         ^
-    /// ```
-    ty: Type,
-    ///
-    ///
-    where_clause: Option<WhereClause>,
-}
-
-impl ThunkTraitFnReturnType {
-    /// Generates dispatch expression to prepare a return type,
-    ///
-    pub fn dispatch_output_expr(&self) -> TokenStream {
-        quote_spanned! {self.ty.span()=>
-            .transmute::<Properties>()
-            .result()
-        }
-    }
-
-    /// Generates an expression for handling an async dispatch,
-    ///
-    pub fn async_dispatch_output_expr(&self) -> TokenStream {
-        quote_spanned! {self.ty.span()=>
-            .await
-            .disable_async()
-            .transmute::<Properties>()
-            .result()
-        }
-    }
-}
-
-impl Parse for ThunkTraitFnReturnType {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let p = input.parse::<ReturnType>()?;
-        match p {
-            ReturnType::Type(_, ty) => match *ty {
-                Type::Path(p) => {
-                    let p = &p.path;
-                    for r in p.segments.iter() {
-                        match &r.arguments {
-                            syn::PathArguments::None => {
-                                if r.ident.to_string() != "reality" {
-                                    return Err(syn::Error::new(
-                                        input.span(),
-                                        format!("Must have generic parameter"),
-                                    ));
-                                } else {
-                                    continue;
-                                }
-                            }
-                            syn::PathArguments::AngleBracketed(args) => {
-                                if let Some(ty) = args
-                                    .args
-                                    .iter()
-                                    .filter_map(|p| match p {
-                                        syn::GenericArgument::Type(t) => Some(t),
-                                        _ => None,
-                                    })
-                                    .cloned()
-                                    .next()
-                                {
-                                    return Ok(Self {
-                                        ty,
-                                        where_clause: input.parse::<syn::WhereClause>().ok(),
-                                    });
-                                } else {
-                                    return Err(syn::Error::new(
-                                            input.span(),
-                                            "Return type must include generic parameter ex: `-> reality::Result<T>`",
-                                        ));
-                                }
-                            }
-                            syn::PathArguments::Parenthesized(_) => {
-                                return Err(syn::Error::new(
-                                    input.span(),
-                                    "Return type must be a variant of reality::Result<T>",
-                                ))
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-
-        Err(syn::Error::new(
-            input.span(),
-            "Return type must be a variant of reality::Result<T>",
-        ))
     }
 }
 
@@ -492,6 +517,7 @@ pub mod dispatch_ref_stmts {
     use proc_macro2::TokenStream;
     use quote::quote;
     use quote::quote_spanned;
+    use syn::Path;
     use syn::Type;
 
     /// Returns an async dispatch sequence for stmts,
@@ -553,7 +579,7 @@ pub mod dispatch_ref_stmts {
         }
     }
 
-    pub fn recv_with_closure(recv: &Type, with: &Type, fn_ident: &Ident) -> TokenStream {
+    pub fn recv_with_closure(recv: &Path, with: &Type, fn_ident: &Ident) -> TokenStream {
         quote_spanned! {fn_ident.span()=>
             |recv: #recv, with: #with| {
                 recv.#fn_ident(with)
@@ -561,7 +587,7 @@ pub mod dispatch_ref_stmts {
         }
     }
 
-    pub fn recv_closure(recv: &Type, fn_ident: &Ident) -> TokenStream {
+    pub fn recv_closure(recv: &Path, fn_ident: &Ident) -> TokenStream {
         quote_spanned! {fn_ident.span()=>
             |recv: #recv| {
                 recv.#fn_ident()
@@ -569,7 +595,7 @@ pub mod dispatch_ref_stmts {
         }
     }
 
-    pub fn recv_with_async_closure(recv: &Type, with: &Type, fn_ident: &Ident) -> TokenStream {
+    pub fn recv_with_async_closure(recv: &Path, with: &Type, fn_ident: &Ident) -> TokenStream {
         quote_spanned! {fn_ident.span()=>
             |recv: #recv, with: #with| {
                 let recv = recv.clone();
@@ -581,7 +607,7 @@ pub mod dispatch_ref_stmts {
         }
     }
 
-    pub fn recv_async_closure(recv: &Type, fn_ident: &Ident) -> TokenStream {
+    pub fn recv_async_closure(recv: &Path, fn_ident: &Ident) -> TokenStream {
         quote_spanned! {fn_ident.span()=>
             |recv: #recv| {
                 let recv = recv.clone();
@@ -631,54 +657,43 @@ pub mod dispatch_ref_stmts {
             .map_with(#closure)
         }
     }
+
+    /// Generates a `read` statement,
+    /// 
+    pub fn read_stmt(closure: &TokenStream) -> TokenStream {
+        quote! {
+            .read(#closure)
+        }
+    }
+
+    /// Generates a `write` statement,
+    /// 
+    pub fn write_stmt(closure: &TokenStream) -> TokenStream {
+        quote! {
+            .write(#closure)
+        }
+    }
+
+    /// Generates a `read_with` statement,
+    /// 
+    pub fn read_with_stmt(closure: &TokenStream) -> TokenStream {
+        quote! {
+            .read_with(#closure)
+        }
+    }
+
+    /// Generates a `write_with` statement,
+    /// 
+    pub fn write_with_stmt(closure: &TokenStream) -> TokenStream {
+        quote! {
+            .write_with(#closure)
+        }
+    }
 }
 
-#[allow(unused_imports)]
 mod tests {
-    use proc_macro2::TokenStream;
-    use quote::ToTokens;
-    use syn::{parse2, Path, PredicateType};
-
-    use super::ThunkTraitFnReturnType;
-
     #[test]
-    fn test_thunk_trait_fn_return_type() -> Result<(), Box<dyn std::error::Error>> {
-        let ts = "-> reality::Result<T> where T: Component".parse::<TokenStream>()?;
-        let ts = parse2::<ThunkTraitFnReturnType>(ts)?;
-        // dbg!(ts.dispatch_output_expr());
+    fn test() {
 
-        match ts.where_clause {
-            Some(w) => {
-                dbg!(w.to_token_stream());
-                for p in w.predicates.iter() {
-                    match p {
-                        syn::WherePredicate::Lifetime(_) => continue,
-                        syn::WherePredicate::Type(ty) => {
-                            dbg!(ty.to_token_stream());
-                            dbg!(ty.bounded_ty.to_token_stream());
-                            if ty.bounded_ty.to_token_stream().to_string()
-                                == ts.ty.to_token_stream().to_string()
-                            {
-                                assert!(ty.bounds.iter().any(|b| match b {
-                                    syn::TypeParamBound::Trait(t) => {
-                                        t.path.is_ident("Component")
-                                            || t.path.is_ident("specs::Component")
-                                    }
-                                    _ => false,
-                                }));
-
-                                break;
-                            } else {
-                                continue;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            None => assert!(false),
-        }
-
-        Ok(())
     }
 }
