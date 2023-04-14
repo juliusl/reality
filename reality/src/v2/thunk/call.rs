@@ -11,9 +11,9 @@ use crate::v2::prelude::*;
 
 internal_use!();
 
-thunk! {
 /// Trait for a type to implement an async call function,
 ///
+#[thunk]
 #[async_trait]
 pub trait Call
 {
@@ -21,7 +21,7 @@ pub trait Call
     ///
     async fn call(&self) -> Result<Properties>;
 }
-}
+
 
 /// This implementation is for functions w/o any state,
 ///

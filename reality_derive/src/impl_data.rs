@@ -1,20 +1,18 @@
 use proc_macro2::Ident;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
-use quote::format_ident;
 use quote::quote;
-use quote::ToTokens;
 use quote::quote_spanned;
 use syn::Generics;
 use syn::parse::Parse;
-use syn::parse2;
-use syn::Data;
-use syn::DeriveInput;
-use syn::FieldsNamed;
 use syn::Path;
 use syn::spanned::Spanned;
 
+/// 
+/// 
 pub struct ImplData {
+    /// 
+    /// 
     path: Path,
     generics: Generics,
     dispatches: Vec<ImplFn>,

@@ -1,5 +1,5 @@
-use reality::v2::{prelude::*, Config, Action};
-use test_framework::{Process, TestA};
+use reality::v2::Action;
+use reality::v2::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 /// Example of a plugin framework compiler,
@@ -308,15 +308,15 @@ pub mod test_framework {
         }
     }
 
-    thunk! {
-        pub trait TestA {
-            fn testa(&self);
-        }
+    #[thunk]
+    pub trait TestA {
+        fn testa(&self) -> reality::Result<()>;
     }
 
     impl TestA for Println {
-        fn testa(&self) {
+        fn testa(&self) -> reality::Result<()> {
             println!("TestA impl for Println");
+            Ok(())
         }
     }
 

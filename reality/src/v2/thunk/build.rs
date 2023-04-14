@@ -11,16 +11,18 @@ use super::Dispatch;
 
 internal_use!();
 
-thunk! {
+
 /// Trait to build components for an entity,
 ///
+
+#[thunk]
 pub trait Build
 {
     /// Builds an entity w/ a lazy builder
     ///
     fn build(&self, lazy_builder: LazyBuilder) -> Result<Entity>;
 }
-}
+
 
 impl<T: Fn(LazyBuilder) -> Result<Entity> + Sync + Send + 'static> Build for T {
     fn build(&self, lazy_builder: LazyBuilder) -> Result<Entity> {

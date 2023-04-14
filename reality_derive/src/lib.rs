@@ -1,10 +1,7 @@
 use quote::quote_spanned;
 use syn::parse_macro_input;
-use syn::DataEnum;
-use syn::Item;
 use syn::ItemEnum;
 use syn::LitStr;
-use syn::Path;
 mod struct_data;
 use struct_data::StructData;
 mod apply_framework;
@@ -18,7 +15,6 @@ mod impl_data;
 use impl_data::ImplData;
 
 mod enum_data;
-use enum_data::EnumData;
 use enum_data::InterpolationExpr;
 
 /// Allows macros to be used internally,
@@ -205,13 +201,15 @@ pub fn apply_framework(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
 /// }
 /// ```
 ///
-#[proc_macro]
-pub fn thunk(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+#[proc_macro_attribute]
+pub fn thunk(_attr: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let thunk_macro = parse_macro_input!(input as ThunkMacroArguments);
 
-    thunk_macro.trait_expr().into()
+    thunk_macro.trait_impl().into()
 }
 
+/// Generates structs for enum fields that use an #[interpolate(..)] attribute,
+/// 
 #[proc_macro]
 pub fn dispatch_signature(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let item_enum = parse_macro_input!(input as ItemEnum);
@@ -220,9 +218,7 @@ pub fn dispatch_signature(input: proc_macro::TokenStream) -> proc_macro::TokenSt
     let vis = &item_enum.vis;
 
     let interpolations = item_enum.variants.iter().filter_map(|variant| {
-        variant
-            .attrs
-            .iter()
+        variant.attrs.iter()
             .find(|a| a.path().is_ident("interpolate"))
             .map(|a| (a, variant.clone()))
     });
@@ -264,6 +260,7 @@ pub fn dispatch_signature(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         }
 
         impl #generics #name #generics {
+            #[doc = "Returns any matches of signatures from a BuildLog component"]
             #vis fn get_matches(build_log: BuildLog) -> Vec<#name #generics> {
                 let mut matches = vec![];
 
@@ -274,6 +271,7 @@ pub fn dispatch_signature(input: proc_macro::TokenStream) -> proc_macro::TokenSt
                 matches
             }
 
+            #[doc = "Returns all matches for this identifier"]
             #vis fn get_match(ident: &crate::Identifier) -> Vec<#name #generics> {
                 let mut matches = vec![];
 
@@ -329,7 +327,7 @@ mod tests {
 
         let input = parse2::<ThunkMacroArguments>(ts).unwrap();
 
-        println!("{:#}", input.trait_expr());
+        println!("{:#}", input.trait_impl());
     }
 
     #[test]

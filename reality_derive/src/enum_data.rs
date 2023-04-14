@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-
 use logos::Lexer;
 use logos::Logos;
 use proc_macro2::Ident;
@@ -7,74 +6,11 @@ use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use quote::format_ident;
 use quote::quote;
-use quote::ToTokens;
 use quote::quote_spanned;
-use syn::Generics;
 use syn::LitStr;
-use syn::Token;
-use syn::parse::Parse;
-use syn::parse2;
-use syn::Data;
-use syn::DeriveInput;
-use syn::FieldsNamed;
-use syn::Path;
-use syn::spanned::Spanned;
 
-pub struct EnumData {
-
-}
-
-
-
-impl EnumData {
-    fn dispatch_trait_impl(&self) -> TokenStream {
-        quote ! {
-            impl Dispatch for  {
-                fn dispatch<'a>(&self, dispatch_ref: DispatchRef<'a, Properties>) -> DispatchResult<'a> {
-                    match &self.0 {
-                        DispatchSignature::BlockRootExt { 
-                            ref root, 
-                            ref ext 
-                        } => {
-                            if root == "test" {
-                                Err(Error::skip())
-                            } else {
-                                Err(Error::skip())
-                            }
-                        }
-                        DispatchSignature::RootConfigExt {
-                            ref config,
-                            ref ext,
-                        } => {
-                            if config == "test" {
-                                Err(Error::skip())
-                            } else {
-                                Err(Error::skip())
-                            }
-                        }
-                        DispatchSignature::BlockRootConfigExtNameProp {
-                            ref root,
-                            ref config,
-                            ref ext,
-                            ref name,
-                            ref prop,
-                        } => {
-                            if root == "test" {
-                                Err(Error::skip())
-                            } else if root == "boot" {
-                                Err(Error::skip())
-                            } else {
-                                Err(Error::skip())
-                            }
-                        }
-                        _ => Err(Error::skip()),
-                    }
-                }
-            }
-        }
-    }
-}
-
+/// Parses an interpolation expression and generates a struct for assignment tokens,
+/// 
 pub(crate) struct InterpolationExpr {
     pub(crate) name: Ident,
     pub(crate) expr: LitStr,
@@ -167,6 +103,8 @@ mod tests {
     }
 }
 
+/// TODO: Move this to a library, copied from ::v2
+/// 
 /// Tokens to parse an identifier and interpolate values,
 ///
 /// Example,

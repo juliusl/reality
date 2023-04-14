@@ -1,6 +1,7 @@
 use std::ops::Deref;
 
 use proc_macro2::TokenStream;
+use quote::__private::ext::RepToTokensExt;
 use quote::format_ident;
 use quote::quote;
 use quote::quote_spanned;
@@ -32,7 +33,9 @@ pub(crate) struct ThunkMacroArguments {
 }
 
 impl ThunkMacroArguments {
-    pub(crate) fn trait_expr(&self) -> TokenStream {
+    /// Generates thunk method impl for a trait definition,
+    ///
+    pub(crate) fn trait_impl(&self) -> TokenStream {
         let attributes = self.attributes.iter().map(|a| {
             quote_spanned! {a.span()=>
                 #a
@@ -48,7 +51,7 @@ impl ThunkMacroArguments {
             #( #exprs )*
         };
 
-        let thunk_trait_type_expr = self.thunk_trait_type_expr();
+        let thunk_trait_type_expr = self.thunk_trait_convert_fn_expr();
         let thunk_trait_impl_expr = self.thunk_trait_impl_expr();
         let arc_impl_expr = self.arc_impl_expr();
 
@@ -118,7 +121,9 @@ impl ThunkMacroArguments {
         }
     }
 
-    pub(crate) fn thunk_trait_type_expr(&self) -> TokenStream {
+    /// Generates a fn to convert an implementing type into a Thunk component,
+    ///
+    pub(crate) fn thunk_trait_convert_fn_expr(&self) -> TokenStream {
         let name = &self.type_path;
         let ident = name.get_ident().expect("should have an ident");
         let thunk_type_name = format_ident!("Thunk{}", ident);
@@ -150,12 +155,14 @@ impl Parse for ThunkMacroArguments {
 
         match expr {
             Expr::Block(block) => {
-                exprs = block
+                for expr in block
                     .block
                     .stmts
                     .iter()
-                    .filter_map(|s| parse2::<ThunkTraitFn>(s.to_token_stream()).ok())
-                    .collect();
+                    .map(|s| parse2::<ThunkTraitFn>(s.to_token_stream())) {
+                    let expr = expr.map_err(|e| input.error(e))?;
+                    exprs.push(expr);
+                }
             }
             _ => {}
         }
@@ -180,6 +187,7 @@ pub(crate) struct ThunkTraitFn {
     traitfn: syn::TraitItemFn,
     default: bool,
     is_async: bool,
+    skip: bool,
 }
 
 impl ThunkTraitFn {
@@ -294,94 +302,80 @@ impl ThunkTraitFn {
             quote! {}
         }
     }
-
-    fn async_dispatch(&self, trait_ident: &Ident) -> TokenStream {
-        let fn_ident = &self.name;
-        let input = self
-            .fields
-            .iter()
-            .filter_map(|f| match f {
-                FnArg::Receiver(_) => None,
-                FnArg::Typed(typed) => Some(typed.pat.clone()),
-            })
-            .map(|f| {
-                quote_spanned! {f.span()=>
-                    #f
-                }
-            });
-        let input = quote_spanned! {self.name.span()=>
-            #( #input ),*
-        };
-        let thunk_type = format_ident!("Thunk{}", trait_ident);
-
-        match &self.return_type {
-            ReturnType::Default => {
-                quote_spanned! {trait_ident.span()=>
-                    compile_error!("Must return at least a reality::Result<()>");
-                };
-            }
-            ReturnType::Type(_, ty) => match ty.deref() {
-                syn::Type::Verbatim(v) => {
-                    let v = v.to_token_stream();
-                    if let Ok(retty) = parse2::<ThunkTraitFnReturnType>(v) {}
-                }
-                _ => {}
-            },
-        }
-
-        quote! {
-        #[async_trait]
-        impl<T: #trait_ident + Send + Sync> reality::v2::AsyncDispatch for Arc<T> {
-            async fn async_dispatch<'a, 'b>(
-                &'a self,
-                build_ref: reality::v2::DispatchRef<'b, reality::v2::Properties>,
-            ) -> reality::v2::DispatchResult<'b> {
-                build_ref
-                    .enable_async()
-                    .transmute::<#thunk_type>()
-                    .map_into::<reality::v2::Properties, _>(|r| {
-                        let r = r.clone();
-                        async move { r.#fn_ident(#input).await }
-                    })
-                    .await
-                    .disable_async()
-                    .result()
-            }
-        }
-        }
-    }
 }
 
 impl Parse for ThunkTraitFn {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        println!("{}", input.to_string());
-
         let traitfn = input.parse::<syn::TraitItemFn>()?;
+
+        let mut skip = false;
+        for attr in traitfn.attrs.iter() {
+            if attr.path().is_ident("skip") {
+                skip = true;
+            }
+        }
+
         let name = traitfn.sig.ident.clone();
         let is_async = traitfn.sig.asyncness.is_some();
         let fields: Vec<FnArg> = traitfn.sig.inputs.iter().cloned().collect();
-        let return_type = traitfn.sig.output.clone();
+        let return_type = &traitfn.sig.output;
         let default = traitfn.default.is_some();
+        let where_clause = &traitfn.sig.generics.where_clause;
+
+        if !skip && fields.len() > 2 {
+            return Err(input.error( "Currently, only 2 inputs for thunk trait fn's are supported"));
+        }
 
         match fields.first() {
             Some(FnArg::Receiver(r)) => {
-                assert!(r.mutability.is_none(), "must be an immutable reference");
-                assert!(r.reference.is_some(), "must be an immutable reference");
+                assert!(r.reference.is_some(), "must be either &self or &mut self");
             }
-            _ if !default => {
-                panic!("First argument must be a receiver type")
+            _ if !default && !skip => {
+                return Err(input.error(
+                    "Trait fn's must have a receiver type, i.e. `fn (self)`",
+                ))
             }
             _ => {}
         }
 
+        match fields.iter().skip(1).take(1).next() {
+            Some(f) => {
+                
+            },
+            None => {
+                
+            },
+        }
+
+        match &return_type {
+            ReturnType::Default if !skip => {
+                return Err(input.error(
+                    "Must return a reality::Result<T> from a thunk trait fn",
+                ));
+            }
+            ReturnType::Type(_, ty) => {
+                match ty.deref() {
+                    Type::Path(p) => {
+                        let segments = &p.path.segments;
+
+                    },
+                    _ => return Err(input.error("Return type must be a variant of reality::Result<T>")),
+                }
+            }
+            _ => {
+
+            }
+        }
+
         return Ok(Self {
             name,
-            return_type,
+            return_type: return_type.clone(),
             attributes: vec![],
             fields,
             traitfn,
             default,
             is_async,
+            skip,
         });
     }
 }
@@ -424,115 +418,6 @@ impl ThunkTraitFnReturnType {
             .disable_async()
             .transmute::<Properties>()
             .result()
-        }
-    }
-}
-
-/// Generates DispatchRef statements,
-/// 
-pub mod dispatch_ref_stmts {
-    use proc_macro2::TokenStream;
-    use proc_macro2::Ident;
-    use quote::quote_spanned;
-
-    /// Generates a `.transmute::<Type>` statement,
-    ///
-    pub fn transmute_stmt(ty: &Ident) -> TokenStream {
-        quote_spanned!(ty.span()=>{
-            transmute::<#ty>()
-        })
-    }
-
-    /// 
-    /// 
-    pub fn map_into_async(thunk_type: &Ident, fn_ident: &Ident, fn_input: TokenStream) -> TokenStream {
-        let begin_async = quote_spanned! {thunk_type.span()=>
-            .enable_async()
-            .transmute::<#thunk_type>()
-        };
-
-        let async_body = quote_spanned! {fn_ident.span()=>
-            .map_into::<reality::v2::Properties, _>(|r| {
-                let r = r.clone();
-                async move { r.#fn_ident(#fn_input).await }
-            })
-            .await
-            .disable_async()
-            .transmute::<Properties>()
-            .result()
-        };
-
-        quote_spanned! {thunk_type.span()=>
-            #begin_async
-            #async_body
-        }
-    }
-
-    ///
-    /// 
-    pub fn async_map_into_stmt(ty: &Ident, fn_ident: &Ident) -> TokenStream {
-        let fn_stmt = quote_spanned! {fn_ident.span()=>
-            let r = r.clone();
-            async move { r.#fn_ident().await }
-        };
-
-        quote_spanned! {ty.span()=>
-            .map_into::<#ty, _>(|r| {
-                #fn_stmt
-            })
-        }
-    }
-
-    ///
-    /// 
-    pub fn map_into_stmt(ty: &Ident, fn_ident: &Ident) -> TokenStream {
-        let fn_stmt = quote_spanned! {fn_ident.span()=>
-            let r = r.clone();
-            r.#fn_ident()
-        };
-
-        quote_spanned! {ty.span()=>
-            .map_into::<#ty>(|r| {
-                #fn_stmt
-            })
-        }
-    }
-
-    ///
-    /// 
-    pub fn map_into_with_stmt(ty: &Ident, fn_ident: &Ident) -> TokenStream {
-        let fn_stmt = quote_spanned! {fn_ident.span()=>
-            let r = r.clone();
-            r.#fn_ident(w)
-        };
-
-        quote_spanned! {ty.span()=>
-            .map_into_with::<#ty>(|r, w| {
-                #fn_stmt
-            })
-        }
-    }
-
-    ///
-    /// 
-    pub fn map_with_stmt(ty: &Ident, fn_ident: &Ident) -> TokenStream {
-        let fn_stmt = quote_spanned! {fn_ident.span()=>
-            let r = r.clone();
-            r.#fn_ident(w)
-        };
-
-        quote_spanned! {ty.span()=>
-            .map_with::<#ty>(|r, w| {
-                #fn_stmt
-            })
-        }
-    }
-
-    /// <Self::Layout as Join>::Type
-    /// 
-    pub fn join_map(ty: &Ident) -> TokenStream {
-        quote_spanned! {ty.span()=>
-            
         }
     }
 }
@@ -596,6 +481,155 @@ impl Parse for ThunkTraitFnReturnType {
             input.span(),
             "Return type must be a variant of reality::Result<T>",
         ))
+    }
+}
+
+/// This module is for generating dispatch sequences for thunk types,
+///
+#[allow(dead_code)]
+pub mod dispatch_ref_stmts {
+    use proc_macro2::Ident;
+    use proc_macro2::TokenStream;
+    use quote::quote;
+    use quote::quote_spanned;
+    use syn::Type;
+
+    /// Returns an async dispatch sequence for stmts,
+    ///
+    pub fn async_dispatch_seq(
+        thunk_type: &Ident,
+        stmts: impl Iterator<Item = TokenStream>,
+    ) -> TokenStream {
+        let begin_async = quote_spanned! {thunk_type.span()=>
+            .enable_async()
+            .transmute::<#thunk_type>()
+        };
+
+        let stmts = stmts.map(|s| {
+            quote! {
+                #s
+                .await
+            }
+        });
+
+        let async_body = quote! {
+            #( #stmts )*
+            .disable_async()
+            .transmute::<Properties>()
+            .result()
+        };
+
+        quote_spanned! {thunk_type.span()=>
+            #begin_async
+            #async_body
+        }
+    }
+
+    /// Generates code for a synchronous dispatch seq,
+    ///
+    pub fn dispatch_seq(
+        thunk_type: &Ident,
+        stmts: impl Iterator<Item = TokenStream>,
+    ) -> TokenStream {
+        let begin = quote_spanned! {thunk_type.span()=>
+            .transmute::<#thunk_type>()
+        };
+
+        let stmts = stmts.map(|s| {
+            quote! {
+                #s
+            }
+        });
+
+        let body = quote! {
+            #( #stmts )*
+            .transmute::<Properties>()
+            .result()
+        };
+
+        quote_spanned! {thunk_type.span()=>
+            #begin
+            #body
+        }
+    }
+
+    pub fn recv_with_closure(recv: &Type, with: &Type, fn_ident: &Ident) -> TokenStream {
+        quote_spanned! {fn_ident.span()=>
+            |recv: #recv, with: #with| {
+                recv.#fn_ident(with)
+            }
+        }
+    }
+
+    pub fn recv_closure(recv: &Type, fn_ident: &Ident) -> TokenStream {
+        quote_spanned! {fn_ident.span()=>
+            |recv: #recv| {
+                recv.#fn_ident()
+            }
+        }
+    }
+
+    pub fn recv_with_async_closure(recv: &Type, with: &Type, fn_ident: &Ident) -> TokenStream {
+        quote_spanned! {fn_ident.span()=>
+            |recv: #recv, with: #with| {
+                let recv = recv.clone();
+                let with = with.clone();
+                async move {
+                    recv.#fn_ident(with).await
+                }
+            }
+        }
+    }
+
+    pub fn recv_async_closure(recv: &Type, fn_ident: &Ident) -> TokenStream {
+        quote_spanned! {fn_ident.span()=>
+            |recv: #recv| {
+                let recv = recv.clone();
+                async move {
+                    recv.#fn_ident().await
+                }
+            }
+        }
+    }
+
+    /// Generates a `.transmute::<Type>` statement,
+    ///
+    pub fn transmute_stmt(ty: &Ident) -> TokenStream {
+        quote_spanned!(ty.span()=>{
+            transmute::<#ty>()
+        })
+    }
+
+    /// Generates a `map` statement,
+    ///
+    pub fn map_stmt(closure: &TokenStream) -> TokenStream {
+        quote! {
+            .map(#closure)
+        }
+    }
+
+    /// Generates a `map_into` statement,
+    ///
+    pub fn map_into_stmt(closure: &TokenStream) -> TokenStream {
+        quote! {
+            .map_into(#closure)
+        }
+    }
+
+    /// Generates a `map_into_with` statement,
+    ///
+    pub fn map_into_with_stmt(closure: &TokenStream) -> TokenStream {
+        quote! {
+            .map_into_with(#closure)
+        }
+    }
+
+    /// Generates a `map_with` statement,
+    ///
+    pub fn map_with_stmt(closure: &TokenStream) -> TokenStream {
+        quote! {
+            .map_with(#closure)
+        }
     }
 }
 
