@@ -10,17 +10,27 @@ pub trait TestA {
 }
 
 fn main() {
-    let testa = thunk_testa(ATest {param: 4096});
+    let testa = thunk_testa(ATest { param: 4096 });
     println!("{:?}", testa.testa());
 }
 
 struct ATest {
-    param: usize
+    param: usize,
 }
 
 impl TestA for ATest {
     fn testa(&self) -> reality::Result<()> {
         println!("hello test a {}", self.param);
         Ok(())
+    }
+}
+
+impl Dispatch for ATest {
+    fn dispatch<'a>(&self, dispatch_ref: DispatchRef<'a, Properties>) -> DispatchResult<'a> {
+        dispatch_ref
+            .transmute::<ThunkTestA>()
+            .read(|recv: &ThunkTestA| recv.testa())
+            .transmute::<Properties>()
+            .result()
     }
 }

@@ -22,7 +22,6 @@ pub trait Call
     async fn call(&self) -> Result<Properties>;
 }
 
-
 /// This implementation is for functions w/o any state,
 ///
 #[async_trait]

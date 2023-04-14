@@ -18,7 +18,7 @@ mod enum_data;
 use enum_data::InterpolationExpr;
 
 /// Allows macros to be used internally,
-/// 
+///
 #[proc_macro]
 pub fn internal_use(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
     quote::quote! {
@@ -27,7 +27,8 @@ pub fn internal_use(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 pub use crate::v2::*;
             }
         }
-    }.into()
+    }
+    .into()
 }
 
 /// Derives Load trait implementation as well as system data impl,
@@ -202,14 +203,17 @@ pub fn apply_framework(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
 /// ```
 ///
 #[proc_macro_attribute]
-pub fn thunk(_attr: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn thunk(
+    _attr: proc_macro::TokenStream,
+    input: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
     let thunk_macro = parse_macro_input!(input as ThunkMacroArguments);
 
     thunk_macro.trait_impl().into()
 }
 
 /// Generates structs for enum fields that use an #[interpolate(..)] attribute,
-/// 
+///
 #[proc_macro]
 pub fn dispatch_signature(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let item_enum = parse_macro_input!(input as ItemEnum);
@@ -218,7 +222,9 @@ pub fn dispatch_signature(input: proc_macro::TokenStream) -> proc_macro::TokenSt
     let vis = &item_enum.vis;
 
     let interpolations = item_enum.variants.iter().filter_map(|variant| {
-        variant.attrs.iter()
+        variant
+            .attrs
+            .iter()
             .find(|a| a.path().is_ident("interpolate"))
             .map(|a| (a, variant.clone()))
     });
@@ -315,11 +321,14 @@ mod tests {
             /// Doc comment
             pub trait MyTrait {
                 /// test
-                fn test(&self, test: usize) -> String;
+                fn test(&self) -> Result<Properties>;
 
                 fn test2() -> String {
                     String::new()
                 }
+
+                #[skip]
+                fn my_trait() -> Result<Test>;
             }
     "#,
         )
@@ -328,6 +337,7 @@ mod tests {
         let input = parse2::<ThunkMacroArguments>(ts).unwrap();
 
         println!("{:#}", input.trait_impl());
+        println!("{:#}", input.impl_dispatch_exprs());
     }
 
     #[test]

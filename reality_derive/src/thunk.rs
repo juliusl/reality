@@ -6,6 +6,7 @@ use quote::format_ident;
 use quote::quote;
 use quote::quote_spanned;
 use quote::ToTokens;
+use syn::ItemTrait;
 use syn::parse::Parse;
 use syn::parse2;
 use syn::parse_macro_input;
@@ -26,10 +27,10 @@ use syn::Visibility;
 use syn::WhereClause;
 
 pub(crate) struct ThunkMacroArguments {
+    name: Ident,
     attributes: Vec<Attribute>,
     visibility: Visibility,
     generics: Generics,
-    type_path: Path,
     exprs: Vec<ThunkTraitFn>,
 }
 
@@ -46,8 +47,9 @@ impl ThunkMacroArguments {
             #( #attributes )*
         };
         let vis = &self.visibility;
-        let name = &self.type_path;
+        let name = &self.name;
         let exprs = self.exprs.iter().map(|e| e.trait_fn());
+        let dispatch_exprs = self.impl_dispatch_exprs();
         let exprs = quote! {
             #( #exprs )*
         };
@@ -72,7 +74,7 @@ impl ThunkMacroArguments {
     }
 
     pub(crate) fn thunk_trait_impl_expr(&self) -> TokenStream {
-        let name = &self.type_path;
+        let name = &self.name;
         let exprs = self
             .exprs
             .iter()
@@ -98,7 +100,7 @@ impl ThunkMacroArguments {
     }
 
     pub(crate) fn arc_impl_expr(&self) -> TokenStream {
-        let name = &self.type_path;
+        let name = &self.name;
         let exprs = self
             .exprs
             .iter()
@@ -125,12 +127,11 @@ impl ThunkMacroArguments {
     /// Generates a fn to convert an implementing type into a Thunk component,
     ///
     pub(crate) fn thunk_trait_convert_fn_expr(&self) -> TokenStream {
-        let name = &self.type_path;
-        let ident = name.get_ident().expect("should have an ident");
-        let thunk_type_name = format_ident!("Thunk{}", ident);
+        let name = &self.name;
+        let thunk_type_name = format_ident!("Thunk{}", name);
         let vis = &self.visibility;
 
-        let convert_fn_name = format_ident!("thunk_{}", ident.to_string().to_lowercase());
+        let convert_fn_name = format_ident!("thunk_{}", name.to_string().to_lowercase());
 
         quote! {
             #vis type #thunk_type_name = reality::v2::Thunk<std::sync::Arc<dyn #name>>;
@@ -144,51 +145,66 @@ impl ThunkMacroArguments {
     }
 
     /// Generates a dispatch expr for trait fn,
-    /// 
-    pub(crate) fn dispatch_expr(&self) -> TokenStream {
-        let name = &self.type_path;
-        let ident = name.get_ident().expect("should have an ident");
-        let thunk_type_name = format_ident!("Thunk{}", ident);
-        
-        let stmts = self.exprs.iter()
-            .filter(|e| !e.is_async && !e.skip)
-            .map(|e| e.dispatch_stmt(&self.type_path))
-            .take(1);
-        
-        dispatch_ref_stmts::dispatch_seq(&thunk_type_name, stmts)
+    ///
+    pub(crate) fn impl_dispatch_exprs(&self) -> TokenStream {
+        let name = &self.name;
+        let thunk_type_name = format_ident!("Thunk{}", name);
+
+        let dispatch_exprs = self
+            .exprs
+            .iter()
+            .filter(|e| !e.skip && !e.default)
+            .map(|e| {
+                let fn_name = &e.name;
+                let fn_name = format_ident!("thunk_{}_dispatch_{}", name.to_string().to_lowercase(), fn_name);
+                let stmt = e.dispatch_stmt(&thunk_type_name);
+
+                if e.is_async {
+                    let body = dispatch_ref_stmts::async_dispatch_seq(&thunk_type_name, Some(stmt).into_iter());
+                    quote! {
+                        pub(super) async fn #fn_name<'a>(dispatch_ref: reality::v2::DispatchRef<'a, Properties>) -> reality::v2::DispatchResult<'a> {
+                            dispatch_ref
+                            #body
+                        }
+                    }
+                } else {
+                    let body = dispatch_ref_stmts::dispatch_seq(&thunk_type_name, Some(stmt).into_iter());
+                    quote! {
+                        pub(super) fn #fn_name<'a>(dispatch_ref: reality::v2::DispatchRef<'a, Properties>) -> reality::v2::DispatchResult<'a> {
+                            dispatch_ref
+                            #body
+                        }
+                    }
+                }
+            });
+
+        quote! {
+            #( #dispatch_exprs )*
+        }
     }
 }
 
 impl Parse for ThunkMacroArguments {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let attributes = Attribute::parse_outer(input)?;
-        let visibility = input.parse::<Visibility>()?;
-        input.parse::<Token![trait]>()?;
-        let type_path = input.parse::<Path>()?;
-        let generics = input.parse::<Generics>().ok().unwrap_or_default();
-        let expr = input.parse::<Expr>()?;
-        let mut exprs = vec![];
 
-        match expr {
-            Expr::Block(block) => {
-                for expr in block
-                    .block
-                    .stmts
-                    .iter()
-                    .map(|s| parse2::<ThunkTraitFn>(s.to_token_stream()))
-                {
-                    let expr = expr.map_err(|e| input.error(e))?;
-                    exprs.push(expr);
-                }
-            }
-            _ => {}
+        let item_trait = input.parse::<ItemTrait>()?;
+        let visibility = item_trait.vis;
+        let name = item_trait.ident;
+        let generics = item_trait.generics;
+
+        let mut exprs = vec![];
+        for trait_fn in item_trait.items.iter() {
+            let expr = parse2::<ThunkTraitFn>(trait_fn.to_token_stream())?;
+
+            exprs.push(expr);
         }
 
         Ok(Self {
             attributes,
             visibility,
             generics,
-            type_path,
+            name,
             exprs,
         })
     }
@@ -326,68 +342,97 @@ impl ThunkTraitFn {
     }
 
     /// Generates a dispatch expr for a thunk'ed fn,
-    /// 
-    pub(crate) fn dispatch_stmt(&self, recv_type_path: &Path) -> TokenStream {
+    ///
+    pub(crate) fn dispatch_stmt(&self, recv_type: &Ident) -> TokenStream {
         let closure = match &self {
-            ThunkTraitFn { name, with_type: None, is_async: true, default: false, .. } => {
-                dispatch_ref_stmts::recv_async_closure(recv_type_path, name)
-            }
-            ThunkTraitFn { name, with_type: None, is_async: false, default: false, .. } => {
-                dispatch_ref_stmts::recv_closure(recv_type_path, name)
-            }
-            ThunkTraitFn { name, with_type: Some(with_ty), is_async: true, default: false, .. } => {
-                dispatch_ref_stmts::recv_with_async_closure(recv_type_path, with_ty.ty.deref(), name)
-            }
-            ThunkTraitFn { name, with_type: Some(with_ty), mutable_recv: false, is_async: false, default: false, .. } => {
-                dispatch_ref_stmts::recv_with_closure(recv_type_path, with_ty.ty.deref(), name)
-                
-            }
+            ThunkTraitFn {
+                name,
+                with_type: None,
+                is_async: true,
+                default: false,
+                ..
+            } => dispatch_ref_stmts::recv_async_closure(recv_type, name),
+            ThunkTraitFn {
+                name,
+                with_type: None,
+                is_async: false,
+                default: false,
+                mutable_recv,
+                ..
+            } => dispatch_ref_stmts::recv_closure(*mutable_recv, recv_type, name),
+            ThunkTraitFn {
+                name,
+                with_type: Some(with_ty),
+                is_async: true,
+                default: false,
+                ..
+            } => dispatch_ref_stmts::recv_with_async_closure(
+                recv_type,
+                with_ty.ty.deref(),
+                name,
+            ),
+            ThunkTraitFn {
+                name,
+                with_type: Some(with_ty),
+                mutable_recv,
+                is_async: false,
+                default: false,
+                ..
+            } => dispatch_ref_stmts::recv_with_closure(*mutable_recv, recv_type, with_ty.ty.deref(), name),
             _ => {
-                quote!{}
+                quote! {}
             }
         };
 
         match &self {
-            ThunkTraitFn { output_type, with_type: None, mutable_recv: true, .. } => {
-                match output_type {
-                    Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
-                        dispatch_ref_stmts::write_stmt(&closure)
-                    },
-                    _ => {
-                        dispatch_ref_stmts::map_stmt(&closure)
-                    },
+            ThunkTraitFn {
+                output_type,
+                with_type: None,
+                mutable_recv: true,
+                is_async,
+                ..
+            } => match output_type {
+                Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
+                    dispatch_ref_stmts::write_stmt(&closure)
                 }
-            }
-            ThunkTraitFn { output_type, with_type: None, mutable_recv: false, .. } => {
-                match output_type {
-                    Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
-                        dispatch_ref_stmts::read_stmt(&closure)
-                    },
-                    _ => {
-                        dispatch_ref_stmts::map_stmt(&closure)
-                    },
+                _ => dispatch_ref_stmts::map_stmt(&closure, output_type, *is_async),
+            },
+            ThunkTraitFn {
+                output_type,
+                with_type: None,
+                mutable_recv: false,
+                is_async,
+                ..
+            } => match output_type {
+                Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
+                    dispatch_ref_stmts::read_stmt(&closure)
                 }
-            }
-            ThunkTraitFn { output_type, with_type: Some(..), mutable_recv: true, .. } => {
-                match output_type {
-                    Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
-                        dispatch_ref_stmts::write_with_stmt(&closure)
-                    },
-                    _ => {
-                        dispatch_ref_stmts::map_with_stmt(&closure)
-                    },
+                _ => dispatch_ref_stmts::map_stmt(&closure, output_type, *is_async),
+            },
+            ThunkTraitFn {
+                output_type,
+                with_type: Some(..),
+                mutable_recv: true,
+                is_async,
+                ..
+            } => match output_type {
+                Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
+                    dispatch_ref_stmts::write_with_stmt(&closure)
                 }
-            }
-            ThunkTraitFn { output_type, with_type: Some(..), mutable_recv: false, .. } => {
-                match output_type {
-                    Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
-                        dispatch_ref_stmts::read_with_stmt(&closure)
-                    },
-                    _ => {
-                        dispatch_ref_stmts::map_with_stmt(&closure)
-                    },
+                _ => dispatch_ref_stmts::map_with_stmt(&closure, output_type, *is_async),
+            },
+            ThunkTraitFn {
+                output_type,
+                with_type: Some(..),
+                mutable_recv: false,
+                is_async,
+                ..
+            } => match output_type {
+                Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
+                    dispatch_ref_stmts::read_with_stmt(&closure)
                 }
-            }
+                _ => dispatch_ref_stmts::map_with_stmt(&closure, output_type, *is_async),
+            },
         }
     }
 }
@@ -417,11 +462,11 @@ impl Parse for ThunkTraitFn {
 
         match fields.first() {
             Some(FnArg::Receiver(r)) => {
-                assert!(r.reference.is_some(), "must be either &self or &mut self");
+                assert!(r.reference.is_some(), "Must be either &self or &mut self");
                 mutable_recv = r.mutability.is_some();
             }
             _ if !default && !skip => {
-                return Err(input.error("Trait fn's must have a receiver type, i.e. `fn (self)`"))
+                return Err(input.error(format!("Trait fn's must have a receiver type, i.e. `fn (self)` skip: {} default: {}, {}", skip, default, traitfn.to_token_stream())))
             }
             _ => {}
         }
@@ -438,7 +483,8 @@ impl Parse for ThunkTraitFn {
             .next();
 
         let output_type = match &return_type {
-            ReturnType::Default if !skip => {
+            ReturnType::Type(_, ty) if default => ty.deref().clone(),
+            ReturnType::Default if !skip && !default => {
                 return Err(input.error("Must return a reality::Result<T> from a thunk trait fn"));
             }
             ReturnType::Type(_, ty) => match ty.deref() {
@@ -452,7 +498,10 @@ impl Parse for ThunkTraitFn {
                             syn::PathArguments::None
                                 if s.ident.to_string().as_str() != "reality" =>
                             {
-                                Err(input.error("Must be in the format of reality::Result<T>"))
+                                Err(input.error(format!(
+                                    "Must be in the format of reality::Result<T>, found: {}",
+                                    s.ident
+                                )))
                             }
                             syn::PathArguments::AngleBracketed(args)
                                 if s.ident.to_string().starts_with("Result")
@@ -527,8 +576,8 @@ pub mod dispatch_ref_stmts {
         stmts: impl Iterator<Item = TokenStream>,
     ) -> TokenStream {
         let begin_async = quote_spanned! {thunk_type.span()=>
-            .enable_async()
             .transmute::<#thunk_type>()
+            .enable_async()
         };
 
         let stmts = stmts.map(|s| {
@@ -579,25 +628,37 @@ pub mod dispatch_ref_stmts {
         }
     }
 
-    pub fn recv_with_closure(recv: &Path, with: &Type, fn_ident: &Ident) -> TokenStream {
+    pub fn recv_with_closure(is_mut: bool, recv: &Ident, with: &Type, fn_ident: &Ident) -> TokenStream {
+        let reference_ty = if is_mut {
+            quote! { &mut }
+        } else {
+            quote! { & }
+        };
+
         quote_spanned! {fn_ident.span()=>
-            |recv: #recv, with: #with| {
+            |recv: #reference_ty #recv, with: &#with| {
                 recv.#fn_ident(with)
             }
         }
     }
 
-    pub fn recv_closure(recv: &Path, fn_ident: &Ident) -> TokenStream {
+    pub fn recv_closure(is_mut: bool, recv: &Ident, fn_ident: &Ident) -> TokenStream {
+        let reference_ty = if is_mut {
+            quote! { &mut }
+        } else {
+            quote! { & }
+        };
+
         quote_spanned! {fn_ident.span()=>
-            |recv: #recv| {
+            |recv: #reference_ty #recv| {
                 recv.#fn_ident()
             }
         }
     }
 
-    pub fn recv_with_async_closure(recv: &Path, with: &Type, fn_ident: &Ident) -> TokenStream {
+    pub fn recv_with_async_closure(recv: &Ident, with: &Type, fn_ident: &Ident) -> TokenStream {
         quote_spanned! {fn_ident.span()=>
-            |recv: #recv, with: #with| {
+            |recv: &#recv, with: &#with| {
                 let recv = recv.clone();
                 let with = with.clone();
                 async move {
@@ -607,9 +668,9 @@ pub mod dispatch_ref_stmts {
         }
     }
 
-    pub fn recv_async_closure(recv: &Path, fn_ident: &Ident) -> TokenStream {
+    pub fn recv_async_closure(recv: &Ident, fn_ident: &Ident) -> TokenStream {
         quote_spanned! {fn_ident.span()=>
-            |recv: #recv| {
+            |recv: &#recv| {
                 let recv = recv.clone();
                 async move {
                     recv.#fn_ident().await
@@ -628,38 +689,62 @@ pub mod dispatch_ref_stmts {
 
     /// Generates a `map` statement,
     ///
-    pub fn map_stmt(closure: &TokenStream) -> TokenStream {
-        quote! {
-            .map(#closure)
+    pub fn map_stmt(closure: &TokenStream, out_ty: &Type, is_async: bool) -> TokenStream {
+        if is_async {
+            quote! {
+                .map::<#out_ty, _>(#closure)
+            }
+        } else {
+            quote! {
+                .map::<#out_ty>(#closure)
+            }
         }
     }
 
     /// Generates a `map_into` statement,
     ///
-    pub fn map_into_stmt(closure: &TokenStream) -> TokenStream {
-        quote! {
-            .map_into(#closure)
+    pub fn map_into_stmt(closure: &TokenStream, out_ty: &Type, is_async: bool) -> TokenStream {
+        if is_async {
+            quote! {
+                .map_into::<#out_ty, _>(#closure)
+            }
+        } else {
+            quote! {
+                .map_into::<#out_ty>(#closure)
+            }
         }
     }
 
     /// Generates a `map_into_with` statement,
     ///
-    pub fn map_into_with_stmt(closure: &TokenStream) -> TokenStream {
-        quote! {
-            .map_into_with(#closure)
+    pub fn map_into_with_stmt(closure: &TokenStream, out_ty: &Type, is_async: bool) -> TokenStream {
+        if is_async {
+            quote! {
+                .map_into_with::<#out_ty, _>(#closure)
+            }
+        } else {
+            quote! {
+                .map_into_with::<#out_ty>(#closure)
+            }
         }
     }
 
     /// Generates a `map_with` statement,
     ///
-    pub fn map_with_stmt(closure: &TokenStream) -> TokenStream {
-        quote! {
-            .map_with(#closure)
+    pub fn map_with_stmt(closure: &TokenStream, out_ty: &Type, is_async: bool) -> TokenStream {
+        if is_async {
+            quote! {
+                .map_with::<#out_ty, _>(#closure)
+            }
+        } else {
+            quote! {
+                .map_with::<#out_ty>(#closure)
+            }
         }
     }
 
     /// Generates a `read` statement,
-    /// 
+    ///
     pub fn read_stmt(closure: &TokenStream) -> TokenStream {
         quote! {
             .read(#closure)
@@ -667,7 +752,7 @@ pub mod dispatch_ref_stmts {
     }
 
     /// Generates a `write` statement,
-    /// 
+    ///
     pub fn write_stmt(closure: &TokenStream) -> TokenStream {
         quote! {
             .write(#closure)
@@ -675,7 +760,7 @@ pub mod dispatch_ref_stmts {
     }
 
     /// Generates a `read_with` statement,
-    /// 
+    ///
     pub fn read_with_stmt(closure: &TokenStream) -> TokenStream {
         quote! {
             .read_with(#closure)
@@ -683,7 +768,7 @@ pub mod dispatch_ref_stmts {
     }
 
     /// Generates a `write_with` statement,
-    /// 
+    ///
     pub fn write_with_stmt(closure: &TokenStream) -> TokenStream {
         quote! {
             .write_with(#closure)
@@ -693,7 +778,5 @@ pub mod dispatch_ref_stmts {
 
 mod tests {
     #[test]
-    fn test() {
-
-    }
+    fn test() {}
 }
