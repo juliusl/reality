@@ -28,10 +28,11 @@ use syn::WhereClause;
 
 pub(crate) struct ThunkMacroArguments {
     name: Ident,
+    generics: Generics,
     attributes: Vec<Attribute>,
     visibility: Visibility,
-    generics: Generics,
     exprs: Vec<ThunkTraitFn>,
+    other_exprs: Vec<syn::TraitItem>,
 }
 
 impl ThunkMacroArguments {
@@ -54,6 +55,8 @@ impl ThunkMacroArguments {
             #( #exprs )*
         };
 
+        let other_exprs = self.other_exprs.iter();
+
         let thunk_trait_type_expr = self.thunk_trait_convert_fn_expr();
         let thunk_trait_impl_expr = self.thunk_trait_impl_expr();
         let arc_impl_expr = self.arc_impl_expr();
@@ -63,7 +66,11 @@ impl ThunkMacroArguments {
             #vis trait #name
             where
                 Self: Send + Sync,
-            { #exprs }
+            { 
+                #exprs 
+                
+                #( #other_exprs )*
+            }
 
             #arc_impl_expr
 
@@ -193,10 +200,24 @@ impl Parse for ThunkMacroArguments {
         let name = item_trait.ident;
         let generics = item_trait.generics;
 
+        let mut other_exprs = vec![];
         let mut exprs = vec![];
         for trait_fn in item_trait.items.iter() {
-            let expr = parse2::<ThunkTraitFn>(trait_fn.to_token_stream())?;
+            match &trait_fn {
+                syn::TraitItem::Fn(ty) => {
+                    if ty.default.is_some() {
+                        other_exprs.push(trait_fn.clone());
+                        continue;
+                    } else if ty.attrs.iter().any(|a| a.path().is_ident("skip")) {
+                        other_exprs.push(trait_fn.clone());
+                        continue;
+                    }
+                },
+                _ => {
+                },
+            }
 
+            let expr = parse2::<ThunkTraitFn>(trait_fn.to_token_stream())?;
             exprs.push(expr);
         }
 
@@ -206,6 +227,7 @@ impl Parse for ThunkMacroArguments {
             generics,
             name,
             exprs,
+            other_exprs,
         })
     }
 }
@@ -483,7 +505,7 @@ impl Parse for ThunkTraitFn {
             .next();
 
         let output_type = match &return_type {
-            ReturnType::Type(_, ty) if default => ty.deref().clone(),
+            ReturnType::Type(_, ty) if default || skip => ty.deref().clone(),
             ReturnType::Default if !skip && !default => {
                 return Err(input.error("Must return a reality::Result<T> from a thunk trait fn"));
             }
