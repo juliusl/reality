@@ -19,16 +19,28 @@ use syn::Type;
 use syn::Visibility;
 use syn::WhereClause;
 
-pub(crate) struct ThunkMacroArguments {
+/// Struct containing parts of a trait definition,
+///
+pub(crate) struct ThunkMacro {
+    /// Name of the trait,
+    ///
     name: Ident,
-    generics: Generics,
+    /// Attributes used w/this attribute,
+    ///
     attributes: Vec<Attribute>,
+    /// Visibility modifier,
+    ///
     visibility: Visibility,
+    /// Thunk trait expressions,
+    ///
     exprs: Vec<ThunkTraitFn>,
+    /// Other expressions defined in the trait,
+    ///
     other_exprs: Vec<syn::TraitItem>,
+    _generics: Generics,
 }
 
-impl ThunkMacroArguments {
+impl ThunkMacro {
     /// Generates thunk method impl for a trait definition,
     ///
     pub(crate) fn trait_impl(&self) -> TokenStream {
@@ -53,6 +65,7 @@ impl ThunkMacroArguments {
         let thunk_trait_type_expr = self.thunk_trait_convert_fn_expr();
         let thunk_trait_impl_expr = self.thunk_trait_impl_expr();
         let arc_impl_expr = self.arc_impl_expr();
+        let bootstrap_fn = self.bootstrap_fn();
 
         quote_spanned! {vis.span()=>
             #attributes
@@ -63,6 +76,8 @@ impl ThunkMacroArguments {
                 #exprs
 
                 #( #other_exprs )*
+
+                #bootstrap_fn
             }
 
             #arc_impl_expr
@@ -75,6 +90,8 @@ impl ThunkMacroArguments {
         }
     }
 
+    /// Generates trait impl for Thunk<Arc<dyn T>>,
+    ///
     pub(crate) fn thunk_trait_impl_expr(&self) -> TokenStream {
         let name = &self.name;
         let exprs = self
@@ -101,6 +118,8 @@ impl ThunkMacroArguments {
         }
     }
 
+    /// Generates trait impl for Arc<dyn T>,
+    ///
     pub(crate) fn arc_impl_expr(&self) -> TokenStream {
         let name = &self.name;
         let exprs = self
@@ -142,6 +161,31 @@ impl ThunkMacroArguments {
                 reality::v2::Thunk {
                     thunk: std::sync::Arc::new(t)
                 }
+            }
+        }
+    }
+
+    /// Generates statements to bootstrap dispatch extensions,
+    /// 
+    pub(crate) fn bootstrap_fn(&self) -> TokenStream {
+        let bootstrap = self
+            .exprs
+            .iter()
+            .filter(|e| !e.skip && !e.default)
+            .map(|e| {
+                let dispatch_thunk_struct_alias = format_ident!("dispatch_{}", e.name);
+                quote! {
+                    .map(|_| Ok(#dispatch_thunk_struct_alias {}))
+                }
+            });
+
+        quote! {
+            fn __bootstrap<'a>(dispatch_ref: DispatchRef<'a, Properties>) -> DispatchRef<'a, Properties>
+            where
+            Self: Sized
+            {
+                dispatch_ref
+                #( #bootstrap )*
             }
         }
     }
@@ -234,7 +278,7 @@ impl ThunkMacroArguments {
                         ///
                         fn #ext_fn_name(self) -> reality::v2::DispatchResult<'a>;
                     }
-                    
+
                     impl<'a> #dispatch_thunk_trait_ext_name<'a> for reality::v2::DispatchRef<'a, reality::v2::Properties> {
                         fn #ext_fn_name(self) -> reality::v2::DispatchResult<'a> {
                             self.exec_slot::<#idx_lit, #dispatch_thunk_struct_alias>()
@@ -256,18 +300,11 @@ impl ThunkMacroArguments {
             #struct_def
 
             #( #dispatch_exprs )*
-
-            /// Applies thunk extensions to dispatch ref,
-            ///
-            pub fn using<'a>(d: reality::v2::DispatchRef<'a, Properties>) -> reality::v2::DispatchRef<'a, Properties> {
-                d
-                #( #using )*
-            }
         }
     }
 }
 
-impl Parse for ThunkMacroArguments {
+impl Parse for ThunkMacro {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let attributes = Attribute::parse_outer(input)?;
 
@@ -299,7 +336,7 @@ impl Parse for ThunkMacroArguments {
         Ok(Self {
             attributes,
             visibility,
-            generics,
+            _generics: generics,
             name,
             exprs,
             other_exprs,
@@ -310,23 +347,46 @@ impl Parse for ThunkMacroArguments {
 #[allow(dead_code)]
 #[derive(Clone)]
 pub(crate) struct ThunkTraitFn {
+    /// Fn name,
+    ///
     name: Ident,
+    /// Attributes define on this trait fn,
+    ///
     attributes: Vec<Attribute>,
+    /// Original parsed ReturnType
+    ///
     return_type: ReturnType,
+    /// Output type, inner-type in Result<T>,
+    ///
     output_type: Type,
+    /// Optional "with" fn argument,
+    ///
     with_type: Option<PatType>,
+    /// Where clause
+    ///
     where_clause: Option<WhereClause>,
-    fields: Vec<syn::FnArg>,
+    /// Function arguments,
+    ///
+    args: Vec<syn::FnArg>,
+    /// Original TraitItemFn
+    ///
     traitfn: syn::TraitItemFn,
+    /// True if the trait fn has a mutable receiver,
+    ///
     mutable_recv: bool,
+    /// True if function has a default impl,
+    ///
     default: bool,
+    /// True if function is async,
+    ///
     is_async: bool,
+    /// Value of the #[skip] attribute,
+    ///
     skip: bool,
-    /// The position of a fn arg LazyUpdate
+    /// The position of a fn arg LazyUpdate,
     ///
     lazy_update_pos: Option<usize>,
-
-    /// The position of a fn arg LazyBuilder
+    /// The position of a fn arg LazyBuilder,
     ///
     lazy_builder_pos: Option<usize>,
 }
@@ -351,7 +411,7 @@ impl ThunkTraitFn {
     pub(crate) fn thunk_impl_fn(&self) -> TokenStream {
         if !self.default {
             let name = &self.name;
-            let fields = self.fields.iter().map(|f| {
+            let fields = self.args.iter().map(|f| {
                 quote_spanned! {f.span()=>
                     #f
                 }
@@ -361,7 +421,7 @@ impl ThunkTraitFn {
             };
 
             let input = self
-                .fields
+                .args
                 .iter()
                 .filter_map(|f| match f {
                     FnArg::Receiver(_) => None,
@@ -400,7 +460,7 @@ impl ThunkTraitFn {
     pub(crate) fn arc_impl_fn(&self) -> TokenStream {
         if !self.default {
             let name = &self.name;
-            let fields = self.fields.iter().map(|f| {
+            let fields = self.args.iter().map(|f| {
                 quote_spanned! {f.span()=>
                     #f
                 }
@@ -410,7 +470,7 @@ impl ThunkTraitFn {
             };
 
             let input = self
-                .fields
+                .args
                 .iter()
                 .filter_map(|f| match f {
                     FnArg::Receiver(_) => None,
@@ -430,7 +490,7 @@ impl ThunkTraitFn {
             if self.is_async {
                 quote! {
                     async fn #name(#fields) #return_type {
-                        self.deref().#name(#input).await
+                        std::ops::Deref::deref(self).#name(#input).await
                     }
                 }
             } else {
@@ -771,7 +831,7 @@ impl Parse for ThunkTraitFn {
             output_type,
             attributes: vec![],
             where_clause,
-            fields,
+            args: fields,
             traitfn,
             default,
             is_async,

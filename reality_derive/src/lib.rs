@@ -1,7 +1,4 @@
-use std::env::Args;
-
 use quote::quote_spanned;
-use syn::Attribute;
 use syn::parse_macro_input;
 use syn::ItemEnum;
 use syn::LitStr;
@@ -12,10 +9,7 @@ mod struct_field;
 use apply_framework::ApplyFrameworkMacro;
 mod thunk;
 use syn::spanned::Spanned;
-use thunk::ThunkMacroArguments;
-
-mod impl_data;
-use impl_data::ImplData;
+use thunk::ThunkMacro;
 
 mod enum_data;
 use enum_data::InterpolationExpr;
@@ -210,7 +204,7 @@ pub fn thunk(
     _attr: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let thunk_macro = parse_macro_input!(input as ThunkMacroArguments);
+    let thunk_macro = parse_macro_input!(input as ThunkMacro);
 
     thunk_macro.trait_impl().into()
 }
@@ -295,7 +289,7 @@ pub fn dispatch_signature(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
 #[allow(unused_imports)]
 mod tests {
-    use crate::thunk::ThunkMacroArguments;
+    use crate::thunk::ThunkMacro;
     use crate::thunk::ThunkTraitFn;
     use crate::StructData;
     use proc_macro2::Ident;
@@ -337,7 +331,7 @@ mod tests {
         )
         .unwrap();
 
-        let input = parse2::<ThunkMacroArguments>(ts).unwrap();
+        let input = parse2::<ThunkMacro>(ts).unwrap();
 
         println!("{:#}", input.trait_impl());
         println!("{:#}", input.impl_dispatch_exprs());

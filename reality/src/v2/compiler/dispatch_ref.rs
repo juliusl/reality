@@ -12,7 +12,6 @@ use std::sync::Arc;
 
 use crate::v2::AsyncDispatch;
 use crate::v2::Dispatch;
-use crate::v2::Properties;
 use crate::Error;
 
 /// Struct for working w/ a compiler's build log,
@@ -122,6 +121,12 @@ impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> DispatchRef<'a, T, ENABL
             error: None,
             _u: PhantomData,
         }
+    }
+
+    /// Transforms self w/ transform,
+    /// 
+    pub fn transform(self, transform: impl FnOnce(Self) -> Self) -> Self {
+        transform(self)
     }
 }
 

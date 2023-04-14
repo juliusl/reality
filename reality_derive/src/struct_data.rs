@@ -233,6 +233,19 @@ impl StructData {
     pub fn compile_trait(&self) -> TokenStream {
         let name = &self.name;
 
+        let bootstraps = self.compile.iter().filter_map(|c| {
+            if let Some(ident) = c.get_ident().filter(|i| i.to_string().starts_with("Thunk"))
+            {
+                let ty_name = ident.to_string().replace("Thunk", "");
+                let ty = format_ident!("{}", ty_name);
+                Some(quote! {
+                    .transform(|s| <#name as #ty>::__bootstrap(s))
+                })
+            } else {
+                None
+            }
+        });
+
         let map = self.compile.iter().filter_map(|c| {
             if c.is_ident("ThunkCall") || c.is_ident("Call") {
                 Some(quote! {
@@ -267,8 +280,8 @@ impl StructData {
             } 
             else if let Some(ident) = c.get_ident().filter(|i| i.to_string().starts_with("Thunk"))
             {
-                let name = ident.to_string().replace("Thunk", "");
-                let name = format_ident!("thunk_{}", name.to_lowercase());
+                let ty_name = ident.to_string().replace("Thunk", "");
+                let name = format_ident!("thunk_{}", ty_name.to_lowercase());
                 Some(quote! {
                     .map(|b|{
                         Ok(#name(b.clone()))
@@ -291,7 +304,9 @@ impl StructData {
                     dispatch_ref: reality::v2::DispatchRef<'a, reality::v2::Properties>,
                 ) -> reality::v2::DispatchResult<'a> {
                     let clone = self.clone();
+
                     dispatch_ref
+                        #( #bootstraps ) *
                         .transmute::<ActionBuffer>()
                         .map_into(move |b| {
                             let mut clone = clone;

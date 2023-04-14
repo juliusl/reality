@@ -26,6 +26,11 @@ pub use crate::v2::command::import_toml;
 pub use crate::v2::property_list;
 pub use crate::v2::property_value;
 
+mod ext {
+    pub use crate::v2::thunk::DispatchcallExt;
+}
+pub use ext::*;
+
 pub use crate::state::Load;
 pub use crate::state::Provider;
 pub use crate::state::iter_state;
@@ -62,7 +67,16 @@ pub use specs::world::LazyBuilder;
 /// async_trait -- Async trait attribute
 pub use async_trait::async_trait;
 
-/// Logging 
+/// Logging
+/// 
+/// Trace - Will log activity such as entering and exiting requests
+/// Debug - Will include debug information such as field values
+/// Error - Will log unexpected errors
+/// Warn  - Will log expected errors
+/// Info  - Will log operational information
+/// 
 pub use tracing::trace;
-
-pub use std::ops::Deref;
+pub use tracing::debug;
+pub use tracing::error;
+pub use tracing::warn;
+pub use tracing::info;

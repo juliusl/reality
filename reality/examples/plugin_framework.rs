@@ -48,31 +48,31 @@ async fn main() -> Result<()> {
 
     log.find_ref::<ActionBuffer>("app.#block#.usage.#root#.plugin.println", &mut compiler)
         .unwrap()
-        .map(|_| Ok(dispatch_testa {}))
         .transmute::<Properties>()
-        .testa()?;
+        .testa()?
+        .enable_async()
+        .call().await?;
 
-    for (id, _, e) in log.search_index("#block#.#root#.plugin.println") {
-        let exists = compiler
-            .as_mut()
-            .read_component::<ThunkTestA>()
-            .contains(*e);
-        println!("{:#} {}", id, exists);
-        let build_ref = DispatchRef::<ThunkTestA>::new(*e, &mut compiler);
-        build_ref
-            .map(|_| Ok(dispatch_testa {}))
-            .transmute::<Properties>()
-            .testa()?;
-        // .enable_async()
-        // .read(|tc| {
-        //     let tc = tc.clone();
-        //     async move {
-        //         tc.call().await?;
-        //         Ok(())
-        //     }
-        // })
-        // .await;
-    }
+    // for (id, _, e) in log.search_index("#block#.#root#.plugin.println") {
+    //     let exists = compiler
+    //         .as_mut()
+    //         .read_component::<ThunkTestA>()
+    //         .contains(*e);
+    //     println!("{:#} {}", id, exists);
+    //     let build_ref = DispatchRef::<ThunkTestA>::new(*e, &mut compiler);
+    //     build_ref
+    //         .transmute::<Properties>()
+    //         .testa()?;
+    //     // .enable_async()
+    //     // .read(|tc| {
+    //     //     let tc = tc.clone();
+    //     //     async move {
+    //     //         tc.call().await?;
+    //     //         Ok(())
+    //     //     }
+    //     // })
+    //     // .await;
+    // }
 
     // .transmute::<ActionBuffer>()
     // .read(|a| {
@@ -273,7 +273,7 @@ pub mod test_framework {
         Identifier, Runmd,
     };
     use specs::{storage, DenseVecStorage, VecStorage};
-    use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+    use std::{collections::BTreeMap, path::PathBuf, sync::Arc, ops::{IndexMut, Index}};
     use tracing::{trace, Id};
     use tracing_test::traced_test;
 
@@ -284,7 +284,7 @@ pub mod test_framework {
         pub map: (),
         pub list: (),
         #[root]
-        pub call: Call,
+        pub call: (),
     }
 
     impl Plugin {
@@ -293,7 +293,7 @@ pub mod test_framework {
                 path: Path { canonical: false },
                 map: (),
                 list: (),
-                call: Call { test: false },
+                call: (),
             }
         }
 
@@ -309,17 +309,17 @@ pub mod test_framework {
         canonical: bool,
     }
 
-    #[derive(Config, Clone, Debug, Default)]
-    pub struct Call {
-        test: bool,
-    }
+    // #[derive(Config, Clone, Debug, Default)]
+    // pub struct Call {
+    //     test: bool,
+    // }
 
-    impl Apply for Call {
-        fn apply(&self, name: impl AsRef<str>, property: &Property) -> Result<Property> {
-            println!("Applying call config: {} -- {:?}", name.as_ref(), property);
-            Ok(property.clone())
-        }
-    }
+    // impl Apply for Call {
+    //     fn apply(&self, name: impl AsRef<str>, property: &Property) -> Result<Property> {
+    //         println!("Applying call config: {} -- {:?}", name.as_ref(), property);
+    //         Ok(property.clone())
+    //     }
+    // }
 
     impl Apply for Path {
         fn apply(&self, ext: impl AsRef<str>, property: &Property) -> Result<Property> {
@@ -355,7 +355,7 @@ pub mod test_framework {
 
     #[derive(Runmd, Config, Debug, Clone, Component)]
     #[storage(specs::VecStorage)]
-    #[compile(Call, ThunkTestA)]
+    #[compile(ThunkCall, ThunkTestA)]
     pub struct Println {
         println: String,
         stderr: Vec<String>,
@@ -368,6 +368,7 @@ pub mod test_framework {
     #[async_trait]
     impl reality::v2::Call for Println {
         async fn call(&self) -> Result<Properties> {
+            println!("entering");
             trace!("{:?}", self);
             for out in self.stdout.iter() {
                 println!("{out}");
@@ -461,6 +462,7 @@ pub mod test_framework {
 
     impl Process {
         pub const fn new() -> Self {
+            
             Self {
                 process: String::new(),
                 redirect: String::new(),
@@ -474,6 +476,7 @@ pub mod test_framework {
         async fn call(&self) -> Result<Properties> {
             println!("Calling {}", self.process);
             println!("{:?}", self);
+
             Ok(Properties::default())
         }
     }

@@ -1,5 +1,5 @@
-mod using;
-pub use using::Using;
+mod bootstrap;
+pub use bootstrap::Bootstrap;
 
 mod action;
 pub use action::Action;
@@ -46,7 +46,7 @@ pub use properties::property_value;
 pub use properties::Properties;
 pub use properties::Property;
 
-mod thunk;
+pub mod thunk;
 pub use thunk::thunk_build;
 pub use thunk::thunk_call;
 pub use thunk::thunk_compile;
