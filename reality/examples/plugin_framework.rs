@@ -1,12 +1,7 @@
 use reality::v2::prelude::*;
-use reality::v2::Action;
 use tracing_subscriber::EnvFilter;
 
 use test_framework::DispatchtestaExt;
-
-use crate::test_framework::dispatch_testa;
-use crate::test_framework::TestA;
-use crate::test_framework::ThunkTestA;
 
 /// Example of a plugin framework compiler,
 ///
@@ -45,7 +40,6 @@ async fn main() -> Result<()> {
     let matches = DispatchSignature::get_matches(log.clone());
 
     println!("{:#?}", matches);
-
     log.find_ref::<ActionBuffer>("app.#block#.usage.#root#.plugin.println", &mut compiler)
         .unwrap()
         .transmute::<Properties>()

@@ -166,7 +166,7 @@ impl ThunkMacro {
     }
 
     /// Generates statements to bootstrap dispatch extensions,
-    /// 
+    ///
     pub(crate) fn bootstrap_fn(&self) -> TokenStream {
         let bootstrap = self
             .exprs
@@ -374,6 +374,9 @@ pub(crate) struct ThunkTraitFn {
     /// True if the trait fn has a mutable receiver,
     ///
     mutable_recv: bool,
+    /// True if the trait fn has a mutable with,
+    ///
+    mutable_with: bool,
     /// True if function has a default impl,
     ///
     default: bool,
@@ -508,6 +511,9 @@ impl ThunkTraitFn {
     /// Generates a dispatch expr for a thunk'ed fn,
     ///
     pub(crate) fn dispatch_stmt(&self, recv_type: &Ident) -> TokenStream {
+        dbg!(self.mutable_recv);
+        dbg!(self.mutable_with);
+
         let closure = match &self {
             ThunkTraitFn {
                 name,
@@ -580,16 +586,26 @@ impl ThunkTraitFn {
             ThunkTraitFn {
                 name,
                 with_type: Some(with_ty),
-                mutable_recv,
+                mutable_with,
+                output_type,
                 is_async: false,
                 default: false,
                 ..
-            } => dispatch_ref_stmts::recv_with_closure(
-                *mutable_recv,
-                recv_type,
-                with_ty.ty.deref(),
-                name,
-            ),
+            } => {
+                let closure = dispatch_ref_stmts::recv_with_closure(
+                    *mutable_with,
+                    recv_type,
+                    with_ty.ty.deref(),
+                    name,
+                );
+
+                return match output_type {
+                    Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
+                        dispatch_ref_stmts::write_with_stmt(&closure, &with_ty.ty)
+                    }
+                    _ => dispatch_ref_stmts::map_with_stmt(&closure, output_type, false),
+                };
+            },
             _ => {
                 quote! {}
             }
@@ -598,10 +614,10 @@ impl ThunkTraitFn {
         match &self {
             ThunkTraitFn {
                 with_type: Some(w),
-                mutable_recv: true,
+                mutable_with: true,
                 lazy_update_pos: Some(_),
                 ..
-            } => dispatch_ref_stmts::dispatch_mut_with_stmt(&closure, &w.ty),
+            } => dispatch_ref_stmts::dispatch_mut_with_stmt(&closure, Some(recv_type), &w.ty),
             ThunkTraitFn {
                 with_type: None,
                 mutable_recv: true,
@@ -636,6 +652,7 @@ impl ThunkTraitFn {
                 output_type,
                 with_type: None,
                 mutable_recv: true,
+                mutable_with: false,
                 is_async,
                 ..
             } => match output_type {
@@ -648,6 +665,7 @@ impl ThunkTraitFn {
                 output_type,
                 with_type: None,
                 mutable_recv: false,
+                mutable_with: false,
                 is_async,
                 ..
             } => match output_type {
@@ -658,13 +676,14 @@ impl ThunkTraitFn {
             },
             ThunkTraitFn {
                 output_type,
-                with_type: Some(..),
-                mutable_recv: true,
+                with_type: Some(with_ty),
+                mutable_recv: false,
+                mutable_with: true,
                 is_async,
                 ..
             } => match output_type {
                 Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
-                    dispatch_ref_stmts::write_with_stmt(&closure)
+                    dispatch_ref_stmts::write_with_stmt(&closure, &with_ty.ty)
                 }
                 _ => dispatch_ref_stmts::map_with_stmt(&closure, output_type, *is_async),
             },
@@ -672,6 +691,7 @@ impl ThunkTraitFn {
                 output_type,
                 with_type: Some(..),
                 mutable_recv: false,
+                mutable_with: false,
                 is_async,
                 ..
             } => match output_type {
@@ -680,6 +700,9 @@ impl ThunkTraitFn {
                 }
                 _ => dispatch_ref_stmts::map_with_stmt(&closure, output_type, *is_async),
             },
+            _ => {
+                quote! {}
+            }
         }
     }
 }
@@ -703,8 +726,10 @@ impl Parse for ThunkTraitFn {
         let where_clause = traitfn.sig.generics.where_clause.clone();
         let mut mutable_recv = false;
 
-        if !skip && fields.len() > 2 {
-            return Err(input.error("Currently, only 2 inputs for thunk trait fn's are supported"));
+        if !skip && fields.len() > 3 {
+            return Err(
+                input.error("Currently, only a max of 3 inputs for thunk trait fn's are supported")
+            );
         }
 
         match fields.first() {
@@ -735,7 +760,8 @@ impl Parse for ThunkTraitFn {
 
         let mut lazy_update_pos = None;
         let mut lazy_builder_pos = None;
-        let with_type = match other_fields.next() {
+        let mut with_mut = false;
+        let mut with_type = match other_fields.next() {
             Some(pat) => match pat.ty.deref() {
                 Type::Path(p) => {
                     if p.path.is_ident("LazyUpdate") {
@@ -745,6 +771,13 @@ impl Parse for ThunkTraitFn {
                         lazy_builder_pos = Some(0);
                         None
                     } else {
+                        dbg!(pat.ty.to_token_stream());
+                        match pat.ty.deref() {
+                            Type::Reference(r) if r.mutability.is_some() => {
+                                with_mut = true;
+                            }
+                            _ => {}
+                        }
                         Some(pat)
                     }
                 }
@@ -752,6 +785,27 @@ impl Parse for ThunkTraitFn {
             },
             None => None,
         };
+
+        if let Some(other_type) = other_fields.next() {
+            match other_type.ty.deref() {
+                Type::Path(p) => {
+                    if p.path.is_ident("LazyUpdate") {
+                        lazy_update_pos = Some(0);
+                    } else if p.path.is_ident("LazyBuilder") {
+                        lazy_builder_pos = Some(0);
+                    } else if with_type.is_none() {
+                        match other_type.ty.deref() {
+                            Type::Reference(r) if r.mutability.is_some() => {
+                                with_mut = true;
+                            }
+                            _ => {}
+                        }
+                        with_type = Some(other_type);
+                    }
+                }
+                _ => {}
+            }
+        }
 
         let output_type = match &return_type {
             ReturnType::Type(_, ty) if default || skip => ty.deref().clone(),
@@ -810,23 +864,11 @@ impl Parse for ThunkTraitFn {
             }
         };
 
-        if let Some(other_type) = other_fields.next() {
-            match other_type.ty.deref() {
-                Type::Path(p) => {
-                    if p.path.is_ident("LazyUpdate") {
-                        lazy_update_pos = Some(0);
-                    } else if p.path.is_ident("LazyBuilder") {
-                        lazy_builder_pos = Some(0);
-                    }
-                }
-                _ => {}
-            }
-        }
-
         return Ok(Self {
             name,
             return_type: return_type.clone(),
             mutable_recv,
+            mutable_with: with_mut,
             with_type,
             output_type,
             attributes: vec![],
@@ -845,10 +887,14 @@ impl Parse for ThunkTraitFn {
 /// This module is for generating dispatch sequences for thunk types,
 ///
 pub mod dispatch_ref_stmts {
+    use std::ops::Deref;
+
     use proc_macro2::Ident;
     use proc_macro2::TokenStream;
+    use quote::format_ident;
     use quote::quote;
     use quote::quote_spanned;
+    use quote::ToTokens;
     use syn::Type;
 
     /// Returns an async dispatch sequence for stmts,
@@ -986,8 +1032,8 @@ pub mod dispatch_ref_stmts {
 
     pub fn recv_with_closure(
         is_mut: bool,
-        recv: &Ident,
-        with: &Type,
+        with: &Ident,
+        recv: &Type,
         fn_ident: &Ident,
     ) -> TokenStream {
         let reference_ty = if is_mut {
@@ -997,8 +1043,8 @@ pub mod dispatch_ref_stmts {
         };
 
         quote_spanned! {fn_ident.span()=>
-            |recv: #reference_ty #recv, with: &#with| {
-                recv.#fn_ident(with)
+            |recv: #recv, with: #reference_ty #with| {
+                with.#fn_ident(recv)
             }
         }
     }
@@ -1018,7 +1064,7 @@ pub mod dispatch_ref_stmts {
 
     pub fn recv_with_async_closure(recv: &Ident, with: &Type, fn_ident: &Ident) -> TokenStream {
         quote_spanned! {fn_ident.span()=>
-            |recv: &#recv, with: &#with| {
+            |recv: &#recv, with: #with| {
                 let recv = recv.clone();
                 let with = with.clone();
                 async move {
@@ -1078,6 +1124,15 @@ pub mod dispatch_ref_stmts {
     /// Generates a `map_into_with` statement,
     ///
     pub fn map_into_with_stmt(closure: &TokenStream, out_ty: &Type, is_async: bool) -> TokenStream {
+        let out_ty = out_ty
+            .to_token_stream()
+            .to_string()
+            .trim_start_matches("&")
+            .trim_start_matches("mut")
+            .trim_start()
+            .to_string();
+        let out_ty = format_ident!("{}", out_ty);
+
         if is_async {
             quote! {
                 .map_into_with::<#out_ty, _>(#closure)
@@ -1092,6 +1147,15 @@ pub mod dispatch_ref_stmts {
     /// Generates a `map_with` statement,
     ///
     pub fn map_with_stmt(closure: &TokenStream, out_ty: &Type, is_async: bool) -> TokenStream {
+        let out_ty = out_ty
+            .to_token_stream()
+            .to_string()
+            .trim_start_matches("&")
+            .trim_start_matches("mut")
+            .trim_start()
+            .to_string();
+        let out_ty = format_ident!("{}", out_ty);
+
         if is_async {
             quote! {
                 .map_with::<#out_ty, _>(#closure)
@@ -1129,9 +1193,18 @@ pub mod dispatch_ref_stmts {
 
     /// Generates a `write_with` statement,
     ///
-    pub fn write_with_stmt(closure: &TokenStream) -> TokenStream {
-        quote! {
-            .write_with(#closure)
+    pub fn write_with_stmt(closure: &TokenStream, with_ty: &Type) -> TokenStream {
+        match with_ty {
+            Type::Reference(r) if r.mutability.is_some() => {
+                let with_ty = &r.elem;
+                quote! {
+                .transmute::<#with_ty>()
+                .write_with(#closure)
+                }
+            }
+            _ => quote! {
+                .write_with(#closure)
+            },
         }
     }
 
@@ -1147,8 +1220,30 @@ pub mod dispatch_ref_stmts {
         }
     }
 
-    pub fn dispatch_mut_with_stmt(closure: &TokenStream, with_ty: &Type) -> TokenStream {
+    pub fn dispatch_mut_with_stmt(
+        closure: &TokenStream,
+        mut_ty: Option<&Ident>,
+        with_ty: &Type,
+    ) -> TokenStream {
+        let with_ty = with_ty
+            .to_token_stream()
+            .to_string()
+            .trim_start_matches("&")
+            .trim_start_matches("mut")
+            .trim_start()
+            .to_string();
+        let with_ty = format_ident!("{}", with_ty);
+
+        let mut_ty = mut_ty
+            .map(|t| {
+                quote_spanned! {t.span()=>
+                    .transmute::<#t>()
+                }
+            })
+            .into_iter();
+
         quote! {
+            #( #mut_ty )*
             .dispatch_mut_with::<#with_ty>(#closure)?
         }
     }
@@ -1160,12 +1255,28 @@ pub mod dispatch_ref_stmts {
     }
 
     pub fn fork_into_with(closure: &TokenStream, with_ty: &Type) -> TokenStream {
+        let with_ty = with_ty
+            .to_token_stream()
+            .to_string()
+            .trim_start_matches("&")
+            .trim_start_matches("mut")
+            .trim_start()
+            .to_string();
+        let with_ty = format_ident!("{}", with_ty);
         quote! {
             .fork_into_with::<#with_ty>(#closure)?
         }
     }
 
     pub fn fork_into_with_mut(closure: &TokenStream, with_ty: &Type) -> TokenStream {
+        let with_ty = with_ty
+            .to_token_stream()
+            .to_string()
+            .trim_start_matches("&")
+            .trim_start_matches("mut")
+            .trim_start()
+            .to_string();
+        let with_ty = format_ident!("{}", with_ty);
         quote! {
             .fork_into_with_mut::<#with_ty>(#closure)?
         }

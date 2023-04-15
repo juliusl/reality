@@ -135,20 +135,6 @@ impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> DispatchRef<'a, T, ENABL
 impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool>
     DispatchRef<'a, T, ENABLE_ASYNC>
 {
-    /// Takes the component from storage
-    ///
-    // pub fn take(self, map: impl FnOnce(T) -> Result<T, Error>) -> Result<Self, Error> {
-    //     if let (Some(wr), Some(e)) = (self.world_ref.as_ref(), self.entity.as_ref()) {
-    //         if let Some(w) = wr.as_ref().write_component::<T>().remove(*e) {
-    //             let w = map(w)?;
-
-    //             wr.as_ref().write_component::<T>().insert(*e, w)?;
-    //         }
-    //     }
-
-    //     Ok(self)
-    // }
-
     /// Dispatches changes to world storage via lazy-update and calls .maintain(),
     ///
     pub fn dispatch(
@@ -178,6 +164,8 @@ impl<'a, T: Send + Sync + Component + 'a, const ENABLE_ASYNC: bool>
         }
     }
 
+    /// Dispatches a fn w/ mut access to component and a LazyUpdate reference,
+    /// 
     pub fn dispatch_mut(
         &mut self,
         map: impl FnOnce(&mut T, &LazyUpdate) -> Result<(), Error>,
