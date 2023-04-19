@@ -24,10 +24,6 @@ pub use dispatch::DispatchSignature;
 mod update;
 pub use update::Update;
 
-mod config;
-pub use config::Config;
-pub use config::Apply;
-
 mod select;
 pub use select::Select;
 

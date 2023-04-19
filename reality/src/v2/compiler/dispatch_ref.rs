@@ -25,7 +25,7 @@ pub struct DispatchRef<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool = false
     pub(super) world_ref: Option<&'a mut (dyn WorldRef + Send + Sync)>,
     /// The entity built by the reality compiler,
     ///
-    pub(crate) entity: Option<Entity>,
+    pub entity: Option<Entity>,
     /// Current error,
     ///
     pub(super) error: Option<Arc<Error>>,
@@ -114,7 +114,7 @@ impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> DispatchRef<'a, T, ENABL
 
     /// Sets the entity and clears any errors,
     ///
-    pub fn entity(self, entity: Entity) -> Self {
+    pub fn with_entity(self, entity: Entity) -> Self {
         Self {
             world_ref: self.world_ref,
             entity: Some(entity),
@@ -937,6 +937,7 @@ impl<'a> From<&'a mut World> for WorldWrapper<'a> {
 }
 
 #[allow(unused_imports)]
+#[allow(dead_code)]
 mod tests {
     use super::DispatchRef;
     use crate::{
@@ -957,7 +958,7 @@ mod tests {
             .unwrap();
     }
 
-    async fn test_async_disp(mut disp: DispatchRef<'_, Yield>) -> crate::Result<()> {
+    async fn test_async_disp(disp: DispatchRef<'_, Yield>) -> crate::Result<()> {
         disp.read(|y| {
             if y.0.is_none() {
                 Err(Error::skip())
@@ -968,13 +969,13 @@ mod tests {
         .exec::<crate::v2::DispatchThunkBuild>()?
         .enable_async()
         .transmute::<Yield>()
-        .write_with::<Properties, _>(|y, p| {
+        .write_with::<Properties, _>(|y, _| {
             let Yield(rx) = y;
             let rx = rx
                 .take()
                 .expect("should exist because previous step returned Ok(())");
             async move {
-                let world = rx.await?;
+                let _world = rx.await?;
                 Ok(())
             }
         })
@@ -1023,7 +1024,7 @@ mod tests {
         /// +  .main
         /// ```
         ///
-        async fn main(world: World) -> Result<(), Error> {
+        async fn main(_world: World) -> Result<(), Error> {
             Ok(())
         }
     }

@@ -1,105 +1,122 @@
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::path::PathBuf;
 use std::sync::Arc;
 
+use ::specs::Entity;
 use bytemuck::cast;
 use bytes::BufMut;
 use bytes::BytesMut;
-use ::specs::Entity;
 use tracing::trace;
 
-use crate::v2::states::Object;
-use crate::Identifier;
-use crate::Value;
+use super::Block;
 use super::Properties;
 use super::Property;
 use super::Root;
-use super::Block;
+use crate::v2::states::Object;
+use crate::Identifier;
+use crate::Value;
+
+/// Enumeration of entity variants for visit_block, visit_root, and visit_extension
+///
+#[derive(Clone, Copy, Debug)]
+pub enum EntityVisitor {
+    /// This entity is the build that created this component,
+    ///
+    /// Note: Not used in default impl
+    ///
+    Build(Entity),
+    /// This entity is the entity of the owner of the component,
+    ///
+    Owner(Entity),
+    /// This entity is a relative of the owner of the component,
+    ///
+    Relative(Entity),
+}
 
 /// Visitor trait for visiting compiled runmd data,
-/// 
+///
 /// Note: Includes a number of default implementations mostly for the non-leaf types,
-/// 
+///
 #[allow(unused_variables)]
 pub trait Visitor {
     /// Visits an empty value,
-    /// 
+    ///
     fn visit_empty_value(&mut self, name: &String, idx: Option<usize>) {}
 
     /// Visits a bool value,
-    /// 
+    ///
     fn visit_bool(&mut self, name: &String, idx: Option<usize>, bool: bool) {}
 
     /// Visits a symbol value,
-    /// 
+    ///
     fn visit_symbol(&mut self, name: &String, idx: Option<usize>, symbol: &String) {}
 
     /// Visits a text buffer value,
-    /// 
+    ///
     fn visit_text_buffer(&mut self, name: &String, idx: Option<usize>, text_buffer: &String) {}
 
     /// Visits an integer value,
-    /// 
+    ///
     fn visit_int(&mut self, name: &String, idx: Option<usize>, i: i32) {}
 
     /// Visits an integer pair value,
-    /// 
+    ///
     fn visit_int_pair(&mut self, name: &String, idx: Option<usize>, pair: &[i32; 2]) {}
 
     /// Visits an integer range value,
-    /// 
+    ///
     fn visit_int_range(&mut self, name: &String, idx: Option<usize>, range: &[i32; 3]) {}
 
     /// Visits a float value,
-    /// 
+    ///
     fn visit_float(&mut self, name: &String, idx: Option<usize>, f: f32) {}
 
     /// Visits a float pair value,
-    /// 
+    ///
     fn visit_float_pair(&mut self, name: &String, idx: Option<usize>, pair: &[f32; 2]) {}
 
     /// Visits a float range value,
-    /// 
+    ///
     fn visit_float_range(&mut self, name: &String, idx: Option<usize>, range: &[f32; 3]) {}
 
     /// Visits a binary value,
-    /// 
+    ///
     fn visit_binary(&mut self, name: &String, idx: Option<usize>, binary: &Vec<u8>) {}
 
     /// Visits a reference value,
-    /// 
+    ///
     fn visit_reference(&mut self, name: &String, idx: Option<usize>, reference: u64) {}
 
     /// Visits a complex set value,
-    /// 
+    ///
     fn visit_complex(&mut self, name: &String, idx: Option<usize>, complex: &BTreeSet<String>) {}
 
-    /// Visits a root extension,
-    /// 
-    /// Note: By default, will be called in parse order
-    /// 
-    fn visit_extension(&mut self, entity: Entity, identifier: &Identifier) {}
-
     /// Visits an identifier,
-    /// 
+    ///
     fn visit_identifier(&mut self, identifier: &Identifier) {}
 
     /// Visits an empty property,
-    /// 
+    ///
     fn visit_empty(&mut self, name: &String) {}
 
     /// Visits readonly properties,
-    /// 
+    ///
     fn visit_readonly(&mut self, properties: Arc<Properties>) {}
 
     /// Visits a property name,
-    /// 
+    ///
     fn visit_property_name(&mut self, name: &String) {}
 
+    /// Visits a root extension,
+    ///
+    /// Note: The default implementation will call this fn via visit_root. EntityVisitor will be the Relative variant.
+    ///
+    fn visit_extension(&mut self, entity: EntityVisitor, identifier: &Identifier) {}
+
     /// Visits a list of values,
-    /// 
+    ///
     /// Note: if overriding default implementation, value idx will need to be derived if calling visit_value
-    /// 
+    ///
     fn visit_list(&mut self, name: &String, values: &Vec<Value>) {
         for (idx, v) in values.iter().enumerate() {
             self.visit_value(name, Some(idx), v);
@@ -107,9 +124,9 @@ pub trait Visitor {
     }
 
     /// Visits a property value,
-    /// 
+    ///
     /// Note: If overriding default implementation, visit_* value types will need to be called manually
-    /// 
+    ///
     fn visit_value(&mut self, name: &String, idx: Option<usize>, value: &Value) {
         match value {
             Value::Empty => self.visit_empty_value(name, idx),
@@ -128,41 +145,10 @@ pub trait Visitor {
         }
     }
 
-    /// Visits an object,
-    /// 
-    /// Note: If overriding the default implementation, visit_block, visit_identifier, and visit_properties, will need to be called manually.
-    /// 
-    fn visit_object(&mut self, object: &Object) {
-        object.as_block().map(|b| self.visit_block(object.entity(), b));
-        object.as_root().map(|b| self.visit_root(object.entity(), b));
-        self.visit_identifier(object.ident());
-        self.visit_properties(object.properties());
-    }
-
-    /// Visits a block,
-    /// 
-    /// Note: If overriding the default implementation, visit_root will need to be called manually.
-    /// 
-    fn visit_block(&mut self, entity: Entity, block: &Block) {
-        for root in block.roots() {
-            self.visit_root(entity, root);
-        }
-    }
-
-    /// Visits a root,
-    /// 
-    /// Note: If overriding the default implementation, visit_extension will need to be called manually.
-    /// 
-    fn visit_root(&mut self, entity: Entity, root: &Root) {
-        for ext in root.extensions() {
-            self.visit_extension(entity, ext);
-        }
-    }
-
     /// Visits a properties map,
-    /// 
+    ///
     /// Note: If overriding the default implementation, visit_property will need to be called manually.
-    /// 
+    ///
     fn visit_properties(&mut self, properties: &Properties) {
         self.visit_identifier(properties.owner());
 
@@ -172,10 +158,10 @@ pub trait Visitor {
     }
 
     /// Visits a property,
-    /// 
-    /// Note: If overriding the default implementation, visit_value, visit_list, visit_readonly, 
+    ///
+    /// Note: If overriding the default implementation, visit_value, visit_list, visit_readonly,
     /// and visit_empty and will need to be called manually.
-    /// 
+    ///
     fn visit_property(&mut self, name: &String, property: &Property) {
         self.visit_property_name(name);
 
@@ -184,6 +170,62 @@ pub trait Visitor {
             Property::List(values) => self.visit_list(name, values),
             Property::Properties(properties) => self.visit_readonly(properties.clone()),
             Property::Empty => self.visit_empty(name),
+        }
+    }
+
+    /// Visits an object,
+    ///
+    /// # Background
+    ///
+    /// An object struct represents transient data with 3 variants, Block, Root, and Extension.
+    /// Because they are transient, they include an entity in their fn inputs.
+    ///
+    /// Note: If overriding the default implementation, visit_block, visit_identifier, and visit_properties, will need to be called manually.
+    ///
+    fn visit_object(&mut self, object: &Object) {
+        // Transient data
+        object
+            .as_block()
+            .map(|b| self.visit_block(EntityVisitor::Owner(object.entity()), b));
+
+        object
+            .as_root()
+            .map(|b| self.visit_root(EntityVisitor::Owner(object.entity()), b));
+
+        // Stable data
+        self.visit_identifier(object.ident());
+        self.visit_properties(object.properties());
+    }
+
+    /// Visits a block,
+    ///
+    /// Note: If overriding the default implementation, visit_root will need to be called manually.
+    ///
+    fn visit_block(&mut self, entity: EntityVisitor, block: &Block) {
+        let entity = if let EntityVisitor::Owner(entity) = entity {
+            EntityVisitor::Relative(entity)
+        } else {
+            entity
+        };
+
+        for root in block.roots() {
+            self.visit_root(entity, root);
+        }
+    }
+
+    /// Visits a root,
+    ///
+    /// Note: If overriding the default implementation, visit_extension will need to be called manually.
+    ///
+    fn visit_root(&mut self, entity: EntityVisitor, root: &Root) {
+        let entity = if let EntityVisitor::Owner(entity) = entity {
+            EntityVisitor::Relative(entity)
+        } else {
+            entity
+        };
+
+        for ext in root.extensions() {
+            self.visit_extension(entity, ext);
         }
     }
 }
@@ -226,6 +268,12 @@ impl Visitor for Vec<String> {
         } else {
             self.push(text_buffer.to_string());
         }
+    }
+}
+
+impl Visitor for bool {
+    fn visit_bool(&mut self, _: &String, _: Option<usize>, bool: bool) {
+        *self = bool;
     }
 }
 
@@ -332,18 +380,78 @@ impl Visitor for BytesMut {
     }
 }
 
-mod specs {
-    use crate::v2::{prelude::*, compiler::Object};
+impl Visitor for BTreeMap<String, Value> {
+    fn visit_value(&mut self, name: &String, idx: Option<usize>, value: &Value) {
+        if idx.is_none() {
+            self.insert(name.to_string(), value.clone());
+        }
+    }
+}
+
+/// # Experiment
+/// 
+/// How to use visitor pattern directly with world storage.
+/// 
+mod experiment_specs {
+    use crate::v2::{compiler::Object, prelude::*};
 
     impl<'a> Visitor for WriteStorage<'a, Properties> {
         fn visit_object(&mut self, object: &Object) {
-            self.insert(object.entity(), object.properties().clone()).ok();
+            self.insert(object.entity(), object.properties().clone())
+                .ok();
         }
     }
 
     impl<'a> Visitor for WriteStorage<'a, Identifier> {
         fn visit_object(&mut self, object: &Object) {
+            // This will only work if the target storage belongs to a world where these entities are alive
             self.insert(object.entity(), object.ident().clone()).ok();
+        }
+    }
+
+    #[allow(unused_imports)]
+    mod tests {
+        use crate::v2::prelude::*;
+
+        #[test]
+        fn test_transfer() -> Result<()> {
+            let mut compiler = Compiler::new();
+            let _ = Parser::new()
+                .parse_line("```runmd")?
+                .parse_line("+ .test A")?
+                .parse_line("<> .comp ")?
+                .parse("```", &mut compiler)?;
+            
+            let build = compiler.compile()?;
+            compiler
+                .as_mut()
+                .exec(|(entities, idents): (Entities, ReadStorage<Identifier>)| {
+                    for (entity, ident) in (&entities, &idents).join() {
+                        println!("Original -- {:?} :: {:#}", entity, ident);
+                    }
+                });
+
+            let mut transfer = World::new();
+            transfer.register::<Identifier>();
+            transfer.entities().create();
+            transfer.entities().create();
+            transfer.entities().create();
+            transfer.entities().create();
+            transfer.entities().create();    
+            transfer.maintain();
+
+            compiler
+                .compiled()
+                .visit_build(build, &mut transfer.write_component::<Identifier>());
+            transfer.maintain();
+
+            transfer.exec(|(entities, idents): (Entities, ReadStorage<Identifier>)| {
+                for (entity, ident) in (&entities, &idents).join() {
+                    println!("Transfer -- {:?} :: {:#}", entity, ident);
+                }
+            });
+
+            Ok(())
         }
     }
 }

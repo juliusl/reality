@@ -1,5 +1,4 @@
 pub use crate::v2::ActionBuffer;
-pub use crate::v2::Apply;
 pub use crate::v2::Call;
 pub use crate::v2::Dispatch;
 pub use crate::v2::DispatchResult;
@@ -41,10 +40,8 @@ pub use crate::Error;
 pub use crate::Result;
 
 /// reality_derive -- Derive traits for interfacing with runmd compiled data and macros for applying them
-pub use reality_derive::Apply;
-pub use reality_derive::Config;
-pub use reality_derive::Load;
 pub use reality_derive::Runmd;
+pub use reality_derive::Load;
 pub use reality_derive::apply_framework;
 pub use reality_derive::thunk;
 pub use reality_derive::dispatch_signature;

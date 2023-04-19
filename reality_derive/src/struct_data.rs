@@ -342,13 +342,14 @@ impl StructData {
                     dispatch_ref: reality::v2::DispatchRef<'a, reality::v2::Properties>,
                 ) -> reality::v2::DispatchResult<'a> {
                     let clone = self.clone();
+                    let entity = dispatch_ref.entity.expect("Should have an entity");
 
                     dispatch_ref
                         #( #bootstraps ) *
                         .transmute::<ActionBuffer>()
                         .map_into(move |b| {
                             let mut clone = clone;
-                            b.config(&mut clone)?;
+                            b.config2(entity, &mut clone)?;
                             Ok(clone)
                         })
                         .result()?
@@ -364,13 +365,13 @@ impl StructData {
         let name = &self.name;
 
         // Mapping compile
-        let compile_map = self.root_fields().map(|f| {
+        let compile_map = self.transient_fields().map(|f| {
             let pattern = f.root_ext_input_pattern_lit_str(name);
             quote_spanned! {f.span=>
                 if let Some(log) = compiler.last_build_log() {
                     for (_, _, entity) in log.search_index(#pattern) {
                         let dispatch_ref = reality::v2::DispatchRef::<reality::v2::Properties>::new(*entity, compiler);
-                        let dispatch_ref = 
+                        let _ = 
                         reality::v2::Dispatch::dispatch(self, dispatch_ref)?;
                     }
                 }
@@ -380,6 +381,9 @@ impl StructData {
             #( #compile_map )*
         };
 
+        let visitor_trait = self.visitor_trait();
+        let compile_trait = self.compile_trait();
+
         quote! {
             impl reality::v2::Runmd for #name {
                 fn runmd(&self, compiler: &mut reality::v2::Compiler) -> reality::Result<()> {
@@ -388,11 +392,126 @@ impl StructData {
                     Ok(())
                 }
             }
+
+            #visitor_trait
+            #compile_trait
         }
     }
 
-    fn root_fields(&self) -> impl Iterator<Item = &StructField> {
-        self.fields.iter().filter(|f| f.root)
+
+    /// Returns an impl for the visitor trait,
+    /// 
+    pub fn visitor_trait(&self) -> TokenStream {
+        let name = &self.name;
+
+        let visit_property = self.fields
+            .iter()
+            .filter(|f| !f.ignore && !f.block && !f.root && !f.ext)
+            .map(|f| {
+                f.visitor_expr()
+            });
+        
+        let visit_block = self.visit_block();
+        let visit_root = self.visit_root();
+        let visit_ext = self.visit_extension();
+
+        let visit_ext_property = self.fields
+            .iter()
+            .filter(|f| !f.ignore && (f.block || f.root || f.ext))
+            .filter_map(|f| {
+                f.name.get_ident()
+            }).map(|n| {
+                quote_spanned! {n.span()=>
+                    self.#n.visit_property(name, property);
+                }
+            });
+
+        quote! {
+            impl reality::v2::Visitor for #name {
+                fn visit_property(&mut self, name: &String, property: &reality::v2::Property) {
+                    match name.to_lowercase().as_str() { 
+                        #( #visit_property ),*
+                        _ => {
+                        }
+                    }
+                    
+                    #( #visit_ext_property )*
+                }
+
+                #visit_block
+
+                #visit_ext
+
+                #visit_root
+            }
+        }
+    }
+
+    fn visit_extension(&self) -> TokenStream {
+        let visit_ext =self.fields
+            .iter()
+            .filter(|f| !f.ignore && !f.block && !f.root && f.ext)
+            .map(|f| {
+                f.visitor_expr()
+            })
+            .collect::<Vec<_>>();
+
+        if !visit_ext.is_empty() {
+            let visit_ext = visit_ext.iter();
+            quote! {
+                fn visit_extension(&mut self, entity: reality::v2::EntityVisitor, ident: &reality::Identifier) {
+                    #( #visit_ext )*
+                }
+            }
+        } else {
+            quote! {}
+        }
+    }
+
+    fn visit_root(&self) -> TokenStream {
+        let visit_root = self.fields
+            .iter()
+            .filter(|f| !f.ignore && !f.block && f.root && !f.ext)
+            .map(|f| {
+                f.visitor_expr()
+            })
+            .collect::<Vec<_>>();
+    
+        if !visit_root.is_empty() {
+            let visit_root = visit_root.iter();
+            quote! {
+                fn visit_root(&mut self, entity: reality::v2::EntityVisitor, root: &reality::v2::Root) {
+                    #( #visit_root )*
+                }
+            }
+        } else {
+            quote! {}
+        }
+    }
+
+    fn visit_block(&self) -> TokenStream {
+        let visit_block = self.fields
+            .iter()
+            .filter(|f| !f.ignore && f.block && !f.root && !f.ext)
+            .map(|f| {
+                f.visitor_expr()
+            })
+            .collect::<Vec<_>>();
+        
+        if !visit_block.is_empty() {
+            let visit_block = visit_block.iter();
+            quote! {
+                fn visit_block(&mut self, entity: reality::v2::EntityVisitor, root: &reality::v2::Block) {
+                    #( #visit_block )*
+                }
+            }
+        } else {
+            quote! {}
+        }
+    }
+
+    fn transient_fields(&self) -> impl Iterator<Item = &StructField> {
+        self.fields.iter().filter(|f| !f.ignore).filter(|f| f.root || f.ext || f.block)
     }
 
     fn reference_fields(&self) -> impl Iterator<Item = &StructField> {

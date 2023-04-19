@@ -886,6 +886,8 @@ impl Parse for ThunkTraitFn {
 
 /// This module is for generating dispatch sequences for thunk types,
 ///
+#[allow(dead_code)]
+#[allow(unused_imports)]
 pub mod dispatch_ref_stmts {
     use std::ops::Deref;
 

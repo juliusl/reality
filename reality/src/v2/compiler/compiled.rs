@@ -382,7 +382,7 @@ pub type BuildFormat<'a> = (
 impl<'a> Load for Build<'a> {
     type Layout = BuildFormat<'a>;
 
-    fn load(entity: Entity, (build_log, identifier, properties): <Self::Layout as Join>::Type) -> Self {
+    fn load(_: Entity, (build_log, identifier, properties): <Self::Layout as Join>::Type) -> Self {
         Build { build_log, identifier, properties }
     }
 }

@@ -149,7 +149,7 @@ pub fn derive_apply(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
 /// Derives Runmd trait,
 ///
-#[proc_macro_derive(Runmd)]
+#[proc_macro_derive(Runmd, attributes(compile, block, root, ext))]
 pub fn derive_runmd(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let struct_data = parse_macro_input!(input as StructData);
 
@@ -325,7 +325,7 @@ struct Test {
         )
         .unwrap();
 
-        let input = parse2::<DeriveInput>(ts).unwrap();
+        let _input = parse2::<DeriveInput>(ts).unwrap();
 
         // for a in input.attrs.iter() {
         //     a.parse_nested_meta(|nested| {

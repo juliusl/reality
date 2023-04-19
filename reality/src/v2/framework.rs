@@ -26,6 +26,7 @@ use crate::Error;
 use crate::Identifier;
 
 use super::DispatchSignature;
+use super::EntityVisitor;
 use super::compiler::Object;
 use super::BuildLog;
 use super::DispatchRef;
@@ -256,7 +257,7 @@ impl Visitor for Framework {
         if object
             .as_root()
             .map(|r| {
-                self.visit_root(object.entity(), r);
+                self.visit_root(EntityVisitor::Owner(object.entity()), r);
             })
             .is_some()
         {
@@ -298,7 +299,7 @@ impl Visitor for Framework {
         }
     }
 
-    fn visit_extension(&mut self, _: Entity, identifier: &Identifier) {
+    fn visit_extension(&mut self, _: EntityVisitor, identifier: &Identifier) {
         // This means this extension needs to be configured
         if let Some(map) = identifier
             .commit()

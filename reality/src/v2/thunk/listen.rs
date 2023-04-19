@@ -2,7 +2,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use crate::v2::Properties;
-use crate::Error;
 use crate::Result;
 use crate::Identifier;
 use async_trait::async_trait;

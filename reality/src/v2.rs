@@ -36,9 +36,7 @@ pub use documentation::Documentation;
 
 mod visitor;
 pub use visitor::Visitor;
-
-mod visitor_mut;
-pub use visitor_mut::VisitorMut;
+pub use visitor::EntityVisitor;
 
 mod interner;
 pub use interner::Interner;
@@ -64,8 +62,6 @@ pub use thunk::DispatchResult;
 pub use thunk::DispatchSignature;
 pub use thunk::Listen;
 pub use thunk::Update;
-pub use thunk::Config;
-pub use thunk::Apply;
 pub use thunk::Map;
 pub use thunk::MapWith;
 pub use thunk::Listener;
@@ -76,8 +72,6 @@ pub use thunk::ThunkCall;
 pub use thunk::ThunkCompile;
 pub use thunk::ThunkListen;
 pub use thunk::ThunkUpdate;
-
-use crate::Error;
 
 mod data;
 pub mod toml {
@@ -93,19 +87,6 @@ pub trait Runmd {
     /// Configures the compiler for a runmd-based project,
     /// 
     fn runmd(&self, compiler: &mut Compiler) -> Result<(), crate::Error>;
-}
-
-/// Configures T w/ the properties returned from the ThunkCall and returns the result,
-/// 
-pub async fn call_config_into<T>(call: ThunkCall, mut component: impl Config + Into<T>) -> Result<T, Error> {
-    let properties = call.call().await?;
-
-    for (name, property) in properties.iter_properties() {
-        let ident = properties.owner().branch(name)?;
-        component.config(&ident, property)?;
-    }
-
-    Ok(component.into())
 }
 
 #[allow(unused_variables)]

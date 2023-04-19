@@ -1,4 +1,4 @@
-use reality::v2::{prelude::*, Visitor};
+use reality::v2::prelude::*;
 use specs::VecStorage;
 
 /// Test A trait
@@ -13,7 +13,7 @@ pub trait TestA {
     async fn testb(&self) -> reality::Result<()>;
 }
 
-#[derive(Config, Component, Clone)]
+#[derive(Runmd, Component, Clone)]
 #[compile(ThunkTestA)]
 #[storage(VecStorage)]
 struct ATest {
@@ -22,7 +22,7 @@ struct ATest {
 
 impl ATest {
     ///
-    /// 
+    ///
     pub fn print_self(&self) -> Result<()> {
         println!("param: {}", self.param);
 
@@ -34,16 +34,13 @@ impl ATest {
     }
 }
 
-impl Visitor for ATest {
-}
-
 #[async_trait]
 impl TestA for ATest {
     fn testa(&self) -> reality::Result<()> {
         self.print_self()
     }
 
-    async fn testb(&self) -> reality::Result<()>  {
+    async fn testb(&self) -> reality::Result<()> {
         self.print_self_async().await
     }
 }

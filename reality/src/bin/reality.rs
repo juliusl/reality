@@ -38,6 +38,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(unused_imports)]
 mod framework {
     use reality::v2::{prelude::*, BuildLog, Visitor};
     use specs::VecStorage;
@@ -71,7 +72,7 @@ mod framework {
     ```
     "##;
 
-    #[derive(Runmd, Config, Component, Clone, Default)]
+    #[derive(Runmd, Component, Clone, Default)]
     #[storage(VecStorage)]
     #[compile]
     pub struct Example {
@@ -80,11 +81,8 @@ mod framework {
         help: Option<Shell>,
     }
 
-    impl Visitor for Example {
-        
-    }
-
-    #[derive(Runmd, Config, Clone, Apply, Debug, Default)]
+    #[derive(Runmd, Component, Clone, Debug, Default)]
+    #[storage(VecStorage)]
     pub struct Cli {
         command: Command,
         arg: (),
@@ -101,7 +99,8 @@ mod framework {
 
     /// Command extension settings,
     /// 
-    #[derive(Config, Clone, Debug, Default)]
+    #[derive(Runmd, Component, Clone, Debug, Default)]
+    #[storage(VecStorage)]
     pub struct Command {
         /// Command name,
         /// 
@@ -119,15 +118,8 @@ mod framework {
         }
     }
 
-    impl Apply for Command {
-        fn apply(&self, _: impl AsRef<str>, property: &Property) -> Result<Property> {
-            Ok(property.clone())
-        }
-    }
-
-    /// Component for describing a shell
     /// 
-    #[derive(Runmd, Config, Clone, Default, Debug, Component)]
+    #[derive(Runmd, Clone, Default, Debug, Component)]
     #[storage(VecStorage)]
     #[compile]
     pub struct Shell {
@@ -141,16 +133,6 @@ mod framework {
         /// 
         #[root]
         cli: Cli,
-    }
-
-    impl Visitor for Shell {
-        
-    }
-
-    impl Apply for Shell {
-        fn apply(&self, _: impl AsRef<str>, property: &Property) -> Result<Property> {
-            Ok(property.clone())
-        }
     }
 
     #[async_trait]

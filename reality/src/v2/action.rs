@@ -7,8 +7,8 @@ use tracing::warn;
 use crate::Error;
 use crate::Identifier;
 use crate::Value;
+use crate::v2::EntityVisitor;
 
-use super::Config;
 use super::DispatchSignature;
 use super::Property;
 use super::Visitor;
@@ -113,14 +113,14 @@ impl ActionBuffer {
                                             let config_ext = format!("{config}.{extension}.{name}")
                                                 .parse::<Identifier>()?;
                                             target.visit_property(name, prop);
-                                            target.visit_extension(entity, &config_ext);
+                                            target.visit_extension(EntityVisitor::Owner(entity), &config_ext);
                                         }
 
                                         let config_prop = format!("{name}.{extension}.{property}")
                                             .parse::<Identifier>()?;
                                         let prop = properties.property(property).expect("should be a property since this is an extended property");
                                         target.visit_property(property, prop);
-                                        target.visit_extension(entity, &config_prop);
+                                        target.visit_extension(EntityVisitor::Owner(entity), &config_prop);
                                     }
                                 }
                                 DispatchSignature::ExtendedProperty {
@@ -142,90 +142,8 @@ impl ActionBuffer {
                                             let config_ext = format!("{config}.{extension}.{name}")
                                                 .parse::<Identifier>()?;
                                             target.visit_property(name, prop);
-                                            target.visit_extension(entity, &config_ext);
+                                            target.visit_extension(EntityVisitor::Owner(entity), &config_ext);
                                         }
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                        None => {
-                            continue;
-                        }
-                    }
-                }
-                _ => {
-                    continue;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Configures a target that implements the Config trait,
-    ///
-    pub fn config(&self, target: &mut impl Config) -> Result<(), Error> {
-        for action in self.actions.iter() {
-            match action {
-                Action::Config(ident, prop) => {
-                    let sigs = DispatchSignature::get_match(ident);
-                    if sigs.len() > 1 {
-                        warn!(
-                            "Multiple signatures detected, {} {:#} -- {:?}",
-                            ident, ident, sigs
-                        );
-                    }
-
-                    match sigs.first() {
-                        Some(sig) => {
-                            match sig {
-                                DispatchSignature::ExtendedProperty {
-                                    config,
-                                    name,
-                                    extension,
-                                    property: Some(property),
-                                } => {
-                                    trace!(
-                                        config,
-                                        name,
-                                        extension,
-                                        property,
-                                        "Detected Extended Property Signature --"
-                                    );
-                                    if let Some(properties) = prop.as_properties() {
-                                        let config_ext = format!("{config}.{extension}")
-                                            .parse::<Identifier>()?;
-
-                                        let config_prop = format!("{name}.{extension}.{property}")
-                                            .parse::<Identifier>()?;
-
-                                        for (name, prop) in properties
-                                            .iter_properties()
-                                            .filter(|(name, _)| *name != property)
-                                        {
-                                            let ident = config_ext.branch(name)?;
-                                            trace!(
-                                                "Extension config -- {:<10} {:<10} {:?}",
-                                                ident.root(),
-                                                ident,
-                                                prop
-                                            );
-                                            // Apply extended config to the extension config
-                                            target.config(&ident, prop)?;
-                                        }
-
-                                        let prop = properties.property(property).expect("should be a property since this is an extended property");
-                                        // Apply config to the primary property
-                                        trace!(
-                                            "Config           -- {:<10} {:<20} {:?}",
-                                            config_prop.root(),
-                                            config_prop,
-                                            prop
-                                        );
-                                        target.config(&config_prop, prop)?;
-
-                                        trace!("Configured Extended Property -- \n");
                                     }
                                 }
                                 _ => {}

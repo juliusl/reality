@@ -14,11 +14,9 @@ pub use property::property_list;
 pub use property::property_value;
 pub use property::Property;
 
-use super::Framework;
 use super::data::query::Predicate;
 use super::data::query::Query;
 use super::data::query::QueryResult;
-use super::Config;
 use super::Visitor;
 
 /// Component for a map of property attributes
@@ -213,18 +211,6 @@ impl Properties {
     ///
     pub fn len(&self) -> usize {
         self.map.len()
-    }
-
-    /// Iterates over properties to config,
-    ///
-    pub fn config<T: Config>(&self, config: &mut T) -> Result<(), Error> {
-        for (name, prop) in self.iter_properties() {
-            let ident = self.owner().branch(name)?;
-
-            config.config(&ident, prop)?;
-        }
-
-        Ok(())
     }
 }
 

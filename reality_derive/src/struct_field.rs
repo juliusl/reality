@@ -4,7 +4,6 @@ use proc_macro2::TokenStream;
 use quote::format_ident;
 use quote::quote_spanned;
 use quote::ToTokens;
-use syn::Path;
 use syn::ext::IdentExt;
 use syn::parse::Parse;
 use syn::parse2;
@@ -13,6 +12,7 @@ use syn::Attribute;
 use syn::Generics;
 use syn::Lifetime;
 use syn::LitStr;
+use syn::Path;
 use syn::Token;
 use syn::Type;
 use syn::Visibility;
@@ -51,11 +51,14 @@ pub(crate) struct StructField {
     /// True if this field should be ignored,
     ///
     pub(crate) ignore: bool,
+    /// True if this field has a #[block] attribute,
+    ///
+    pub(crate) block: bool,
     /// True if this field has a #[root] attribute,
     ///
     pub(crate) root: bool,
     /// True if this field has a #[ext] attribute,
-    /// 
+    ///
     pub(crate) ext: bool,
     /// Sets the first doc comment from in the struct
     ///
@@ -64,21 +67,41 @@ pub(crate) struct StructField {
 
 impl StructField {
     /// Returns a match expression for visitor trait,
-    /// 
+    ///
     pub(crate) fn visitor_expr(&self) -> TokenStream {
         let name_lit = self.name_str_literal();
         let name = &self.name;
         if let Some(ident) = name.get_ident() {
-            quote_spanned! {ident.span()=>
-                #name_lit => {
-                    self.#name.visit_property(name, property);
+            // The type of visitor expression that will be generated,
+            match self {
+                Self { block: true, .. } => {
+                    quote_spanned! {ident.span()=>
+                        self.#name.visit_block(entity, block);
+                    }
+                }
+                Self { root: true, .. } => {
+                    quote_spanned! {ident.span()=>
+                        self.#name.visit_root(entity, root);
+                    }
+                }
+                Self { ext: true, .. } => {
+                    quote_spanned! {ident.span()=>
+                        self.#name.visit_extension(entity, ident);
+                    }
+                }
+                _ => {
+                    quote_spanned! {ident.span()=>
+                        #name_lit => {
+                            self.#name.visit_property(name, property);
+                        }
+                    }
                 }
             }
         } else {
             quote::quote! {}
         }
     }
-    
+
     pub(crate) fn join_tuple_storage_type_expr(&self) -> TokenStream {
         let ty = &self.ty;
         if self.mutable && !self.option {
@@ -217,6 +240,7 @@ impl Parse for StructField {
         let attributes = Attribute::parse_outer(input)?;
         let mut config_attr = None::<Ident>;
         let mut doc = None::<LitStr>;
+        let mut block = false;
         let mut root = false;
         let mut ext = false;
         let span = input.span();
@@ -225,10 +249,6 @@ impl Parse for StructField {
             if attribute.path().is_ident("config") {
                 let ident: Ident = attribute.parse_args()?;
                 config_attr = Some(ident);
-            }
-
-            if attribute.path().is_ident("root") {
-                root = true;
             }
 
             if attribute.path().is_ident("doc") {
@@ -242,8 +262,16 @@ impl Parse for StructField {
                 }
             }
 
+            if attribute.path().is_ident("root") {
+                root = true;
+            }
+
             if attribute.path().is_ident("ext") {
                 ext = true;
+            }
+
+            if attribute.path().is_ident("block") {
+                block = true;
             }
         }
 
@@ -273,6 +301,7 @@ impl Parse for StructField {
                 mutable,
                 option: false,
                 ignore: false,
+                block,
                 root,
                 ext,
                 config: config_attr,
@@ -300,6 +329,7 @@ impl Parse for StructField {
                     mutable,
                     option: true,
                     ignore: false,
+                    block,
                     root,
                     ext,
                     config: config_attr,
@@ -317,6 +347,7 @@ impl Parse for StructField {
                     mutable: false,
                     option: false,
                     ignore: false,
+                    block,
                     root,
                     ext,
                     config: config_attr,
@@ -334,6 +365,7 @@ impl Parse for StructField {
                 mutable: false,
                 option: false,
                 ignore: true,
+                block,
                 root,
                 ext,
                 config: config_attr,

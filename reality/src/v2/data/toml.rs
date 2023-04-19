@@ -3,6 +3,7 @@ use std::ops::Index;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::v2::EntityVisitor;
 use crate::v2::compiler::BuildLog;
 use crate::v2::Block;
 use crate::v2::Build;
@@ -16,7 +17,6 @@ use crate::Value;
 use serde::Deserialize;
 use specs::Builder;
 use specs::Component;
-use specs::Entity;
 use specs::HashMapStorage;
 use specs::World;
 use specs::WorldExt;
@@ -90,7 +90,7 @@ impl DocumentBuilder {
 }
 
 impl Visitor for DocumentBuilder {
-    fn visit_block(&mut self, _: Entity, block: &crate::v2::Block) {
+    fn visit_block(&mut self, _: EntityVisitor, block: &crate::v2::Block) {
         let owner = Self::format_ident(block.ident());
         self.doc["block"][&owner] = table();
 
@@ -109,7 +109,7 @@ impl Visitor for DocumentBuilder {
         });
     }
 
-    fn visit_root(&mut self, _: Entity, root: &crate::v2::Root) {
+    fn visit_root(&mut self, _: EntityVisitor, root: &crate::v2::Root) {
         let owner = Self::format_ident(&root.ident);
         if !self.doc["root"]
             .get(&owner)
