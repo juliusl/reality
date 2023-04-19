@@ -62,8 +62,6 @@ pub use thunk::DispatchResult;
 pub use thunk::DispatchSignature;
 pub use thunk::Listen;
 pub use thunk::Update;
-pub use thunk::Map;
-pub use thunk::MapWith;
 pub use thunk::Listener;
 pub use thunk::Thunk;
 pub use thunk::ThunkBuild;

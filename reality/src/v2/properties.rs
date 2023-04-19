@@ -31,6 +31,8 @@ pub struct Properties {
 }
 
 impl Properties {
+    /// Returns an empty properties map,
+    /// 
     pub const fn empty() -> Self {
         Self { owner: Identifier::new(), map: BTreeMap::new() }
     }

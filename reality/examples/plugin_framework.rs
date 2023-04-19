@@ -196,37 +196,11 @@ const EXAMPLE_USAGE: &'static str = r##"
 ```
 "##;
 
-#[allow(dead_code)]
-#[derive(Load)]
-pub struct Test<'a> {
-    identifier: &'a Identifier,
-    properties: &'a Properties,
-}
-
 #[allow(unused_imports)]
 #[allow(dead_code)]
 #[allow(unused_variables)]
 pub mod test_framework {
     use reality::v2::prelude::*;
-    use reality::v2::property_value;
-    use reality::v2::AsyncDispatch;
-    use reality::v2::BuildLog;
-    use reality::v2::DispatchRef;
-    use reality::v2::Map;
-    use reality::v2::MapWith;
-    use reality::v2::Visitor;
-    use reality::Identifier;
-    use reality::Runmd;
-    use specs::storage;
-    use specs::DenseVecStorage;
-    use specs::VecStorage;
-    use std::collections::BTreeMap;
-    use std::ops::Index;
-    use std::ops::IndexMut;
-    use std::path::PathBuf;
-    use std::sync::Arc;
-    use tracing::trace;
-    use tracing::Id;
     use tracing_test::traced_test;
 
     #[derive(Clone, Debug, Default)]
@@ -352,93 +326,6 @@ pub mod test_framework {
             println!("{:?}", self);
 
             Ok(Properties::default())
-        }
-    }
-
-    const DISPATCH_ROOT: &'static str = "#block#.#root#.(root).(ext).(name).(prop)";
-
-    const DISPATCH_ROOT_CONFIG: &'static str =
-        "#block#.#root#.(root).(config).(ext).(name).(?prop)";
-
-    const DISPATCH_ROOT_EXT: &'static str = "#block#.#root#.(root).(ext);";
-
-    #[derive(Component)]
-    #[storage(VecStorage)]
-    struct PluginFramework(DispatchSignature);
-
-    impl<'b> Dispatch for PluginFramework {
-        fn dispatch<'a>(&self, dispatch_ref: DispatchRef<'a, Properties>) -> DispatchResult<'a> {
-            dispatch_ref
-                .transmute::<BuildLog>()
-                .read(|p| {
-                    let matches = DispatchSignature::get_matches(p.clone());
-
-                    Ok(())
-                })
-                .transmute()
-                .result()
-        }
-    }
-
-    impl Test {}
-
-    struct Test;
-
-    impl Dispatch for Test {
-        fn dispatch<'a>(&self, dispatch_ref: DispatchRef<'a, Properties>) -> DispatchResult<'a> {
-            if let Ok(accepted) = dispatch_ref
-                .transmute::<Identifier>()
-                .read(|id| {
-                    if let Some(map) = id.interpolate("#block#.#root#.(root).Test.(ext).(?prop)") {
-                        Ok(())
-                    } else {
-                        Err(Error::skip())
-                    }
-                })
-                .result()
-            {
-                accepted.read(|_| Ok(()));
-                Err(Error::skip())
-            } else {
-                Err(Error::not_implemented())
-            }
-        }
-    }
-
-    #[async_trait]
-    impl AsyncDispatch for Test {
-        async fn async_dispatch<'a, 'b>(
-            &'a self,
-            dispatch_ref: DispatchRef<'b, Properties>,
-        ) -> DispatchResult<'b> {
-            Ok(dispatch_ref)
-        }
-    }
-
-    #[derive(Component)]
-    #[storage(VecStorage)]
-    struct Usage {}
-
-    impl Usage {
-        /// Dispatches on #block#.#root#.usage.start_usage,
-        ///
-        fn start_usage<'a>(&mut self) -> Result<()> {
-            Ok(())
-        }
-
-        /// Dispatches on #block#.#root#.usage.read_usage,
-        ///
-        fn read_usage<'a>(&self) -> Result<()> {
-            Ok(())
-        }
-
-        fn _dispatch_start_usage<'a>(
-            dispatch_ref: DispatchRef<'a, Properties>,
-        ) -> DispatchRef<'a, Properties> {
-            dispatch_ref
-                .transmute::<Self>()
-                .write(|s| s.start_usage())
-                .transmute()
         }
     }
 }

@@ -511,9 +511,6 @@ impl ThunkTraitFn {
     /// Generates a dispatch expr for a thunk'ed fn,
     ///
     pub(crate) fn dispatch_stmt(&self, recv_type: &Ident) -> TokenStream {
-        dbg!(self.mutable_recv);
-        dbg!(self.mutable_with);
-
         let closure = match &self {
             ThunkTraitFn {
                 name,

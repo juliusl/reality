@@ -24,13 +24,6 @@ pub use dispatch::DispatchSignature;
 mod update;
 pub use update::Update;
 
-mod select;
-pub use select::Select;
-
-mod map;
-pub use map::Map;
-pub use map::MapWith;
-
 /// Auto thunk trait implementations for common types,
 ///
 pub mod auto {
