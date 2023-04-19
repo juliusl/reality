@@ -339,7 +339,7 @@ impl StructData {
                         .transmute::<ActionBuffer>()
                         .map_into(move |b| {
                             let mut clone = clone;
-                            b.config2(&mut clone)?;
+                            b.config(&mut clone)?;
                             Ok(clone)
                         })
                         .result()?

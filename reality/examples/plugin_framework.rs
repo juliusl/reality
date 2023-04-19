@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
                 .from_env()
                 .expect("should be able to build from env variables")
                 .add_directive(
-                    "reality::v2::framework=trace"
+                    "reality::v2::action=trace"
                         .parse()
                         .expect("should be able to parse tracing settings"),
                 ),
