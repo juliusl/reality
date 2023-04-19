@@ -66,5 +66,5 @@ where
 {
     provider
         .iter_preload_state::<L>()
-        .map(|(e, d)| (e, L::load(d)))
+        .map(|(e, d)| (e, L::load(e, d)))
 }

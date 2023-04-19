@@ -222,6 +222,15 @@ impl StructData {
             #( #systemdata_provider_body ),*
         };
 
+        let load_struct_expr = self.fields.iter().find(|f| f.ty.is_ident("Entity") && f.name.is_ident("entity")).map(|f| {
+            let ident = f.name.get_ident().unwrap();
+            quote_spanned! {ident.span()=>
+                Self { entity, #idents }
+            }
+        }).unwrap_or(quote! {
+            Self { #idents }
+        });
+
         quote! {
             use specs::prelude::*;
 
@@ -236,8 +245,8 @@ impl StructData {
             impl<'a> reality::state::Load for #ident<'a> {
                 type Layout = #format_ident<'a>;
 
-                fn load((#idents): <Self::Layout as specs::Join>::Type) -> Self {
-                    Self { #idents }
+                fn load(entity: Entity, (#idents): <Self::Layout as specs::Join>::Type) -> Self {
+                    #load_struct_expr
                 }
             }
 

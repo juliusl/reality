@@ -13,14 +13,14 @@ where
 
     /// Loads state for self frin world data,
     /// 
-    fn load(state: <Self::Layout as Join>::Type) -> Self;
+    fn load(entity: Entity, state: <Self::Layout as Join>::Type) -> Self;
 
     /// Returns the current self from world data if it's data exists,
     /// 
     fn current<'a>(entity: Entity, entities: &Entities<'a>, data: Self::Layout) -> Option<Self> {
         data.join()
             .get(entity, entities)
-            .map(|s| Self::load(s))
+            .map(|s| Self::load(entity, s))
     }
 }
 

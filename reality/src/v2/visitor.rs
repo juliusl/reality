@@ -1,6 +1,11 @@
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 
+use bytemuck::cast;
+use bytes::BufMut;
+use bytes::BytesMut;
+use ::specs::Entity;
 use tracing::trace;
 
 use crate::v2::states::Object;
@@ -73,7 +78,7 @@ pub trait Visitor {
     /// 
     /// Note: By default, will be called in parse order
     /// 
-    fn visit_extension(&mut self, identifier: &Identifier) {}
+    fn visit_extension(&mut self, entity: Entity, identifier: &Identifier) {}
 
     /// Visits an identifier,
     /// 
@@ -93,8 +98,6 @@ pub trait Visitor {
 
     /// Visits a list of values,
     /// 
-    /// Default implementation will call this method on the alternate if some,
-    /// 
     /// Note: if overriding default implementation, value idx will need to be derived if calling visit_value
     /// 
     fn visit_list(&mut self, name: &String, values: &Vec<Value>) {
@@ -104,8 +107,6 @@ pub trait Visitor {
     }
 
     /// Visits a property value,
-    /// 
-    /// Default implementation will call this method on the alternate if some,
     /// 
     /// Note: If overriding default implementation, visit_* value types will need to be called manually
     /// 
@@ -129,44 +130,36 @@ pub trait Visitor {
 
     /// Visits an object,
     /// 
-    /// Default implementation will call this method on the alternate if some,
-    /// 
     /// Note: If overriding the default implementation, visit_block, visit_identifier, and visit_properties, will need to be called manually.
     /// 
     fn visit_object(&mut self, object: &Object) {
-        object.as_block().map(|b| self.visit_block(b));
-        object.as_root().map(|b| self.visit_root(b));
+        object.as_block().map(|b| self.visit_block(object.entity(), b));
+        object.as_root().map(|b| self.visit_root(object.entity(), b));
         self.visit_identifier(object.ident());
         self.visit_properties(object.properties());
     }
 
     /// Visits a block,
     /// 
-    /// Default implementation will call this method on the alternate if some,
-    /// 
     /// Note: If overriding the default implementation, visit_root will need to be called manually.
     /// 
-    fn visit_block(&mut self, block: &Block) {
+    fn visit_block(&mut self, entity: Entity, block: &Block) {
         for root in block.roots() {
-            self.visit_root(root);
+            self.visit_root(entity, root);
         }
     }
 
     /// Visits a root,
     /// 
-    /// Default implementation will call this method on the alternate if some,
-    /// 
     /// Note: If overriding the default implementation, visit_extension will need to be called manually.
     /// 
-    fn visit_root(&mut self, root: &Root) {
+    fn visit_root(&mut self, entity: Entity, root: &Root) {
         for ext in root.extensions() {
-            self.visit_extension(ext);
+            self.visit_extension(entity, ext);
         }
     }
 
     /// Visits a properties map,
-    /// 
-    /// Default implementation will call this method on the alternate if some,
     /// 
     /// Note: If overriding the default implementation, visit_property will need to be called manually.
     /// 
@@ -179,8 +172,6 @@ pub trait Visitor {
     }
 
     /// Visits a property,
-    /// 
-    /// Default implementation will call this method on the alternate if some,
     /// 
     /// Note: If overriding the default implementation, visit_value, visit_list, visit_readonly, 
     /// and visit_empty and will need to be called manually.
@@ -251,5 +242,108 @@ impl Visitor for usize {
 impl Visitor for i32 {
     fn visit_int(&mut self, _: &String, _: Option<usize>, i: i32) {
         *self = i;
+    }
+}
+
+impl Visitor for u32 {
+    fn visit_int(&mut self, _: &String, _: Option<usize>, i: i32) {
+        if i >= 0 {
+            *self = i as u32;
+        } else {
+            // Skipping because integer is signed
+        }
+    }
+}
+
+impl Visitor for crate::Result<usize> {
+    fn visit_int(&mut self, _: &String, _: Option<usize>, i: i32) {
+        if i >= 0 {
+            *self = Ok(i as usize);
+        } else {
+            *self = Err("Current value is signed (negative) and cannot be converted".into())
+        }
+    }
+
+    fn visit_int_pair(&mut self, _: &String, _: Option<usize>, pair: &[i32; 2]) {
+        if pair[0] >= 0 && pair[1] >= 0 {
+            *self = Ok(cast::<[i32; 2], usize>(*pair));
+        } else {
+            *self = Err("Current value is signed (negative) and cannot be converted".into())
+        }
+    }
+}
+
+impl Visitor for crate::Result<u32> {
+    fn visit_int(&mut self, _: &String, _: Option<usize>, i: i32) {
+        if i >= 0 {
+            *self = Ok(i as u32);
+        } else {
+            *self = Err("Current value is signed (negative) and cannot be converted".into())
+        }
+    }
+}
+
+impl Visitor for crate::Result<i64> {
+    fn visit_int(&mut self, _: &String, _: Option<usize>, i: i32) {
+        *self = Ok(i as i64);
+    }
+
+    fn visit_int_pair(&mut self, _: &String, _: Option<usize>, pair: &[i32; 2]) {
+        *self = Ok(cast::<[i32; 2], i64>(*pair))
+    }
+}
+
+impl Visitor for Vec<u8> {
+    fn visit_binary(&mut self, _: &String, _: Option<usize>, binary: &Vec<u8>) {
+        if self.len() == binary.len() {
+            self.copy_from_slice(&binary);
+        } else {
+            // Skipping because vectors are different lengths
+        }
+    }
+
+    fn visit_text_buffer(&mut self, _: &String, _: Option<usize>, text_buffer: &String) {
+        if self.len() == text_buffer.as_bytes().len() {
+            self.copy_from_slice(text_buffer.as_bytes());
+        } else {
+            // Skipping because vectors are different lengths
+        }
+    }
+}
+
+impl Visitor for BytesMut {
+    fn visit_binary(&mut self, _: &String, _: Option<usize>, binary: &Vec<u8>) {
+        self.put(&binary[..]);
+    }
+
+    fn visit_text_buffer(&mut self, _: &String, _: Option<usize>, text_buffer: &String) {
+        self.put(text_buffer.as_bytes());
+    }
+
+    fn visit_readonly(&mut self, properties: Arc<Properties>) {
+        let name = properties.owner().subject();
+
+        let property = Property::Properties(properties);
+        if let Some(bytes) = property.as_binary() {
+            self.visit_binary(&name, None, bytes);
+        } else if let Some(text_buffer) = property.as_text() {
+            self.visit_text_buffer(&name, None, text_buffer);
+        }
+    }
+}
+
+mod specs {
+    use crate::v2::{prelude::*, compiler::Object};
+
+    impl<'a> Visitor for WriteStorage<'a, Properties> {
+        fn visit_object(&mut self, object: &Object) {
+            self.insert(object.entity(), object.properties().clone()).ok();
+        }
+    }
+
+    impl<'a> Visitor for WriteStorage<'a, Identifier> {
+        fn visit_object(&mut self, object: &Object) {
+            self.insert(object.entity(), object.ident().clone()).ok();
+        }
     }
 }

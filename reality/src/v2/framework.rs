@@ -256,7 +256,7 @@ impl Visitor for Framework {
         if object
             .as_root()
             .map(|r| {
-                self.visit_root(r);
+                self.visit_root(object.entity(), r);
             })
             .is_some()
         {
@@ -298,7 +298,7 @@ impl Visitor for Framework {
         }
     }
 
-    fn visit_extension(&mut self, identifier: &Identifier) {
+    fn visit_extension(&mut self, _: Entity, identifier: &Identifier) {
         // This means this extension needs to be configured
         if let Some(map) = identifier
             .commit()

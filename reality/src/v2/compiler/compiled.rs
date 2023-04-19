@@ -119,6 +119,9 @@ impl<'a> Compiled<'a> {
 /// Compiled object struct,
 ///
 pub struct ObjectData<'a> {
+    /// Entity,
+    /// 
+    pub entity: Entity,
     /// Object's identifier,
     ///
     identifier: &'a Identifier,
@@ -183,6 +186,14 @@ pub enum Object<'a> {
 }
 
 impl<'a> Object<'a> {
+    /// Returns the current entity for this object,
+    /// 
+    pub fn entity(&self) -> Entity {
+        match self {
+            Object::Block(d) | Object::Root(d) | Object::Extension(d) => d.entity,
+        }
+    }
+
     /// Returns the object identifier,
     ///
     pub fn ident(&self) -> &Identifier {
@@ -319,9 +330,11 @@ impl<'a> Load for Object<'a> {
     type Layout = ObjectFormat<'a>;
 
     fn load(
+        entity: Entity,
         (identifier, properties, block, root, call, build, update, listen, compile): <Self::Layout as Join>::Type,
     ) -> Self {
         let object_data = ObjectData {
+            entity,
             identifier,
             properties,
             block,
@@ -369,7 +382,7 @@ pub type BuildFormat<'a> = (
 impl<'a> Load for Build<'a> {
     type Layout = BuildFormat<'a>;
 
-    fn load((build_log, identifier, properties): <Self::Layout as Join>::Type) -> Self {
+    fn load(entity: Entity, (build_log, identifier, properties): <Self::Layout as Join>::Type) -> Self {
         Build { build_log, identifier, properties }
     }
 }

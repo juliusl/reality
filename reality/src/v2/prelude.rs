@@ -11,6 +11,7 @@ pub use crate::v2::Compiler;
 pub use crate::v2::Framework;
 pub use crate::v2::Parser;
 pub use crate::v2::Runmd;
+pub use crate::v2::Visitor;
 pub use crate::v2::ThunkCall;
 pub use crate::v2::ThunkBuild;
 pub use crate::v2::ThunkListen;

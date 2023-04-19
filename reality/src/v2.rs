@@ -37,6 +37,9 @@ pub use documentation::Documentation;
 mod visitor;
 pub use visitor::Visitor;
 
+mod visitor_mut;
+pub use visitor_mut::VisitorMut;
+
 mod interner;
 pub use interner::Interner;
 

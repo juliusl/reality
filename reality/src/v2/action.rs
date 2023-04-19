@@ -1,4 +1,5 @@
 use specs::Component;
+use specs::Entity;
 use specs::VecStorage;
 use tracing::trace;
 use tracing::warn;
@@ -76,7 +77,7 @@ impl ActionBuffer {
         self.actions.push(config(config_ident, _config));
     }
 
-    pub fn config2(&self, target: &mut impl Visitor) -> Result<(), Error> {
+    pub fn config2(&self, entity: Entity, target: &mut impl Visitor) -> Result<(), Error> {
         for action in self.actions.iter() {
             match action {
                 Action::Config(ident, prop) => {
@@ -112,14 +113,14 @@ impl ActionBuffer {
                                             let config_ext = format!("{config}.{extension}.{name}")
                                                 .parse::<Identifier>()?;
                                             target.visit_property(name, prop);
-                                            target.visit_extension(&config_ext);
+                                            target.visit_extension(entity, &config_ext);
                                         }
 
                                         let config_prop = format!("{name}.{extension}.{property}")
                                             .parse::<Identifier>()?;
                                         let prop = properties.property(property).expect("should be a property since this is an extended property");
                                         target.visit_property(property, prop);
-                                        target.visit_extension(&config_prop);
+                                        target.visit_extension(entity, &config_prop);
                                     }
                                 }
                                 DispatchSignature::ExtendedProperty {
@@ -141,7 +142,7 @@ impl ActionBuffer {
                                             let config_ext = format!("{config}.{extension}.{name}")
                                                 .parse::<Identifier>()?;
                                             target.visit_property(name, prop);
-                                            target.visit_extension(&config_ext);
+                                            target.visit_extension(entity, &config_ext);
                                         }
                                     }
                                 }
