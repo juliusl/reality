@@ -368,7 +368,7 @@ impl Identifier {
                     }
                 }
                 StringInterpolationTokens::OptionalSuffixAssignment(_)
-                    if tokens.remainder().len() > 0 =>
+                    if tokens.remainder().len() > 0 && tokens.remainder() != ";" =>
                 {
                     panic!("Pattern error, optional suffix assignment can only be at the end")
                 }
@@ -384,6 +384,18 @@ impl Identifier {
         let mut map = BTreeMap::<String, String>::default();
         let buf = if let Some(start) = sint.start {
             if start > buf.len() {
+                trace!("start > buf.len() {} > {}, remaining: {:?}", start, buf.len(), sint.tokens);
+
+                if sint.tokens.len() > 1 {
+                    return None;
+                } else if sint.tokens.len() == 1 {
+                    if let Some(StringInterpolationTokens::OptionalSuffixAssignment(_)) = sint.tokens.pop() {
+                        return Some(map);
+                    }
+                } else if sint.tokens.is_empty() {
+                    return Some(map);
+                }
+
                 return None;
             }
 
@@ -1155,5 +1167,16 @@ mod tests {
             .unwrap();
 
         println!("{:#}", test.absolute().unwrap());
+    }
+
+    #[test]
+    #[traced_test]
+    fn test_interpolation_misc() {
+        let test = r##"app.#block#.usage.#root#.plugin.println"##
+            .parse::<Identifier>()
+            .unwrap();
+
+        let map = test.interpolate("#root#.println.(?input)");
+        println!("{:?}", map);
     }
 }

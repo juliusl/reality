@@ -1,13 +1,17 @@
 use crate::Value;
+
 use std::fmt::Display;
 use std::ops::Index;
 use std::sync::Arc;
+use specs::VecStorage;
+use specs::Component;
 
 use super::Properties;
 
 /// Enumeration of property types
 ///
-#[derive(Default, Debug, Hash, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Component, Default, Debug, Hash, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[storage(VecStorage)]
 pub enum Property {
     /// Property is a single value,
     ///

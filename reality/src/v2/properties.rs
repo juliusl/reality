@@ -250,6 +250,10 @@ impl Visitor for Properties {
     fn visit_properties(&mut self, properties: &Properties) {
         self.add_readonly_properties(properties);
     }
+
+    fn visit_property(&mut self, name: &String, property: &Property) {
+        self.set(name, property.clone());
+    }
 }
 
 impl Display for Properties {

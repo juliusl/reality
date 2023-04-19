@@ -298,9 +298,11 @@ mod tests {
     use quote::format_ident;
     use quote::quote;
     use quote::ToTokens;
+    use syn::Expr;
     use syn::ext::IdentExt;
     use syn::parse::Parse;
     use syn::parse2;
+    use syn::punctuated::Punctuated;
     use syn::token::Mut;
     use syn::Attribute;
     use syn::Data;
@@ -308,8 +310,37 @@ mod tests {
     use syn::Fields;
     use syn::Lifetime;
     use syn::LitStr;
+    use syn::Path;
     use syn::Token;
     use syn::Visibility;
+
+    #[test]
+    fn test_compile_thunk_derive_expr() {
+        let ts = <proc_macro2::TokenStream as std::str::FromStr>::from_str(
+            r#"
+#[compile(Test(|e| e.testa))]
+struct Test {
+}       
+"#,
+        )
+        .unwrap();
+
+        let input = parse2::<DeriveInput>(ts).unwrap();
+
+        // for a in input.attrs.iter() {
+        //     a.parse_nested_meta(|nested| {
+
+        //         let expr: Expr = nested.input.parse().unwrap();
+        //         if let Expr::Paren(expr) = &expr {
+        //             if let Expr::Closure(expr) = *expr.expr {
+                       
+        //             }
+        //         } else {
+        //             Err(nested.error("Expecting a closure like this `|e| e.fn_name`"))
+        //         }
+        //     }).unwrap();
+        // }
+    }
 
     #[test]
     fn test_thunk_macro() {

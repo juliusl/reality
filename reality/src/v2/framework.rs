@@ -25,6 +25,7 @@ use crate::v2::WorldWrapper;
 use crate::Error;
 use crate::Identifier;
 
+use super::DispatchSignature;
 use super::compiler::Object;
 use super::BuildLog;
 use super::DispatchRef;
@@ -93,13 +94,13 @@ impl Framework {
             if name == property {
                 return Some((
                     format!("{:#}", other),
-                    ConfigPattern::NameInput(format!("#root#.{}.(input)", name)),
+                    ConfigPattern::NameInput(format!("#root#.{}.(?input)", name)),
                 ));
             } else {
                 // Otherwise, the pattern is {name}.{pattern}.(input)
                 return Some((
                     format!("{:#}", other),
-                    ConfigPattern::NamePropertyInput(format!("#root#.{}.{}.(input)", name, property)),
+                    ConfigPattern::NamePropertyInput(format!("#root#.{}.{}.(?input)", name, property)),
                 ));
             }
         }
@@ -113,7 +114,7 @@ impl Framework {
         let owner = format!("{:#}", properties.owner());
         trace!("Analyzing  -- {}", owner);
         trace!("           -- {}", properties);
-
+        let subject = properties.owner().subject().to_string();
         let mut owner = owner.parse::<Identifier>()?;
         let mut found = vec![];
 
@@ -125,16 +126,18 @@ impl Framework {
             match ext_config_pattern {
                 ConfigPattern::NameInput(config_pattern) => {
                     if let Some(map) = owner.interpolate(config_pattern) {
+                        let input = map.get("input").unwrap_or(&subject);
+
                         let properties = read_only
                             .clone()
-                            .branch(pattern, Some(property_value(&map["input"])))?;
+                            .branch(pattern, Some(property_value(input)))?;
 
                         found.push((
                             Property::Properties(properties.into()),
                             owner.clone(),
                             pattern,
                             config_pattern,
-                            map["input"].clone(),
+                            input.to_string(),
                         ));
 
                         trace!("Truncating --> {:?}", owner);
@@ -142,6 +145,8 @@ impl Framework {
                         owner.add_tag("root");
                         trace!("Truncated  --> {:#}", owner);
                         break;
+                    } else {
+                        println!("NameInput skipped -- {:#}", owner);
                     }
                 }
                 ConfigPattern::NamePropertyInput(config_pattern) => {
@@ -213,15 +218,15 @@ impl Framework {
                     properties,
                     ident
                 );
+                let config_ident = pattern.parse::<Identifier>()?;
+                action_buffer.push_config(&config_ident, &property);
             } else {
                 trace!(
-                    "Found config {:?} {:#} -- {pattern} --> {config_pattern} --> {input}",
+                    "(Skipping) Found config {:?} {:#} -- {pattern} --> {config_pattern} --> {input}",
                     property,
                     ident
                 );
             }
-            let config_ident = pattern.parse::<Identifier>()?;
-            action_buffer.push_config(&config_ident, &property);
         }
 
         Ok(action_buffer)
@@ -267,10 +272,27 @@ impl Visitor for Framework {
             return;
         }
 
-        //
+        let matches = DispatchSignature::get_match(properties.owner());
+        if matches.iter().any(|m| {
+            match m {
+                DispatchSignature::ConfigRoot { .. } |
+                DispatchSignature::ConfigRootExt { .. } |
+                DispatchSignature::ConfigExtendedProperty { .. } |
+                DispatchSignature::ExtendedProperty { .. } => false,
+                _ => true
+             }
+        }) || matches.is_empty() {
+            println!("Skipping {:?}, {:#}", matches, properties.owner());
+            return;
+        } else {
+            println!("Accepting {:?}, {:#}", matches, properties.owner());
+        }
+
         let key = format!("{:#}", properties.owner());
 
         if !self.config_properties.contains_key(&key) {
+            println!("Adding -- {}", key);
+
             self.config_properties
                 .insert(key, Arc::new(properties.clone()));
         }

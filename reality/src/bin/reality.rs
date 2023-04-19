@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
 }
 
 mod framework {
-    use reality::v2::{prelude::*, BuildLog};
+    use reality::v2::{prelude::*, BuildLog, Visitor};
     use specs::VecStorage;
 
     pub static ROOT: &'static str = r##"
@@ -78,6 +78,10 @@ mod framework {
         /// Help shell command for example
         /// 
         help: Option<Shell>,
+    }
+
+    impl Visitor for Example {
+        
     }
 
     #[derive(Runmd, Config, Clone, Apply, Debug, Default)]
@@ -137,6 +141,10 @@ mod framework {
         /// 
         #[root]
         cli: Cli,
+    }
+
+    impl Visitor for Shell {
+        
     }
 
     impl Apply for Shell {

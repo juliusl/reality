@@ -75,6 +75,36 @@ impl Parse for StructData {
     }
 }
 
+pub(crate) struct CompileAttribute {
+    /// Path,
+    /// 
+    path: Path,
+}
+
+impl CompileAttribute {
+    // If arguments are included, interpret as an expression and derive thunk trait,
+    // 
+    // pub fn t(&self) -> TokenStream {
+    //     for s in self.path.segments.iter() {
+    //         match s.arguments {
+    //             syn::PathArguments::None => {
+    //                 continue;
+    //             },
+    //             syn::PathArguments::AngleBracketed(_) => {
+                    
+    //             },
+    //             syn::PathArguments::Parenthesized(inner) => {
+                    
+    //             },
+    //         }
+    //     }
+
+    //     quote! { 
+
+    //     }
+    // }
+}
+
 impl StructData {
     /// Returns token stream of impl for the Apply trait
     ///
@@ -117,7 +147,6 @@ impl StructData {
                     #lit => {
                         let ident = format!("{:#}", ident).replace(#lit, "").trim_matches('.').parse::<reality::Identifier>()?;
                         reality::v2::Config::config(&mut self.#name, &ident, property)?;
-                        return Ok(());
                     }
                 }
             });
@@ -310,7 +339,7 @@ impl StructData {
                         .transmute::<ActionBuffer>()
                         .map_into(move |b| {
                             let mut clone = clone;
-                            b.config(&mut clone)?;
+                            b.config2(&mut clone)?;
                             Ok(clone)
                         })
                         .result()?

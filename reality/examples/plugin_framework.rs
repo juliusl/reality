@@ -5,6 +5,12 @@ use test_framework::DispatchtestaExt;
 
 /// Example of a plugin framework compiler,
 ///
+/// A plugin adds functionality to a program.
+///
+/// This example will demonstrate runmd in this case.
+///
+/// Take for example we have 2 machines, machine A and machine B.
+///
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::Subscriber::builder()
@@ -13,7 +19,7 @@ async fn main() -> Result<()> {
                 .from_env()
                 .expect("should be able to build from env variables")
                 .add_directive(
-                    "reality::v2::action=trace"
+                    "reality::v2::framework=trace"
                         .parse()
                         .expect("should be able to parse tracing settings"),
                 ),
@@ -38,90 +44,15 @@ async fn main() -> Result<()> {
     let log = compiler.last_build_log().unwrap();
 
     let matches = DispatchSignature::get_matches(log.clone());
-
     println!("{:#?}", matches);
+
     log.find_ref::<ActionBuffer>("app.#block#.usage.#root#.plugin.println", &mut compiler)
         .unwrap()
         .transmute::<Properties>()
         .testa()?
         .enable_async()
-        .call().await?;
-
-    // for (id, _, e) in log.search_index("#block#.#root#.plugin.println") {
-    //     let exists = compiler
-    //         .as_mut()
-    //         .read_component::<ThunkTestA>()
-    //         .contains(*e);
-    //     println!("{:#} {}", id, exists);
-    //     let build_ref = DispatchRef::<ThunkTestA>::new(*e, &mut compiler);
-    //     build_ref
-    //         .transmute::<Properties>()
-    //         .testa()?;
-    //     // .enable_async()
-    //     // .read(|tc| {
-    //     //     let tc = tc.clone();
-    //     //     async move {
-    //     //         tc.call().await?;
-    //     //         Ok(())
-    //     //     }
-    //     // })
-    //     // .await;
-    // }
-
-    // .transmute::<ActionBuffer>()
-    // .read(|a| {
-    //     println!("{:#?}", a);
-
-    //     if let Some(Action::Config(ident, prop)) = a.iter_actions().last() {
-    //         println!("Config: {:#}", ident);
-    //         println!("Properties: {}", prop);
-    //         println!("{:?}", prop.as_symbol());
-    //     }
-
-    //     Ok(())
-    // });
-
-    // for (_, _, e) in log.search_index("#block#.#root#.plugin.process") {
-    //     let build_ref = DispatchRef::<ThunkCall>::new(*e, &mut compiler);
-    //     build_ref
-    //         .enable_async()
-    //         .read(|tc| {
-    //             let tc = tc.clone();
-    //             async move {
-    //                 tc.call().await?;
-    //                 Ok(())
-    //             }
-    //         })
-    //         .await;
-    // }
-
-    // /*
-    //    MUST_INITIALIZE => () {
-    //        self::new()
-    //    }
-    //    MUST_BRANCH => (self, lazy_update) {
-    //        .with(self.clone()).build()
-    //    }
-    // */
-    // for (_, _, e) in log.search_index("plugin.println") {
-    //     let build_ref = DispatchRef::<ThunkCall>::new(*e, &mut compiler);
-    //     build_ref
-    //         .read_with::<test_framework::ThunkTestA>(|_, ta| {
-    //             ta.testa();
-    //             Ok(())
-    //         })
-    //         .enable_async()
-    //         .map_with::<test_framework::Println, _>(|call, println| {
-    //             reality::v2::call_config_into(call.clone(), println.clone())
-    //         })
-    //         .await
-    //         .disable_async()
-    //         .transmute::<test_framework::Println>()
-    //         .read(|p| {
-    //             println!("{:?}", p);
-    //             Ok(())
-    //         });
-    // }
+        .call()
+        .await?;
 
     Ok(())
 }
@@ -259,16 +190,29 @@ pub struct Test<'a> {
     properties: &'a Properties,
 }
 
+#[allow(unused_imports)]
 pub mod test_framework {
-    use reality::{
-        v2::{
-            prelude::*, property_value, AsyncDispatch, BuildLog, Config, DispatchRef, Map, MapWith,
-        },
-        Identifier, Runmd,
-    };
-    use specs::{storage, DenseVecStorage, VecStorage};
-    use std::{collections::BTreeMap, path::PathBuf, sync::Arc, ops::{IndexMut, Index}};
-    use tracing::{trace, Id};
+    use reality::v2::prelude::*;
+    use reality::v2::property_value;
+    use reality::v2::AsyncDispatch;
+    use reality::v2::BuildLog;
+    use reality::v2::Config;
+    use reality::v2::DispatchRef;
+    use reality::v2::Map;
+    use reality::v2::MapWith;
+    use reality::v2::Visitor;
+    use reality::Identifier;
+    use reality::Runmd;
+    use specs::storage;
+    use specs::DenseVecStorage;
+    use specs::VecStorage;
+    use std::collections::BTreeMap;
+    use std::ops::Index;
+    use std::ops::IndexMut;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use tracing::trace;
+    use tracing::Id;
     use tracing_test::traced_test;
 
     #[derive(Config, Clone, Apply, Debug, Default)]
@@ -359,6 +303,36 @@ pub mod test_framework {
         plugin: Plugin,
     }
 
+    impl Visitor for Plugin {
+        fn visit_property(&mut self, name: &String, property: &Property) {
+            match name.as_str() {
+                "call" => {
+                    self.call.visit_property(name, property);
+                }
+                "list" => {}
+                _ => {}
+            }
+        }
+    }
+
+    impl Visitor for Println {
+        fn visit_property(&mut self, name: &String, property: &Property) {
+            match name.as_str() {
+                "println" => {
+                    self.println.visit_property(name, property);
+                }
+                "stderr" => {
+                    self.stderr.visit_property(name, property);
+                    println!("Configured println.stderr {:?}", self.stderr);
+                }
+                "stdout" => {
+                    self.stdout.visit_property(name, property);
+                }
+                _ => {}
+            }
+        }
+    }
+
     #[async_trait]
     impl reality::v2::Call for Println {
         async fn call(&self) -> Result<Properties> {
@@ -409,39 +383,6 @@ pub mod test_framework {
                 plugin: Plugin::new(),
             }
         }
-
-        /// Should generate code like this,
-        ///
-        /// ```
-        /// .read(|s| {
-        ///     self.test_config()
-        /// })
-        /// ```
-        ///
-        pub fn test_config(&self) -> Result<()> {
-            Ok(())
-        }
-
-        /// Should generate code like this,
-        ///
-        /// ```
-        /// .write_with::<Properties>(|s, p| {
-        ///     s.config_path(p)
-        /// })
-        /// ```
-        ///
-        /// Called when,
-        ///
-        /// ```runmd
-        /// +       .plugin Process
-        /// <path>  .redirect
-        ///
-        /// +        .other
-        /// <plugin> .process test : .redirect test/test.out
-        /// ```
-        pub fn config_path(&mut self, properties: &Properties) -> Result<()> {
-            todo!()
-        }
     }
 
     #[derive(Runmd, Config, Debug, Clone, Component)]
@@ -456,7 +397,6 @@ pub mod test_framework {
 
     impl Process {
         pub const fn new() -> Self {
-            
             Self {
                 process: String::new(),
                 redirect: String::new(),
@@ -464,6 +404,8 @@ pub mod test_framework {
             }
         }
     }
+
+    impl Visitor for Process {}
 
     #[async_trait]
     impl reality::v2::Call for Process {
@@ -603,3 +545,81 @@ mod prototype {
         }
     }
 }
+
+/*
+   // for (id, _, e) in log.search_index("#block#.#root#.plugin.println") {
+   //     let exists = compiler
+   //         .as_mut()
+   //         .read_component::<ThunkTestA>()
+   //         .contains(*e);
+   //     println!("{:#} {}", id, exists);
+   //     let build_ref = DispatchRef::<ThunkTestA>::new(*e, &mut compiler);
+   //     build_ref
+   //         .transmute::<Properties>()
+   //         .testa()?;
+   //     // .enable_async()
+   //     // .read(|tc| {
+   //     //     let tc = tc.clone();
+   //     //     async move {
+   //     //         tc.call().await?;
+   //     //         Ok(())
+   //     //     }
+   //     // })
+   //     // .await;
+   // }
+
+   // .transmute::<ActionBuffer>()
+   // .read(|a| {
+   //     println!("{:#?}", a);
+
+   //     if let Some(Action::Config(ident, prop)) = a.iter_actions().last() {
+   //         println!("Config: {:#}", ident);
+   //         println!("Properties: {}", prop);
+   //         println!("{:?}", prop.as_symbol());
+   //     }
+
+   //     Ok(())
+   // });
+
+   // for (_, _, e) in log.search_index("#block#.#root#.plugin.process") {
+   //     let build_ref = DispatchRef::<ThunkCall>::new(*e, &mut compiler);
+   //     build_ref
+   //         .enable_async()
+   //         .read(|tc| {
+   //             let tc = tc.clone();
+   //             async move {
+   //                 tc.call().await?;
+   //                 Ok(())
+   //             }
+   //         })
+   //         .await;
+   // }
+
+   // /*
+   //    MUST_INITIALIZE => () {
+   //        self::new()
+   //    }
+   //    MUST_BRANCH => (self, lazy_update) {
+   //        .with(self.clone()).build()
+   //    }
+   // */
+   // for (_, _, e) in log.search_index("plugin.println") {
+   //     let build_ref = DispatchRef::<ThunkCall>::new(*e, &mut compiler);
+   //     build_ref
+   //         .read_with::<test_framework::ThunkTestA>(|_, ta| {
+   //             ta.testa();
+   //             Ok(())
+   //         })
+   //         .enable_async()
+   //         .map_with::<test_framework::Println, _>(|call, println| {
+   //             reality::v2::call_config_into(call.clone(), println.clone())
+   //         })
+   //         .await
+   //         .disable_async()
+   //         .transmute::<test_framework::Println>()
+   //         .read(|p| {
+   //             println!("{:?}", p);
+   //             Ok(())
+   //         });
+   // }
+*/

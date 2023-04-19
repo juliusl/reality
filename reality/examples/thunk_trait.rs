@@ -1,4 +1,5 @@
-use reality::v2::prelude::*;
+use reality::v2::{prelude::*, Visitor};
+use specs::VecStorage;
 
 /// Test A trait
 ///
@@ -12,27 +13,45 @@ pub trait TestA {
     async fn testb(&self) -> reality::Result<()>;
 }
 
+#[derive(Config, Component, Clone)]
+#[compile(ThunkTestA)]
+#[storage(VecStorage)]
 struct ATest {
     param: usize,
+}
+
+impl ATest {
+    ///
+    /// 
+    pub fn print_self(&self) -> Result<()> {
+        println!("param: {}", self.param);
+
+        Ok(())
+    }
+
+    pub async fn print_self_async(&self) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl Visitor for ATest {
 }
 
 #[async_trait]
 impl TestA for ATest {
     fn testa(&self) -> reality::Result<()> {
-        println!("hello test a {}", self.param);
-        Ok(())
+        self.print_self()
     }
 
     async fn testb(&self) -> reality::Result<()>  {
-        println!("hello test b {}", self.param + 4096);
-        Ok(())
+        self.print_self_async().await
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let testa = thunk_testa(ATest { param: 4096 });
-
+    // thunk_testa();
     testa.testa()?;
     testa.testb().await
 }

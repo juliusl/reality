@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use tracing::trace;
+
 use crate::v2::states::Object;
 use crate::Identifier;
 use crate::Value;
@@ -169,6 +171,8 @@ pub trait Visitor {
     /// Note: If overriding the default implementation, visit_property will need to be called manually.
     /// 
     fn visit_properties(&mut self, properties: &Properties) {
+        self.visit_identifier(properties.owner());
+
         for (name, property) in properties.iter_properties() {
             self.visit_property(name, property);
         }
@@ -196,5 +200,56 @@ pub trait Visitor {
 impl Visitor for () {
     fn visit_identifier(&mut self, identifier: &Identifier) {
         println!("{:#?}", identifier);
+    }
+
+    fn visit_property(&mut self, name: &String, property: &Property) {
+        trace!("name: {name}, property: {:?}", property);
+    }
+}
+
+impl Visitor for String {
+    fn visit_symbol(&mut self, _: &String, _: Option<usize>, symbol: &String) {
+        *self = symbol.to_string();
+    }
+
+    fn visit_text_buffer(&mut self, _: &String, _: Option<usize>, text_buffer: &String) {
+        *self = text_buffer.to_string();
+    }
+}
+
+impl Visitor for Vec<String> {
+    fn visit_symbol(&mut self, _: &String, idx: Option<usize>, symbol: &String) {
+        if let Some(idx) = idx {
+            if self.get(idx).is_some() {
+            } else {
+                self.insert(idx, symbol.to_string());
+            }
+        } else {
+            self.push(symbol.to_string());
+        }
+    }
+
+    fn visit_text_buffer(&mut self, _: &String, idx: Option<usize>, text_buffer: &String) {
+        if let Some(idx) = idx {
+            self.insert(idx, text_buffer.to_string());
+        } else {
+            self.push(text_buffer.to_string());
+        }
+    }
+}
+
+impl Visitor for usize {
+    fn visit_int(&mut self, _: &String, _: Option<usize>, i: i32) {
+        if i >= 0 {
+            *self = i as usize;
+        } else {
+            // Skipping because integer is signed
+        }
+    }
+}
+
+impl Visitor for i32 {
+    fn visit_int(&mut self, _: &String, _: Option<usize>, i: i32) {
+        *self = i;
     }
 }

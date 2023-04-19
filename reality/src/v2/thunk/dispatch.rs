@@ -10,18 +10,18 @@ dispatch_signature! {
     ///
     pub enum DispatchSignature {
         #[interpolate("!#block#.#root#.(config);")]
-        RootConfig,
+        ConfigRoot,
         /// Dispatch would map to RootConfigExt signature --> .plugin.#root#.(ext),
         ///
         #[interpolate("!#block#.#root#.(config).(ext);")]
-        RootConfigExt,
+        ConfigRootExt,
         /// Signature of an indivisual property for configuring an extension of an extended property,
         /// 
         #[interpolate("!#block#.#root#.(config).(ext).(prop);")]
-        ExtendedPropertyConfig,
+        ConfigExtendedProperty,
         /// Signature of an extended property,
         /// 
-        #[interpolate("#root#.(config).(name).(extension).(property);")]
+        #[interpolate("#root#.(config).(name).(extension).(?property);")]
         ExtendedProperty,
         /// Given,
         ///
