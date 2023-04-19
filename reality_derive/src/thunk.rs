@@ -768,7 +768,6 @@ impl Parse for ThunkTraitFn {
                         lazy_builder_pos = Some(0);
                         None
                     } else {
-                        dbg!(pat.ty.to_token_stream());
                         match pat.ty.deref() {
                             Type::Reference(r) if r.mutability.is_some() => {
                                 with_mut = true;

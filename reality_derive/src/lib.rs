@@ -148,6 +148,8 @@ pub fn derive_apply(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 /// Derives Runmd trait,
+/// 
+/// Note: In order to derive this trait, the type must also derive `Component and Clone`.
 ///
 #[proc_macro_derive(Runmd, attributes(compile, block, root, ext))]
 pub fn derive_runmd(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
