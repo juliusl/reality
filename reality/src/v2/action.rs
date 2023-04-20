@@ -77,7 +77,7 @@ impl ActionBuffer {
         self.actions.push(config(config_ident, _config));
     }
 
-    pub fn config2(&self, entity: Entity, target: &mut impl Visitor) -> Result<(), Error> {
+    pub fn config(&self, entity: Entity, target: &mut impl Visitor) -> Result<(), Error> {
         for action in self.actions.iter() {
             match action {
                 Action::Config(ident, prop) => {
@@ -92,6 +92,24 @@ impl ActionBuffer {
                     match sigs.first() {
                         Some(sig) => {
                             match sig {
+                                DispatchSignature::ConfigRootExtProperty {
+                                    config,
+                                    name,
+                                    ext,
+                                    extname,
+                                    property,
+                                } => {
+                                    trace!(
+                                        config,
+                                        name,
+                                        ext,
+                                        extname,
+                                        property,
+                                        "Detected Config Root Extension Property --"
+                                    );
+                                    target.visit_property(property, prop);
+                                    target.visit_extension(EntityVisitor::Owner(entity), ident);
+                                }
                                 DispatchSignature::ExtendedProperty {
                                     config,
                                     name,

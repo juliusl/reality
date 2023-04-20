@@ -26,6 +26,8 @@ pub use crate::v2::command::import_toml;
 pub use crate::v2::property_list;
 pub use crate::v2::property_value;
 
+pub use crate::v2::states::*;
+
 mod ext {
     pub use crate::v2::thunk::DispatchcallExt;
 }
@@ -58,8 +60,10 @@ pub use specs::ReadStorage;
 pub use specs::WriteStorage;
 pub use specs::Write;
 pub use specs::Read;
-pub use specs::join::MaybeJoin;
 pub use specs::LazyUpdate;
+pub use specs::storage::VecStorage;
+pub use specs::storage::HashMapStorage;
+pub use specs::join::MaybeJoin;
 pub use specs::world::LazyBuilder;
 
 /// async_trait -- Async trait attribute

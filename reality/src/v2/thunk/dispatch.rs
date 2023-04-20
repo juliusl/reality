@@ -5,9 +5,10 @@ use async_trait::async_trait;
 use reality_derive::dispatch_signature;
 use std::sync::Arc;
 
-dispatch_signature! {
+
     /// Dispatch signatures,
     ///
+    #[dispatch_signature]
     pub enum DispatchSignature {
         #[interpolate("!#block#.#root#.(config);")]
         ConfigRoot,
@@ -15,10 +16,14 @@ dispatch_signature! {
         ///
         #[interpolate("!#block#.#root#.(config).(ext);")]
         ConfigRootExt,
-        /// Signature of an indivisual property for configuring an extension of an extended property,
+        /// Signature of an individual property for configuring an extension of an extended property,
         /// 
         #[interpolate("!#block#.#root#.(config).(ext).(prop);")]
         ConfigExtendedProperty,
+        /// Signature of a property belonging to a config root extensions,
+        /// 
+        #[interpolate("!#block#.#root#.(config).(name).(ext).(extname).(property);")]
+        ConfigRootExtProperty,
         /// Signature of an extended property,
         /// 
         #[interpolate("#root#.(config).(name).(extension).(?property);")]
@@ -46,7 +51,6 @@ dispatch_signature! {
         #[interpolate("#block#.#root#.(root).(config).(ext).(name).(?prop)")]
         BlockRootConfigExtNameProp,
     }
-}
 
 /// Trait to run async code and then dispatch actions to a world,
 ///

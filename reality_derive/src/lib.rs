@@ -213,8 +213,8 @@ pub fn thunk(
 
 /// Generates structs for enum fields that use an #[interpolate(..)] attribute,
 ///
-#[proc_macro]
-pub fn dispatch_signature(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+#[proc_macro_attribute]
+pub fn dispatch_signature(_attr: proc_macro::TokenStream, input: proc_macro::TokenStream,) -> proc_macro::TokenStream {
     let item_enum = parse_macro_input!(input as ItemEnum);
     let name = &item_enum.ident;
     let generics = &item_enum.generics;

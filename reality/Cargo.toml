@@ -26,8 +26,6 @@ async-trait = "0.1.64"
 toml = "0.7.2"
 reality_derive = { path = "../reality_derive" }
 clap =  { version = "4.2.1", features = [ "cargo", "string" ] }
-
-[dev-dependencies]
 tracing-subscriber = "0.3.16"
 
 [[example]]

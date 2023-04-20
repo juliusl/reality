@@ -147,7 +147,7 @@ impl Framework {
                         trace!("Truncated  --> {:#}", owner);
                         break;
                     } else {
-                        println!("NameInput skipped -- {:#}", owner);
+                        trace!("NameInput skipped -- {:#}", owner);
                     }
                 }
                 ConfigPattern::NamePropertyInput(config_pattern) => {
@@ -220,6 +220,13 @@ impl Framework {
                     ident
                 );
                 let config_ident = pattern.parse::<Identifier>()?;
+                if let Some(properties) = self.config_properties.get(&format!("{:#}", properties.owner())) {
+                    for (name, prop) in properties.iter_properties() {
+                        let config_ident = config_ident.branch(name)?;
+                        action_buffer.push_config(&config_ident, &prop);
+                    }
+                }
+
                 action_buffer.push_config(&config_ident, &property);
             } else {
                 trace!(
@@ -283,16 +290,16 @@ impl Visitor for Framework {
                 _ => true
              }
         }) || matches.is_empty() {
-            println!("Skipping {:?}, {:#}", matches, properties.owner());
+            trace!("Skipping {:?}, {:#}", matches, properties.owner());
             return;
         } else {
-            println!("Accepting {:?}, {:#}", matches, properties.owner());
+            trace!("Accepting {:?}, {:#}", matches, properties.owner());
         }
 
         let key = format!("{:#}", properties.owner());
 
         if !self.config_properties.contains_key(&key) {
-            println!("Adding -- {}", key);
+            trace!("Adding -- {}", key);
 
             self.config_properties
                 .insert(key, Arc::new(properties.clone()));
