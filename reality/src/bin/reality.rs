@@ -16,24 +16,12 @@ async fn main() -> Result<()> {
     compiler.update_last_build(&mut framework);
 
     apply_framework!(
-        compiler, 
-        framework::Cli, 
-        framework::Shell
+        compiler,
     );
 
-    let log = compiler.last_build_log().expect("should have a build log");
-    println!("{}", log);
-    println!("{:#?}", framework);
-
-    log.find_ref::<framework::Shell>(
-        "#block#.#root#.main",
-        &mut compiler,
-    )
-    .expect("Should have a main root to start")
-    .read(|b| {
-        println!("{:#?}", b);
-        Ok(())
-    });
+    let _ = compiler
+        .last_build_log()
+        .expect("should have a build log");
 
     Ok(())
 }
@@ -45,109 +33,39 @@ mod framework {
 
     pub static ROOT: &'static str = r##"
     ```runmd
-    +  .cli                 # Root for designing cli extensions
-    <> .command             # Command extension
-    :   alias   .symbol     # Aliases to use for this command
-    <>  .arg                # Argument extension
-    :   flag    .false      # True if this argument is a flag
-    :   pos     .int        # Argument position 
-
-    +  .cli         shell           # CLI interface for a shell
-    : shell         .symbol         # Input to pass to the shell
-    : arg           .symbol         # Map of name/argument values 
-    : <command>     .shell          : .alias sh
-    : <arg>         .arg
-
+    +  .cli         # Extensions for describing a cli command
+    <> .command     # Extension to define a cli command
+    <> .arg         # Extension to define a cli argument
     ```
     "##;
 
     pub static EXAMPLE: &'static str = r##"
     ```runmd examples
-    +         .example        # Example Usage 
-    <cli>     .shell  help    # Prints help information, ex. shell help --name example 
-    : name    .arg            # Name to find help for
-    : title   .arg            # Title to find help for
-    <cli>     .shell  view    # Views a the properties of entities, 
-    : pattern .arg            # Pattern to query for entities,
+    + .cli export
+    <command>   .export     # Creates a command `export`
+    <arg>       .out        # Adds an argument called `out`
     ```
     "##;
 
-    #[derive(Runmd, Component, Clone, Default)]
-    #[storage(VecStorage)]
-    #[compile]
-    pub struct Example {
-        /// Help shell command for example
-        /// 
-        help: Option<Shell>,
-    }
-
-    #[derive(Runmd, Component, Clone, Debug, Default)]
-    #[storage(VecStorage)]
+    
+    /// Struct 
+    /// 
     pub struct Cli {
-        command: Command,
-        arg: (),
+        command: clap::builder::Command
     }
 
-    impl Cli {
-        pub const fn new() -> Self {
-            Self {
-                command: Command::new(),
-                arg: (),
-            }
-        }
-    }
+    impl Visitor for Cli {
+        fn visit_symbol(&mut self, name: &String, idx: Option<usize>, symbol: &String) {
+            match name.as_str() {
+                "about" => {
+                    self.command = self.command.clone().about(symbol);
+                }
+                "version" => {
+                    self.command = self.command.clone().version(symbol);
+                }
+                _ => {
 
-    /// Command extension settings,
-    /// 
-    #[derive(Runmd, Component, Clone, Debug, Default)]
-    #[storage(VecStorage)]
-    pub struct Command {
-        /// Command name,
-        /// 
-        command: String,
-        /// Aliases for this command,
-        /// 
-        alias: Vec<String>,
-    }
-
-    impl Command {
-        /// Creates a new empty command,
-        /// 
-        pub const fn new() -> Self {
-            Self { command: String::new(), alias: vec![] }
-        }
-    }
-
-    /// 
-    #[derive(Runmd, Clone, Default, Debug, Component)]
-    #[storage(VecStorage)]
-    #[compile]
-    pub struct Shell {
-        /// Command to execute against Shell,
-        /// 
-        shell: String,
-        /// Argument to indicate debug mode,
-        /// 
-        debug: bool,
-        /// CLI Settings for shell root,
-        /// 
-        #[root]
-        cli: Cli,
-    }
-
-    #[async_trait]
-    impl Call for Shell {
-        async fn call(&self) -> Result<Properties> {
-            todo!()
-        }
-    }
-
-    impl Shell {
-        pub const fn new() -> Self {
-            Self {
-                shell: String::new(),
-                debug: false,
-                cli: Cli::new(),
+                }
             }
         }
     }
