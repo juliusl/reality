@@ -296,6 +296,27 @@ impl Identifier {
         }
     }
 
+    /// Returns immediate ancestors of this identifier,
+    ///
+    pub fn ancestors(&self) -> Vec<Identifier> {
+        let mut start = self.clone();
+        let mut parts = vec![];
+
+        while let Some(parent) = start.parent() {
+            parts.push(parent.deref().clone());
+            start = parent.deref().clone();
+        }
+
+        parts.push(self.clone());
+        parts
+    }
+
+    /// Return identifier parts,
+    ///
+    pub fn parts(&self) -> Result<Vec<String>, Error> {
+        parts(&self.buf)
+    }
+
     /// Interpolates a pattern expression into a map with user-assigned keys,
     ///
     /// Example,
@@ -367,10 +388,30 @@ impl Identifier {
                         return None;
                     }
                 }
-                StringInterpolationTokens::OptionalSuffixAssignment(_)
-                    if tokens.remainder().len() > 0 && tokens.remainder() != ";" =>
-                {
-                    panic!("Pattern error, optional suffix assignment can only be at the end")
+                StringInterpolationTokens::OptionalSuffixAssignment(_) => {
+                    trace!("Optional Suffix detected, parsing remainder -- only optional and break tokens are allowed past this point");
+                    sint.tokens.push(token);
+
+                    while let Some(token) = tokens.next() {
+                        match token {
+                            StringInterpolationTokens::OptionalSuffixAssignment(_) => {
+                                sint.tokens.push(token);
+                                continue;
+                            },
+                            StringInterpolationTokens::Break => {
+                                sint.tokens.push(token);
+                                break;
+                            },
+                            StringInterpolationTokens::Error => {
+                                continue;
+                            },
+                            _ => {
+                                panic!("Only optional and break tokens are allowed after an optional assignment is used.");
+                            }
+                        }
+                    }
+                    
+                    break;
                 }
                 StringInterpolationTokens::Error => {
                     continue;
@@ -508,27 +549,6 @@ impl Identifier {
     ///
     fn should_escape_with_quotes(s: &str) -> bool {
         s.contains(".") || s.contains(" ") || s.contains("\t")
-    }
-
-    /// Returns immediate ancestors of this identifier,
-    ///
-    pub fn ancestors(&self) -> Vec<Identifier> {
-        let mut start = self.clone();
-        let mut parts = vec![];
-
-        while let Some(parent) = start.parent() {
-            parts.push(parent.deref().clone());
-            start = parent.deref().clone();
-        }
-
-        parts.push(self.clone());
-        parts
-    }
-
-    /// Return identifier parts,
-    ///
-    pub fn parts(&self) -> Result<Vec<String>, Error> {
-        parts(&self.buf)
     }
 }
 
@@ -1172,11 +1192,26 @@ mod tests {
     #[test]
     #[traced_test]
     fn test_interpolation_misc() {
-        let test = r##"app.#block#.usage.#root#.plugin.println"##
+        let test = r##"app.#block#.usage.#root#.plugin.println.stderr."Hello World""##
             .parse::<Identifier>()
             .unwrap();
 
-        let map = test.interpolate("#root#.println.(?input)");
-        println!("{:?}", map);
+        let map = test.interpolate("#root#.println.(?input)").unwrap();
+        assert_eq!("stderr", map["input"].as_str());
+
+        let map = test.interpolate("#root#.plugin.(subject).(?property).(?value);").unwrap();
+        assert_eq!("println", map["subject"].as_str());
+        assert_eq!("stderr", map["property"].as_str());
+        assert_eq!("Hello World", map["value"].as_str());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_optional_assignment() {
+        let test = r##"app.#block#.usage.#root#.plugin.println.stderr."Hello World""##
+            .parse::<Identifier>()
+            .unwrap();
+
+        let _ = test.interpolate("#root#.(?root).(subject)");
     }
 }
