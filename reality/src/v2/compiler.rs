@@ -38,6 +38,8 @@ pub use dispatch_ref::DispatchRef;
 pub(crate) use dispatch_ref::WorldRef;
 pub use dispatch_ref::WorldWrapper;
 
+pub mod linker;
+
 /// Struct to build a world from interop packets,
 ///
 pub struct Compiler {
@@ -56,6 +58,9 @@ pub struct Compiler {
     /// Documentation,
     /// 
     documentation: Option<Documentation>,
+    /// Packet handlers,
+    /// 
+    packet_handlers: Vec<Box<dyn PacketHandler + Send + Sync>>,
 }
 
 impl Compiler {
@@ -80,6 +85,7 @@ impl Compiler {
             build_log: BuildLog::default(),
             builds: vec![],
             documentation: None,
+            packet_handlers: vec![],
         }
     }
 
@@ -87,6 +93,13 @@ impl Compiler {
     /// 
     pub fn with_docs(mut self) -> Self {
         self.documentation = Some(Documentation::default());
+        self
+    }
+
+    /// Includes packet handler w/ this compiler,
+    /// 
+    pub fn with_handler(mut self, packet_handler: impl PacketHandler + Sync + Send + 'static) -> Self {
+        self.packet_handlers.push(Box::new(packet_handler));
         self
     }
 
@@ -240,6 +253,10 @@ impl PacketHandler for Compiler {
         // Ingest documentation from packets,
         if let Some(docs) = self.documentation.as_mut() {
             docs.on_packet(packet.clone())?;
+        }
+
+        for p in self.packet_handlers.iter_mut() {
+            p.on_packet(packet.clone())?;
         }
 
         // Route packets to respective blocks,

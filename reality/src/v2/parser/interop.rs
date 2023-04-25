@@ -21,16 +21,16 @@ use crate::Value;
 pub struct Packet {
     /// Block identifier this packet is intended for,
     ///
-    pub(crate) block_identifier: Identifier,
+    pub block_identifier: Identifier,
     /// Packet identifier,
     ///
-    pub(crate) identifier: Identifier,
+    pub identifier: Identifier,
     /// Keyword that parsed this attribute,
     ///
-    pub(crate) keyword: Keywords,
+    pub keyword: Keywords,
     /// List of actions to apply w/ this packet,
     ///
-    pub(crate) actions: Vec<Action>,
+    pub actions: Vec<Action>,
 }
 
 impl Packet {
@@ -124,6 +124,15 @@ impl PacketHandler for () {
     fn on_packet(&mut self, p: Packet) -> Result<(), Error> {
         trace!("{:?}", p);
         Ok(())
+    }
+}
+
+impl<F> PacketHandler for F
+where
+    F: Fn(Packet) -> Result<(), Error>,
+{
+    fn on_packet(&mut self, packet: Packet) -> Result<(), Error> {
+        self(packet)
     }
 }
 

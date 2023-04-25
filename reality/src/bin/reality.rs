@@ -1,4 +1,4 @@
-use reality::v2::prelude::*;
+use reality::v2::{prelude::*, Documentation};
 use tracing_subscriber::EnvFilter;
 
 /// Commands,
@@ -18,12 +18,23 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let mut compiler = Compiler::new().with_docs();
-    let framework = import_toml(&mut compiler, ".test/cli_framework.toml").await?;
+    let mut compiler = Compiler::new().with_handler(|packet: Packet| {
+        let Packet { block_identifier, identifier, keyword, actions } = packet;
+
+        println!("-------------------------");
+        println!("packet.block   : {:#}", block_identifier);
+        println!("packet.ident   : {:#}", identifier);
+        println!("packet.keyword : {:?}", keyword);
+        println!("packet.actions : {:#?}", actions);
+        println!("-------------------------");
+
+        Ok(())
+    });
+    // let framework = import_toml(&mut compiler, ".test/cli_framework.toml").await?;
 
     let parser = Parser::new();
-    // let parser = parser.parse(framework::ROOT, &mut compiler)?;
-    // let framework = compiler.compile()?;
+    let parser = parser.parse(framework::ROOT, &mut compiler)?;
+    let framework = compiler.compile()?;
     let mut framework = Framework::new(framework);
     compiler.visit_last_build(&mut framework);
     export_toml(&mut compiler, ".test/cli_framework.toml").await?;
@@ -83,7 +94,7 @@ mod framework {
     pub static EXAMPLE: &'static str = r##"
     ```runmd examples
     + .root
-    <cli> .test hello world
+    <cli> .test 
     ```
     "##;
 
@@ -158,7 +169,6 @@ mod framework {
                 "author" => {
                     self.command = self.command.clone().author(symbol);
                 }
-                "arg" => {}
                 _ => {}
             }
         }
