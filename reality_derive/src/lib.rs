@@ -305,12 +305,10 @@ pub fn dispatch_signature(_attr: proc_macro::TokenStream, input: proc_macro::Tok
         }
 
         impl #generics reality::v2::GetMatches for #name #generics {
-            fn get_matches(build_log: &reality::v2::BuildLog) -> Vec<(#name #generics, specs::Entity)> {
+            fn get_match(ident: &reality::v2::prelude::Identifier) -> Vec<#name #generics> {
                 let mut matches = vec![];
 
-                for (ident, entity) in build_log.index().iter() {
-                    #variant_matches_with_entity
-                }
+                #variant_matches
 
                 matches
             }

@@ -1,4 +1,6 @@
-use reality::v2::{prelude::*, states::Object};
+use std::collections::BTreeMap;
+
+use reality::v2::{self, prelude::*, states::Object};
 use tracing_subscriber::EnvFilter;
 
 use crate::test_framework::Process;
@@ -45,20 +47,130 @@ async fn main() -> Result<()> {
 
     let log = compiler.last_build_log().unwrap();
 
-    let matches = test_framework::ProcessExtensions::get_matches(&log);
-    for m in matches.iter() {
-        println!("Process: {:?}", m);
+    let mut config_map = BTreeMap::<String, String>::new();
+
+    for (_, build) in compiler.compiled().state_vec::<v2::states::Build>() {
+        let log = build.build_log;
+
+        for (i, e) in log.index().iter() {
+            println!("{:#} {:?}", i, e);
+        }
+
+        let matches = test_framework::ProcessExtensions::get_matches(&log);
+        let mut process = test_framework::Process::new();
+        let process = &mut process;
+
+        for m in matches.iter() {
+            println!("Process: {:?}", m);
+            match &m.0 {
+                test_framework::ProcessExtensions::PluginRoot {} => {
+                    if let Some(o) = compiler.compiled().state::<Object>(m.1) {
+                        process.visit_properties(o.properties());
+                    }
+                },
+                test_framework::ProcessExtensions::PluginConfig { config, property } => {
+                    config_map.insert(property.clone(), format!("Process.config_{}", config));
+                },
+                test_framework::ProcessExtensions::CliRoot {} => {
+                    if let Some(o) = compiler.compiled().state::<Object>(m.1) {
+                        process.visit_properties(o.properties());
+                    }
+                },
+                test_framework::ProcessExtensions::CliConfig { config, property } => {
+                    config_map.insert(property.clone(), config.clone());
+                },
+                // Check to see if a config exists for property
+                test_framework::ProcessExtensions::Plugin { property: Some(property), .. } => {
+                    *process = Process::new();
+                    process.process = property.to_string();
+
+                    if let Some(o) = compiler.compiled().state::<Object>(m.1) {
+                        process.visit_properties(o.properties());
+
+                        for (n, _) in o.properties().iter_properties() {
+                            println!("{n} config: {:?}", config_map.get(n));
+                        }
+                    }
+                    println!("{:?}", process);
+                },
+                test_framework::ProcessExtensions::Cli { property: Some(..), .. } => {
+                    if let Some(o) = compiler.compiled().state::<Object>(m.1) {
+                        process.visit_properties(o.properties());
+
+                        for (n, _) in o.properties().iter_properties() {
+                            println!("{n} config: {:?}", config_map.get(n));
+                        }
+                    }
+                },
+                _ => {
+
+                }
+            }
+        }
+
+        // for m in matches.iter() {
+        //     match &m.0 {
+        //         test_framework::ProcessExtensions::PluginRootConfig { .. } => {
+        //             if let Some(o) = compiler.compiled().state::<Object>(m.1) {
+        //                 let is_root = o.is_root();
+        //                 if !is_root {
+        //                     println!("Process: {:?}", m);
+        //                 }
+        //             }
+        //         },
+        //         test_framework::ProcessExtensions::CliRootConfig { .. } => {
+        //             if let Some(o) = compiler.compiled().state::<Object>(m.1) {
+        //                 let is_root = o.is_root();
+        //                 if !is_root {
+        //                     println!("Process: {:?}", m);
+        //                 }
+        //             }
+        //         },
+        //         _ => {
+        //             println!("Process: {:?}", m);
+        //         }
+        //     }
+        // }
+
+        let matches = <test_framework::Println as Runmd>::Extensions::get_matches(&log);
+        for m in matches.iter() {
+            println!("Println: {:?}", m);
+        }
+        // for m in matches.iter() {
+        //     match &m.0 {
+        //         test_framework::PrintlnExtensions::PluginRootConfig { .. } => {
+        //             if let Some(o) = compiler.compiled().state::<Object>(m.1) {
+        //                 let is_root = o.is_root();
+        //                 if !is_root {
+        //                     println!("Println: {:?}", m);
+        //                 }
+        //             }
+        //         },
+        //         test_framework::PrintlnExtensions::CliRootConfig { .. } => {
+        //             if let Some(o) = compiler.compiled().state::<Object>(m.1) {
+        //                 let is_root = o.is_root();
+        //                 if !is_root {
+        //                     println!("Println: {:?}", m);
+        //                 }
+        //             }
+        //         },
+        //         _ => {
+        //             println!("Println: {:?}", m);
+        //         }
+        //     }
+        // }
+        // if matches.first().map(|f| if let test_framework::PrintlnExtensions::PluginRoot {  } = f.0 {
+        //     true
+        // } else {
+        //     false
+        // }).unwrap_or_default() {
+        // for m in matches.iter() {
+        //     println!("Println: {:?}", m);
+        // }
+        //}
     }
 
-    let matches = <test_framework::Println as Runmd>::Extensions::get_matches(&log);
-    for m in matches.iter() {
-        println!("Println: {:?}", m);
-    }
-
-    let linker = Linker::new(
-        test_framework::Process::new(), 
-        log.clone()
-    );
+    let linker = Linker::new(test_framework::Process::new(), log.clone());
 
     for (idx, (id, e)) in log.index().iter().enumerate() {
         // println!("Build[{idx}]: {:#}", id);
@@ -180,11 +292,11 @@ const ROOT_RUNMD: &'static str = r##"
 + .symbol Cli                               # Defining an extension called Cli
 <> .command                                 # Adds a cli command
 
-+ .symbol    Println                        # A plugin that prints text
-<plugin.call>      .stdout                  # The plugin will print the value of the property to stdout
-<plugin.call>      .stderr                  # The plugin will print the value of the property to stderr
-<plugin.call>      .println                 # The plugin can be called on lists
-<cli.command>      .test                    # The plugin will have a command call test        
++ .plugin           Println                  # A plugin that prints text
+<call>              .stdout                  # The plugin will print the value of the property to stdout
+<call>              .stderr                  # The plugin will print the value of the property to stderr
+<call>              .println                 # The plugin can be called on lists
+<cli.command>       .test                    # The plugin will have a command call test        
 
 + .plugin    Process                        # A plugin that starts a program
 : env       .symbol                         # Environment variables

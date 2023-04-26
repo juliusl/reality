@@ -235,13 +235,39 @@ impl StructField {
 
     pub(crate) fn extension_interpolation_variant(&self, subject: &Ident) -> TokenStream {
         if let Some(ident) = self.ty.get_ident() {
+            let root_pattern = format!(
+                r##"!#block#.#root#.{}.{};"##,
+                ident.to_string().to_lowercase(),
+                subject.to_string().to_lowercase()
+            );
+            let root_ident = format_ident!("{}Root", ident);
+
+            // let root_config_pattern = format!(
+            //     r##"!#block#.#root#.{}.(config);"##,
+            //     ident.to_string().to_lowercase()
+            // );
+            // let root_config_ident = format_ident!("{}RootConfig", ident);
+
+            let config_pattern = format!(
+                r##"!#block#.#root#.{}.{}.(config).(property);"##,
+                ident.to_string().to_lowercase(),
+                subject.to_string().to_lowercase()
+            );
+            let config_ident = format_ident!("{}Config", ident);
+
             let pattern = format!(
-                r##"#root#.{}.{}.(?property).(?value);"##,
+                r##"#block#.#root#.{}.{}.(?property).(?value);"##,
                 ident.to_string().to_lowercase(),
                 subject.to_string().to_lowercase()
             );
             let pattern = LitStr::new(pattern.as_str(), Span::call_site());
             quote_spanned! {self.span=>
+                #[interpolate(#root_pattern)]
+                #root_ident,
+                // #[interpolate(#root_config_pattern)]
+                // #root_config_ident,
+                #[interpolate(#config_pattern)]
+                #config_ident,
                 #[interpolate(#pattern)]
                 #ident
             }

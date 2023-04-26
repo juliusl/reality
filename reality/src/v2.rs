@@ -15,15 +15,15 @@ mod parser;
 pub use parser::Parser;
 
 mod compiler;
-pub use compiler::DispatchRef;
-pub use compiler::BuildLog;
-pub use compiler::Compiler;
-pub use compiler::Compiled;
-pub use compiler::WorldWrapper;
 pub use compiler::linker::Linker;
+pub use compiler::BuildLog;
+pub use compiler::Compiled;
+pub use compiler::Compiler;
+pub use compiler::DispatchRef;
+pub use compiler::WorldWrapper;
 pub mod states {
-    pub use super::compiler::Object;
     pub use super::compiler::CompiledBuild as Build;
+    pub use super::compiler::Object;
 }
 
 pub mod framework;
@@ -55,22 +55,24 @@ pub use thunk::thunk_compile;
 pub use thunk::thunk_listen;
 pub use thunk::thunk_update;
 pub use thunk::Accept;
+pub use thunk::AsyncDispatch;
 pub use thunk::Build;
 pub use thunk::Call;
-pub use thunk::AsyncDispatch;
 pub use thunk::Dispatch;
 pub use thunk::DispatchResult;
 pub use thunk::DispatchSignature;
+pub use thunk::DispatchThunkBuild;
 pub use thunk::Listen;
-pub use thunk::Update;
 pub use thunk::Listener;
 pub use thunk::Thunk;
 pub use thunk::ThunkBuild;
-pub use thunk::DispatchThunkBuild;
 pub use thunk::ThunkCall;
 pub use thunk::ThunkCompile;
 pub use thunk::ThunkListen;
 pub use thunk::ThunkUpdate;
+pub use thunk::Update;
+
+use crate::Identifier;
 
 mod data;
 pub mod toml {
@@ -81,33 +83,49 @@ pub mod command;
 pub mod prelude;
 
 /// Helper trait for pattern matching w/ a build log,
-/// 
-pub trait GetMatches {
+///
+pub trait GetMatches
+where
+    Self: Sized + Clone,
+{
     /// Returns a vector of pattern matches from build log,
-    /// 
-    fn get_matches(build_log: &BuildLog) -> Vec<(Self, specs::Entity)>
-    where
-        Self: Sized;
+    ///
+    fn get_matches(build_log: &BuildLog) -> Vec<(Self, specs::Entity)> {
+        build_log
+            .index()
+            .iter()
+            .flat_map(|(i, e)| Self::get_match(i).iter().map(|m| (m.clone(), *e)).collect::<Vec<_>>())
+            .collect::<Vec<_>>()
+    }
+
+    fn get_match(ident: &Identifier) -> Vec<Self>;
 }
 
 impl GetMatches for () {
     fn get_matches(_: &BuildLog) -> Vec<(Self, specs::Entity)>
     where
-        Self: Sized 
+        Self: Sized,
     {
         Vec::new()
+    }
+
+    fn get_match(ident: &Identifier) -> Vec<Self>
+    where
+        Self: Sized,
+    {
+        todo!()
     }
 }
 
 /// Trait to implement to extend a runmd compiler,
-/// 
-pub trait Runmd : Visitor + Component + Clone + Send + Sync {
+///
+pub trait Runmd: Visitor + Component + Clone + Send + Sync {
     /// Associated type for pattern matching w/ a build log,
-    /// 
+    ///
     type Extensions: GetMatches + std::fmt::Debug;
 
     /// Configures the compiler for a runmd-based project,
-    /// 
+    ///
     fn runmd(&self, compiler: &mut Compiler) -> Result<(), crate::Error>;
 }
 
@@ -177,25 +195,19 @@ mod tests {
 
         let log = compiler.last_build_log().unwrap();
 
-        log.find_ref::<Properties>(
-            ".plugin.process.path.redirect",
-            &mut compiler,
-        )
-        .unwrap()
-        .read(|props| {
-            assert!(props["canonical"].is_enabled());
-            Ok(())
-        });
+        log.find_ref::<Properties>(".plugin.process.path.redirect", &mut compiler)
+            .unwrap()
+            .read(|props| {
+                assert!(props["canonical"].is_enabled());
+                Ok(())
+            });
 
-        log.find_ref::<Properties>(
-            ".plugin.process.path.cd",
-            &mut compiler,
-        )
-        .unwrap()
-        .read(|props| {
-            assert!(!props["canonical"].is_enabled());
-            Ok(())
-        });
+        log.find_ref::<Properties>(".plugin.process.path.cd", &mut compiler)
+            .unwrap()
+            .read(|props| {
+                assert!(!props["canonical"].is_enabled());
+                Ok(())
+            });
 
         let mut doc = DocumentBuilder::new();
         compiler
