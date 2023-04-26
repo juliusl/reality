@@ -6,7 +6,6 @@ use super::Properties;
 use super::action;
 use super::Action;
 use super::Build;
-use crate::Elements;
 use crate::Identifier;
 use crate::Value;
 
@@ -37,32 +36,10 @@ impl Root {
         }
     }
 
-    /// Includes a tag w/ the identifier,
-    ///
-    pub fn set_tags(&mut self, tags: impl AsRef<str>) {
-        use logos::Logos;
-
-        let mut elements = Elements::lexer(tags.as_ref());
-
-        while let Some(element) = elements.next() {
-            match element {
-                Elements::Identifier(tag) => {
-                    for t in tag.split(":") {
-                        self.ident.add_tag(t);
-                    }
-                    return;
-                }
-                _ => {
-                    continue;
-                }
-            }
-        }
-    }
-
     /// Returns an iterator over the extensions required by this attribute,
     ///
     pub fn extensions(&self) -> impl Iterator<Item = &Identifier> {
-        self.action_stack().filter_map(|a| match a {
+        self.action_buffer().filter_map(|a| match a {
             Action::Extend(ident) => Some(ident),
             _ => None,
         })
@@ -70,7 +47,7 @@ impl Root {
 
     /// Returns an iterator over the action stack,
     ///
-    pub fn action_stack(&self) -> impl Iterator<Item = &Action> {
+    pub fn action_buffer(&self) -> impl Iterator<Item = &Action> {
         self.initialize.iter()
     }
 

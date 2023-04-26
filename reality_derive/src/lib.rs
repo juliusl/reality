@@ -240,13 +240,31 @@ pub fn dispatch_signature(_attr: proc_macro::TokenStream, input: proc_macro::Tok
         }
     });
 
+    let variant_matches_with_entity = interpolations.clone().filter_map(|(attr, variant)| {
+        if let Some(expr) = attr.parse_args::<LitStr>().ok() {
+            let expr = InterpolationExpr {
+                name: variant.ident.clone(),
+                expr,
+            }
+            .impl_expr(name.clone(), true);
+            Some(quote_spanned! {variant.span()=>
+                #expr
+            })
+        } else {
+            None
+        }
+    });
+    let variant_matches_with_entity = quote::quote! {
+        #( #variant_matches_with_entity )*
+    };
+
     let variant_matches = interpolations.clone().filter_map(|(attr, variant)| {
         if let Some(expr) = attr.parse_args::<LitStr>().ok() {
             let expr = InterpolationExpr {
                 name: variant.ident.clone(),
                 expr,
             }
-            .impl_expr(name.clone());
+            .impl_expr(name.clone(), false);
             Some(quote_spanned! {variant.span()=>
                 #expr
             })
@@ -259,28 +277,40 @@ pub fn dispatch_signature(_attr: proc_macro::TokenStream, input: proc_macro::Tok
     };
 
     quote::quote! {
-        #[derive(Debug)]
+        #[derive(Debug, Clone)]
         #vis enum #name #generics {
             #( #variants ),*
         }
 
         impl #generics #name #generics {
             #[doc = "Returns any matches of signatures from a BuildLog component"]
-            #vis fn get_matches(build_log: BuildLog) -> Vec<#name #generics> {
+            #vis fn get_matches(build_log: &reality::v2::BuildLog) -> Vec<(#name #generics, specs::Entity)> {
                 let mut matches = vec![];
 
                 for (ident, entity) in build_log.index().iter() {
-                    #variant_matches
+                    #variant_matches_with_entity
                 }
 
                 matches
             }
 
             #[doc = "Returns all matches for this identifier"]
-            #vis fn get_match(ident: &crate::Identifier) -> Vec<#name #generics> {
+            #vis fn get_match(ident: &reality::v2::prelude::Identifier) -> Vec<#name #generics> {
                 let mut matches = vec![];
 
                 #variant_matches
+
+                matches
+            }
+        }
+
+        impl #generics reality::v2::GetMatches for #name #generics {
+            fn get_matches(build_log: &reality::v2::BuildLog) -> Vec<(#name #generics, specs::Entity)> {
+                let mut matches = vec![];
+
+                for (ident, entity) in build_log.index().iter() {
+                    #variant_matches_with_entity
+                }
 
                 matches
             }
@@ -401,7 +431,7 @@ struct Test {
         /// These are rules
         rules: Vec<String>,
         /// This is a plugin
-        #[root]
+        #[ext]
         plugin: Plugin,
         /// This is an event
         #[root]
@@ -414,6 +444,7 @@ struct Test {
         let input = parse2::<StructData>(ts).unwrap();
         println!("{:#}", input.config_trait());
         println!("{:#}", input.runmd_trait());
+        println!("{:#}", input.extensions_enum());
     }
 
     #[test]

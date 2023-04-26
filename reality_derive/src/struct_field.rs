@@ -76,17 +76,17 @@ impl StructField {
             match self {
                 Self { block: true, .. } => {
                     quote_spanned! {ident.span()=>
-                        self.#name.visit_block(entity, block);
+                        self.#name.visit_block(block);
                     }
                 }
                 Self { root: true, .. } => {
                     quote_spanned! {ident.span()=>
-                        self.#name.visit_root(entity, root);
+                        self.#name.visit_root(root);
                     }
                 }
                 Self { ext: true, .. } => {
                     quote_spanned! {ident.span()=>
-                        self.#name.visit_extension(entity, ident);
+                        self.#name.visit_extension(ident);
                     }
                 }
                 _ => {
@@ -231,6 +231,24 @@ impl StructField {
             ext.to_string().to_lowercase()
         );
         LitStr::new(&format, Span::call_site())
+    }
+
+    pub(crate) fn extension_interpolation_variant(&self, subject: &Ident) -> TokenStream {
+        if let Some(ident) = self.ty.get_ident() {
+            let pattern = format!(
+                r##"#root#.{}.{}.(?property).(?value);"##,
+                ident.to_string().to_lowercase(),
+                subject.to_string().to_lowercase()
+            );
+            let pattern = LitStr::new(pattern.as_str(), Span::call_site());
+            quote_spanned! {self.span=>
+                #[interpolate(#pattern)]
+                #ident
+            }
+        } else {
+            quote_spanned! {self.span=>
+            }
+        }
     }
 }
 

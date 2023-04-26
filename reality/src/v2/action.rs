@@ -7,7 +7,6 @@ use tracing::warn;
 use crate::Error;
 use crate::Identifier;
 use crate::Value;
-use crate::v2::EntityVisitor;
 
 use super::DispatchSignature;
 use super::Property;
@@ -71,6 +70,7 @@ impl ActionBuffer {
     pub const fn new() -> Self {
         Self { actions: vec![] }
     }
+
     /// Pushes a new config to the buffer,
     ///
     pub fn push_config(&mut self, config_ident: &Identifier, _config: &Property) {
@@ -108,7 +108,7 @@ impl ActionBuffer {
                                         "Detected Config Root Extension Property --"
                                     );
                                     target.visit_property(property, prop);
-                                    target.visit_extension(EntityVisitor::Owner(entity), ident);
+                                    target.visit_extension(ident);
                                 }
                                 DispatchSignature::ExtendedProperty {
                                     config,
@@ -131,14 +131,14 @@ impl ActionBuffer {
                                             let config_ext = format!("{config}.{extension}.{name}")
                                                 .parse::<Identifier>()?;
                                             target.visit_property(name, prop);
-                                            target.visit_extension(EntityVisitor::Owner(entity), &config_ext);
+                                            target.visit_extension(&config_ext);
                                         }
 
                                         let config_prop = format!("{name}.{extension}.{property}")
                                             .parse::<Identifier>()?;
                                         let prop = properties.property(property).expect("should be a property since this is an extended property");
                                         target.visit_property(property, prop);
-                                        target.visit_extension(EntityVisitor::Owner(entity), &config_prop);
+                                        target.visit_extension(&config_prop);
                                     }
                                 }
                                 DispatchSignature::ExtendedProperty {
@@ -160,7 +160,7 @@ impl ActionBuffer {
                                             let config_ext = format!("{config}.{extension}.{name}")
                                                 .parse::<Identifier>()?;
                                             target.visit_property(name, prop);
-                                            target.visit_extension(EntityVisitor::Owner(entity), &config_ext);
+                                            target.visit_extension( &config_ext);
                                         }
                                     }
                                 }

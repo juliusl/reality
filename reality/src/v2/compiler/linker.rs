@@ -1,28 +1,29 @@
-use std::marker::PhantomData;
-
-use specs::Component;
-
+use crate::v2::Runmd;
 use crate::v2::Visitor;
 
 use super::BuildLog;
 use super::DispatchRef;
 
-/// Linker links a visitor w/ a dispatch ref,
-///
+/// Linker takes a Component and scans the build_log for candidates that the Component must visit,
+/// 
 pub struct Linker<'a, T> 
 where
-    T: Visitor + Clone + Component + Send + Sync,
+    T: Runmd,
 {
     /// The configuration to use when creating a new instance of T,
     /// 
     new: T,
-    dispatch: Option<DispatchRef<'a, T>>,
+    /// Build log w/ mapping from identifiers <-> Entity ID in storage,
+    /// 
     build_log: BuildLog,
+    /// The dispatch ref w/ access to storage,
+    /// 
+    dispatch: Option<DispatchRef<'a, T>>,
 }
 
 impl<'a, T> Linker<'a, T>
 where
-    T: Visitor + Clone + Component + Send + Sync,
+    T: Runmd,
 {
     /// Creates a new empty linker w/ build log,
     /// 
@@ -40,8 +41,16 @@ where
 
 impl<'a, T> Visitor for Linker<'a, T> 
 where
-    T: Visitor + Clone + Component + Send + Sync,
+    T: Runmd,
 {
+    fn visit_object(&mut self, object: &super::Object) {
+        object.as_block().map(|b| {
+            for ex in b.extensions() {
+                
+            }
+        });
+    }
+
     /// Visiting the identifier will update the current entity in the dispatch ref,
     /// 
     fn visit_identifier(&mut self, identifier: &crate::Identifier) {
@@ -55,10 +64,10 @@ where
         }
     }
 
-    fn visit_extension(&mut self, entity: crate::v2::EntityVisitor, identifier: &crate::Identifier) {
+    fn visit_extension(&mut self, identifier: &crate::Identifier) {
         self.dispatch = self.dispatch.take().map(|d| {
             d.write(|v| {
-                v.visit_extension(entity, identifier);
+                v.visit_extension(identifier);
                 Ok(())
             })
         })

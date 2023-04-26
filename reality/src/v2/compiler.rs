@@ -1,14 +1,17 @@
-use super::Documentation;
 use super::parser::Packet;
 use super::parser::PacketHandler;
 use super::thunk::ThunkUpdate;
 use super::thunk::Update;
+use super::Documentation;
+use super::GetMatches;
+use super::Linker;
 use super::Listen;
 use super::Properties;
+use super::Runmd;
 use super::ThunkBuild;
 use super::ThunkCall;
-use super::ThunkListen;
 use super::ThunkCompile;
+use super::ThunkListen;
 use super::Visitor;
 use crate::v2::Block;
 use crate::v2::BlockList;
@@ -26,9 +29,9 @@ use std::ops::Deref;
 use tracing::trace;
 
 mod compiled;
+pub use compiled::Build as CompiledBuild;
 pub use compiled::Compiled;
 pub use compiled::Object;
-pub use compiled::Build as CompiledBuild;
 
 mod build_log;
 pub use build_log::BuildLog;
@@ -56,10 +59,10 @@ pub struct Compiler {
     ///
     builds: Vec<Entity>,
     /// Documentation,
-    /// 
+    ///
     documentation: Option<Documentation>,
     /// Packet handlers,
-    /// 
+    ///
     packet_handlers: Vec<Box<dyn PacketHandler + Send + Sync>>,
 }
 
@@ -90,15 +93,18 @@ impl Compiler {
     }
 
     /// Returns self w/ documentation enabled,
-    /// 
+    ///
     pub fn with_docs(mut self) -> Self {
         self.documentation = Some(Documentation::default());
         self
     }
 
     /// Includes packet handler w/ this compiler,
-    /// 
-    pub fn with_handler(mut self, packet_handler: impl PacketHandler + Sync + Send + 'static) -> Self {
+    ///
+    pub fn with_handler(
+        mut self,
+        packet_handler: impl PacketHandler + Sync + Send + 'static,
+    ) -> Self {
         self.packet_handlers.push(Box::new(packet_handler));
         self
     }
@@ -153,7 +159,7 @@ impl Compiler {
     }
 
     /// Pushes a new build entity,
-    /// 
+    ///
     pub fn push_build(&mut self, entity: Entity) {
         self.builds.push(entity);
     }
@@ -244,6 +250,27 @@ impl Compiler {
             entity: Some(entity),
             error: None,
             _u: PhantomData,
+        }
+    }
+
+    /// Creates a linker and links w/ current build log,
+    ///
+    pub fn link<T: Runmd>(&mut self, new: T) -> crate::Result<()> {
+        if let Some(log) = self.last_build_log() {
+            for (m, e) in <T as Runmd>::Extensions::get_matches(&log) {
+                trace!("Linking {:?}", m);
+
+                let dispref = self.build_ref::<T>(e);
+
+                let _ = Linker::new(
+                    new.clone(), 
+                    log.clone()
+                ).activate(dispref);
+            }
+
+            Ok(())
+        } else {
+            Err("No build log to link with".into())
         }
     }
 }

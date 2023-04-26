@@ -218,7 +218,7 @@ impl MakePacket for AttributeParser {
                 {
                     packet.identifier.join(input)?;
                 }
-
+                
                 packet.actions.append(&mut docs);
                 Ok(packet)
             }
@@ -244,7 +244,7 @@ impl Build for Packet {
                     .with(self.identifier.clone())
                     .build())
             }
-            _ => Err("not implemented".into()),
+            _ => Err(Error::not_implemented()),
         }
     }
 }

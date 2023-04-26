@@ -53,7 +53,7 @@ impl InterpolationExpr {
         }
     }
 
-    pub(crate) fn impl_expr(&self, enum_ident: Ident) -> TokenStream {
+    pub(crate) fn impl_expr(&self, enum_ident: Ident, with_entity: bool) -> TokenStream {
         let name = &self.name;
         let expr = self.expr.value();
 
@@ -80,12 +80,22 @@ impl InterpolationExpr {
             }
         });
 
+        let push_matches = if with_entity {
+            quote! {
+                matches.push((signature, *entity));
+            }
+        } else {
+            quote! {
+                matches.push(signature);
+            }
+        };
+
         quote! {
             if let Some(map) = ident.interpolate(#expr) {
                 let signature = #enum_ident::#name {
                     #( #fields ),*
                 };
-                matches.push(signature);
+                #push_matches
             }
         }
     }

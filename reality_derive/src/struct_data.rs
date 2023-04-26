@@ -4,6 +4,7 @@ use quote::format_ident;
 use quote::quote;
 use quote::quote_spanned;
 use quote::ToTokens;
+use syn::Visibility;
 use syn::parse::Parse;
 use syn::parse2;
 use syn::Data;
@@ -22,6 +23,9 @@ pub(crate) struct StructData {
     /// Name of the struct,
     ///
     name: Ident,
+    /// Visibility of struct,
+    /// 
+    vis: Visibility,
     /// Parsed struct fields,
     ///
     fields: Vec<StructField>,
@@ -69,43 +73,39 @@ impl Parse for StructData {
 
         Ok(Self {
             name,
+            vis: derive_input.vis,
             fields,
             compile,
         })
     }
 }
 
-pub(crate) struct CompileAttribute {
-    /// Path,
-    /// 
-    path: Path,
-}
-
-impl CompileAttribute {
-    // If arguments are included, interpret as an expression and derive thunk trait,
-    // 
-    // pub fn t(&self) -> TokenStream {
-    //     for s in self.path.segments.iter() {
-    //         match s.arguments {
-    //             syn::PathArguments::None => {
-    //                 continue;
-    //             },
-    //             syn::PathArguments::AngleBracketed(_) => {
-                    
-    //             },
-    //             syn::PathArguments::Parenthesized(inner) => {
-                    
-    //             },
-    //         }
-    //     }
-
-    //     quote! { 
-
-    //     }
-    // }
-}
-
 impl StructData {
+    pub(crate) fn extensions_enum_ident(&self) -> Ident {
+        format_ident!("{}Extensions", self.name)
+    }
+
+    pub(crate) fn extensions_enum(&self) -> TokenStream {
+        let ty_ident = self.extensions_enum_ident();
+        let extensions = self.fields.iter()
+            .filter(|f| !f.ignore && f.ext)
+            .map(|f|{
+                let i = f.extension_interpolation_variant(&self.name);
+                quote_spanned! {f.span=>
+                    #i
+                }
+            });
+        let vis = &self.vis;
+        quote_spanned! {self.name.span()=>
+            /// Enumeration of extension patterns,
+            /// 
+            #[dispatch_signature]
+            #vis enum #ty_ident {
+                #( #extensions ),*
+            }
+        }
+    }
+
     /// Returns token stream of impl for the Apply trait
     ///
     pub(crate) fn apply_trait(&self) -> TokenStream {
@@ -231,13 +231,15 @@ impl StructData {
             Self { #idents }
         });
 
+        let vis = &self.vis;
+
         quote! {
             use specs::prelude::*;
 
-            pub type #format_ident<'a> = ( #types );
+            #vis type #format_ident<'a> = ( #types );
 
             #[derive(specs::SystemData)]
-            pub struct #systemdata_ident<'a> {
+            #vis struct #systemdata_ident<'a> {
                 entities: specs::Entities<'a>,
                 #systemdata_body
             }
@@ -333,8 +335,6 @@ impl StructData {
             #( #map )*
         };
 
-        // TODO: Apply using statements
-
         quote! {
             impl reality::v2::Dispatch for #name {
                 fn dispatch<'a>(
@@ -364,6 +364,18 @@ impl StructData {
     pub fn runmd_trait(&self) -> TokenStream {
         let name = &self.name;
 
+        let extensions_enum = format_ident!("{}Extensions", name);
+        let get_extension_matches = quote_spanned!{name.span()=>
+            if let Some(log) = compiler.last_build_log() {
+                let matches = #extensions_enum::get_matches(log);
+            
+                for (m, e) in matches {
+                    let dispatch_ref = reality::v2::DispatchRef::<reality::v2::Properties>::new(e, compiler);
+                    let _ = reality::v2::Dispatch::dispatch(self, dispatch_ref)?;
+                }
+            }
+        };
+
         // Mapping compile
         let compile_map = self.transient_fields().map(|f| {
             let pattern = f.root_ext_input_pattern_lit_str(name);
@@ -383,9 +395,12 @@ impl StructData {
 
         let visitor_trait = self.visitor_trait();
         let compile_trait = self.compile_trait();
+        let extensions_enum = self.extensions_enum();
+        let extensions_enum_ident = self.extensions_enum_ident();
 
         quote! {
             impl reality::v2::Runmd for #name {
+                type Extensions = #extensions_enum_ident;
                 fn runmd(&self, compiler: &mut reality::v2::Compiler) -> reality::Result<()> {
                     #compile_map
 
@@ -395,6 +410,8 @@ impl StructData {
 
             #visitor_trait
             #compile_trait
+
+            #extensions_enum
         }
     }
 
@@ -459,7 +476,7 @@ impl StructData {
         if !visit_ext.is_empty() {
             let visit_ext = visit_ext.iter();
             quote! {
-                fn visit_extension(&mut self, entity: reality::v2::EntityVisitor, ident: &reality::Identifier) {
+                fn visit_extension(&mut self, ident: &reality::Identifier) {
                     #( #visit_ext )*
                 }
             }
@@ -480,7 +497,7 @@ impl StructData {
         if !visit_root.is_empty() {
             let visit_root = visit_root.iter();
             quote! {
-                fn visit_root(&mut self, entity: reality::v2::EntityVisitor, root: &reality::v2::Root) {
+                fn visit_root(&mut self, root: &reality::v2::Root) {
                     #( #visit_root )*
                 }
             }
@@ -501,7 +518,7 @@ impl StructData {
         if !visit_block.is_empty() {
             let visit_block = visit_block.iter();
             quote! {
-                fn visit_block(&mut self, entity: reality::v2::EntityVisitor, root: &reality::v2::Block) {
+                fn visit_block(&mut self, root: &reality::v2::Block) {
                     #( #visit_block )*
                 }
             }

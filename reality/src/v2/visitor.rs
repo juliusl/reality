@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use ::specs::Entity;
 use bytemuck::cast;
 use bytes::BufMut;
 use bytes::BytesMut;
@@ -15,23 +14,6 @@ use super::Root;
 use crate::v2::states::Object;
 use crate::Identifier;
 use crate::Value;
-
-/// Enumeration of entity variants for visit_block, visit_root, and visit_extension
-///
-#[derive(Clone, Copy, Debug)]
-pub enum EntityVisitor {
-    /// This entity is the build that created this component,
-    ///
-    /// Note: Not used in default impl
-    ///
-    Build(Entity),
-    /// This entity is the entity of the owner of the component,
-    ///
-    Owner(Entity),
-    /// This entity is a relative of the owner of the component,
-    ///
-    Relative(Entity),
-}
 
 /// Visitor trait for visiting compiled runmd data,
 ///
@@ -109,9 +91,7 @@ pub trait Visitor {
 
     /// Visits a root extension,
     ///
-    /// Note: The default implementation will call this fn via visit_root. EntityVisitor will be the Relative variant.
-    ///
-    fn visit_extension(&mut self, entity: EntityVisitor, identifier: &Identifier) {}
+    fn visit_extension(&mut self, identifier: &Identifier) {}
 
     /// Visits a list of values,
     ///
@@ -186,11 +166,11 @@ pub trait Visitor {
         // Transient data
         object
             .as_block()
-            .map(|b| self.visit_block(EntityVisitor::Owner(object.entity()), b));
+            .map(|b| self.visit_block(b));
 
         object
             .as_root()
-            .map(|b| self.visit_root(EntityVisitor::Owner(object.entity()), b));
+            .map(|b| self.visit_root(b));
 
         // Stable data
         self.visit_identifier(object.ident());
@@ -201,15 +181,9 @@ pub trait Visitor {
     ///
     /// Note: If overriding the default implementation, visit_root will need to be called manually.
     ///
-    fn visit_block(&mut self, entity: EntityVisitor, block: &Block) {
-        let entity = if let EntityVisitor::Owner(entity) = entity {
-            EntityVisitor::Relative(entity)
-        } else {
-            entity
-        };
-
+    fn visit_block(&mut self, block: &Block) {
         for root in block.roots() {
-            self.visit_root(entity, root);
+            self.visit_root(root);
         }
     }
 
@@ -217,15 +191,9 @@ pub trait Visitor {
     ///
     /// Note: If overriding the default implementation, visit_extension will need to be called manually.
     ///
-    fn visit_root(&mut self, entity: EntityVisitor, root: &Root) {
-        let entity = if let EntityVisitor::Owner(entity) = entity {
-            EntityVisitor::Relative(entity)
-        } else {
-            entity
-        };
-
+    fn visit_root(&mut self, root: &Root) {
         for ext in root.extensions() {
-            self.visit_extension(entity, ext);
+            self.visit_extension(ext);
         }
     }
 }

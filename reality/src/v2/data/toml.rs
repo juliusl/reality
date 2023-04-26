@@ -3,7 +3,6 @@ use std::ops::Index;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::v2::EntityVisitor;
 use crate::v2::compiler::BuildLog;
 use crate::v2::Block;
 use crate::v2::Build;
@@ -90,7 +89,7 @@ impl DocumentBuilder {
 }
 
 impl Visitor for DocumentBuilder {
-    fn visit_block(&mut self, _: EntityVisitor, block: &crate::v2::Block) {
+    fn visit_block(&mut self, block: &crate::v2::Block) {
         let owner = Self::format_ident(block.ident());
         self.doc["block"][&owner] = table();
 
@@ -109,7 +108,7 @@ impl Visitor for DocumentBuilder {
         });
     }
 
-    fn visit_root(&mut self, _: EntityVisitor, root: &crate::v2::Root) {
+    fn visit_root(&mut self, root: &crate::v2::Root) {
         let owner = Self::format_ident(&root.ident);
         if !self.doc["root"]
             .get(&owner)

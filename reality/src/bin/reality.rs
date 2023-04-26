@@ -141,9 +141,8 @@ mod framework {
     }
 
     impl Visitor for Cli {
-        fn visit_extension(&mut self, entity: reality::v2::EntityVisitor, identifier: &Identifier) {
+        fn visit_extension(&mut self, identifier: &Identifier) {
             println!("Cli visited by ext: {:#}", identifier);
-            println!("Cli visited by ext: {:?}", entity);
 
             let matches = CliSignatures::get_match(identifier);
 

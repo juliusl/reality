@@ -44,14 +44,46 @@ async fn main() -> Result<()> {
     };
 
     let log = compiler.last_build_log().unwrap();
+
+    let matches = test_framework::ProcessExtensions::get_matches(&log);
+    for m in matches.iter() {
+        println!("Process: {:?}", m);
+    }
+
+    let matches = <test_framework::Println as Runmd>::Extensions::get_matches(&log);
+    for m in matches.iter() {
+        println!("Println: {:?}", m);
+    }
+
+    let linker = Linker::new(
+        test_framework::Process::new(), 
+        log.clone()
+    );
+
     for (idx, (id, e)) in log.index().iter().enumerate() {
-        println!("Build[{idx}]: {:#}", id);
-        println!("Build[{idx}]: {:?}", e);
-        compiler.as_ref().read_component::<Process>().get(*e).map(|e| {
-            println!("{:?}", e);
-        });
+        // println!("Build[{idx}]: {:#}", id);
+        // println!("Build[{idx}]: {:?}", e);
+        // compiler.as_ref().read_component::<Process>().get(*e).map(|e| {
+        //     println!("{:?}", e);
+        // });
         compiler.compiled().state::<Object>(*e).map(|o| {
-            println!("Build[{idx}]: {}", o.properties());
+            let map = o.ident().interpolate("#block#.(root).(?subject);");
+            println!("block -- {:?}", map);
+
+            let map = o
+                .ident()
+                .interpolate("#root#.plugin.(root).(?subject).(?property);");
+            println!("process plugin extension -- {:?}", map);
+
+            let is_block = o.is_block();
+            let is_root = o.is_root();
+            println!("is_block: {}, is_root: {}", is_block, is_root);
+            let ident = o.ident();
+            println!("{:#}", ident);
+            for (name, prop) in o.properties().iter_properties() {
+                let prop_ident = ident.branch(name).unwrap();
+                println!("{name}->{:#}: {:?}", prop_ident, prop);
+            }
         });
     }
 
@@ -145,10 +177,14 @@ const ROOT_RUNMD: &'static str = r##"
 <> .list                                    # Indicates that a property will be a list
 <> .call                                    # Indicates that a property will be used as the input for a thunk_call
 
-+ .plugin    Println                        # A plugin that prints text
-<call>      .stdout                         # The plugin will print the value of the property to stdout
-<call>      .stderr                         # The plugin will print the value of the property to stderr
-<call>      .println                        # The plugin can be called on lists
++ .symbol Cli                               # Defining an extension called Cli
+<> .command                                 # Adds a cli command
+
++ .symbol    Println                        # A plugin that prints text
+<plugin.call>      .stdout                  # The plugin will print the value of the property to stdout
+<plugin.call>      .stderr                  # The plugin will print the value of the property to stderr
+<plugin.call>      .println                 # The plugin can be called on lists
+<cli.command>      .test                    # The plugin will have a command call test        
 
 + .plugin    Process                        # A plugin that starts a program
 : env       .symbol                         # Environment variables
@@ -164,35 +200,35 @@ const ROOT_RUNMD: &'static str = r##"
 ///
 const EXAMPLE_USAGE: &'static str = r##"
 ```runmd
-+ .plugin                                               # Extending the framework by adding a new extension and plugin
-<> .listen                                              # Indicates that a root will have a thunk_listen component
++                       .plugin                             # Extending the framework by adding a new extension and plugin
+<>                      .listen                             # Indicates that a root will have a thunk_listen component
 
-+ .plugin   Readln                                      # A plugin that reads text
-<listen>    .stdin                                      # The plugin will use a thunk_listen to write to a property specified by the value of this property
++                       .plugin   Readln                    # A plugin that reads text
+<listen>                .stdin                              # The plugin will use a thunk_listen to write to a property specified by the value of this property
 ```
 
-```runmd app
-+                       .symbol     Usage               # Creating a simple root called Usage,
-<plugin.println>        .stdout     World Hello         # Can also be activated in one line
-<plugin.println>        .stderr     World Hello Error   # Can also be activated in one line
-<plugin>    .println
-: .stdout   Hello World
-: .stdout   Goodbye World
-: .stderr   Hello World Error
-: .stderr   Goodbye World Error
-<plugin>                .process    cargo               # This process will be started
+```runmd test app
++                       .symbol     Usage                   # Creating a simple root called Usage,
+<plugin.println>        .stdout     World Hello             # Can also be activated in one line
+<plugin.println>        .stderr     World Hello Error       # Can also be activated in one line
+<cli.println>           .test       Test here               # Testing adding a command
+<plugin>                .println
+:                       .stdout     Hello World
+:                       .stdout     Goodbye World
+:                       .stderr     Hello World Error
+:                       .stderr     Goodbye World Error
+<plugin>                .process    cargo                   # This process will be started
 : RUST_LOG              .env        reality=trace
 :                       .redirect   .test/test.output
-<plugin>                .process    python              # This process will be started
+<plugin>                .process    python                  # This process will be started
 :                       .redirect   .test/test.output   
-<plugin> .println pt2
-: .stdout   Hello World 2
-: .stdout   Goodbye World 2 
-: .stderr   Hello World Error 2 
-: .stderr   Goodbye World Error 2
-<plugin.readln>         .stdin      name                # This will read stdin and save the value to the property name
-<> .start_usage  # Starts the usage example
-
+<plugin>                .println    pt2
+:                       .stdout     Hello World 2
+:                       .stdout     Goodbye World 2 
+:                       .stderr     Hello World Error 2 
+:                       .stderr     Goodbye World Error 2
+<plugin.readln>         .stdin      name                    # This will read stdin and save the value to the property name
+<> .start_usage                                             # Starts the usage example
 ```
 "##;
 
@@ -207,9 +243,8 @@ pub mod test_framework {
     pub struct Plugin;
 
     impl Visitor for Plugin {
-        fn visit_extension(&mut self, entity: reality::v2::EntityVisitor, identifier: &Identifier) {
+        fn visit_extension(&mut self, identifier: &Identifier) {
             println!("Plugin visited by: {:#}", identifier);
-            println!("Plugin visited by: {:?}", entity);
         }
 
         fn visit_property(&mut self, name: &String, property: &Property) {
@@ -218,6 +253,15 @@ pub mod test_framework {
         }
     }
 
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct Cli;
+
+    impl Visitor for Cli {
+        fn visit_property(&mut self, name: &String, property: &Property) {
+            println!("Cli visited by: {name}");
+            println!("Cli visited by: {:?}", property);
+        }
+    }
 
     #[thunk]
     pub trait TestA {
@@ -241,6 +285,8 @@ pub mod test_framework {
         test: String,
         #[ext]
         plugin: Plugin,
+        #[ext]
+        cli: Cli,
     }
 
     #[async_trait]
@@ -262,27 +308,8 @@ pub mod test_framework {
         }
     }
 
-    /*
-    struct Println {
-       test_config --> test.config.#root#
-
-
-       ```
-       + .println test_config
-       + .println
-       ```
-    }
-     */
-
     impl Println {
         /// Should generate code like this,
-        ///
-        /// ```
-        /// fn dispatch(&self, r...) -> ... {
-        ///     let s = Self::new();
-        ///     r.store(s)?;
-        /// }
-        /// ```
         ///
         pub const fn new() -> Self {
             Self {
@@ -290,7 +317,8 @@ pub mod test_framework {
                 stderr: vec![],
                 stdout: vec![],
                 test: String::new(),
-                plugin: Plugin{},
+                plugin: Plugin {},
+                cli: Cli {},
             }
         }
     }
@@ -305,6 +333,8 @@ pub mod test_framework {
         pub env: Vec<String>,
         #[ext]
         plugin: Plugin,
+        #[ext]
+        cli: Cli,
     }
 
     impl Process {
@@ -314,7 +344,8 @@ pub mod test_framework {
                 redirect: String::new(),
                 rust_log: String::new(),
                 env: vec![],
-                plugin: Plugin{},
+                plugin: Plugin {},
+                cli: Cli {},
             }
         }
     }

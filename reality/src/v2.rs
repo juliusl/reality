@@ -20,6 +20,7 @@ pub use compiler::BuildLog;
 pub use compiler::Compiler;
 pub use compiler::Compiled;
 pub use compiler::WorldWrapper;
+pub use compiler::linker::Linker;
 pub mod states {
     pub use super::compiler::Object;
     pub use super::compiler::CompiledBuild as Build;
@@ -35,8 +36,8 @@ mod documentation;
 pub use documentation::Documentation;
 
 mod visitor;
+use specs::Component;
 pub use visitor::Visitor;
-pub use visitor::EntityVisitor;
 
 mod interner;
 pub use interner::Interner;
@@ -79,9 +80,32 @@ pub mod toml {
 pub mod command;
 pub mod prelude;
 
+/// Helper trait for pattern matching w/ a build log,
+/// 
+pub trait GetMatches {
+    /// Returns a vector of pattern matches from build log,
+    /// 
+    fn get_matches(build_log: &BuildLog) -> Vec<(Self, specs::Entity)>
+    where
+        Self: Sized;
+}
+
+impl GetMatches for () {
+    fn get_matches(_: &BuildLog) -> Vec<(Self, specs::Entity)>
+    where
+        Self: Sized 
+    {
+        Vec::new()
+    }
+}
+
 /// Trait to implement to extend a runmd compiler,
 /// 
-pub trait Runmd {
+pub trait Runmd : Visitor + Component + Clone + Send + Sync {
+    /// Associated type for pattern matching w/ a build log,
+    /// 
+    type Extensions: GetMatches + std::fmt::Debug;
+
     /// Configures the compiler for a runmd-based project,
     /// 
     fn runmd(&self, compiler: &mut Compiler) -> Result<(), crate::Error>;

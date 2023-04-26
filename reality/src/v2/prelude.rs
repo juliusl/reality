@@ -7,6 +7,7 @@ pub use crate::v2::Properties;
 pub use crate::v2::Property;
 pub use crate::v2::DispatchRef;
 pub use crate::v2::Compiler;
+pub use crate::v2::Linker;
 pub use crate::v2::Framework;
 pub use crate::v2::Parser;
 pub use crate::v2::Runmd;
