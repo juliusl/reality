@@ -19,14 +19,16 @@ use super::data::query::Query;
 use super::data::query::QueryResult;
 use super::Visitor;
 
-/// Component for a map of property attributes
+/// Component for a map of properties,
 ///
 #[derive(Component, Hash, Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[storage(VecStorage)]
 pub struct Properties {
     /// Identifier of owner,
+    /// 
     owner: Identifier,
-    /// Map of properties
+    /// Map of properties,
+    /// 
     map: BTreeMap<String, Property>,
 }
 

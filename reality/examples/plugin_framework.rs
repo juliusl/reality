@@ -48,6 +48,7 @@ async fn main() -> Result<()> {
     let log = compiler.last_build_log().unwrap();
 
     let mut config_map = BTreeMap::<String, String>::new();
+    let mut config_actions = BTreeMap::<String, Property>::new();
 
     for (_, build) in compiler.compiled().state_vec::<v2::states::Build>() {
         let log = build.build_log;
@@ -56,23 +57,35 @@ async fn main() -> Result<()> {
             println!("{:#} {:?}", i, e);
         }
 
-        let matches = test_framework::ProcessExtensions::get_matches(&log);
+        let matches = <test_framework::Process as Runmd>::Extensions::get_matches(&log);
         let mut process = test_framework::Process::new();
         let process = &mut process;
 
         for m in matches.iter() {
-            println!("Process: {:?}", m);
-            match &m.0 {
+            println!("Process: {:#}--{:?}--{:?}", m.0, m.1, m.2);
+            match &m.1 {
                 test_framework::ProcessExtensions::PluginRoot {} => {
-                    if let Some(o) = compiler.compiled().state::<Object>(m.1) {
+                    if let Some(o) = compiler.compiled().state::<Object>(m.2) {
                         process.visit_properties(o.properties());
                     }
                 },
                 test_framework::ProcessExtensions::PluginConfig { config, property } => {
-                    config_map.insert(property.clone(), format!("Process.config_{}", config));
+                    let config_name = format!("Plugin.config_{}", config);
+                    if let None = config_map.insert(property.clone(), config_name.to_string()) {
+                        if let Some(o) = compiler.compiled().state::<Object>(m.2) {
+                            let owner = o.properties().owner();
+                            let key = format!("{}.{}", owner.root(), owner.subject());
+                            println!("-- owner: {owner}");
+                            for (n, prop) in o.properties().iter_properties() {
+                                println!("-- {n} {:?}", prop);
+                            }
+
+                            config_actions.insert(config_name, Property::Properties(o.properties().clone().into()));
+                        }
+                    }
                 },
                 test_framework::ProcessExtensions::CliRoot {} => {
-                    if let Some(o) = compiler.compiled().state::<Object>(m.1) {
+                    if let Some(o) = compiler.compiled().state::<Object>(m.2) {
                         process.visit_properties(o.properties());
                     }
                 },
@@ -84,21 +97,25 @@ async fn main() -> Result<()> {
                     *process = Process::new();
                     process.process = property.to_string();
 
-                    if let Some(o) = compiler.compiled().state::<Object>(m.1) {
+                    if let Some(o) = compiler.compiled().state::<Object>(m.2) {
                         process.visit_properties(o.properties());
 
                         for (n, _) in o.properties().iter_properties() {
-                            println!("{n} config: {:?}", config_map.get(n));
+                            if let Some(config) = config_map.get(n).and_then(|c| config_actions.get(c)) {
+                                println!("{n} config: {:?}", config);
+                            }
                         }
                     }
                     println!("{:?}", process);
                 },
                 test_framework::ProcessExtensions::Cli { property: Some(..), .. } => {
-                    if let Some(o) = compiler.compiled().state::<Object>(m.1) {
+                    if let Some(o) = compiler.compiled().state::<Object>(m.2) {
                         process.visit_properties(o.properties());
 
                         for (n, _) in o.properties().iter_properties() {
-                            println!("{n} config: {:?}", config_map.get(n));
+                            if let Some(config) = config_map.get(n).and_then(|c| config_actions.get(c)) {
+                                println!("{n} config: {:?}", config);
+                            }
                         }
                     }
                 },
@@ -107,6 +124,8 @@ async fn main() -> Result<()> {
                 }
             }
         }
+
+        println!("{:#?}", config_actions);
 
         // for m in matches.iter() {
         //     match &m.0 {
@@ -134,7 +153,7 @@ async fn main() -> Result<()> {
 
         let matches = <test_framework::Println as Runmd>::Extensions::get_matches(&log);
         for m in matches.iter() {
-            println!("Println: {:?}", m);
+            println!("Println: {:#}--{:?}--{:?}", m.0, m.1, m.2);
         }
         // for m in matches.iter() {
         //     match &m.0 {
@@ -333,7 +352,7 @@ const EXAMPLE_USAGE: &'static str = r##"
 : RUST_LOG              .env        reality=trace
 :                       .redirect   .test/test.output
 <plugin>                .process    python                  # This process will be started
-:                       .redirect   .test/test.output   
+:                       .redirect   .test2/test.output   
 <plugin>                .println    pt2
 :                       .stdout     Hello World 2
 :                       .stdout     Goodbye World 2 
@@ -356,12 +375,12 @@ pub mod test_framework {
 
     impl Visitor for Plugin {
         fn visit_extension(&mut self, identifier: &Identifier) {
-            println!("Plugin visited by: {:#}", identifier);
+            println!("--- Plugin visited by: {:#}", identifier);
         }
 
         fn visit_property(&mut self, name: &String, property: &Property) {
-            println!("Plugin visited by: {name}");
-            println!("Plugin visited by: {:?}", property);
+            println!("--- Plugin visited by: {name}");
+            println!("--- Plugin visited by: {:?}", property);
         }
     }
 
@@ -370,8 +389,8 @@ pub mod test_framework {
 
     impl Visitor for Cli {
         fn visit_property(&mut self, name: &String, property: &Property) {
-            println!("Cli visited by: {name}");
-            println!("Cli visited by: {:?}", property);
+            println!("--- Cli visited by: {name}");
+            println!("--- Cli visited by: {:?}", property);
         }
     }
 

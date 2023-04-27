@@ -257,7 +257,7 @@ impl Compiler {
     ///
     pub fn link<T: Runmd>(&mut self, new: T) -> crate::Result<()> {
         if let Some(log) = self.last_build_log() {
-            for (m, e) in <T as Runmd>::Extensions::get_matches(&log) {
+            for (i, m, e) in <T as Runmd>::Extensions::get_matches(&log) {
                 trace!("Linking {:?}", m);
 
                 let dispref = self.build_ref::<T>(e);

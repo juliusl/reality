@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
 
 #[allow(unused_imports)]
 mod framework {
-    use reality::v2::{prelude::*, BuildLog, Visitor};
+    use reality::v2::{prelude::*, BuildLog, Visitor, GetMatches};
     use specs::VecStorage;
 
     pub static ROOT: &'static str = r##"

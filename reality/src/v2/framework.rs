@@ -26,6 +26,7 @@ use crate::Error;
 use crate::Identifier;
 
 use super::DispatchSignature;
+use super::GetMatches;
 use super::compiler::Object;
 use super::BuildLog;
 use super::DispatchRef;

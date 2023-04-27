@@ -31,10 +31,14 @@ where
         Self { new, dispatch: None, build_log }
     }
 
-    /// Activates the linker w/ a dispatch ref,
+    /// Activates the linker by providing a dispatch ref to storage,
     /// 
     pub fn activate(self, dispatch: DispatchRef<'a, T>) -> Self {
-        Self { new: self.new, dispatch: Some(dispatch), build_log: self.build_log }
+        Self { 
+            new: self.new, 
+            dispatch: Some(dispatch), 
+            build_log: self.build_log 
+        }
     }
 }
 

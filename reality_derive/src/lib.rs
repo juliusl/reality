@@ -282,28 +282,6 @@ pub fn dispatch_signature(_attr: proc_macro::TokenStream, input: proc_macro::Tok
             #( #variants ),*
         }
 
-        impl #generics #name #generics {
-            #[doc = "Returns any matches of signatures from a BuildLog component"]
-            #vis fn get_matches(build_log: &reality::v2::BuildLog) -> Vec<(#name #generics, specs::Entity)> {
-                let mut matches = vec![];
-
-                for (ident, entity) in build_log.index().iter() {
-                    #variant_matches_with_entity
-                }
-
-                matches
-            }
-
-            #[doc = "Returns all matches for this identifier"]
-            #vis fn get_match(ident: &reality::v2::prelude::Identifier) -> Vec<#name #generics> {
-                let mut matches = vec![];
-
-                #variant_matches
-
-                matches
-            }
-        }
-
         impl #generics reality::v2::GetMatches for #name #generics {
             fn get_match(ident: &reality::v2::prelude::Identifier) -> Vec<#name #generics> {
                 let mut matches = vec![];

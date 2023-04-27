@@ -17,6 +17,7 @@ pub use crate::v2::ThunkBuild;
 pub use crate::v2::ThunkListen;
 pub use crate::v2::ThunkCompile;
 pub use crate::v2::ThunkUpdate;
+pub use crate::v2::GetMatches;
 pub use crate::v2::parser::Packet;
 pub use crate::v2::thunk_call;
 pub use crate::v2::thunk_build;
@@ -27,7 +28,6 @@ pub use crate::v2::command::export_toml;
 pub use crate::v2::command::import_toml;
 pub use crate::v2::property_list;
 pub use crate::v2::property_value;
-
 pub use crate::v2::states::*;
 
 mod ext {

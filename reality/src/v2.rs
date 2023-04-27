@@ -90,11 +90,16 @@ where
 {
     /// Returns a vector of pattern matches from build log,
     ///
-    fn get_matches(build_log: &BuildLog) -> Vec<(Self, specs::Entity)> {
+    fn get_matches(build_log: &BuildLog) -> Vec<(Identifier, Self, specs::Entity)> {
         build_log
             .index()
             .iter()
-            .flat_map(|(i, e)| Self::get_match(i).iter().map(|m| (m.clone(), *e)).collect::<Vec<_>>())
+            .flat_map(|(i, e)| 
+                Self::get_match(i)
+                    .iter()
+                    .map(|m| (i.clone(), m.clone(), *e))
+                    .collect::<Vec<_>>()
+                )
             .collect::<Vec<_>>()
     }
 
@@ -102,7 +107,7 @@ where
 }
 
 impl GetMatches for () {
-    fn get_matches(_: &BuildLog) -> Vec<(Self, specs::Entity)>
+    fn get_matches(_: &BuildLog) -> Vec<(Identifier, Self, specs::Entity)>
     where
         Self: Sized,
     {

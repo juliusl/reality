@@ -9,6 +9,8 @@ use crate::Identifier;
 use crate::Value;
 
 use super::DispatchSignature;
+use super::GetMatches;
+use super::Properties;
 use super::Property;
 use super::Visitor;
 
@@ -16,7 +18,7 @@ use super::Visitor;
 ///
 #[derive(Clone, Debug)]
 pub enum Action {
-    /// Applies a value to the current namespace,
+    /// Applies a name/value,
     ///
     With(String, Value),
     /// Extends the current namespace,
@@ -28,6 +30,9 @@ pub enum Action {
     /// Doc comment,
     ///
     Doc(String),
+    /// Sets a property,
+    ///
+    Set(String, Property),
 }
 
 /// Returns an action that will apply a property,
@@ -54,6 +59,12 @@ pub fn config(config_ident: &Identifier, config: &Property) -> Action {
     Action::Config(config_ident.clone(), config.clone())
 }
 
+/// Returns a set action,
+///
+pub fn set(name: impl Into<String>, property: impl Into<Property>) -> Action {
+    Action::Set(name.into(), property.into())
+}
+
 /// Component for a list of actions to apply,
 ///
 #[derive(Component, Debug)]
@@ -62,6 +73,61 @@ pub struct ActionBuffer {
     /// Actions that are pending application,
     ///
     actions: Vec<Action>,
+}
+
+impl ActionBuffer {
+    /// Returns an action that will apply a property,
+    ///
+    pub fn with(mut self, name: impl Into<String>, value: impl Into<Value>) -> Self {
+        self.actions.push(with(name, value));
+        self
+    }
+
+    /// Returns an extend action,
+    ///
+    pub fn extend(mut self, ident: impl Into<Identifier>) -> Self {
+        let ident = ident.into();
+        self.actions.push(extend(&ident));
+        self
+    }
+
+    /// Returns a doc comment action,
+    ///
+    pub fn doc(mut self, comment: impl Into<String>) -> Self {
+        self.actions.push(doc(comment));
+        self
+    }
+
+    /// Returns a set action,
+    ///
+    pub fn set(mut self, name: impl Into<String>, property: impl Into<Property>) -> Self {
+        self.actions.push(set(name, property));
+        self
+    }
+
+    /// Apply actions to properties,
+    /// 
+    // pub fn apply(&self, properties: &mut Properties) {
+    //     for a in self.actions.iter() {
+    //         match a {
+    //             Action::With(name, value) => {
+    //                 properties.add(name, value.clone());
+    //             },
+    //             Action::Set(name, prop) => {
+    //                 properties.set(name, prop.clone());
+    //             },
+    //             Action::Extend(_) => {
+    //                 continue;
+    //             },
+    //             Action::Config(_, _) => {
+    //                 continue;
+    //             },
+    //             Action::Doc(_) => {
+                    
+    //             },
+    //         }
+    //     }
+    // }
 }
 
 impl ActionBuffer {
@@ -77,7 +143,7 @@ impl ActionBuffer {
         self.actions.push(config(config_ident, _config));
     }
 
-    pub fn config(&self, entity: Entity, target: &mut impl Visitor) -> Result<(), Error> {
+    pub fn config(&self, _: Entity, target: &mut impl Visitor) -> Result<(), Error> {
         for action in self.actions.iter() {
             match action {
                 Action::Config(ident, prop) => {
@@ -154,13 +220,11 @@ impl ActionBuffer {
                                         "Detected Extended Property Signature --"
                                     );
                                     if let Some(properties) = prop.as_properties() {
-                                        for (name, prop) in properties
-                                            .iter_properties()
-                                        {
+                                        for (name, prop) in properties.iter_properties() {
                                             let config_ext = format!("{config}.{extension}.{name}")
                                                 .parse::<Identifier>()?;
                                             target.visit_property(name, prop);
-                                            target.visit_extension( &config_ext);
+                                            target.visit_extension(&config_ext);
                                         }
                                     }
                                 }

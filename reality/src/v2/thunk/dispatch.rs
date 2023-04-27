@@ -97,7 +97,7 @@ where
 
 #[allow(unused_imports)]
 mod tests {
-    use crate::v2::prelude::*;
+    use crate::v2::{prelude::*, GetMatches};
 
     #[tracing_test::traced_test]
     #[test]
