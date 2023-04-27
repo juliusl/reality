@@ -105,8 +105,8 @@ impl ActionBuffer {
         self
     }
 
-    /// Apply actions to properties,
-    /// 
+    // Apply actions to properties,
+    //
     // pub fn apply(&self, properties: &mut Properties) {
     //     for a in self.actions.iter() {
     //         match a {

@@ -155,38 +155,6 @@ async fn main() -> Result<()> {
         for m in matches.iter() {
             println!("Println: {:#}--{:?}--{:?}", m.0, m.1, m.2);
         }
-        // for m in matches.iter() {
-        //     match &m.0 {
-        //         test_framework::PrintlnExtensions::PluginRootConfig { .. } => {
-        //             if let Some(o) = compiler.compiled().state::<Object>(m.1) {
-        //                 let is_root = o.is_root();
-        //                 if !is_root {
-        //                     println!("Println: {:?}", m);
-        //                 }
-        //             }
-        //         },
-        //         test_framework::PrintlnExtensions::CliRootConfig { .. } => {
-        //             if let Some(o) = compiler.compiled().state::<Object>(m.1) {
-        //                 let is_root = o.is_root();
-        //                 if !is_root {
-        //                     println!("Println: {:?}", m);
-        //                 }
-        //             }
-        //         },
-        //         _ => {
-        //             println!("Println: {:?}", m);
-        //         }
-        //     }
-        // }
-        // if matches.first().map(|f| if let test_framework::PrintlnExtensions::PluginRoot {  } = f.0 {
-        //     true
-        // } else {
-        //     false
-        // }).unwrap_or_default() {
-        // for m in matches.iter() {
-        //     println!("Println: {:?}", m);
-        // }
-        //}
     }
 
     let linker = Linker::new(test_framework::Process::new(), log.clone());

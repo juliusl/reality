@@ -1,10 +1,26 @@
+use std::ops::Index;
+
+use crate::v2::Properties;
+use crate::v2::Property;
 use crate::v2::Runmd;
 use crate::v2::Visitor;
 
 use super::BuildLog;
 use super::DispatchRef;
 
-/// Linker takes a Component and scans the build_log for candidates that the Component must visit,
+/// A Linker wraps a runmd component T and scans the build log index for entities that are related,
+/// 
+/// Entities are selected via the Runmd::Extensions associated type that implements GetMatches. 
+/// 
+/// When the Runmd trait is derived, there are 3 distinct patterns that are relevant to an extension.
+/// 
+/// Given some extension named Plugin,
+/// 
+/// 1) `PluginRoot`  : This entity is the root of the extension symbol
+/// 2) `PluginConfig`: This entity is a configuration of the extension
+/// 3) `Plugin`      : This entity is a usage of the extension
+/// 
+/// *Root and *Config entities are defined and found in the "root" block
 /// 
 pub struct Linker<'a, T> 
 where
@@ -25,10 +41,10 @@ impl<'a, T> Linker<'a, T>
 where
     T: Runmd,
 {
-    /// Creates a new empty linker w/ build log,
+    /// Creates a new Linker,
     /// 
     pub fn new(new: T, build_log: BuildLog) -> Self {
-        Self { new, dispatch: None, build_log }
+        Self { new, build_log, dispatch: None }
     }
 
     /// Activates the linker by providing a dispatch ref to storage,
@@ -39,6 +55,13 @@ where
             dispatch: Some(dispatch), 
             build_log: self.build_log 
         }
+    }
+
+    /// Link 
+    /// 
+    pub fn link<'b>(&mut self, config: &mut (impl Visitor + Index<&'b str, Output = Property>), target: &mut impl Visitor, name: &'b String, property: &Property) {
+        config.visit_property(name, property);
+        target.visit_property(name, &config[name]);
     }
 }
 
