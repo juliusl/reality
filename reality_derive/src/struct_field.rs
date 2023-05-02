@@ -7,8 +7,11 @@ use quote::ToTokens;
 use syn::ext::IdentExt;
 use syn::parse::Parse;
 use syn::parse2;
+use syn::parse_str;
+use syn::spanned::Spanned;
 use syn::token::Mut;
 use syn::Attribute;
+use syn::ExprField;
 use syn::Generics;
 use syn::Lifetime;
 use syn::LitStr;
@@ -36,9 +39,14 @@ pub(crate) struct StructField {
     /// Name of the type,
     ///
     pub(crate) ty: Path,
+    /// Name to use for the field,
+    ///
+    pub(crate) rename: Option<LitStr>,
+
+    pub(crate) config: Option<ExprField>,
     /// Ident of the config attribute,
     ///
-    pub(crate) config: Option<Ident>,
+    // pub(crate) config: Option<Ident>,
     /// True if reference type
     ///
     pub(crate) reference: bool,
@@ -218,7 +226,9 @@ impl StructField {
     pub(crate) fn name_str_literal(&self) -> LitStr {
         let name = &self.name;
         let name = name.get_ident().unwrap();
-        LitStr::new(&name.to_string(), name.span())
+        let name = LitStr::new(&name.to_string(), name.span());
+
+        self.rename.clone().unwrap_or(name)
     }
 
     pub(crate) fn root_ext_input_pattern_lit_str(&self, ext: &Ident) -> LitStr {
@@ -233,6 +243,74 @@ impl StructField {
         LitStr::new(&format, Span::call_site())
     }
 
+    pub(crate) fn visit_config_extensions(&self, subject: &Ident) -> TokenStream {
+        if let Some(ident) = self.ty.get_ident() {
+            let extensions = format_ident!("{}Extensions", subject);
+
+            let root_ident = format!("{}::{}Root", extensions, ident);
+            let root_ident = parse_str::<Path>(&root_ident).unwrap();
+            let config_ident = format!("{}::{}Config", extensions, ident);
+            let config_ident = parse_str::<Path>(&config_ident).unwrap();
+
+            let ident_lit = LitStr::new(ident.to_string().to_lowercase().as_str(), Span::call_site());
+            let ident_config_lit = LitStr::new(format!("{}.{{config}}.{{property}}", ident.to_string().to_lowercase()).as_str(), Span::call_site());
+
+            quote_spanned! {subject.span()=>
+                #root_ident { } => {
+                    if properties.len() > 0 {
+                        visitor.visit_property(#ident_lit, &reality::v2::prelude::Property::Properties(properties.clone().into()));
+                    } else {
+                        visitor.visit_property(#ident_lit, &reality::v2::prelude::Property::Empty);
+                    }
+                    
+                    return Ok(());
+                },
+                #config_ident { config, property } => {
+                    if properties.len() > 0 {
+                        visitor.visit_property(&format!(#ident_config_lit), &reality::v2::prelude::Property::Properties(properties.clone().into()));
+                    } else {
+                        visitor.visit_property(&format!(#ident_config_lit), &reality::v2::prelude::Property::Empty);
+                    }
+
+                    return Ok(());
+                },
+            }
+        } else {
+            quote_spanned! {subject.span()=>
+
+            }
+        }
+    }
+
+    pub(crate) fn visit_load_extensions(&self, subject: &Ident) -> TokenStream {
+        if let Some(ident) = self.ty.get_ident() {
+            let name = &self.name;
+            let extensions = format_ident!("{}Extensions", subject);
+
+            let load_ident = format!("{}::{}", extensions, ident);
+            let load_ident = parse_str::<Path>(&load_ident).unwrap();
+
+            let subject_lit = LitStr::new(subject.to_string().to_lowercase().as_str(), Span::call_site());
+
+            quote_spanned! {subject.span()=>
+                #load_ident { property: Some(property), value: None } => {
+                    visitor.visit_symbol(#subject_lit, None, property);
+                    <#subject as reality::v2::prelude::Visit<&#ident>>::visit(&loading, &loading.#name, visitor)?;
+                    return Ok(());
+                },
+                #load_ident { property: Some(property), value: Some(value) } => {
+                    visitor.visit_symbol(property, None, value);
+                    <#subject as reality::v2::prelude::Visit<&#ident>>::visit(&loading, &loading.#name, visitor)?;
+                    return Ok(());
+                },
+            }
+        } else {
+            quote_spanned! {subject.span()=>
+
+            }
+        }
+    }
+
     pub(crate) fn extension_interpolation_variant(&self, subject: &Ident) -> TokenStream {
         if let Some(ident) = self.ty.get_ident() {
             let root_pattern = format!(
@@ -241,12 +319,6 @@ impl StructField {
                 subject.to_string().to_lowercase()
             );
             let root_ident = format_ident!("{}Root", ident);
-
-            // let root_config_pattern = format!(
-            //     r##"!#block#.#root#.{}.(config);"##,
-            //     ident.to_string().to_lowercase()
-            // );
-            // let root_config_ident = format_ident!("{}RootConfig", ident);
 
             let config_pattern = format!(
                 r##"!#block#.#root#.{}.{}.(config).(property);"##,
@@ -261,6 +333,19 @@ impl StructField {
                 subject.to_string().to_lowercase()
             );
             let pattern = LitStr::new(pattern.as_str(), Span::call_site());
+
+            let root = quote_spanned! {subject.span()=>
+                #root_ident { } => {
+
+                },
+                #config_ident { config, property } => {
+
+                },
+                #ident { property, value } => {
+
+                }
+            };
+
             quote_spanned! {self.span=>
                 #[interpolate(#root_pattern)]
                 #root_ident,
@@ -276,24 +361,47 @@ impl StructField {
             }
         }
     }
+
+    pub(crate) fn visit_property_expr(&self) -> TokenStream {
+        let prop = &self.name;
+
+        if let Some(config) = self.config.as_ref() {
+            quote_spanned! {config.span()=>
+                &self.#config(&self.#prop)
+            }
+        } else {
+            quote_spanned! {prop.span()=>
+                &reality::v2::prelude::Property::from(&self.#prop)
+            }
+        }
+    }
+
+    pub(crate) fn visit_expr(&self) -> TokenStream {
+        let name_lit = self.name_str_literal();
+        let prop = self.visit_property_expr();
+        quote_spanned! {self.span=>
+            <reality::v2::prelude::Property as reality::v2::prelude::Visit<reality::v2::prelude::Name<'a>>>::visit(#prop, #name_lit, visitor)?;
+        }
+    }
 }
 
 impl Parse for StructField {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         // Parse attributes
         let attributes = Attribute::parse_outer(input)?;
-        let mut config_attr = None::<Ident>;
         let mut doc = None::<LitStr>;
+        let mut rename = None::<LitStr>;
+        let mut config = None::<ExprField>;
         let mut block = false;
         let mut root = false;
         let mut ext = false;
         let span = input.span();
 
         for attribute in attributes {
-            if attribute.path().is_ident("config") {
-                let ident: Ident = attribute.parse_args()?;
-                config_attr = Some(ident);
-            }
+            // if attribute.path().is_ident("config") {
+            //     let ident: Ident = attribute.parse_args()?;
+            //     config_attr = Some(ident);
+            // }
 
             if attribute.path().is_ident("doc") {
                 if doc.is_none() {
@@ -317,6 +425,25 @@ impl Parse for StructField {
             if attribute.path().is_ident("block") {
                 block = true;
             }
+
+            // #[config(rename = "SOME_NAME", ext = plugin.list)]
+            if attribute.path().is_ident("config") {
+                attribute.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("rename") {
+                        meta.input.parse::<Token![=]>()?;
+                        let _r = meta.input.parse::<LitStr>()?;
+                        rename = Some(_r);
+                    }
+
+                    if meta.path.is_ident("ext") {
+                        meta.input.parse::<Token![=]>()?;
+                        let _c = meta.input.parse::<ExprField>()?;
+                        config = Some(_c);
+                    }
+
+                    Ok(())
+                })?;
+            }
         }
 
         // Parse any visibility modifiers
@@ -338,6 +465,8 @@ impl Parse for StructField {
 
             let ty = input.parse::<Path>()?;
             Ok(Self {
+                config,
+                rename,
                 span,
                 name,
                 ty,
@@ -348,7 +477,7 @@ impl Parse for StructField {
                 block,
                 root,
                 ext,
-                config: config_attr,
+                // config: config_attr,
                 doc,
             })
         } else if input.peek(Ident::peek_any) {
@@ -366,6 +495,8 @@ impl Parse for StructField {
                 let ty = input.parse::<Path>()?;
                 input.parse::<Token![>]>()?;
                 Ok(Self {
+                    config,
+                    rename,
                     span,
                     name,
                     ty,
@@ -376,7 +507,7 @@ impl Parse for StructField {
                     block,
                     root,
                     ext,
-                    config: config_attr,
+                    // config: config_attr,
                     doc,
                 })
             } else {
@@ -384,6 +515,8 @@ impl Parse for StructField {
                 input.parse::<Generics>()?;
 
                 Ok(Self {
+                    config,
+                    rename,
                     span,
                     name,
                     ty,
@@ -394,7 +527,7 @@ impl Parse for StructField {
                     block,
                     root,
                     ext,
-                    config: config_attr,
+                    // config: config_attr,
                     doc,
                 })
             }
@@ -402,6 +535,8 @@ impl Parse for StructField {
             let ty = name.clone();
             input.parse::<Type>()?;
             Ok(Self {
+                config,
+                rename,
                 span,
                 name,
                 ty,
@@ -412,7 +547,7 @@ impl Parse for StructField {
                 block,
                 root,
                 ext,
-                config: config_attr,
+                // config: config_attr,
                 doc,
             })
         }

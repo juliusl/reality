@@ -355,6 +355,24 @@ impl From<Vec<Value>> for Property {
     }
 }
 
+impl From<&Vec<String>> for Property {
+    fn from(value: &Vec<String>) -> Self {
+        let mut values = vec![];
+
+        for v in value.iter() {
+            values.push(Value::Symbol(v.to_string()));
+        }
+
+        Property::List(values)
+    }
+}
+
+impl From<&usize> for Property {
+    fn from(value: &usize) -> Self {
+        Property::Single(Value::Int(*value as i32))
+    }
+}
+
 impl From<&Property> for String {
     fn from(value: &Property) -> Self {
         value.as_symbol().map(|s| s.to_string()).unwrap_or_default()
@@ -364,6 +382,18 @@ impl From<&Property> for String {
 impl From<Property> for String {
     fn from(value: Property) -> Self {
         value.as_symbol().map(|s| s.to_string()).unwrap_or_default()
+    }
+}
+
+impl From<String> for Property {
+    fn from(value: String) -> Self {
+        Property::Single(Value::Symbol(value))
+    }
+}
+
+impl From<&String> for Property {
+    fn from(value: &String) -> Self {
+        Property::Single(Value::Symbol(value.to_string()))
     }
 }
 

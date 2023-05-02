@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
                 .from_env()
                 .expect("should be able to build from env variables")
                 .add_directive(
-                    "reality::v2::action=trace"
+                    "reality::v2=trace"
                         .parse()
                         .expect("should be able to parse tracing settings"),
                 ),
@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
         .init();
 
     let mut args = std::env::args();
-    let compiler = loop {
+    let mut compiler = loop {
         if let Some(argument) = args.next() {
             match argument.as_str() {
                 "toml" => {
@@ -45,157 +45,20 @@ async fn main() -> Result<()> {
         }
     };
 
+    compiler.link(test_framework::Process::new()).unwrap();
+
     let log = compiler.last_build_log().unwrap();
 
-    let mut config_map = BTreeMap::<String, String>::new();
-    let mut config_actions = BTreeMap::<String, Property>::new();
-
-    for (_, build) in compiler.compiled().state_vec::<v2::states::Build>() {
-        let log = build.build_log;
-
-        for (i, e) in log.index().iter() {
-            println!("{:#} {:?}", i, e);
-        }
-
-        let matches = <test_framework::Process as Runmd>::Extensions::get_matches(&log);
-        let mut process = test_framework::Process::new();
-        let process = &mut process;
-
-        for m in matches.iter() {
-            println!("Process: {:#}--{:?}--{:?}", m.0, m.1, m.2);
-            match &m.1 {
-                test_framework::ProcessExtensions::PluginRoot {} => {
-                    if let Some(o) = compiler.compiled().state::<Object>(m.2) {
-                        process.visit_properties(o.properties());
-                    }
-                },
-                test_framework::ProcessExtensions::PluginConfig { config, property } => {
-                    let config_name = format!("Plugin.config_{}", config);
-                    if let None = config_map.insert(property.clone(), config_name.to_string()) {
-                        if let Some(o) = compiler.compiled().state::<Object>(m.2) {
-                            let owner = o.properties().owner();
-                            let key = format!("{}.{}", owner.root(), owner.subject());
-                            println!("-- owner: {owner}");
-                            for (n, prop) in o.properties().iter_properties() {
-                                println!("-- {n} {:?}", prop);
-                            }
-
-                            config_actions.insert(config_name, Property::Properties(o.properties().clone().into()));
-                        }
-                    }
-                },
-                test_framework::ProcessExtensions::CliRoot {} => {
-                    if let Some(o) = compiler.compiled().state::<Object>(m.2) {
-                        process.visit_properties(o.properties());
-                    }
-                },
-                test_framework::ProcessExtensions::CliConfig { config, property } => {
-                    config_map.insert(property.clone(), config.clone());
-                },
-                // Check to see if a config exists for property
-                test_framework::ProcessExtensions::Plugin { property: Some(property), .. } => {
-                    *process = Process::new();
-                    process.process = property.to_string();
-
-                    if let Some(o) = compiler.compiled().state::<Object>(m.2) {
-                        process.visit_properties(o.properties());
-
-                        for (n, _) in o.properties().iter_properties() {
-                            if let Some(config) = config_map.get(n).and_then(|c| config_actions.get(c)) {
-                                println!("{n} config: {:?}", config);
-                            }
-                        }
-                    }
-                    println!("{:?}", process);
-                },
-                test_framework::ProcessExtensions::Cli { property: Some(..), .. } => {
-                    if let Some(o) = compiler.compiled().state::<Object>(m.2) {
-                        process.visit_properties(o.properties());
-
-                        for (n, _) in o.properties().iter_properties() {
-                            if let Some(config) = config_map.get(n).and_then(|c| config_actions.get(c)) {
-                                println!("{n} config: {:?}", config);
-                            }
-                        }
-                    }
-                },
-                _ => {
-
-                }
-            }
-        }
-
-        println!("{:#?}", config_actions);
-
-        // for m in matches.iter() {
-        //     match &m.0 {
-        //         test_framework::ProcessExtensions::PluginRootConfig { .. } => {
-        //             if let Some(o) = compiler.compiled().state::<Object>(m.1) {
-        //                 let is_root = o.is_root();
-        //                 if !is_root {
-        //                     println!("Process: {:?}", m);
-        //                 }
-        //             }
-        //         },
-        //         test_framework::ProcessExtensions::CliRootConfig { .. } => {
-        //             if let Some(o) = compiler.compiled().state::<Object>(m.1) {
-        //                 let is_root = o.is_root();
-        //                 if !is_root {
-        //                     println!("Process: {:?}", m);
-        //                 }
-        //             }
-        //         },
-        //         _ => {
-        //             println!("Process: {:?}", m);
-        //         }
-        //     }
-        // }
-
-        let matches = <test_framework::Println as Runmd>::Extensions::get_matches(&log);
-        for m in matches.iter() {
-            println!("Println: {:#}--{:?}--{:?}", m.0, m.1, m.2);
+    for (_, m, e) in test_framework::ProcessExtensions::get_matches(&log) {
+        match m {
+            test_framework::ProcessExtensions::Plugin { .. } => {
+                compiler.as_ref().read_component::<test_framework::Process>().get(e).map(|p| {
+                    println!("post-link -- {:#?}", p);
+                });
+            },
+            _ => {}
         }
     }
-
-    let linker = Linker::new(test_framework::Process::new(), log.clone());
-
-    for (idx, (id, e)) in log.index().iter().enumerate() {
-        // println!("Build[{idx}]: {:#}", id);
-        // println!("Build[{idx}]: {:?}", e);
-        // compiler.as_ref().read_component::<Process>().get(*e).map(|e| {
-        //     println!("{:?}", e);
-        // });
-        compiler.compiled().state::<Object>(*e).map(|o| {
-            let map = o.ident().interpolate("#block#.(root).(?subject);");
-            println!("block -- {:?}", map);
-
-            let map = o
-                .ident()
-                .interpolate("#root#.plugin.(root).(?subject).(?property);");
-            println!("process plugin extension -- {:?}", map);
-
-            let is_block = o.is_block();
-            let is_root = o.is_root();
-            println!("is_block: {}, is_root: {}", is_block, is_root);
-            let ident = o.ident();
-            println!("{:#}", ident);
-            for (name, prop) in o.properties().iter_properties() {
-                let prop_ident = ident.branch(name).unwrap();
-                println!("{name}->{:#}: {:?}", prop_ident, prop);
-            }
-        });
-    }
-
-    // let matches = DispatchSignature::get_matches(log.clone());
-    // println!("{:#?}", matches);
-
-    // log.find_ref::<ActionBuffer>("app.#block#.usage.#root#.plugin.println", &mut compiler)
-    //     .unwrap()
-    //     .transmute::<Properties>()
-    //     .testa()?
-    //     .enable_async()
-    //     .call()
-    //     .await?;
 
     Ok(())
 }
@@ -204,23 +67,8 @@ async fn from_runmd() -> Result<Compiler> {
     let mut compiler = Compiler::new().with_docs();
     let framework = compile_example_framework(&mut compiler)?;
     println!("Compiled framework: {:?}", framework);
-
-    // Configure framework from build
-    let mut framework = Framework::new(framework);
-    compiler.visit_last_build(&mut framework);
-    println!("Configuring framework {:#?}", framework);
-    export_toml(&mut compiler, ".test/plugin_framework.toml").await?;
-
-    // Compile example usage runmd
     let framework_usage = compile_example_usage(&mut compiler)?;
     println!("Compiled example usage: {:?}", framework_usage);
-
-    // Apply framework to last build
-    compiler.update_last_build(&mut framework);
-    println!("{:#?}", framework);
-
-    // Configure to ingest and configure frameworks
-    apply_framework!(compiler, test_framework::Process, test_framework::Println);
     compiler.as_mut().maintain();
     export_toml(&mut compiler, ".test/usage_example.toml").await?;
 
@@ -318,6 +166,7 @@ const EXAMPLE_USAGE: &'static str = r##"
 :                       .stderr     Goodbye World Error
 <plugin>                .process    cargo                   # This process will be started
 : RUST_LOG              .env        reality=trace
+: HOME_DIR              .env        /etc/acr
 :                       .redirect   .test/test.output
 <plugin>                .process    python                  # This process will be started
 :                       .redirect   .test2/test.output   
@@ -335,20 +184,42 @@ const EXAMPLE_USAGE: &'static str = r##"
 #[allow(dead_code)]
 #[allow(unused_variables)]
 pub mod test_framework {
-    use reality::v2::prelude::*;
+    use std::collections::BTreeMap;
+
+    use reality::{v2::prelude::*, Value};
     use tracing_test::traced_test;
 
     #[derive(Clone, Debug, Default)]
-    pub struct Plugin;
+    pub struct Plugin {
+        list: (),
+        properties: Properties,
+    }
+
+    impl Plugin {
+        /// Returns read-only properties of values found in properties,
+        /// 
+        fn map(&self, properties: &Vec<String>) -> Property {
+            let mut output = Properties::empty();
+            for name in properties {
+                if let Some(prop) = self.properties.property(name) {
+                    output.set(name, prop.clone());
+                }
+            }
+
+            Property::Properties(output.into())
+        }
+    }
 
     impl Visitor for Plugin {
         fn visit_extension(&mut self, identifier: &Identifier) {
             println!("--- Plugin visited by: {:#}", identifier);
         }
 
-        fn visit_property(&mut self, name: &String, property: &Property) {
+        fn visit_property(&mut self, name: &str, property: &Property) {
             println!("--- Plugin visited by: {name}");
             println!("--- Plugin visited by: {:?}", property);
+
+            self.properties.visit_property(name, property);
         }
     }
 
@@ -356,7 +227,7 @@ pub mod test_framework {
     pub struct Cli;
 
     impl Visitor for Cli {
-        fn visit_property(&mut self, name: &String, property: &Property) {
+        fn visit_property(&mut self, name: &str, property: &Property) {
             println!("--- Cli visited by: {name}");
             println!("--- Cli visited by: {:?}", property);
         }
@@ -388,6 +259,18 @@ pub mod test_framework {
         cli: Cli,
     }
 
+    impl Visit<&Plugin> for Println {
+        fn visit(&self, context: &Plugin, visitor: &mut impl Visitor) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Visit<&Cli> for Println {
+        fn visit(&self, context: &Cli, visitor: &mut impl Visitor) -> Result<()> {
+            Ok(())
+        }
+    }
+
     #[async_trait]
     impl reality::v2::Call for Println {
         async fn call(&self) -> Result<Properties> {
@@ -416,7 +299,7 @@ pub mod test_framework {
                 stderr: vec![],
                 stdout: vec![],
                 test: String::new(),
-                plugin: Plugin {},
+                plugin: Plugin { list: (), properties: Properties::empty() },
                 cli: Cli {},
             }
         }
@@ -428,12 +311,32 @@ pub mod test_framework {
     pub struct Process {
         pub process: String,
         pub redirect: String,
+        #[config(rename="RUST_LOG")]
         pub rust_log: String,
+        #[config(rename="env", ext=plugin.map)]
         pub env: Vec<String>,
         #[ext]
         plugin: Plugin,
         #[ext]
         cli: Cli,
+    }
+
+    impl Visit<&Cli> for Process {
+        fn visit(&self, context: &Cli, visitor: &mut impl Visitor) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Visit<&Plugin> for Process {
+        fn visit(&self, context: &Plugin, visitor: &mut impl Visitor) -> Result<()> {
+            println!("visiting -- {}", self.process);
+            for (name, prop) in context.properties.iter_properties() {
+                println!("visiting -- {name} -- {:#?}", prop);
+                visitor.visit_property(name, prop);
+            }
+            
+            Ok(())
+        }
     }
 
     impl Process {
@@ -443,7 +346,7 @@ pub mod test_framework {
                 redirect: String::new(),
                 rust_log: String::new(),
                 env: vec![],
-                plugin: Plugin {},
+                plugin: Plugin { list: (), properties: Properties::empty() },
                 cli: Cli {},
             }
         }
@@ -457,5 +360,27 @@ pub mod test_framework {
 
             Ok(Properties::default())
         }
+    }
+
+    #[test]
+    fn test_visit_process() {
+        let process = Process {
+            process: String::from("test"),
+            redirect: String::from(".test/test.log"),
+            rust_log: String::from("trace"),
+            env: vec![String::from("a"), String::from("b")],
+            plugin: Plugin,
+            cli: Cli,
+        };
+
+        let mut props = Properties::empty();
+        process.visit((), &mut props).unwrap();
+
+        assert_eq!("test", props["process"].as_symbol().unwrap().as_str());
+        assert_eq!(".test/test.log", props["redirect"].as_symbol().unwrap().as_str());
+        assert_eq!("trace", props["RUST_LOG"].as_symbol().unwrap().as_str());
+        println!("{:#}", props);
+
+        let m = ProcessExtensions::PluginConfig { config: (), property: () };
     }
 }

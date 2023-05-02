@@ -1,5 +1,8 @@
+use self::linker::LinkerEvents;
+
 use super::parser::Packet;
 use super::parser::PacketHandler;
+use super::prelude::Visit;
 use super::thunk::ThunkUpdate;
 use super::thunk::Update;
 use super::Documentation;
@@ -13,6 +16,7 @@ use super::ThunkCall;
 use super::ThunkCompile;
 use super::ThunkListen;
 use super::Visitor;
+use crate::state::Provider;
 use crate::v2::Block;
 use crate::v2::BlockList;
 use crate::v2::Build;
@@ -20,10 +24,12 @@ use crate::v2::Root;
 use crate::Error;
 use crate::Identifier;
 use specs::Builder;
+use specs::Component;
 use specs::Entity;
 use specs::LazyUpdate;
 use specs::World;
 use specs::WorldExt;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use tracing::trace;
@@ -42,6 +48,17 @@ pub(crate) use dispatch_ref::WorldRef;
 pub use dispatch_ref::WorldWrapper;
 
 pub mod linker;
+
+/// Enumeration of different compiler events,
+///
+pub enum CompilerEvents<'a, T> {
+    /// Context when properties of the config block are compiled,
+    ///
+    Config(&'a Properties),
+    /// Context when loading T,
+    ///
+    Load(&'a T),
+}
 
 /// Struct to build a world from interop packets,
 ///
@@ -81,6 +98,7 @@ impl Compiler {
         world.register::<ThunkUpdate>();
         world.register::<ThunkListen>();
         world.register::<ThunkCompile>();
+        world.register::<LinkerEvents>();
         world.insert(None::<tokio::runtime::Handle>);
         Compiler {
             world,
@@ -253,25 +271,60 @@ impl Compiler {
         }
     }
 
+    pub fn empty_build_ref<'a, T: Send + Sync + 'a>(&'a mut self) -> DispatchRef<'a, T> {
+        DispatchRef::<'a, T> {
+            world_ref: Some(self),
+            entity: None,
+            error: None,
+            _u: PhantomData,
+        }
+    }
+
     /// Creates a linker and links w/ current build log,
     ///
-    pub fn link<T: Runmd>(&mut self, new: T) -> crate::Result<()> {
-        if let Some(log) = self.last_build_log() {
-            for (i, m, e) in <T as Runmd>::Extensions::get_matches(&log) {
-                trace!("Linking {:?}", m);
+    pub fn link<T>(&mut self, new: T) -> crate::Result<()>
+    where
+        T: Runmd + Debug,
+        for<'a> &'a T: Visit,
+        <T as Component>::Storage: Default,
+    {
+        let builds = { 
+            let compiled = self.compiled();
+            compiled.state_vec::<crate::v2::prelude::Build>().iter().map(|b| (b.0, b.1.build_log.clone())).collect::<Vec<_>>() 
+        };
 
-                let dispref = self.build_ref::<T>(e);
+        for (_, log) in builds.iter().take(2) {
+            let dispref = self.empty_build_ref::<T>();
 
-                let _ = Linker::new(
-                    new.clone(), 
-                    log.clone()
-                ).activate(dispref);
-            }
-
-            Ok(())
-        } else {
-            Err("No build log to link with".into())
+            let mut linker = Linker::new(
+                new.clone(), 
+                log.clone()
+            )
+            .activate(dispref);
+            
+            linker.link()?;
         }
+
+        Ok(())
+
+        // if let Some(log) = self.last_build_log() {
+        //     for (i, m, e) in <T as Runmd>::Extensions::get_matches(&log) {
+        //         trace!("Linking {:?}", m);
+
+        //         let dispref = self.build_ref::<T>(e);
+
+        //         let mut linker = Linker::new(
+        //             new.clone(),
+        //             log.clone()
+        //         ).activate(dispref);
+
+        //         linker.link()?;
+        //     }
+
+        //     Ok(())
+        // } else {
+        //     Err("No build log to link with".into())
+        // }
     }
 }
 

@@ -107,6 +107,12 @@ mod framework {
         pub cli: Cli,
     }
 
+    impl Visit<&Cli> for Test {
+        fn visit(&self, context: &Cli, visitor: &mut impl Visitor) -> Result<()> {
+            todo!()
+        }
+    }
+
     impl Test {
         pub fn new() -> Test {
             Test {
@@ -155,10 +161,10 @@ mod framework {
             }
         }
 
-        fn visit_symbol(&mut self, name: &String, _: Option<usize>, symbol: &String) {
+        fn visit_symbol(&mut self, name: &str, _: Option<usize>, symbol: &String) {
             println!("Cli visited by prop: {name}");
             println!("Cli visited by prop: {:?}", symbol);
-            match name.as_str() {
+            match name {
                 "about" => {
                     self.command = self.command.clone().about(symbol);
                 }

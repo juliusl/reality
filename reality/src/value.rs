@@ -263,6 +263,48 @@ impl From<Vec<u8>> for Value {
     }
 }
 
+impl From<&[i32; 3]> for Value {
+    fn from(value: &[i32; 3]) -> Self {
+        Value::IntRange(value[0], value[1], value[2])
+    }
+}
+
+impl From<&[i32; 2]> for Value {
+    fn from(value: &[i32; 2]) -> Self {
+        Value::IntPair(value[0], value[1])
+    }
+}
+
+impl From<i32> for Value {
+    fn from(value: i32) -> Self {
+        Value::Int(value)
+    }
+}
+
+impl From<&[f32; 3]> for Value {
+    fn from(value: &[f32; 3]) -> Self {
+        Value::FloatRange(value[0], value[1], value[2])
+    }
+}
+
+impl From<&[f32; 2]> for Value {
+    fn from(value: &[f32; 2]) -> Self {
+        Value::FloatPair(value[0], value[1])
+    }
+}
+
+impl From<f32> for Value {
+    fn from(value: f32) -> Self {
+        Value::Float(value)
+    }
+}
+
+impl From<&Vec<u8>> for Value {
+    fn from(value: &Vec<u8>) -> Self {
+        Value::BinaryVector(value.clone())
+    }
+}
+
 impl Eq for Value {}
 
 impl Ord for Value {

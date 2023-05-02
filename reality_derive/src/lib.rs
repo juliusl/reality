@@ -148,10 +148,10 @@ pub fn derive_apply(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 /// Derives Runmd trait,
-/// 
+///
 /// Note: In order to derive this trait, the type must also derive `Component and Clone`.
 ///
-#[proc_macro_derive(Runmd, attributes(compile, block, root, ext))]
+#[proc_macro_derive(Runmd, attributes(compile, config, block, root, ext))]
 pub fn derive_runmd(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let struct_data = parse_macro_input!(input as StructData);
 
@@ -214,7 +214,10 @@ pub fn thunk(
 /// Generates structs for enum fields that use an #[interpolate(..)] attribute,
 ///
 #[proc_macro_attribute]
-pub fn dispatch_signature(_attr: proc_macro::TokenStream, input: proc_macro::TokenStream,) -> proc_macro::TokenStream {
+pub fn dispatch_signature(
+    _attr: proc_macro::TokenStream,
+    input: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
     let item_enum = parse_macro_input!(input as ItemEnum);
     let name = &item_enum.ident;
     let generics = &item_enum.generics;
@@ -306,7 +309,6 @@ mod tests {
     use quote::format_ident;
     use quote::quote;
     use quote::ToTokens;
-    use syn::Expr;
     use syn::ext::IdentExt;
     use syn::parse::Parse;
     use syn::parse2;
@@ -315,6 +317,7 @@ mod tests {
     use syn::Attribute;
     use syn::Data;
     use syn::DeriveInput;
+    use syn::Expr;
     use syn::Fields;
     use syn::Lifetime;
     use syn::LitStr;
@@ -341,7 +344,7 @@ struct Test {
         //         let expr: Expr = nested.input.parse().unwrap();
         //         if let Expr::Paren(expr) = &expr {
         //             if let Expr::Closure(expr) = *expr.expr {
-                       
+
         //             }
         //         } else {
         //             Err(nested.error("Expecting a closure like this `|e| e.fn_name`"))
@@ -406,6 +409,9 @@ struct Test {
         name: String,
         /// These are rules
         rules: Vec<String>,
+        /// RUST_LOG env variable,
+        #[config(rename = "RUST_LOG", ext = plugin.list)]
+        rust_log: String,
         /// This is a plugin
         #[ext]
         plugin: Plugin,
@@ -418,9 +424,11 @@ struct Test {
         .unwrap();
 
         let input = parse2::<StructData>(ts).unwrap();
-        println!("{:#}", input.config_trait());
+        // println!("{:#}", input.config_trait());
+        // println!("{:#}", input.runmd_trait());
+        // println!("{:#}", input.extensions_enum());
+        // println!("{:#}", input.visit_trait());
         println!("{:#}", input.runmd_trait());
-        println!("{:#}", input.extensions_enum());
     }
 
     #[test]

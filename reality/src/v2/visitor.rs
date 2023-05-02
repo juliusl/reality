@@ -14,64 +14,152 @@ use super::Root;
 use crate::v2::states::Object;
 use crate::Identifier;
 use crate::Value;
+use crate::Result;
+
+/// Trait to visit a reference to a Visitor impl,
+/// 
+pub trait Visit<T = ()> {
+    /// 
+    /// 
+    fn visit(&self, context: T, visitor: &mut impl Visitor) -> Result<()>;
+}
+
+impl Visit for () {
+    fn visit(&self, _: (), _: &mut impl Visitor) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl Visit for Properties {
+    fn visit(&self, _: (), visitor: &mut impl Visitor) -> Result<()> {
+        for (name, property) in self.iter_properties() {
+            visitor.visit_property(name, property);
+        }
+        
+        Ok(())
+    }
+}
+
+impl<'a> Visit for Object<'a> {
+    fn visit(&self, _: (), visitor: &mut impl Visitor) -> Result<()> {
+        self.as_block()
+            .map(|b| visitor.visit_block(b));
+
+        self.as_root()
+            .map(|b| visitor.visit_root(b));
+
+        visitor.visit_identifier(self.ident());
+        visitor.visit_properties(self.properties());
+
+        Ok(())
+    }
+}
+
+/// Type alias for a property name,
+/// 
+pub type Name<'a> = &'a str;
+
+/// Struct containing arguments for visiting a value,
+/// 
+pub struct NameIndex<'a>(&'a str, Option<usize>);
+
+impl<'a> Visit<Name<'a>> for Property {
+    fn visit(&self, name: Name, visitor: &mut impl Visitor) -> Result<()> {
+        visitor.visit_property(&name, self);
+
+        Ok(())
+    }
+}
+
+impl<'a> Visit<NameIndex<'a>> for String {
+    fn visit(&self, NameIndex(name, idx): NameIndex<'a>, visitor: &mut impl Visitor) -> Result<()> {
+        visitor.visit_symbol(&name, idx, self);
+
+        Ok(())
+    }
+}
+
+impl<'a> Visit<Name<'a>> for String {
+    fn visit(&self, context: Name<'a>, visitor: &mut impl Visitor) -> Result<()> {
+        visitor.visit_symbol(context, None, self);
+        Ok(())
+    }
+}
+
+impl<'a> Visit<NameIndex<'a>> for Value {
+    fn visit(&self, NameIndex(name, idx): NameIndex<'a>, visitor: &mut impl Visitor) -> Result<()> {
+        visitor.visit_value(name, idx, self);
+        Ok(())
+    }
+}
+
+impl<'a> Visit<Name<'a>> for Value {
+    fn visit(&self, name: Name<'a>, visitor: &mut impl Visitor) -> Result<()> {
+        visitor.visit_value(name, None, self);
+        Ok(())
+    }
+}
 
 /// Visitor trait for visiting compiled runmd data,
 ///
 /// Note: Includes a number of default implementations mostly for the non-leaf types,
 ///
 #[allow(unused_variables)]
-pub trait Visitor {
+pub trait Visitor 
+where
+    Self: Sized
+{
     /// Visits an empty value,
     ///
-    fn visit_empty_value(&mut self, name: &String, idx: Option<usize>) {}
+    fn visit_empty_value(&mut self, name: &str, idx: Option<usize>) {}
 
     /// Visits a bool value,
     ///
-    fn visit_bool(&mut self, name: &String, idx: Option<usize>, bool: bool) {}
+    fn visit_bool(&mut self, name: &str, idx: Option<usize>, bool: bool) {}
 
     /// Visits a symbol value,
     ///
-    fn visit_symbol(&mut self, name: &String, idx: Option<usize>, symbol: &String) {}
+    fn visit_symbol(&mut self, name: &str, idx: Option<usize>, symbol: &String) {}
 
     /// Visits a text buffer value,
     ///
-    fn visit_text_buffer(&mut self, name: &String, idx: Option<usize>, text_buffer: &String) {}
+    fn visit_text_buffer(&mut self, name: &str, idx: Option<usize>, text_buffer: &String) {}
 
     /// Visits an integer value,
     ///
-    fn visit_int(&mut self, name: &String, idx: Option<usize>, i: i32) {}
+    fn visit_int(&mut self, name: &str, idx: Option<usize>, i: i32) {}
 
     /// Visits an integer pair value,
     ///
-    fn visit_int_pair(&mut self, name: &String, idx: Option<usize>, pair: &[i32; 2]) {}
+    fn visit_int_pair(&mut self, name: &str, idx: Option<usize>, pair: &[i32; 2]) {}
 
     /// Visits an integer range value,
     ///
-    fn visit_int_range(&mut self, name: &String, idx: Option<usize>, range: &[i32; 3]) {}
+    fn visit_int_range(&mut self, name: &str, idx: Option<usize>, range: &[i32; 3]) {}
 
     /// Visits a float value,
     ///
-    fn visit_float(&mut self, name: &String, idx: Option<usize>, f: f32) {}
+    fn visit_float(&mut self, name: &str, idx: Option<usize>, f: f32) {}
 
     /// Visits a float pair value,
     ///
-    fn visit_float_pair(&mut self, name: &String, idx: Option<usize>, pair: &[f32; 2]) {}
+    fn visit_float_pair(&mut self, name: &str, idx: Option<usize>, pair: &[f32; 2]) {}
 
     /// Visits a float range value,
     ///
-    fn visit_float_range(&mut self, name: &String, idx: Option<usize>, range: &[f32; 3]) {}
+    fn visit_float_range(&mut self, name: &str, idx: Option<usize>, range: &[f32; 3]) {}
 
     /// Visits a binary value,
     ///
-    fn visit_binary(&mut self, name: &String, idx: Option<usize>, binary: &Vec<u8>) {}
+    fn visit_binary(&mut self, name: &str, idx: Option<usize>, binary: &Vec<u8>) {}
 
     /// Visits a reference value,
     ///
-    fn visit_reference(&mut self, name: &String, idx: Option<usize>, reference: u64) {}
+    fn visit_reference(&mut self, name: &str, idx: Option<usize>, reference: u64) {}
 
     /// Visits a complex set value,
     ///
-    fn visit_complex(&mut self, name: &String, idx: Option<usize>, complex: &BTreeSet<String>) {}
+    fn visit_complex(&mut self, name: &str, idx: Option<usize>, complex: &BTreeSet<String>) {}
 
     /// Visits an identifier,
     ///
@@ -79,7 +167,7 @@ pub trait Visitor {
 
     /// Visits an empty property,
     ///
-    fn visit_empty(&mut self, name: &String) {}
+    fn visit_empty(&mut self, name: &str) {}
 
     /// Visits readonly properties,
     ///
@@ -87,7 +175,7 @@ pub trait Visitor {
 
     /// Visits a property name,
     ///
-    fn visit_property_name(&mut self, name: &String) {}
+    fn visit_property_name(&mut self, name: &str) {}
 
     /// Visits a root extension,
     ///
@@ -97,7 +185,7 @@ pub trait Visitor {
     ///
     /// Note: if overriding default implementation, value idx will need to be derived if calling visit_value
     ///
-    fn visit_list(&mut self, name: &String, values: &Vec<Value>) {
+    fn visit_list(&mut self, name: &str, values: &Vec<Value>) {
         for (idx, v) in values.iter().enumerate() {
             self.visit_value(name, Some(idx), v);
         }
@@ -107,7 +195,7 @@ pub trait Visitor {
     ///
     /// Note: If overriding default implementation, visit_* value types will need to be called manually
     ///
-    fn visit_value(&mut self, name: &String, idx: Option<usize>, value: &Value) {
+    fn visit_value(&mut self, name: &str, idx: Option<usize>, value: &Value) {
         match value {
             Value::Empty => self.visit_empty_value(name, idx),
             Value::Bool(b) => self.visit_bool(name, idx, *b),
@@ -127,14 +215,8 @@ pub trait Visitor {
 
     /// Visits a properties map,
     ///
-    /// Note: If overriding the default implementation, visit_property will need to be called manually.
-    ///
     fn visit_properties(&mut self, properties: &Properties) {
-        self.visit_identifier(properties.owner());
-
-        for (name, property) in properties.iter_properties() {
-            self.visit_property(name, property);
-        }
+        properties.visit((), self).ok();
     }
 
     /// Visits a property,
@@ -142,7 +224,9 @@ pub trait Visitor {
     /// Note: If overriding the default implementation, visit_value, visit_list, visit_readonly,
     /// and visit_empty and will need to be called manually.
     ///
-    fn visit_property(&mut self, name: &String, property: &Property) {
+    fn visit_property(&mut self, name: &str, property: &Property) {
+        // property.visit(Some(name.to_string()), self).ok();
+
         self.visit_property_name(name);
 
         match property {
@@ -163,18 +247,7 @@ pub trait Visitor {
     /// Note: If overriding the default implementation, visit_block, visit_identifier, and visit_properties, will need to be called manually.
     ///
     fn visit_object(&mut self, object: &Object) {
-        // Transient data
-        object
-            .as_block()
-            .map(|b| self.visit_block(b));
-
-        object
-            .as_root()
-            .map(|b| self.visit_root(b));
-
-        // Stable data
-        self.visit_identifier(object.ident());
-        self.visit_properties(object.properties());
+        object.visit((), self).ok();
     }
 
     /// Visits a block,
@@ -203,23 +276,23 @@ impl Visitor for () {
         println!("{:#?}", identifier);
     }
 
-    fn visit_property(&mut self, name: &String, property: &Property) {
+    fn visit_property(&mut self, name: &str, property: &Property) {
         trace!("name: {name}, property: {:?}", property);
     }
 }
 
 impl Visitor for String {
-    fn visit_symbol(&mut self, _: &String, _: Option<usize>, symbol: &String) {
+    fn visit_symbol(&mut self, _: &str, _: Option<usize>, symbol: &String) {
         *self = symbol.to_string();
     }
 
-    fn visit_text_buffer(&mut self, _: &String, _: Option<usize>, text_buffer: &String) {
+    fn visit_text_buffer(&mut self, _: &str, _: Option<usize>, text_buffer: &String) {
         *self = text_buffer.to_string();
     }
 }
 
 impl Visitor for Vec<String> {
-    fn visit_symbol(&mut self, _: &String, idx: Option<usize>, symbol: &String) {
+    fn visit_symbol(&mut self, _: &str, idx: Option<usize>, symbol: &String) {
         if let Some(idx) = idx {
             if self.get(idx).is_some() {
             } else {
@@ -230,7 +303,7 @@ impl Visitor for Vec<String> {
         }
     }
 
-    fn visit_text_buffer(&mut self, _: &String, idx: Option<usize>, text_buffer: &String) {
+    fn visit_text_buffer(&mut self, _: &str, idx: Option<usize>, text_buffer: &String) {
         if let Some(idx) = idx {
             self.insert(idx, text_buffer.to_string());
         } else {
@@ -240,13 +313,13 @@ impl Visitor for Vec<String> {
 }
 
 impl Visitor for bool {
-    fn visit_bool(&mut self, _: &String, _: Option<usize>, bool: bool) {
+    fn visit_bool(&mut self, _: &str, _: Option<usize>, bool: bool) {
         *self = bool;
     }
 }
 
 impl Visitor for usize {
-    fn visit_int(&mut self, _: &String, _: Option<usize>, i: i32) {
+    fn visit_int(&mut self, _: &str, _: Option<usize>, i: i32) {
         if i >= 0 {
             *self = i as usize;
         } else {
@@ -256,13 +329,13 @@ impl Visitor for usize {
 }
 
 impl Visitor for i32 {
-    fn visit_int(&mut self, _: &String, _: Option<usize>, i: i32) {
+    fn visit_int(&mut self, _: &str, _: Option<usize>, i: i32) {
         *self = i;
     }
 }
 
 impl Visitor for u32 {
-    fn visit_int(&mut self, _: &String, _: Option<usize>, i: i32) {
+    fn visit_int(&mut self, _: &str, _: Option<usize>, i: i32) {
         if i >= 0 {
             *self = i as u32;
         } else {
@@ -271,8 +344,36 @@ impl Visitor for u32 {
     }
 }
 
+impl Visitor for u64 {
+    fn visit_reference(&mut self, _: &str, _: Option<usize>, reference: u64) {
+        *self = reference;
+    }
+
+    fn visit_int_pair(&mut self, _: &str, _: Option<usize>, pair: &[i32; 2]) {
+        *self = bytemuck::cast::<[i32; 2], u64>(*pair);
+    }
+}
+
+impl Visitor for i64 {
+    fn visit_int_pair(&mut self, _: &str, _: Option<usize>, pair: &[i32; 2]) {
+        *self = bytemuck::cast::<[i32; 2], i64>(*pair);
+    }
+}
+
+impl Visitor for f32 {
+    fn visit_float(&mut self, _: &str, _: Option<usize>, f: f32) {
+        *self = f;
+    }
+}
+
+impl Visitor for BTreeSet<String> {
+    fn visit_complex(&mut self, _: &str, _: Option<usize>, complex: &BTreeSet<String>) {
+        *self = complex.clone();
+    }
+}
+
 impl Visitor for crate::Result<usize> {
-    fn visit_int(&mut self, _: &String, _: Option<usize>, i: i32) {
+    fn visit_int(&mut self, _: &str, _: Option<usize>, i: i32) {
         if i >= 0 {
             *self = Ok(i as usize);
         } else {
@@ -280,7 +381,7 @@ impl Visitor for crate::Result<usize> {
         }
     }
 
-    fn visit_int_pair(&mut self, _: &String, _: Option<usize>, pair: &[i32; 2]) {
+    fn visit_int_pair(&mut self, _: &str, _: Option<usize>, pair: &[i32; 2]) {
         if pair[0] >= 0 && pair[1] >= 0 {
             *self = Ok(cast::<[i32; 2], usize>(*pair));
         } else {
@@ -290,7 +391,7 @@ impl Visitor for crate::Result<usize> {
 }
 
 impl Visitor for crate::Result<u32> {
-    fn visit_int(&mut self, _: &String, _: Option<usize>, i: i32) {
+    fn visit_int(&mut self, _: &str, _: Option<usize>, i: i32) {
         if i >= 0 {
             *self = Ok(i as u32);
         } else {
@@ -300,17 +401,17 @@ impl Visitor for crate::Result<u32> {
 }
 
 impl Visitor for crate::Result<i64> {
-    fn visit_int(&mut self, _: &String, _: Option<usize>, i: i32) {
+    fn visit_int(&mut self, _: &str, _: Option<usize>, i: i32) {
         *self = Ok(i as i64);
     }
 
-    fn visit_int_pair(&mut self, _: &String, _: Option<usize>, pair: &[i32; 2]) {
+    fn visit_int_pair(&mut self, _: &str, _: Option<usize>, pair: &[i32; 2]) {
         *self = Ok(cast::<[i32; 2], i64>(*pair))
     }
 }
 
 impl Visitor for Vec<u8> {
-    fn visit_binary(&mut self, _: &String, _: Option<usize>, binary: &Vec<u8>) {
+    fn visit_binary(&mut self, _: &str, _: Option<usize>, binary: &Vec<u8>) {
         if self.len() == binary.len() {
             self.copy_from_slice(&binary);
         } else {
@@ -318,7 +419,7 @@ impl Visitor for Vec<u8> {
         }
     }
 
-    fn visit_text_buffer(&mut self, _: &String, _: Option<usize>, text_buffer: &String) {
+    fn visit_text_buffer(&mut self, _: &str, _: Option<usize>, text_buffer: &String) {
         if self.len() == text_buffer.as_bytes().len() {
             self.copy_from_slice(text_buffer.as_bytes());
         } else {
@@ -328,11 +429,11 @@ impl Visitor for Vec<u8> {
 }
 
 impl Visitor for BytesMut {
-    fn visit_binary(&mut self, _: &String, _: Option<usize>, binary: &Vec<u8>) {
+    fn visit_binary(&mut self, _: &str, _: Option<usize>, binary: &Vec<u8>) {
         self.put(&binary[..]);
     }
 
-    fn visit_text_buffer(&mut self, _: &String, _: Option<usize>, text_buffer: &String) {
+    fn visit_text_buffer(&mut self, _: &str, _: Option<usize>, text_buffer: &String) {
         self.put(text_buffer.as_bytes());
     }
 
@@ -349,7 +450,7 @@ impl Visitor for BytesMut {
 }
 
 impl Visitor for BTreeMap<String, Value> {
-    fn visit_value(&mut self, name: &String, idx: Option<usize>, value: &Value) {
+    fn visit_value(&mut self, name: &str, idx: Option<usize>, value: &Value) {
         if idx.is_none() {
             self.insert(name.to_string(), value.clone());
         }

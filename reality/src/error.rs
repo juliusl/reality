@@ -93,6 +93,12 @@ impl Error {
 
         EXIT_RESTART
     }
+
+    /// Returns true if the receiver should skip it's current task,
+    /// 
+    pub fn should_skip(&self) -> bool {
+        *self == Self::skip()
+    }
 }
 
 impl std::error::Error for Error {}

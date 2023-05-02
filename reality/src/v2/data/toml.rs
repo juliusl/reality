@@ -142,7 +142,7 @@ impl Visitor for DocumentBuilder {
         }
     }
 
-    fn visit_value(&mut self, name: &String, idx: Option<usize>, value: &Value) {
+    fn visit_value(&mut self, name: &str, idx: Option<usize>, value: &Value) {
         self.parsing.as_ref().map(|id| {
             if let Some(0) = idx {
                 self.doc["properties"][id][name] = toml_edit::value(Array::new());

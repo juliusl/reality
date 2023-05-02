@@ -181,11 +181,11 @@ impl Into<HashMap<u64, String>> for Interner {
 /// Allows the build itself to derive an interner,
 /// 
 impl Visitor for Interner {
-    fn visit_property_name(&mut self, name: &String) {
+    fn visit_property_name(&mut self, name: &str) {
         self.add_symbol(name).map_err(|e| error!("Could not add property name to interner, {e}")).ok();
     }
 
-    fn visit_symbol(&mut self, _: &String, _: Option<usize>, symbol: &String) {
+    fn visit_symbol(&mut self, _: &str, _: Option<usize>, symbol: &String) {
         self.add_symbol(symbol).map_err(|e| error!("Could not add symbol to interner, {e}")).ok();
     }
 

@@ -131,6 +131,23 @@ impl StructData {
         }.into()
     }
 
+    pub(crate) fn visit_trait(&self) -> TokenStream {
+        let name = &self.name;
+
+        let visits = self.fields.iter().filter(|f| !f.ignore && !f.ext).map(|f| {
+            f.visit_expr()
+        });
+
+        quote! {
+            impl<'a> reality::v2::prelude::Visit for &'a #name {
+                fn visit(&self, context: (), visitor: &mut impl reality::v2::Visitor) -> reality::Result<()> {
+                    #( #visits )*
+                    Ok(())
+                }
+            }
+        }
+    }
+
     /// Returns token stream of impl for the Config trait,
     ///
     pub(crate) fn config_trait(&self) -> TokenStream {
@@ -394,9 +411,11 @@ impl StructData {
         };
 
         let visitor_trait = self.visitor_trait();
+        let visit_trait = self.visit_trait();
         let compile_trait = self.compile_trait();
         let extensions_enum = self.extensions_enum();
         let extensions_enum_ident = self.extensions_enum_ident();
+        let visit_extensions_trait = self.visit_extensions();
 
         quote! {
             impl reality::v2::Runmd for #name {
@@ -410,8 +429,10 @@ impl StructData {
 
             #visitor_trait
             #compile_trait
-
             #extensions_enum
+
+            #visit_trait
+            #visit_extensions_trait
         }
     }
 
@@ -445,8 +466,8 @@ impl StructData {
 
         quote! {
             impl reality::v2::Visitor for #name {
-                fn visit_property(&mut self, name: &String, property: &reality::v2::Property) {
-                    match name.to_lowercase().as_str() { 
+                fn visit_property(&mut self, name: &str, property: &reality::v2::Property) {
+                    match name { 
                         #( #visit_property ),*
                         _ => {
                         }
@@ -533,5 +554,50 @@ impl StructData {
 
     fn reference_fields(&self) -> impl Iterator<Item = &StructField> {
         self.fields.iter().filter(|f| f.reference)
+    }
+
+    fn visit_extensions(&self) -> TokenStream {
+        let name = &self.name;
+        let type_alias_ident = format_ident!("{}CompilerEvents", self.name);
+        let extensions_enum = format_ident!("{}Extensions", self.name);
+
+        let config_fields = self.fields.iter().filter(|f| !f.ignore && f.ext).map(|f| { 
+            let match_arms = f.visit_config_extensions(&self.name);
+            quote_spanned!{f.span=>
+                #match_arms
+            }
+        });
+
+        let load_fields = self.fields.iter().filter(|f| !f.ignore && f.ext).map(|f| {
+            let match_arms = f.visit_load_extensions(&self.name);
+            quote_spanned! {f.span=>
+                #match_arms
+            }
+        });
+
+        quote! {
+            type #type_alias_ident<'a> = reality::v2::prelude::CompilerEvents<'a, #name>;
+
+            impl<'linking> reality::v2::prelude::Visit<#type_alias_ident<'linking>> for #extensions_enum {
+                fn visit(&self, context: #type_alias_ident<'linking>, visitor: &mut impl reality::v2::prelude::Visitor) -> reality::Result<()> {
+                    match context {
+                        CompilerEvents::Config(properties) => match self {
+                            #( #config_fields )*
+                            _ => {
+        
+                            }
+                        },
+                        CompilerEvents::Load(loading) => match self {
+                            #( #load_fields )*
+                            _ => {
+
+                            }
+                        },
+                    }
+
+                    Err(reality::Error::skip())
+                }
+            }
+        }
     }
 }

@@ -19,6 +19,7 @@ pub use compiler::linker::Linker;
 pub use compiler::BuildLog;
 pub use compiler::Compiled;
 pub use compiler::Compiler;
+pub use compiler::CompilerEvents;
 pub use compiler::DispatchRef;
 pub use compiler::WorldWrapper;
 pub mod states {
@@ -74,6 +75,8 @@ pub use thunk::Update;
 
 use crate::Identifier;
 
+use self::prelude::Visit;
+
 mod data;
 pub mod toml {
     pub use crate::v2::data::toml::DocumentBuilder;
@@ -124,10 +127,14 @@ impl GetMatches for () {
 
 /// Trait to implement to extend a runmd compiler,
 ///
-pub trait Runmd: Visitor + Component + Clone + Send + Sync {
+pub trait Runmd: Visitor + Component + Clone + Send + Sync 
+where
+    for<'a> &'a Self: Visit,
+    <Self as Component>::Storage: Default,
+{
     /// Associated type for pattern matching w/ a build log,
     ///
-    type Extensions: GetMatches + std::fmt::Debug;
+    type Extensions: for<'a> Visit<CompilerEvents<'a, Self>> + GetMatches + std::fmt::Debug;
 
     /// Configures the compiler for a runmd-based project,
     ///

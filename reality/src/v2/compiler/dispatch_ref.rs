@@ -79,7 +79,7 @@ impl<'a, T: Send + Sync + 'a, const ENABLE_ASYNC: bool> DispatchRef<'a, T, ENABL
         if self
             .error
             .as_ref()
-            .filter(|e| e.deref().deref().as_ref() != Error::skip().as_ref())
+            .filter(|e| !e.should_skip())
             .is_some()
         {
             self.world_ref.take();

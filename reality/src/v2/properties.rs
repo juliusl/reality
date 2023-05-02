@@ -25,18 +25,21 @@ use super::Visitor;
 #[storage(VecStorage)]
 pub struct Properties {
     /// Identifier of owner,
-    /// 
+    ///
     owner: Identifier,
     /// Map of properties,
-    /// 
+    ///
     map: BTreeMap<String, Property>,
 }
 
 impl Properties {
     /// Returns an empty properties map,
-    /// 
+    ///
     pub const fn empty() -> Self {
-        Self { owner: Identifier::new(), map: BTreeMap::new() }
+        Self {
+            owner: Identifier::new(),
+            map: BTreeMap::new(),
+        }
     }
 
     /// Branches this colelction w/ a new branch owner,
@@ -241,8 +244,243 @@ impl Visitor for Properties {
         self.add_readonly_properties(properties);
     }
 
-    fn visit_property(&mut self, name: &String, property: &Property) {
+    fn visit_property(&mut self, name: &str, property: &Property) {
         self.set(name, property.clone());
+    }
+
+    fn visit_symbol(&mut self, name: &str, idx: Option<usize>, symbol: &String) {
+        if !self.contains(name) {
+            self.add(name, symbol);
+            return;
+        }
+
+        self.property_mut(name).map(|p| match p {
+            Property::Single(Value::Symbol(s)) => {
+                s.visit_symbol(name, idx, symbol);
+            }
+            Property::List(list) if idx.is_some() => {
+                if let Some(Value::Symbol(s)) = list.get_mut(idx.expect("should exist")) {
+                    s.visit_symbol(name, idx, symbol);
+                }
+            }
+            _ => {}
+        });
+    }
+
+    fn visit_bool(&mut self, name: &str, idx: Option<usize>, bool: bool) {
+        if !self.contains(name) {
+            self.add(name, bool);
+            return;
+        }
+
+        self.property_mut(name).map(|p| match p {
+            Property::Single(Value::Bool(b)) => {
+                b.visit_bool(name, idx, bool);
+            }
+            Property::List(list) if idx.is_some() => {
+                if let Some(Value::Bool(b)) = list.get_mut(idx.expect("should exist")) {
+                    b.visit_bool(name, idx, bool);
+                }
+            }
+            _ => {}
+        });
+    }
+
+    fn visit_text_buffer(&mut self, name: &str, idx: Option<usize>, text_buffer: &String) {
+        if !self.contains(name) {
+            self.add(name, text_buffer);
+            return;
+        }
+
+        self.property_mut(name).map(|p| match p {
+            Property::Single(Value::TextBuffer(t)) => {
+                t.visit_text_buffer(name, idx, text_buffer);
+            }
+            Property::List(list) if idx.is_some() => {
+                if let Some(Value::TextBuffer(t)) = list.get_mut(idx.expect("should exist")) {
+                    t.visit_text_buffer(name, idx, text_buffer);
+                }
+            }
+            _ => {}
+        });
+    }
+
+    fn visit_int(&mut self, name: &str, idx: Option<usize>, i: i32) {
+        if !self.contains(name) {
+            self.add(name, i);
+            return;
+        }
+
+        self.property_mut(name).map(|p| match p {
+            Property::Single(Value::Int(_i)) => {
+                _i.visit_int(name, idx, i);
+            }
+            Property::List(list) if idx.is_some() => {
+                if let Some(Value::Int(_i)) = list.get_mut(idx.expect("should exist")) {
+                    _i.visit_int(name, idx, i);
+                }
+            }
+            _ => {}
+        });
+    }
+
+    fn visit_int_pair(&mut self, name: &str, idx: Option<usize>, pair: &[i32; 2]) {
+        if !self.contains(name) {
+            self.add(name, pair);
+            return;
+        }
+
+        self.property_mut(name).map(|p| match p {
+            Property::Single(Value::IntPair(a, b)) => {
+                a.visit_int(name, idx, pair[0]);
+                b.visit_int(name, idx, pair[1]);
+            }
+            Property::List(list) if idx.is_some() => {
+                if let Some(Value::IntPair(a, b)) = list.get_mut(idx.expect("should exist")) {
+                    a.visit_int(name, idx, pair[0]);
+                    b.visit_int(name, idx, pair[1]);
+                }
+            }
+            _ => {}
+        });
+    }
+
+    fn visit_int_range(&mut self, name: &str, idx: Option<usize>, range: &[i32; 3]) {
+        if !self.contains(name) {
+            self.add(name, range);
+            return;
+        }
+
+        self.property_mut(name).map(|p| match p {
+            Property::Single(Value::IntRange(a, b, c)) => {
+                a.visit_int(name, idx, range[0]);
+                b.visit_int(name, idx, range[1]);
+                c.visit_int(name, idx, range[2]);
+            }
+            Property::List(list) if idx.is_some() => {
+                if let Some(Value::IntRange(a, b, c)) = list.get_mut(idx.expect("should exist")) {
+                    a.visit_int(name, idx, range[0]);
+                    b.visit_int(name, idx, range[1]);
+                    c.visit_int(name, idx, range[2]);
+                }
+            }
+            _ => {}
+        });
+    }
+
+    fn visit_float(&mut self, name: &str, idx: Option<usize>, f: f32) {
+        if !self.contains(name) {
+            self.add(name, f);
+            return;
+        }
+
+        self.property_mut(name).map(|p| match p {
+            Property::Single(Value::Float(_f)) => {
+                _f.visit_float(name, idx, f);
+            }
+            Property::List(list) if idx.is_some() => {
+                if let Some(Value::Float(_f)) = list.get_mut(idx.expect("should exist")) {
+                    _f.visit_float(name, idx, f);
+                }
+            }
+            _ => {}
+        });
+    }
+
+    fn visit_float_pair(&mut self, name: &str, idx: Option<usize>, pair: &[f32; 2]) {
+        if !self.contains(name) {
+            self.add(name, pair);
+            return;
+        }
+
+        self.property_mut(name).map(|p| match p {
+            Property::Single(Value::FloatPair(a, b)) => {
+                a.visit_float(name, idx, pair[0]);
+                b.visit_float(name, idx, pair[1]);
+            }
+            Property::List(list) if idx.is_some() => {
+                if let Some(Value::FloatPair(a, b)) = list.get_mut(idx.expect("should exist")) {
+                    a.visit_float(name, idx, pair[0]);
+                    b.visit_float(name, idx, pair[1]);
+                }
+            }
+            _ => {}
+        });
+    }
+
+    fn visit_float_range(&mut self, name: &str, idx: Option<usize>, range: &[f32; 3]) {
+        if !self.contains(name) {
+            self.add(name, range);
+            return;
+        }
+
+        self.property_mut(name).map(|p| match p {
+            Property::Single(Value::FloatRange(a, b, c)) => {
+                a.visit_float(name, idx, range[0]);
+                b.visit_float(name, idx, range[1]);
+                c.visit_float(name, idx, range[2]);
+            }
+            Property::List(list) if idx.is_some() => {
+                if let Some(Value::FloatRange(a, b, c)) = list.get_mut(idx.expect("should exist")) {
+                    a.visit_float(name, idx, range[0]);
+                    b.visit_float(name, idx, range[1]);
+                    c.visit_float(name, idx, range[2]);
+                }
+            }
+            _ => {}
+        });
+    }
+
+    fn visit_binary(&mut self, name: &str, idx: Option<usize>, binary: &Vec<u8>) {
+        if !self.contains(name) {
+            self.add(name, binary);
+            return;
+        }
+
+        self.property_mut(name).map(|p| match p {
+            Property::Single(Value::BinaryVector(b)) => {
+                b.visit_binary(name, idx, binary);
+            }
+            Property::List(list) if idx.is_some() => {
+                if let Some(Value::BinaryVector(b)) = list.get_mut(idx.expect("should exist")) {
+                    b.visit_binary(name, idx, binary);
+                }
+            }
+            _ => {}
+        });
+    }
+
+    fn visit_reference(&mut self, name: &str, idx: Option<usize>, reference: u64) {
+        self.property_mut(name).map(|p| match p {
+            Property::Single(Value::Reference(r)) => {
+                r.visit_reference(name, idx, reference);
+            }
+            Property::List(list) if idx.is_some() => {
+                if let Some(Value::Reference(r)) = list.get_mut(idx.expect("should exist")) {
+                    r.visit_reference(name, idx, reference);
+                }
+            }
+            _ => {}
+        });
+    }
+
+    fn visit_complex(&mut self, name: &str, idx: Option<usize>, complex: &std::collections::BTreeSet<String>) {
+        if !self.contains(name) {
+            self.add(name, complex.clone());
+            return;
+        }
+
+        self.property_mut(name).map(|p| match p {
+            Property::Single(Value::Complex(c)) => {
+                c.visit_complex(name, idx, complex);
+            }
+            Property::List(list) if idx.is_some() => {
+                if let Some(Value::Complex(c)) = list.get_mut(idx.expect("should exist")) {
+                    c.visit_complex(name, idx, complex);
+                }
+            }
+            _ => {}
+        });
     }
 }
 
@@ -267,7 +505,7 @@ impl Display for Properties {
 mod tests {
     use super::Properties;
     use crate::{
-        v2::{properties::property::property_value, thunk_update, Property},
+        v2::{properties::property::property_value, thunk_update, Property, Visitor},
         Identifier, Value,
     };
 
@@ -303,7 +541,20 @@ mod tests {
 
         assert_eq!(
             "test-mut-value",
-            properties[".test-mut"].as_symbol().unwrap()
+            properties["test-mut"].as_symbol().unwrap()
+        );
+
+        let mut test_visitor = Properties::empty();
+        test_visitor.visit_symbol("test-symbol-a", None, &String::from("test-symbol-a"));
+        assert_eq!(
+            "test-symbol-a",
+            test_visitor["test-symbol-a"].as_symbol().unwrap()
+        );
+
+        test_visitor.visit_symbol("test-symbol-a", None, &String::from("test-symbol-b"));
+        assert_eq!(
+            "test-symbol-b",
+            test_visitor["test-symbol-a"].as_symbol().unwrap()
         );
     }
 }
