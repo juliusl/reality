@@ -348,7 +348,7 @@ impl StructData {
                 None
             }
         });
-        let additional_compile = quote! {
+        let compile_thunks = quote! {
             #( #map )*
         };
 
@@ -358,19 +358,13 @@ impl StructData {
                     &self,
                     dispatch_ref: reality::v2::DispatchRef<'a, reality::v2::Properties>,
                 ) -> reality::v2::DispatchResult<'a> {
-                    let clone = self.clone();
-                    let entity = dispatch_ref.entity.expect("Should have an entity");
-
                     dispatch_ref
                         #( #bootstraps ) *
-                        .transmute::<ActionBuffer>()
-                        .map_into(move |b| {
-                            let mut clone = clone;
-                            b.config(entity, &mut clone)?;
-                            Ok(clone)
+                        .transmute::<#name>()
+                        #compile_thunks
+                        .map(|_| {
+                            Ok(reality::v2::Instance::Ready)
                         })
-                        .result()?
-                        #additional_compile
                         .transmute::<Properties>()
                         .result()
                 }
@@ -380,23 +374,6 @@ impl StructData {
 
     pub fn runmd_trait(&self) -> TokenStream {
         let name = &self.name;
-
-        // Mapping compile
-        let compile_map = self.transient_fields().map(|f| {
-            let pattern = f.root_ext_input_pattern_lit_str(name);
-            quote_spanned! {f.span=>
-                if let Some(log) = compiler.last_build_log() {
-                    for (_, _, entity) in log.search_index(#pattern) {
-                        let dispatch_ref = reality::v2::DispatchRef::<reality::v2::Properties>::new(*entity, compiler);
-                        let _ = 
-                        reality::v2::Dispatch::dispatch(self, dispatch_ref)?;
-                    }
-                }
-            }
-        });
-        let compile_map = quote! {
-            #( #compile_map )*
-        };
 
         let visitor_trait = self.visitor_trait();
         let visit_trait = self.visit_trait();
@@ -408,11 +385,6 @@ impl StructData {
         quote! {
             impl reality::v2::Runmd for #name {
                 type Extensions = #extensions_enum_ident;
-                fn runmd(&self, compiler: &mut reality::v2::Compiler) -> reality::Result<()> {
-                    #compile_map
-
-                    Ok(())
-                }
             }
 
             #visitor_trait
@@ -534,10 +506,6 @@ impl StructData {
         } else {
             quote! {}
         }
-    }
-
-    fn transient_fields(&self) -> impl Iterator<Item = &StructField> {
-        self.fields.iter().filter(|f| !f.ignore).filter(|f| f.root || f.ext || f.block)
     }
 
     fn reference_fields(&self) -> impl Iterator<Item = &StructField> {

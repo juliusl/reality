@@ -36,6 +36,9 @@ pub enum LinkerEvents {
     /// Component should be created,
     /// 
     Create(Properties),
+    /// Components are ready,
+    /// 
+    Ready,
 }
 
 /// A Linker wraps a runmd component T and scans the build log index for entities that are related,
@@ -95,7 +98,7 @@ where
         }
     }
 
-    /// Begin linking process
+    /// Links the component T to entities indexed by the current build log,
     ///
     pub fn link(&mut self) -> Result<()> {
         // Scan build log for relevant types for config,
@@ -106,10 +109,10 @@ where
             d.as_mut().register::<T>();
         }
 
-        // Configure
-        // 
+        // Map linker events from derived compiler events, 
+        //
         for (id, m, _) in matches {
-            // Visiting the identifier will set the entity,
+            // Note: Visiting the identifier will set the entity,
             //
             self.visit_identifier(&id);
 
@@ -135,21 +138,24 @@ where
             }
         }
 
-        // Prepare the base type
+        // Prepare the base type and consume linker events to finish creating new components,
+        // 
         if let Some(mut dispatch) = self.dispatch.take() {
             dispatch.dispatch_mut(|t, lz| {
                 let base = t.clone();
                 lz.exec_mut(move |w| {
-                    let mut configuring = BaseType::new(base);
+                    let mut configuring = Type::new(base);
                     configuring.run_now(w);
                     for (e, mut i) in configuring.instances {
-                        // Finish completing instances
+                        // Finish creating components
+                        // Properties are used as the transient data-structure
                         let mut ip = Properties::empty();
                         <&T as Visit>::visit(&&i, (), &mut ip).ok();
-                        i.visit_properties(&ip);
 
-                        // Write finished product
-                        w.write_component().insert(e, i).ok();
+                        // Properties are applied to the final version and written to storage
+                        i.visit_properties(&ip);
+                        w.write_component().insert(e, i).expect("should be able to insert component");
+                        w.write_component().insert(e, LinkerEvents::Ready).expect("should be able to insert component");
                     }
                 });
                 Ok(())
@@ -178,6 +184,7 @@ where
                 .dispatch
                 .take()
                 .map(|d| d.with_entity(e).map(|_| Ok(identifier.clone())));
+            trace!("Setting entity to -- {:?}", e);
         }
     }
 
@@ -215,7 +222,7 @@ where
 /// Struct containing the base type and instances created by the linker,
 /// 
 #[derive(Debug)]
-struct BaseType<T>
+struct Type<T>
 where
     T: Runmd,
     for<'b> &'b T: Visit,
@@ -225,7 +232,7 @@ where
     instances: Vec<(Entity, T)>,
 }
 
-impl<T> BaseType<T> 
+impl<T> Type<T> 
 where
     T: Runmd,
     for<'b> &'b T: Visit,
@@ -238,7 +245,7 @@ where
     }
 }
 
-impl<'a, T> System<'a> for BaseType<T>
+impl<'a, T> System<'a> for Type<T>
 where
     T: Runmd + Debug,
     for<'b> &'b T: Visit,
@@ -251,17 +258,18 @@ where
         for (e, p, event) in (&entities, &properties, events.drain()).join() {
             match event {
                 LinkerEvents::AddConfig(config) => {
-                    trace!("Adding config config from {:?}", e);
+                    trace!("Adding config config from -- {:?}", e);
                     self.base.visit_properties(&config);
                 },
                 LinkerEvents::Create(mut properties) => {
-                    trace!("Creating for {:?}", e);
+                    trace!("Creating for -- {:?}", e);
                     // The final config will be performed in the create queue
                     for (n, p) in p.iter_properties() {
                         properties.visit_property(n, p);
                     }
                     create_queue.push((e, properties));
-                }
+                },
+                _ => {}
             }
         }
 

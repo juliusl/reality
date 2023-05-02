@@ -231,7 +231,7 @@ impl Compiler {
             .map(move |result| match result {
                 Ok(entity) => {
                     self.as_mut().maintain();
-                    self.build_ref(entity)
+                    self.dispatch_ref(entity)
                 }
                 Err(err) => err.into(),
             })
@@ -252,25 +252,16 @@ impl Compiler {
             .map(move |result| match result {
                 Ok(_) => {
                     self.as_mut().maintain();
-                    self.build_ref(entity)
+                    self.dispatch_ref(entity)
                 }
                 Err(err) => err.into(),
             })
             .unwrap_or_default()
     }
 
-    /// Returns a build ref for a given entity,
+    /// Returns a dispatch ref without an entity set,
     ///
-    pub fn build_ref<'a, T: Send + Sync + 'a>(&'a mut self, entity: Entity) -> DispatchRef<'a, T> {
-        DispatchRef::<'a, T> {
-            world_ref: Some(self),
-            entity: Some(entity),
-            error: None,
-            _u: PhantomData,
-        }
-    }
-
-    pub fn empty_build_ref<'a, T: Send + Sync + 'a>(&'a mut self) -> DispatchRef<'a, T> {
+    pub fn empty_dispatch_ref<'a, T: Send + Sync + 'a>(&'a mut self) -> DispatchRef<'a, T> {
         DispatchRef::<'a, T> {
             world_ref: Some(self),
             entity: None,
@@ -279,7 +270,16 @@ impl Compiler {
         }
     }
 
-    /// Creates a linker and links w/ current build log,
+    /// Returns a dispatch ref for the given entity,
+    ///
+    pub fn dispatch_ref<'a, T: Send + Sync + 'a>(
+        &'a mut self,
+        entity: Entity,
+    ) -> DispatchRef<'a, T> {
+        self.empty_dispatch_ref().with_entity(entity)
+    }
+
+    /// Creates a linker for T, and links all available builds created by this compiler,
     ///
     pub fn link<T>(&mut self, new: T) -> crate::Result<()>
     where
@@ -287,43 +287,27 @@ impl Compiler {
         for<'a> &'a T: Visit,
         <T as Component>::Storage: Default,
     {
-        let builds = { 
+        let builds = {
             let compiled = self.compiled();
-            compiled.state_vec::<crate::v2::prelude::Build>().iter().map(|b| (b.0, b.1.build_log.clone())).collect::<Vec<_>>() 
+            compiled
+                .state_vec::<crate::v2::prelude::Build>()
+                .iter()
+                .map(|b| (b.0, b.1.build_log.clone()))
+                .collect::<Vec<_>>()
         };
 
-        for (_, log) in builds.iter().take(2) {
-            let dispref = self.empty_build_ref::<T>();
+        for (e, log) in builds.iter() {
+            trace!("Linking build -- {:?}", e);
+            let dispref = self.empty_dispatch_ref::<T>();
 
-            let mut linker = Linker::new(
-                new.clone(), 
-                log.clone()
-            )
-            .activate(dispref);
-            
+            let mut linker = Linker::new(new.clone(), log.clone()).activate(dispref);
+
             linker.link()?;
         }
 
+        new.runmd(self)?;
+
         Ok(())
-
-        // if let Some(log) = self.last_build_log() {
-        //     for (i, m, e) in <T as Runmd>::Extensions::get_matches(&log) {
-        //         trace!("Linking {:?}", m);
-
-        //         let dispref = self.build_ref::<T>(e);
-
-        //         let mut linker = Linker::new(
-        //             new.clone(),
-        //             log.clone()
-        //         ).activate(dispref);
-
-        //         linker.link()?;
-        //     }
-
-        //     Ok(())
-        // } else {
-        //     Err("No build log to link with".into())
-        // }
     }
 }
 

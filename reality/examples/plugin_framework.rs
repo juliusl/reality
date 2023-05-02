@@ -1,4 +1,5 @@
-use reality::v2::prelude::*;
+use reality::v2::{prelude::*, Instance};
+use test_framework::Println;
 use tracing_subscriber::EnvFilter;
 
 /// Example of a plugin framework compiler,
@@ -47,10 +48,14 @@ async fn main() -> Result<()> {
     for (_, m, e) in test_framework::ProcessExtensions::get_matches(&log) {
         match m {
             test_framework::ProcessExtensions::Plugin { .. } => {
-                compiler.as_ref().read_component::<test_framework::Process>().get(e).map(|p| {
-                    println!("post-link -- {:#?}", p);
-                });
-            },
+                compiler
+                    .as_ref()
+                    .read_component::<test_framework::Process>()
+                    .get(e)
+                    .map(|p| {
+                        println!("post-link -- {:#?}", p);
+                    });
+            }
             _ => {}
         }
     }
@@ -58,15 +63,53 @@ async fn main() -> Result<()> {
     for (_, m, e) in test_framework::PrintlnExtensions::get_matches(&log) {
         match m {
             test_framework::PrintlnExtensions::Plugin { .. } => {
-                compiler.as_ref().read_component::<test_framework::Println>().get(e).map(|p| {
-                    println!("post-link -- {:#?}", p);
-                });
-            },
+                compiler
+                    .as_ref()
+                    .read_component::<test_framework::Println>()
+                    .get(e)
+                    .map(|p| {
+                        println!("post-link -- {:#?}", p);
+                    });
+            }
             _ => {}
         }
     }
 
+    let mut q = vec![];
+
+    for instance in compiler.as_ref().system_data::<PrintlnInstanceSystemData>().state_vec::<PrintlnInstance>().iter() {
+        q.push(instance.0);
+    }
+    for q in q.iter() {
+        compiler
+            .dispatch_ref(*q)
+            .read(|p| {
+                println!("Before call -- {:?}", p);
+                Ok(())
+            })
+            .enable_async()
+            .call()
+            .await
+            .unwrap()
+            .read(|p| {
+                println!("After call -- {:?}", p);
+                Ok(())
+            })
+            .enable_async()
+            .call()
+            .await
+            .unwrap();
+    }
+
     Ok(())
+}
+
+#[allow(dead_code)]
+#[derive(Load)]
+struct PrintlnInstance<'a> {
+    entity: Entity,
+    println: &'a Println,
+    instance: &'a Instance,
 }
 
 async fn from_runmd() -> Result<Compiler> {
@@ -158,7 +201,7 @@ const EXAMPLE_USAGE: &'static str = r##"
 +                       .symbol     Usage                   # Creating a simple root called Usage,
 <plugin.println>        .stdout     World Hello             # Can also be activated in one line
 <plugin.println>        .stderr     World Hello Error       # Can also be activated in one line
-<cli.println>           .test       Test here               # Testing adding a command
+<cli.println>           .test       Test here               : .stdout CLI HELLO WORLD # Testing adding a command
 <plugin>                .println    
 :                       .stdout     Hello World
 :                       .stdout     Goodbye World
@@ -191,13 +234,12 @@ pub mod test_framework {
 
     #[derive(Clone, Debug, Default)]
     pub struct Plugin {
-        list: (),
         properties: Properties,
     }
 
     impl Plugin {
         /// Returns read-only properties of values found in properties,
-        /// 
+        ///
         fn map(&self, properties: &Vec<String>) -> Property {
             let mut output = Properties::empty();
             for name in properties {
@@ -211,10 +253,6 @@ pub mod test_framework {
     }
 
     impl Visitor for Plugin {
-        fn visit_extension(&mut self, identifier: &Identifier) {
-            println!("--- Plugin visited by: {:#}", identifier);
-        }
-
         fn visit_property(&mut self, name: &str, property: &Property) {
             println!("--- Plugin visited by: {name}");
             println!("--- Plugin visited by: {:?}", property);
@@ -305,7 +343,9 @@ pub mod test_framework {
                 stderr: vec![],
                 stdout: vec![],
                 test: String::new(),
-                plugin: Plugin { list: (), properties: Properties::empty() },
+                plugin: Plugin {
+                    properties: Properties::empty(),
+                },
                 cli: Cli {},
             }
         }
@@ -317,7 +357,7 @@ pub mod test_framework {
     pub struct Process {
         pub process: String,
         pub redirect: String,
-        #[config(rename="RUST_LOG")]
+        #[config(rename = "RUST_LOG")]
         pub rust_log: String,
         #[config(rename="env", ext=plugin.map)]
         pub env: Vec<String>,
@@ -340,7 +380,7 @@ pub mod test_framework {
                 println!("visiting -- {name} -- {:#?}", prop);
                 visitor.visit_property(name, prop);
             }
-            
+
             Ok(())
         }
     }
@@ -352,7 +392,9 @@ pub mod test_framework {
                 redirect: String::new(),
                 rust_log: String::new(),
                 env: vec![],
-                plugin: Plugin { list: (), properties: Properties::empty() },
+                plugin: Plugin {
+                    properties: Properties::empty(),
+                },
                 cli: Cli {},
             }
         }
@@ -383,10 +425,11 @@ pub mod test_framework {
         process.visit((), &mut props).unwrap();
 
         assert_eq!("test", props["process"].as_symbol().unwrap().as_str());
-        assert_eq!(".test/test.log", props["redirect"].as_symbol().unwrap().as_str());
+        assert_eq!(
+            ".test/test.log",
+            props["redirect"].as_symbol().unwrap().as_str()
+        );
         assert_eq!("trace", props["RUST_LOG"].as_symbol().unwrap().as_str());
         println!("{:#}", props);
-
-        let m = ProcessExtensions::PluginConfig { config: (), property: () };
     }
 }

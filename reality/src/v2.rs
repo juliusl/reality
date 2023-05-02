@@ -1,3 +1,5 @@
+use specs::Component;
+
 mod bootstrap;
 pub use bootstrap::Bootstrap;
 
@@ -16,6 +18,7 @@ pub use parser::Parser;
 
 mod compiler;
 pub use compiler::linker::Linker;
+pub use compiler::linker::LinkerEvents;
 pub use compiler::BuildLog;
 pub use compiler::Compiled;
 pub use compiler::Compiler;
@@ -34,7 +37,6 @@ mod documentation;
 pub use documentation::Documentation;
 
 mod visitor;
-use specs::Component;
 pub use visitor::Visitor;
 
 mod interner;
@@ -94,12 +96,12 @@ where
         build_log
             .index()
             .iter()
-            .flat_map(|(i, e)| 
+            .flat_map(|(i, e)| {
                 Self::get_match(i)
                     .iter()
                     .map(|m| (i.clone(), m.clone(), *e))
                     .collect::<Vec<_>>()
-                )
+            })
             .collect::<Vec<_>>()
     }
 
@@ -122,9 +124,20 @@ impl GetMatches for () {
     }
 }
 
+/// Enumeration of instance states for an entity,
+/// 
+#[derive(Component, Debug)]
+#[storage(specs::storage::DenseVecStorage)]
+pub enum Instance {
+    /// The instance has been compiled and has all thunks applied,
+    /// 
+    Ready,
+    // TODO -- Should this be used to track state?
+}
+
 /// Trait to implement to extend a runmd compiler,
 ///
-pub trait Runmd: Visitor + Component + Clone + Send + Sync 
+pub trait Runmd: Dispatch + Visitor + Component + Clone + Send + Sync
 where
     for<'a> &'a Self: Visit,
     <Self as Component>::Storage: Default,
@@ -133,9 +146,44 @@ where
     ///
     type Extensions: for<'a> Visit<CompilerEvents<'a, Self>> + GetMatches + std::fmt::Debug;
 
-    /// Configures the compiler for a runmd-based project,
-    ///
-    fn runmd(&self, compiler: &mut Compiler) -> Result<(), crate::Error>;
+    /// Finishes building runmd type w/ compiler,
+    /// 
+    fn runmd(&self, compiler: &mut Compiler) -> Result<(), crate::Error> {
+        use specs::Entities;
+        use specs::LazyUpdate;
+        use specs::Read;
+        use specs::ReadStorage;
+        use specs::WorldExt;
+        use specs::Join;
+
+        compiler.as_mut().exec(
+            |(lz, entities, linker_events, components): (
+                Read<LazyUpdate>,
+                Entities,
+                ReadStorage<LinkerEvents>,
+                ReadStorage<Self>,
+            )| {
+                for (e, c, event) in (&entities, &components, &linker_events).join() {
+                    match event {
+                        LinkerEvents::Ready => {
+                            let c = c.clone();
+                            lz.exec_mut(move |w| {
+                                let mut wrapper = WorldWrapper::from(w);
+
+                                c.dispatch(wrapper.get_ref(e))
+                                    .expect("should be able to dispatch");
+                            });
+                        }
+                        _ => {
+                            continue;
+                        }
+                    }
+                }
+            },
+        );
+        compiler.as_mut().maintain();
+        Ok(())
+    }
 }
 
 #[allow(unused_variables)]

@@ -231,18 +231,6 @@ impl StructField {
         self.rename.clone().unwrap_or(name)
     }
 
-    pub(crate) fn root_ext_input_pattern_lit_str(&self, ext: &Ident) -> LitStr {
-        let name = &self.name;
-        let name = name.get_ident().unwrap();
-
-        let format = format!(
-            "{}.{}.(?input)",
-            name.to_string().to_lowercase(),
-            ext.to_string().to_lowercase()
-        );
-        LitStr::new(&format, Span::call_site())
-    }
-
     pub(crate) fn visit_config_extensions(&self, subject: &Ident) -> TokenStream {
         if let Some(ident) = self.ty.get_ident() {
             let extensions = format_ident!("{}Extensions", subject);

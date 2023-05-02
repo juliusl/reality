@@ -9,6 +9,7 @@ pub use crate::v2::DispatchRef;
 pub use crate::v2::Compiler;
 pub use crate::v2::CompilerEvents;
 pub use crate::v2::Linker;
+pub use crate::v2::LinkerEvents;
 pub use crate::v2::Parser;
 pub use crate::v2::Runmd;
 pub use crate::v2::Visitor;
@@ -38,6 +39,7 @@ mod ext {
 }
 pub use ext::*;
 
+pub use crate::v2::Instance;
 pub use crate::state::Load;
 pub use crate::state::Provider;
 pub use crate::state::iter_state;
