@@ -381,18 +381,6 @@ impl StructData {
     pub fn runmd_trait(&self) -> TokenStream {
         let name = &self.name;
 
-        let extensions_enum = format_ident!("{}Extensions", name);
-        let get_extension_matches = quote_spanned!{name.span()=>
-            if let Some(log) = compiler.last_build_log() {
-                let matches = #extensions_enum::get_matches(log);
-            
-                for (m, e) in matches {
-                    let dispatch_ref = reality::v2::DispatchRef::<reality::v2::Properties>::new(e, compiler);
-                    let _ = reality::v2::Dispatch::dispatch(self, dispatch_ref)?;
-                }
-            }
-        };
-
         // Mapping compile
         let compile_map = self.transient_fields().map(|f| {
             let pattern = f.root_ext_input_pattern_lit_str(name);

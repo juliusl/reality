@@ -10,7 +10,6 @@ use crate::Value;
 
 use super::DispatchSignature;
 use super::GetMatches;
-use super::Properties;
 use super::Property;
 use super::Visitor;
 

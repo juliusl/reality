@@ -1,4 +1,4 @@
-use reality::v2::{prelude::*, Documentation};
+use reality::v2::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 /// Commands,
@@ -34,17 +34,11 @@ async fn main() -> Result<()> {
 
     let parser = Parser::new();
     let parser = parser.parse(framework::ROOT, &mut compiler)?;
-    let framework = compiler.compile()?;
-    let mut framework = Framework::new(framework);
-    compiler.visit_last_build(&mut framework);
+    let _ = compiler.compile()?;
     export_toml(&mut compiler, ".test/cli_framework.toml").await?;
 
     parser.parse(framework::EXAMPLE, &mut compiler)?;
     compiler.compile()?;
-    compiler.update_last_build(&mut framework);
-    println!("{:#?}", framework);
-
-    apply_framework!(compiler, framework::Test);
     compiler.as_mut().maintain();
     export_toml(&mut compiler, ".test/reality-examples.toml").await?;
 
@@ -108,7 +102,7 @@ mod framework {
     }
 
     impl Visit<&Cli> for Test {
-        fn visit(&self, context: &Cli, visitor: &mut impl Visitor) -> Result<()> {
+        fn visit(&self, _: &Cli, _: &mut impl Visitor) -> Result<()> {
             todo!()
         }
     }

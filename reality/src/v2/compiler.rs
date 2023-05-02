@@ -6,7 +6,6 @@ use super::prelude::Visit;
 use super::thunk::ThunkUpdate;
 use super::thunk::Update;
 use super::Documentation;
-use super::GetMatches;
 use super::Linker;
 use super::Listen;
 use super::Properties;

@@ -1,11 +1,5 @@
-use std::collections::BTreeMap;
-
-use reality::v2::{self, prelude::*, states::Object};
+use reality::v2::prelude::*;
 use tracing_subscriber::EnvFilter;
-
-use crate::test_framework::Process;
-
-// use test_framework::DispatchtestaExt;
 
 /// Example of a plugin framework compiler,
 ///
@@ -46,6 +40,7 @@ async fn main() -> Result<()> {
     };
 
     compiler.link(test_framework::Process::new()).unwrap();
+    compiler.link(test_framework::Println::new()).unwrap();
 
     let log = compiler.last_build_log().unwrap();
 
@@ -53,6 +48,17 @@ async fn main() -> Result<()> {
         match m {
             test_framework::ProcessExtensions::Plugin { .. } => {
                 compiler.as_ref().read_component::<test_framework::Process>().get(e).map(|p| {
+                    println!("post-link -- {:#?}", p);
+                });
+            },
+            _ => {}
+        }
+    }
+
+    for (_, m, e) in test_framework::PrintlnExtensions::get_matches(&log) {
+        match m {
+            test_framework::PrintlnExtensions::Plugin { .. } => {
+                compiler.as_ref().read_component::<test_framework::Println>().get(e).map(|p| {
                     println!("post-link -- {:#?}", p);
                 });
             },
@@ -78,15 +84,9 @@ async fn from_runmd() -> Result<Compiler> {
 async fn from_fs() -> Result<Compiler> {
     let mut compiler = Compiler::new().with_docs();
 
-    let framework = import_toml(&mut compiler, ".test/plugin_framework.toml").await?;
-    let mut framework = Framework::new(framework);
-    compiler.visit_last_build(&mut framework);
-
+    let _ = import_toml(&mut compiler, ".test/plugin_framework.toml").await?;
     let _ = import_toml(&mut compiler, ".test/usage_example.toml").await?;
-    compiler.update_last_build(&mut framework);
-    println!("{:#?}", framework);
 
-    apply_framework!(compiler, test_framework::Process, test_framework::Println);
     Ok(compiler)
 }
 
@@ -159,7 +159,7 @@ const EXAMPLE_USAGE: &'static str = r##"
 <plugin.println>        .stdout     World Hello             # Can also be activated in one line
 <plugin.println>        .stderr     World Hello Error       # Can also be activated in one line
 <cli.println>           .test       Test here               # Testing adding a command
-<plugin>                .println
+<plugin>                .println    
 :                       .stdout     Hello World
 :                       .stdout     Goodbye World
 :                       .stderr     Hello World Error
@@ -261,6 +261,12 @@ pub mod test_framework {
 
     impl Visit<&Plugin> for Println {
         fn visit(&self, context: &Plugin, visitor: &mut impl Visitor) -> Result<()> {
+            println!("visiting -- {}", self.println);
+            for (name, prop) in context.properties.iter_properties() {
+                println!("visiting -- {name} -- {:#?}", prop);
+                visitor.visit_property(name, prop);
+            }
+
             Ok(())
         }
     }

@@ -33,7 +33,7 @@ pub enum LinkerEvents {
     /// Entity has config to add,
     /// 
     AddConfig(Properties),
-    /// Create component,
+    /// Component should be created,
     /// 
     Create(Properties),
 }
@@ -266,11 +266,11 @@ where
         }
 
         for (e, properties) in create_queue.iter() {
-            trace!("creating -- {:?}", e);
+            trace!("Creating -- {:?}", e);
             let mut base = self.base.clone();
             base.visit_properties(properties);
 
-            trace!("created -- {:#?}", base);
+            trace!("Created -- {:#?}", base);
             self.instances.push((*e, base));
         }
     }

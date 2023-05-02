@@ -253,7 +253,7 @@ impl StructField {
             let config_ident = parse_str::<Path>(&config_ident).unwrap();
 
             let ident_lit = LitStr::new(ident.to_string().to_lowercase().as_str(), Span::call_site());
-            let ident_config_lit = LitStr::new(format!("{}.{{config}}.{{property}}", ident.to_string().to_lowercase()).as_str(), Span::call_site());
+            let ident_config_lit = LitStr::new(format!("{}.{{}}.{{}}", ident.to_string().to_lowercase()).as_str(), Span::call_site());
 
             quote_spanned! {subject.span()=>
                 #root_ident { } => {
@@ -267,9 +267,9 @@ impl StructField {
                 },
                 #config_ident { config, property } => {
                     if properties.len() > 0 {
-                        visitor.visit_property(&format!(#ident_config_lit), &reality::v2::prelude::Property::Properties(properties.clone().into()));
+                        visitor.visit_property(&format!(#ident_config_lit, config, property), &reality::v2::prelude::Property::Properties(properties.clone().into()));
                     } else {
-                        visitor.visit_property(&format!(#ident_config_lit), &reality::v2::prelude::Property::Empty);
+                        visitor.visit_property(&format!(#ident_config_lit, config, property), &reality::v2::prelude::Property::Empty);
                     }
 
                     return Ok(());
@@ -303,6 +303,10 @@ impl StructField {
                     <#subject as reality::v2::prelude::Visit<&#ident>>::visit(&loading, &loading.#name, visitor)?;
                     return Ok(());
                 },
+                #load_ident { property: None, value: None } => {
+                    <#subject as reality::v2::prelude::Visit<&#ident>>::visit(&loading, &loading.#name, visitor)?;
+                    return Ok(());
+                },
             }
         } else {
             quote_spanned! {subject.span()=>
@@ -333,18 +337,6 @@ impl StructField {
                 subject.to_string().to_lowercase()
             );
             let pattern = LitStr::new(pattern.as_str(), Span::call_site());
-
-            let root = quote_spanned! {subject.span()=>
-                #root_ident { } => {
-
-                },
-                #config_ident { config, property } => {
-
-                },
-                #ident { property, value } => {
-
-                }
-            };
 
             quote_spanned! {self.span=>
                 #[interpolate(#root_pattern)]

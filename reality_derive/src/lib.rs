@@ -14,7 +14,7 @@ use thunk::ThunkMacro;
 mod enum_data;
 use enum_data::InterpolationExpr;
 
-/// Allows macros to be used internally,
+/// Add's namespace alias for macros to be used inside of the reality crate,
 ///
 #[proc_macro]
 pub fn internal_use(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -242,24 +242,6 @@ pub fn dispatch_signature(
             None
         }
     });
-
-    let variant_matches_with_entity = interpolations.clone().filter_map(|(attr, variant)| {
-        if let Some(expr) = attr.parse_args::<LitStr>().ok() {
-            let expr = InterpolationExpr {
-                name: variant.ident.clone(),
-                expr,
-            }
-            .impl_expr(name.clone(), true);
-            Some(quote_spanned! {variant.span()=>
-                #expr
-            })
-        } else {
-            None
-        }
-    });
-    let variant_matches_with_entity = quote::quote! {
-        #( #variant_matches_with_entity )*
-    };
 
     let variant_matches = interpolations.clone().filter_map(|(attr, variant)| {
         if let Some(expr) = attr.parse_args::<LitStr>().ok() {
