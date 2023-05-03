@@ -16,7 +16,7 @@ pub trait TestA {
 #[derive(Runmd, Component, Clone)]
 #[compile(ThunkTestA)]
 #[storage(VecStorage)]
-struct ATest {
+pub struct ATest {
     param: usize,
 }
 

@@ -101,12 +101,6 @@ mod framework {
         pub cli: Cli,
     }
 
-    impl Visit<&Cli> for Test {
-        fn visit(&self, _: &Cli, _: &mut impl Visitor) -> Result<()> {
-            todo!()
-        }
-    }
-
     impl Test {
         pub fn new() -> Test {
             Test {
@@ -129,6 +123,12 @@ mod framework {
             Cli {
                 command: clap::builder::Command::new(""),
             }
+        }
+    }
+
+    impl Visit for Cli {
+        fn visit(&self, _: (), _: &mut impl Visitor) -> Result<()> {
+            todo!()
         }
     }
 

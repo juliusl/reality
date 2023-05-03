@@ -1,6 +1,10 @@
-use reality::v2::{prelude::*, Instance};
-use test_framework::Println;
+use reality::v2::prelude::*;
 use tracing_subscriber::EnvFilter;
+
+pub mod states {
+    pub use super::test_framework::Println__states::*;
+    pub use super::test_framework::Process__states::*;
+}
 
 /// Example of a plugin framework compiler,
 ///
@@ -77,7 +81,31 @@ async fn main() -> Result<()> {
 
     let mut q = vec![];
 
-    for instance in compiler.as_ref().system_data::<PrintlnInstanceSystemData>().state_vec::<PrintlnInstance>().iter() {
+    for instance in compiler.as_ref().system_data::<states::PrintlnInstanceSystemData>().state_vec::<states::PrintlnInstance>().iter() {
+        q.push(instance.0);
+    }
+    for q in q.iter() {
+        compiler
+            .dispatch_ref(*q)
+            .read(|p| {
+                println!("Before call -- {:?}", p);
+                Ok(())
+            })
+            .enable_async()
+            .call()
+            .await
+            .unwrap()
+            .read(|p| {
+                println!("After call -- {:?}", p);
+                Ok(())
+            })
+            .enable_async()
+            .call()
+            .await
+            .unwrap();
+    }
+
+    for instance in compiler.as_ref().system_data::<states::ProcessInstanceSystemData>().state_vec::<states::ProcessInstance>().iter() {
         q.push(instance.0);
     }
     for q in q.iter() {
@@ -102,14 +130,6 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-#[allow(dead_code)]
-#[derive(Load)]
-struct PrintlnInstance<'a> {
-    entity: Entity,
-    println: &'a Println,
-    instance: &'a Instance,
 }
 
 async fn from_runmd() -> Result<Compiler> {
@@ -227,7 +247,7 @@ const EXAMPLE_USAGE: &'static str = r##"
 #[allow(dead_code)]
 #[allow(unused_variables)]
 pub mod test_framework {
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, sync::Arc};
 
     use reality::{v2::prelude::*, Value};
     use tracing_test::traced_test;
@@ -261,6 +281,12 @@ pub mod test_framework {
         }
     }
 
+    impl Visit for Plugin {
+        fn visit(&self, context: (), visitor: &mut impl Visitor) -> Result<()> {
+            Ok(())
+        }
+    }
+
     #[derive(Clone, Copy, Debug, Default)]
     pub struct Cli;
 
@@ -268,6 +294,12 @@ pub mod test_framework {
         fn visit_property(&mut self, name: &str, property: &Property) {
             println!("--- Cli visited by: {name}");
             println!("--- Cli visited by: {:?}", property);
+        }
+    }
+
+    impl Visit for Cli {
+        fn visit(&self, context: (), visitor: &mut impl Visitor) -> Result<()> {
+            Ok(())
         }
     }
 
@@ -295,24 +327,6 @@ pub mod test_framework {
         plugin: Plugin,
         #[ext]
         cli: Cli,
-    }
-
-    impl Visit<&Plugin> for Println {
-        fn visit(&self, context: &Plugin, visitor: &mut impl Visitor) -> Result<()> {
-            println!("visiting -- {}", self.println);
-            for (name, prop) in context.properties.iter_properties() {
-                println!("visiting -- {name} -- {:#?}", prop);
-                visitor.visit_property(name, prop);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl Visit<&Cli> for Println {
-        fn visit(&self, context: &Cli, visitor: &mut impl Visitor) -> Result<()> {
-            Ok(())
-        }
     }
 
     #[async_trait]
@@ -359,30 +373,14 @@ pub mod test_framework {
         pub redirect: String,
         #[config(rename = "RUST_LOG")]
         pub rust_log: String,
-        #[config(rename="env", ext=plugin.map)]
-        pub env: Vec<String>,
+        /// Environment variables to use,
+        /// 
+        #[config(ext=plugin.map)]
+        env: Vec<String>,
         #[ext]
         plugin: Plugin,
         #[ext]
         cli: Cli,
-    }
-
-    impl Visit<&Cli> for Process {
-        fn visit(&self, context: &Cli, visitor: &mut impl Visitor) -> Result<()> {
-            Ok(())
-        }
-    }
-
-    impl Visit<&Plugin> for Process {
-        fn visit(&self, context: &Plugin, visitor: &mut impl Visitor) -> Result<()> {
-            println!("visiting -- {}", self.process);
-            for (name, prop) in context.properties.iter_properties() {
-                println!("visiting -- {name} -- {:#?}", prop);
-                visitor.visit_property(name, prop);
-            }
-
-            Ok(())
-        }
     }
 
     impl Process {
@@ -398,6 +396,12 @@ pub mod test_framework {
                 cli: Cli {},
             }
         }
+
+        pub fn env(&self) -> Option<Arc<Properties>> {
+            self.plugin.properties
+                .property("env")
+                .and_then(|p| p.as_properties())
+        }
     }
 
     #[async_trait]
@@ -405,7 +409,6 @@ pub mod test_framework {
         async fn call(&self) -> Result<Properties> {
             println!("Calling {}", self.process);
             println!("{:?}", self);
-
             Ok(Properties::default())
         }
     }

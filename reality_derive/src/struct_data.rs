@@ -376,11 +376,13 @@ impl StructData {
         let name = &self.name;
 
         let visitor_trait = self.visitor_trait();
-        let visit_trait = self.visit_trait();
         let compile_trait = self.compile_trait();
         let extensions_enum = self.extensions_enum();
         let extensions_enum_ident = self.extensions_enum_ident();
-        let visit_extensions_trait = self.visit_extensions();
+        let visit_trait = self.visit_trait();
+        let visit_extensions_trait = self.visit_extensions_trait();
+
+        let runmd_instance_state = self.runmd_instance_state();
 
         quote! {
             impl reality::v2::Runmd for #name {
@@ -393,6 +395,8 @@ impl StructData {
 
             #visit_trait
             #visit_extensions_trait
+
+            #runmd_instance_state
         }
     }
 
@@ -512,7 +516,30 @@ impl StructData {
         self.fields.iter().filter(|f| f.reference)
     }
 
-    fn visit_extensions(&self) -> TokenStream {
+    fn runmd_instance_state(&self) -> TokenStream {
+        let name = &self.name;
+        let mod_name = format_ident!("{}__states", name);
+        let instance_name = format_ident!("{}Instance", name);
+
+        quote_spanned! {name.span()=>
+            /// This module was generated in order to load instances from storage
+            /// 
+            #[allow(non_snake_case)]
+            pub mod #mod_name {
+                use super::#name;
+                use specs::Entity;
+                
+                #[derive(reality::v2::prelude::Load)]
+                pub struct #instance_name<'a> {
+                    pub entity: Entity,
+                    pub instance: &'a reality::v2::prelude::Instance,
+                    pub ty: &'a #name,
+                }
+            }
+        }
+    }
+
+    fn visit_extensions_trait(&self) -> TokenStream {
         let name = &self.name;
         let type_alias_ident = format_ident!("{}CompilerEvents", self.name);
         let extensions_enum = format_ident!("{}Extensions", self.name);
@@ -529,6 +556,10 @@ impl StructData {
             quote_spanned! {f.span=>
                 #match_arms
             }
+        });
+
+        let visit_fields = self.fields.iter().filter(|f| !f.ignore && f.ext).map(|f| {
+            f.visit_trait(&self.name)
         });
 
         quote! {
@@ -554,6 +585,8 @@ impl StructData {
                     Err(reality::Error::skip())
                 }
             }
+
+            #( #visit_fields )*
         }
     }
 }

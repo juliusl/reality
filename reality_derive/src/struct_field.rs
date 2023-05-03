@@ -303,6 +303,32 @@ impl StructField {
         }
     }
 
+    /// Generates code like this, 
+    ///
+    /// ```
+    /// impl Visit<&TestExtension> for Test {
+    ///     fn visit(&self, context: &TestExtension, visitor: &mut impl Visitor) -> Result<()> {
+    ///         context.visit((), visitor);
+    ///     }
+    /// }
+    /// ```
+    /// 
+    pub(crate) fn visit_trait(&self, subject: &Ident) -> TokenStream {
+        if let Some(ident) = self.ty.get_ident() {
+            quote_spanned! {subject.span()=>
+                impl Visit<&#ident> for #subject {
+                    fn visit(&self, context: &#ident, visitor: &mut impl Visitor) -> Result<()> {
+                        context.visit((), visitor)
+                    }
+                }
+            }
+        } else {
+            quote_spanned! {subject.span()=>
+
+            }
+        }
+    }
+
     pub(crate) fn extension_interpolation_variant(&self, subject: &Ident) -> TokenStream {
         if let Some(ident) = self.ty.get_ident() {
             let root_pattern = format!(
