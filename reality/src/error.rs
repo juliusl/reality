@@ -63,7 +63,7 @@ impl Error {
         NOT_IMPLEMENTED
     }
 
-    /// Returns a skip error,
+    /// Returns an error to indicate to the receiver that they should skip the next steps,
     /// 
     pub const fn skip() -> Self {
         const SKIP: Error = Error::new("Skip");

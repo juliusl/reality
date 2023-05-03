@@ -344,7 +344,8 @@ pub mod test_framework {
 
             let mut props = Properties::new(Identifier::new());
             props["test"] = property_value("test written");
-            Ok(props)
+            
+            Err(Error::skip())
         }
     }
 
@@ -409,7 +410,8 @@ pub mod test_framework {
         async fn call(&self) -> Result<Properties> {
             println!("Calling {}", self.process);
             println!("{:?}", self);
-            Ok(Properties::default())
+
+            Err(Error::skip())
         }
     }
 
