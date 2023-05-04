@@ -2,14 +2,15 @@ use crate::v2::compiler::DispatchRef;
 use crate::v2::Properties;
 use crate::Result;
 use async_trait::async_trait;
-use reality_derive::{dispatch_signature, internal_use};
+use reality_derive::internal_use;
+use reality_derive::patterns;
 use std::sync::Arc;
 
 internal_use!();
 
 /// Dispatch signatures,
 ///
-#[dispatch_signature]
+#[patterns]
 pub enum DispatchSignature {
     #[interpolate("!#block#.#root#.(config);")]
     ConfigRoot,

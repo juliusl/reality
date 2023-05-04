@@ -99,7 +99,7 @@ impl StructData {
         quote_spanned! {self.name.span()=>
             /// Enumeration of extension patterns,
             /// 
-            #[dispatch_signature]
+            #[patterns]
             #vis enum #ty_ident {
                 #( #extensions ),*
             }

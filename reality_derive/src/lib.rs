@@ -1,5 +1,13 @@
+use proc_macro2::Span;
+use proc_macro2::TokenStream;
+use quote::format_ident;
 use quote::quote_spanned;
+use quote::ToTokens;
+use syn::ExprLit;
+use syn::Lit;
 use syn::parse_macro_input;
+use syn::Attribute;
+use syn::Item;
 use syn::ItemEnum;
 use syn::LitStr;
 mod struct_data;
@@ -214,7 +222,7 @@ pub fn thunk(
 /// Generates structs for enum fields that use an #[interpolate(..)] attribute,
 ///
 #[proc_macro_attribute]
-pub fn dispatch_signature(
+pub fn patterns(
     _attr: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
@@ -280,8 +288,83 @@ pub fn dispatch_signature(
     .into()
 }
 
+/// Parses doc comments and generates a compile fn,
+/// 
+#[proc_macro_attribute]
+pub fn include_docs(
+    _attr: proc_macro::TokenStream,
+    input: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let item = parse_macro_input!(input as Item);
+
+    let compile_fn = parse_runmd_from_docs(&item);
+
+    quote::quote! {
+        #item
+
+        #compile_fn
+    }.into()
+}
+
+/// Parses doc comments into a fn for 
+/// 
+fn parse_runmd_from_docs(item: &Item) -> TokenStream {
+    let (attrs, name) = match &item {
+        Item::Type(i) => (&i.attrs, &i.ident),
+        Item::Trait(i) => (&i.attrs, &i.ident),
+        Item::Struct(i) => (&i.attrs, &i.ident),
+        Item::Static(i) => (&i.attrs, &i.ident),
+        Item::Const(i) => (&i.attrs, &i.ident),
+        Item::Enum(i) => (&i.attrs, &i.ident),
+        Item::Fn(i) => (&i.attrs, &i.sig.ident),
+        _ => todo!(),
+    };
+
+    let mut lines = vec![];
+    
+    for line in attrs
+        .iter()
+        .filter_map(|a| match &a.meta {
+            syn::Meta::NameValue(nv) => Some(nv),
+            _ => None,
+        })
+        .filter(|m| m.path.is_ident("doc"))
+        .filter_map(|m| match &m.value {
+            syn::Expr::Lit(ExprLit { lit: Lit::Str(line), ..}) => {
+                Some(line.value())
+            }
+            _ => None
+        })
+    {
+        lines.push(line);
+    }
+
+    let lines = lines.iter().map(|l| {
+        let lit = LitStr::new(l, Span::call_site());
+        quote::quote! {
+            .parse_line(#lit)?
+        }
+    });
+
+    let fn_ident = format_ident!("compile_runmd_{}", name.to_string().to_lowercase());
+    quote_spanned! {name.span()=>
+        /// Generated from documentation,
+        /// 
+        pub fn #fn_ident(compiler: &mut reality::v2::prelude::Compiler) -> Result<Entity> {
+            use reality::v2::prelude::Parser;
+
+            let _ = Parser::new()
+                #( #lines )*
+                .parse("", compiler)?;
+
+            compiler.compile()
+        }
+    }
+}
+
 #[allow(unused_imports)]
 mod tests {
+    use crate::parse_runmd_from_docs;
     use crate::thunk::ThunkMacro;
     use crate::thunk::ThunkTraitFn;
     use crate::StructData;
@@ -301,11 +384,33 @@ mod tests {
     use syn::DeriveInput;
     use syn::Expr;
     use syn::Fields;
+    use syn::Item;
     use syn::Lifetime;
     use syn::LitStr;
     use syn::Path;
     use syn::Token;
     use syn::Visibility;
+
+    #[test]
+    fn test_include_docs_attr() {
+        let ts = <proc_macro2::TokenStream as std::str::FromStr>::from_str(
+            r#"
+            /// Doc comment
+            /// 
+            /// ```runmd
+            /// + .symbol Example
+            /// ```
+            /// 
+            pub fn main() {
+            }
+    "#,
+        )
+        .unwrap();
+
+        let item = parse2::<Item>(ts).unwrap();
+
+        parse_runmd_from_docs(&item);
+    }
 
     #[test]
     fn test_compile_thunk_derive_expr() {

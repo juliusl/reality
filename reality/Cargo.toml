@@ -29,4 +29,4 @@ clap =  { version = "4.2.1", features = [ "cargo", "string" ] }
 tracing-subscriber = "0.3.16"
 
 [[example]]
-name = "plugin_framework"
+name = "plugin"

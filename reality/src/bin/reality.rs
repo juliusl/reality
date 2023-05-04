@@ -132,7 +132,7 @@ mod framework {
         }
     }
 
-    #[dispatch_signature]
+    #[patterns]
     enum CliSignatures {
         /// Signature of a command from `test` cli,
         ///

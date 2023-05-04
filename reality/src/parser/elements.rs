@@ -49,6 +49,8 @@ pub enum Elements {
     /// Valid token elements,
     /// 
     #[token("-")]
+    #[token("{")]
+    #[token("}")]
     Valid,
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.

@@ -1,5 +1,6 @@
 use crate::Value;
 
+use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::ops::Index;
 use std::sync::Arc;
@@ -39,6 +40,19 @@ impl Property {
                 properties[&key].is_enabled()
             }
             _ => false,
+        }
+    }
+    
+    /// Returns a Set of String values if complex,
+    /// 
+    pub fn as_complex(&self) -> Option<&BTreeSet<String>> {
+        match self {
+            Property::Single(Value::Complex(complex)) => Some(complex),
+            Property::Properties(properties) => {
+                let key = properties.owner().subject();
+                properties.property(key).and_then(|p| p.as_complex())
+            }
+            _ => None,
         }
     }
 
