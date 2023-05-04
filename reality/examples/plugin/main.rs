@@ -83,7 +83,7 @@ mod states {
 ///
 /// The rest of the source code of this example will demonstrate how to link new component types w/ the compiler.
 ///
-#[reality::include_docs]
+#[reality::parse_docs]
 #[tokio::main]
 async fn main() -> Result<()> {
     // Uncomment to see logging

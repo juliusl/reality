@@ -2,11 +2,9 @@ use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use quote::format_ident;
 use quote::quote_spanned;
-use quote::ToTokens;
 use syn::ExprLit;
 use syn::Lit;
 use syn::parse_macro_input;
-use syn::Attribute;
 use syn::Item;
 use syn::ItemEnum;
 use syn::LitStr;
@@ -291,7 +289,7 @@ pub fn patterns(
 /// Parses doc comments and generates a compile fn,
 /// 
 #[proc_macro_attribute]
-pub fn include_docs(
+pub fn parse_docs(
     _attr: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
@@ -309,14 +307,14 @@ pub fn include_docs(
 /// Parses doc comments into a fn for 
 /// 
 fn parse_runmd_from_docs(item: &Item) -> TokenStream {
-    let (attrs, name) = match &item {
-        Item::Type(i) => (&i.attrs, &i.ident),
-        Item::Trait(i) => (&i.attrs, &i.ident),
-        Item::Struct(i) => (&i.attrs, &i.ident),
-        Item::Static(i) => (&i.attrs, &i.ident),
-        Item::Const(i) => (&i.attrs, &i.ident),
-        Item::Enum(i) => (&i.attrs, &i.ident),
-        Item::Fn(i) => (&i.attrs, &i.sig.ident),
+    let (attrs, name, vis) = match &item {
+        Item::Type(i) => (&i.attrs, &i.ident, &i.vis),
+        Item::Trait(i) => (&i.attrs, &i.ident, &i.vis),
+        Item::Struct(i) => (&i.attrs, &i.ident, &i.vis),
+        Item::Static(i) => (&i.attrs, &i.ident, &i.vis),
+        Item::Const(i) => (&i.attrs, &i.ident, &i.vis),
+        Item::Enum(i) => (&i.attrs, &i.ident, &i.vis),
+        Item::Fn(i) => (&i.attrs, &i.sig.ident, &i.vis),
         _ => todo!(),
     };
 
@@ -350,7 +348,7 @@ fn parse_runmd_from_docs(item: &Item) -> TokenStream {
     quote_spanned! {name.span()=>
         /// Generated from documentation,
         /// 
-        pub fn #fn_ident(compiler: &mut reality::v2::prelude::Compiler) -> Result<Entity> {
+        #vis fn #fn_ident(compiler: &mut reality::v2::prelude::Compiler) -> Result<Entity> {
             use reality::v2::prelude::Parser;
 
             let _ = Parser::new()
