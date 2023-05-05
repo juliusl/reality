@@ -370,10 +370,11 @@ impl StructField {
 
     pub(crate) fn visit_property_expr(&self) -> TokenStream {
         let prop = &self.name;
+        let prop_lit = LitStr::new(&prop.get_ident().unwrap().to_string(), Span::call_site());
 
         if let Some(config) = self.config.as_ref() {
             quote_spanned! {config.span()=>
-                &self.#config(&self.#prop)
+                &self.#config(#prop_lit, &self.#prop)
             }
         } else {
             quote_spanned! {prop.span()=>

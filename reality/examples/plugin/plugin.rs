@@ -20,7 +20,7 @@ impl Plugin {
 
     /// Returns read-only properties of values found in properties,
     ///
-    pub fn map(&self, properties: &Vec<String>) -> Property {
+    pub fn map(&self, _: &str, properties: &Vec<String>) -> Property {
         let mut output = Properties::empty();
         for name in properties {
             if let Some(prop) = self.properties.property(name) {
@@ -33,7 +33,7 @@ impl Plugin {
 
     /// Scans each line for formatting tokens and produces properties for each,
     ///
-    pub fn format(&self, lines: &Vec<String>) -> Property {
+    pub fn format(&self, _: &str, lines: &Vec<String>) -> Property {
         let mut output = Properties::empty();
 
         for (_, line) in lines.iter().enumerate() {
