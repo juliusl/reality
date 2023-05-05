@@ -105,6 +105,10 @@ where
         //
         let matches = <T::Extensions as GetMatches>::get_matches(&self.build_log);
 
+        if matches.is_empty() {
+            return Ok(());
+        }
+
         if let Some(d) = self.dispatch.as_mut().and_then(|d| d.world_ref.as_mut()) {
             d.as_mut().register::<T>();
         }
