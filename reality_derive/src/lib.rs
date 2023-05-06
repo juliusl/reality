@@ -340,7 +340,10 @@ struct Test {
         let ts = <proc_macro2::TokenStream as std::str::FromStr>::from_str(
             r#"
             /// Doc comment
-            pub trait MyTrait {
+            pub trait MyTrait 
+            where
+                Self: Clone
+            {
                 /// test
                 fn test(&self) -> Result<Properties>;
 

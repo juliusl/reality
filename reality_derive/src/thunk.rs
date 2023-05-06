@@ -5,8 +5,12 @@ use quote::format_ident;
 use quote::quote;
 use quote::quote_spanned;
 use quote::ToTokens;
+use syn::Token;
+use syn::TypeGenerics;
 use syn::parse::Parse;
 use syn::parse2;
+use syn::parse_quote;
+use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::Attribute;
 use syn::FnArg;
@@ -37,7 +41,7 @@ pub(crate) struct ThunkMacro {
     /// Other expressions defined in the trait,
     ///
     other_exprs: Vec<syn::TraitItem>,
-    _generics: Generics,
+    generics: Generics,
 }
 
 impl ThunkMacro {
@@ -67,11 +71,11 @@ impl ThunkMacro {
         let arc_impl_expr = self.arc_impl_expr();
         let bootstrap_fn = self.bootstrap_fn();
 
+        let (generics, where_clause) = self.where_clause();
+
         quote_spanned! {vis.span()=>
             #attributes
-            #vis trait #name
-            where
-                Self: Send + Sync,
+            #vis trait #name #generics #where_clause
             {
                 #exprs
 
@@ -302,6 +306,58 @@ impl ThunkMacro {
             #( #dispatch_exprs )*
         }
     }
+
+    fn where_clause(&self) -> (TypeGenerics, WhereClause) {
+        let (_, ty_generics, where_clause) = self.generics.split_for_impl();
+
+        let where_clause = if let Some(mut where_clause) = where_clause.cloned() {
+            for p in where_clause.predicates.iter_mut() {
+                match p {
+                    syn::WherePredicate::Type(ty) if ty.bounded_ty.to_token_stream().to_string().as_str() == "Self" => {
+                        let mut has_send = false;
+                        let mut has_sync = false;
+
+                        for b in ty.bounds.iter() {
+                            match b {
+                                syn::TypeParamBound::Trait(t) => {
+                                    if t.path.is_ident("Send") {
+                                        has_send = true;
+                                    }
+
+                                    if t.path.is_ident("Sync") {
+                                        has_sync = true;
+                                    }
+                                },
+                                _ => {
+
+                                },
+                            }
+                        }
+
+                        if !has_send {
+                            ty.bounds.push(parse_quote!(Send));
+                        }
+
+                        if !has_sync {
+                            ty.bounds.push(parse_quote!(Sync));
+                        }
+                    },
+                    _ => {
+                    },
+                }
+            }
+            where_clause
+        } else {
+            let mut where_clause = WhereClause {
+                where_token: <Token![where]>::default(),
+                predicates: Punctuated::new(),
+            };
+            where_clause.predicates.insert(0, parse_quote!(Self: Send + Sync));
+            where_clause
+        };
+
+        (ty_generics, where_clause)
+    }
 }
 
 impl Parse for ThunkMacro {
@@ -336,7 +392,7 @@ impl Parse for ThunkMacro {
         Ok(Self {
             attributes,
             visibility,
-            _generics: generics,
+            generics,
             name,
             exprs,
             other_exprs,
