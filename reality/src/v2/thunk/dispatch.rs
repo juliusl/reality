@@ -2,57 +2,7 @@ use crate::v2::compiler::DispatchRef;
 use crate::v2::Properties;
 use crate::Result;
 use async_trait::async_trait;
-use reality_derive::internal_use;
-use reality_derive::patterns;
 use std::sync::Arc;
-
-internal_use!();
-
-/// Dispatch signatures,
-///
-#[patterns]
-pub enum DispatchSignature {
-    #[interpolate("!#block#.#root#.(config);")]
-    ConfigRoot,
-    /// Dispatch would map to RootConfigExt signature --> .plugin.#root#.(ext),
-    ///
-    #[interpolate("!#block#.#root#.(config).(ext);")]
-    ConfigRootExt,
-    /// Signature of an individual property for configuring an extension of an extended property,
-    ///
-    #[interpolate("!#block#.#root#.(config).(ext).(prop);")]
-    ConfigExtendedProperty,
-    /// Signature of a property belonging to a config root extensions,
-    ///
-    #[interpolate("!#block#.#root#.(config).(name).(ext).(extname).(property);")]
-    ConfigRootExtProperty,
-    /// Signature of an extended property,
-    ///
-    #[interpolate("#root#.(config).(name).(extension).(?property);")]
-    ExtendedProperty,
-    /// Given,
-    ///
-    /// ```
-    /// struct Example {
-    /// ...
-    /// }
-    ///
-    /// impl Example {
-    ///     fn test(&self) -> Result<(), Error> {
-    ///         ...
-    ///     }
-    /// }
-    /// ```
-    ///
-    /// Dispatch would map to fn test() to BlockRootExt signature --> #block#.#root#.example.test,
-    ///
-    #[interpolate("#block#.#root#.(root).(ext);")]
-    BlockRootExt,
-    /// Dispatch would map BlockRootConfigExtNameProp signature -->
-    ///
-    #[interpolate("#block#.#root#.(root).(config).(ext).(name).(?prop)")]
-    BlockRootConfigExtNameProp,
-}
 
 /// Trait to run async code and then dispatch actions to a world,
 ///
@@ -96,16 +46,3 @@ where
     fn dispatch<'a>(&self, dispatch_ref: DispatchRef<'a, Properties>) -> DispatchResult<'a>;
 }
 
-#[allow(unused_imports)]
-mod tests {
-    use crate::v2::{prelude::*, GetMatches};
-
-    #[tracing_test::traced_test]
-    #[test]
-    fn test_dispatch_signature() {
-        let test = r##".plugin.process.#root#.path.redirect"##
-            .parse::<Identifier>()
-            .unwrap();
-        println!("{:?}", DispatchSignature::get_match(&test));
-    }
-}

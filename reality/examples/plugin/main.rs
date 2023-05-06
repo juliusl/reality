@@ -80,7 +80,7 @@ use println::*;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Uncomment to see logging
-    enable_logging();
+    // enable_logging();
 
     let mut compiler = Compiler::new().with_docs();
 

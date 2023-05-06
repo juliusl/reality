@@ -7,7 +7,6 @@ pub use bootstrap::Bootstrap;
 
 mod action;
 pub use action::Action;
-pub use action::ActionBuffer;
 
 mod root;
 pub use root::Root;
@@ -62,7 +61,6 @@ pub use thunk::Build;
 pub use thunk::Call;
 pub use thunk::Dispatch;
 pub use thunk::DispatchResult;
-pub use thunk::DispatchSignature;
 pub use thunk::DispatchThunkBuild;
 pub use thunk::Listen;
 pub use thunk::Listener;

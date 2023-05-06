@@ -1,5 +1,3 @@
-use self::linker::LinkerEvents;
-
 use super::parser::Packet;
 use super::parser::PacketHandler;
 use super::prelude::Visit;

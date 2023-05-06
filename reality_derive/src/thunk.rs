@@ -77,6 +77,8 @@ impl ThunkMacro {
 
                 #( #other_exprs )*
 
+                /// (Internal use) Bootstraps a component onto the entity to allow for extending the dispatch_ref dynamically,
+                /// 
                 #bootstrap_fn
             }
 

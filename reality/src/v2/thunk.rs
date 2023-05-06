@@ -19,7 +19,6 @@ mod dispatch;
 pub use dispatch::AsyncDispatch;
 pub use dispatch::Dispatch;
 pub use dispatch::DispatchResult;
-pub use dispatch::DispatchSignature;
 
 mod update;
 pub use update::Update;
