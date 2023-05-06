@@ -4,7 +4,6 @@ use quote::format_ident;
 use quote::quote;
 use quote::quote_spanned;
 use quote::ToTokens;
-use syn::Visibility;
 use syn::parse::Parse;
 use syn::parse2;
 use syn::Data;
@@ -12,6 +11,7 @@ use syn::DeriveInput;
 use syn::FieldsNamed;
 use syn::LitStr;
 use syn::Path;
+use syn::Visibility;
 
 use crate::struct_field::StructField;
 
@@ -24,7 +24,7 @@ pub(crate) struct StructData {
     ///
     name: Ident,
     /// Visibility of struct,
-    /// 
+    ///
     vis: Visibility,
     /// Parsed struct fields,
     ///
@@ -87,18 +87,16 @@ impl StructData {
 
     pub(crate) fn extensions_enum(&self) -> TokenStream {
         let ty_ident = self.extensions_enum_ident();
-        let extensions = self.fields.iter()
-            .filter(|f| !f.ignore && f.ext)
-            .map(|f|{
-                let i = f.extension_interpolation_variant(&self.name);
-                quote_spanned! {f.span=>
-                    #i
-                }
-            });
+        let extensions = self.fields.iter().filter(|f| !f.ignore && f.ext).map(|f| {
+            let i = f.extension_interpolation_variant(&self.name);
+            quote_spanned! {f.span=>
+                #i
+            }
+        });
         let vis = &self.vis;
         quote_spanned! {self.name.span()=>
             /// Enumeration of extension patterns,
-            /// 
+            ///
             #[patterns]
             #vis enum #ty_ident {
                 #( #extensions ),*
@@ -134,9 +132,11 @@ impl StructData {
     pub(crate) fn visit_trait(&self) -> TokenStream {
         let name = &self.name;
 
-        let visits = self.fields.iter().filter(|f| !f.ignore && !f.ext).map(|f| {
-            f.visit_expr()
-        });
+        let visits = self
+            .fields
+            .iter()
+            .filter(|f| !f.ignore && !f.ext)
+            .map(|f| f.visit_expr());
 
         quote! {
             impl<'a> reality::v2::prelude::Visit for &'a #name {
@@ -239,14 +239,19 @@ impl StructData {
             #( #systemdata_provider_body ),*
         };
 
-        let load_struct_expr = self.fields.iter().find(|f| f.ty.is_ident("Entity") && f.name.is_ident("entity")).map(|f| {
-            let ident = f.name.get_ident().unwrap();
-            quote_spanned! {ident.span()=>
-                Self { entity, #idents }
-            }
-        }).unwrap_or(quote! {
-            Self { #idents }
-        });
+        let load_struct_expr = self
+            .fields
+            .iter()
+            .find(|f| f.ty.is_ident("Entity") && f.name.is_ident("entity"))
+            .map(|f| {
+                let ident = f.name.get_ident().unwrap();
+                quote_spanned! {ident.span()=>
+                    Self { entity, #idents }
+                }
+            })
+            .unwrap_or(quote! {
+                Self { #idents }
+            });
 
         let vis = &self.vis;
 
@@ -291,8 +296,7 @@ impl StructData {
         let name = &self.name;
 
         let bootstraps = self.compile.iter().filter_map(|c| {
-            if let Some(ident) = c.get_ident().filter(|i| i.to_string().starts_with("Thunk"))
-            {
+            if let Some(ident) = c.get_ident().filter(|i| i.to_string().starts_with("Thunk")) {
                 let ty_name = ident.to_string().replace("Thunk", "");
                 let ty = format_ident!("{}", ty_name);
                 Some(quote! {
@@ -334,8 +338,7 @@ impl StructData {
                         Ok(reality::v2::thunk_listen(b.clone()))
                     })
                 })
-            } 
-            else if let Some(ident) = c.get_ident().filter(|i| i.to_string().starts_with("Thunk"))
+            } else if let Some(ident) = c.get_ident().filter(|i| i.to_string().starts_with("Thunk"))
             {
                 let ty_name = ident.to_string().replace("Thunk", "");
                 let name = format_ident!("thunk_{}", ty_name.to_lowercase());
@@ -372,8 +375,214 @@ impl StructData {
         }
     }
 
+    /// Generates the Runmd trait as well as other traits so that the concrete type can be linked w/ entities in storage,
+    ///
+    /// **Example**
+    /// ```
+    /// #[derive(Runmd, Debug, Clone, Component)]
+    /// #[storage(specs::VecStorage)]
+    /// #[compile(ThunkCall)]
+    /// pub struct Println {
+    ///     /// Input to the println component,
+    ///     println: String,
+    ///     /// Map of properties that can be used to format lines being printed,
+    ///     #[config(ext=plugin.map)]
+    ///     fmt: Vec<String>,
+    ///     /// Lines to print to stderr,
+    ///     #[config(ext=plugin.format)]
+    ///     stderr: Vec<String>,
+    ///     /// Lines to print to stdout,
+    ///     #[config(ext=plugin.format)]
+    ///     stdout: Vec<String>,
+    ///     /// Plugin extension
+    ///     #[ext]
+    ///     plugin: Plugin,
+    /// }
+    /// ```
+    ///
+    /// Would generate,
+    /// 
+    /// ```
+    /// impl reality::v2::Runmd for Println {
+    ///     type Extensions = PrintlnExtensions;
+    /// }
+    /// impl reality::v2::Visitor for Println {
+    ///     fn visit_property(&mut self, name: &str, property: &reality::v2::Property) {
+    ///        match name {
+    ///            "println" => {
+    ///                 self.println.visit_property(name, property);
+    ///             }
+    ///            "fmt" => {
+    ///                 self.fmt.visit_property(name, property);
+    ///             }
+    ///             "stderr" => {
+    ///                 self.stderr.visit_property(name, property);
+    ///             }
+    ///             "stdout" => {
+    ///                 self.stdout.visit_property(name, property);
+    ///             }
+    ///             _ => {}
+    ///         }
+    ///       self.plugin.visit_property(name, property);
+    ///     }
+    ///     fn visit_extension(&mut self, ident: &reality::Identifier) {
+    ///         self.plugin.visit_extension(ident);
+    ///     }
+    /// }
+    /// impl reality::v2::Dispatch for Println {
+    ///     fn dispatch<'a>(
+    ///         &self,
+    ///         dispatch_ref: reality::v2::DispatchRef<'a, reality::v2::Properties>,
+    ///     ) -> reality::v2::DispatchResult<'a> {
+    ///         dispatch_ref
+    ///             .transform(|s| <Println as Call>::__bootstrap(s))
+    ///             .transmute::<Println>()
+    ///             .map(|b| Ok(reality::v2::thunk_call(b.clone())))
+    ///             .map(|_| Ok(reality::v2::Instance::Ready))
+    ///             .transmute::<Properties>()
+    ///             .result()
+    ///     }
+    /// }
+    /// #[doc = r" Enumeration of extension patterns,"]
+    /// #[doc = r" "]
+    /// #[patterns]
+    /// pub enum PrintlnExtensions {
+    ///     #[interpolate("!#block#.#root#.plugin.println;")]
+    ///     PluginRoot,
+    ///     #[interpolate("!#block#.#root#.plugin.println.(config).(property);")]
+    ///     PluginConfig,
+    ///     #[interpolate("#block#.#root#.plugin.println.(?property).(?value);")]
+    ///     Plugin,
+    /// }
+    /// impl<'a> reality::v2::prelude::Visit for &'a Println {
+    ///     fn visit(&self, context: (), visitor: &mut impl reality::v2::Visitor) -> reality::Result<()> {
+    ///         <reality::v2::prelude::Property as reality::v2::prelude::Visit<
+    ///             reality::v2::prelude::Name<'a>,
+    ///         >>::visit(
+    ///             &reality::v2::prelude::Property::from(&self.println),
+    ///             "println",
+    ///             visitor,
+    ///         )?;
+    ///         <reality::v2::prelude::Property as reality::v2::prelude::Visit<
+    ///             reality::v2::prelude::Name<'a>,
+    ///         >>::visit(&self.plugin.map("fmt", &self.fmt), "fmt", visitor)?;
+    ///         <reality::v2::prelude::Property as reality::v2::prelude::Visit<
+    ///             reality::v2::prelude::Name<'a>,
+    ///         >>::visit(
+    ///             &self.plugin.format("stderr", &self.stderr),
+    ///             "stderr",
+    ///             visitor,
+    ///         )?;
+    ///         <reality::v2::prelude::Property as reality::v2::prelude::Visit<
+    ///             reality::v2::prelude::Name<'a>,
+    ///         >>::visit(
+    ///             &self.plugin.format("stdout", &self.stdout),
+    ///             "stdout",
+    ///             visitor,
+    ///         )?;
+    ///         Ok(())
+    ///     }
+    /// }
+    /// type PrintlnCompilerEvents<'a> = reality::v2::prelude::CompilerEvents<'a, Println>;
+    /// impl<'linking> reality::v2::prelude::Visit<PrintlnCompilerEvents<'linking>> for PrintlnExtensions {
+    ///     fn visit(
+    ///         &self,
+    ///         context: PrintlnCompilerEvents<'linking>,
+    ///         visitor: &mut impl reality::v2::prelude::Visitor,
+    ///     ) -> reality::Result<()> {
+    ///         match context {
+    ///             CompilerEvents::Config(properties) => match self {
+    ///                 PrintlnExtensions::PluginRoot {} => {
+    ///                     if properties.len() > 0 {
+    ///                         visitor.visit_property(
+    ///                             "plugin",
+    ///                             &reality::v2::prelude::Property::Properties(properties.clone().into()),
+    ///                         );
+    ///                     } else {
+    ///                         visitor.visit_property("plugin", &reality::v2::prelude::Property::Empty);
+    ///                     }
+    ///                     return Ok(());
+    ///                 }
+    ///                 PrintlnExtensions::PluginConfig { config, property } => {
+    ///                     if properties.len() > 0 {
+    ///                         visitor.visit_property(
+    ///                             &format!("plugin.{}.{}", config, property),
+    ///                             &reality::v2::prelude::Property::Properties(properties.clone().into()),
+    ///                         );
+    ///                     } else {
+    ///                         visitor.visit_property(
+    ///                             &format!("plugin.{}.{}", config, property),
+    ///                             &reality::v2::prelude::Property::Empty,
+    ///                         );
+    ///                     }
+    ///                     return Ok(());
+    ///                 }
+    ///                 _ => {}
+    ///             },
+    ///             CompilerEvents::Load(loading) => match self {
+    ///                 PrintlnExtensions::Plugin {
+    ///                     property: Some(property),
+    ///                     value: None,
+    ///                 } => {
+    ///                     visitor.visit_symbol("println", None, property);
+    ///                     <Println as reality::v2::prelude::Visit<&Plugin>>::visit(
+    ///                         &loading,
+    ///                         &loading.plugin,
+    ///                         visitor,
+    ///                     )?;
+    ///                     return Ok(());
+    ///                 }
+    ///                 PrintlnExtensions::Plugin {
+    ///                     property: Some(property),
+    ///                     value: Some(value),
+    ///                 } => {
+    ///                     visitor.visit_symbol(property, None, value);
+    ///                     <Println as reality::v2::prelude::Visit<&Plugin>>::visit(
+    ///                         &loading,
+    ///                         &loading.plugin,
+    ///                         visitor,
+    ///                     )?;
+    ///                     return Ok(());
+    ///                 }
+    ///                 PrintlnExtensions::Plugin {
+    ///                     property: None,
+    ///                     value: None,
+    ///                 } => {
+    ///                     <Println as reality::v2::prelude::Visit<&Plugin>>::visit(
+    ///                         &loading,
+    ///                         &loading.plugin,
+    ///                         visitor,
+    ///                     )?;
+    ///                     return Ok(());
+    ///                 }
+    ///                 _ => {}
+    ///             },
+    ///         }
+    ///         Err(reality::Error::skip())
+    ///     }
+    /// }
+    /// impl Visit<&Plugin> for Println {
+    ///     fn visit(&self, context: &Plugin, visitor: &mut impl Visitor) -> Result<()> {
+    ///         context.visit((), visitor)
+    ///     }
+    /// }
+    /// #[doc = r" This module was generated in order to load instances from storage"]
+    /// #[doc = r" "]
+    /// #[allow(non_snake_case)]
+    /// pub mod Println__states {
+    ///     use super::Println;
+    ///     use specs::Entity;
+    ///     #[derive(reality::v2::prelude::Load)]
+    ///     pub struct PrintlnInstance<'a> {
+    ///         pub entity: Entity,
+    ///         pub instance: &'a reality::v2::prelude::Instance,
+    ///         pub ty: &'a Println,
+    ///     }
+    /// }
+    /// ```
     pub fn runmd_trait(&self) -> TokenStream {
         let name = &self.name;
+        let name_lit = LitStr::new(name.to_string().as_str(), name.span());
 
         let visitor_trait = self.visitor_trait();
         let compile_trait = self.compile_trait();
@@ -381,12 +590,29 @@ impl StructData {
         let extensions_enum_ident = self.extensions_enum_ident();
         let visit_trait = self.visit_trait();
         let visit_extensions_trait = self.visit_extensions_trait();
-
         let runmd_instance_state = self.runmd_instance_state();
 
+        
+        let mod_name = &self.runmd_instance_state_mod_ident();
+        let instance_name = &self.runmd_instance_ident();
+        let instance_system_data_name = &format_ident!("{}SystemData", instance_name);
+        let instance_provider_alias = &format_ident!("{}Provider", name);
+
         quote! {
+            pub type #instance_provider_alias<'a> = <#name as reality::v2::Runmd>::InstanceSystemData<'a>;
+
+            pub type #instance_name<'a> = <#name as reality::v2::Runmd>::Instance<'a>;
+
             impl reality::v2::Runmd for #name {
+                type InstanceSystemData<'instance> = #mod_name::#instance_system_data_name<'instance>;
+                
+                type Instance<'instance> = #mod_name::#instance_name<'instance>;
+                
                 type Extensions = #extensions_enum_ident;
+
+                fn type_name() -> &'static str {
+                    #name_lit
+                }
             }
 
             #visitor_trait
@@ -400,29 +626,27 @@ impl StructData {
         }
     }
 
-
     /// Returns an impl for the visitor trait,
-    /// 
+    ///
     pub fn visitor_trait(&self) -> TokenStream {
         let name = &self.name;
 
-        let visit_property = self.fields
+        let visit_property = self
+            .fields
             .iter()
             .filter(|f| !f.ignore && !f.block && !f.root && !f.ext)
-            .map(|f| {
-                f.visitor_expr()
-            });
-        
+            .map(|f| f.visitor_expr());
+
         let visit_block = self.visit_block();
         let visit_root = self.visit_root();
         let visit_ext = self.visit_extension();
 
-        let visit_ext_property = self.fields
+        let visit_ext_property = self
+            .fields
             .iter()
             .filter(|f| !f.ignore && (f.block || f.root || f.ext))
-            .filter_map(|f| {
-                f.name.get_ident()
-            }).map(|n| {
+            .filter_map(|f| f.name.get_ident())
+            .map(|n| {
                 quote_spanned! {n.span()=>
                     self.#n.visit_property(name, property);
                 }
@@ -431,12 +655,12 @@ impl StructData {
         quote! {
             impl reality::v2::Visitor for #name {
                 fn visit_property(&mut self, name: &str, property: &reality::v2::Property) {
-                    match name { 
+                    match name {
                         #( #visit_property ),*
                         _ => {
                         }
                     }
-                    
+
                     #( #visit_ext_property )*
                 }
 
@@ -450,12 +674,11 @@ impl StructData {
     }
 
     fn visit_extension(&self) -> TokenStream {
-        let visit_ext =self.fields
+        let visit_ext = self
+            .fields
             .iter()
             .filter(|f| !f.ignore && !f.block && !f.root && f.ext)
-            .map(|f| {
-                f.visitor_expr()
-            })
+            .map(|f| f.visitor_expr())
             .collect::<Vec<_>>();
 
         if !visit_ext.is_empty() {
@@ -471,14 +694,13 @@ impl StructData {
     }
 
     fn visit_root(&self) -> TokenStream {
-        let visit_root = self.fields
+        let visit_root = self
+            .fields
             .iter()
             .filter(|f| !f.ignore && !f.block && f.root && !f.ext)
-            .map(|f| {
-                f.visitor_expr()
-            })
+            .map(|f| f.visitor_expr())
             .collect::<Vec<_>>();
-    
+
         if !visit_root.is_empty() {
             let visit_root = visit_root.iter();
             quote! {
@@ -492,14 +714,13 @@ impl StructData {
     }
 
     fn visit_block(&self) -> TokenStream {
-        let visit_block = self.fields
+        let visit_block = self
+            .fields
             .iter()
             .filter(|f| !f.ignore && f.block && !f.root && !f.ext)
-            .map(|f| {
-                f.visitor_expr()
-            })
+            .map(|f| f.visitor_expr())
             .collect::<Vec<_>>();
-        
+
         if !visit_block.is_empty() {
             let visit_block = visit_block.iter();
             quote! {
@@ -516,19 +737,29 @@ impl StructData {
         self.fields.iter().filter(|f| f.reference)
     }
 
+    fn runmd_instance_state_mod_ident(&self) -> Ident {
+        let name = &self.name;
+        format_ident!("{}__states", name)
+    }
+
+    fn runmd_instance_ident(&self) -> Ident {
+        let name = &self.name;
+        format_ident!("{}Instance", name)
+    }
+
     fn runmd_instance_state(&self) -> TokenStream {
         let name = &self.name;
-        let mod_name = format_ident!("{}__states", name);
-        let instance_name = format_ident!("{}Instance", name);
+        let mod_name = self.runmd_instance_state_mod_ident();
+        let instance_name = self.runmd_instance_ident();
 
         quote_spanned! {name.span()=>
             /// This module was generated in order to load instances from storage
-            /// 
+            ///
             #[allow(non_snake_case)]
             pub mod #mod_name {
                 use super::#name;
                 use specs::Entity;
-                
+
                 #[derive(reality::v2::prelude::Load)]
                 pub struct #instance_name<'a> {
                     pub entity: Entity,
@@ -544,9 +775,9 @@ impl StructData {
         let type_alias_ident = format_ident!("{}CompilerEvents", self.name);
         let extensions_enum = format_ident!("{}Extensions", self.name);
 
-        let config_fields = self.fields.iter().filter(|f| !f.ignore && f.ext).map(|f| { 
+        let config_fields = self.fields.iter().filter(|f| !f.ignore && f.ext).map(|f| {
             let match_arms = f.visit_config_extensions(&self.name);
-            quote_spanned!{f.span=>
+            quote_spanned! {f.span=>
                 #match_arms
             }
         });
@@ -558,9 +789,11 @@ impl StructData {
             }
         });
 
-        let visit_fields = self.fields.iter().filter(|f| !f.ignore && f.ext).map(|f| {
-            f.visit_trait(&self.name)
-        });
+        let visit_fields = self
+            .fields
+            .iter()
+            .filter(|f| !f.ignore && f.ext)
+            .map(|f| f.visit_trait(&self.name));
 
         quote! {
             type #type_alias_ident<'a> = reality::v2::prelude::CompilerEvents<'a, #name>;
@@ -571,7 +804,7 @@ impl StructData {
                         CompilerEvents::Config(properties) => match self {
                             #( #config_fields )*
                             _ => {
-        
+
                             }
                         },
                         CompilerEvents::Load(loading) => match self {

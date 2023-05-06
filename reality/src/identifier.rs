@@ -15,6 +15,9 @@ use crate::Error;
 
 /// Struct for a dot-seperated identifier,
 ///
+/// **TODO**
+/// - It would be useful if this could be built in a const context, but that would need some refactoring
+/// 
 #[derive(Component, Default, Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
 #[storage(VecStorage)]
 pub struct Identifier {

@@ -1,15 +1,8 @@
 use reality::v2::prelude::*;
 
 mod plugin;
-
 mod println;
-use println::Println;
-
-/// `State` types are generated for components to access instances convieniently,
-/// 
-mod states {
-    pub use super::println::Println__states::*;
-}
+use println::*;
 
 /// This example shows how to consume extensions and components described with runmd w/ the reality compiler,
 ///
@@ -17,7 +10,7 @@ mod states {
 ///
 /// The storage method/architecture the compiler uses is based on the ECS pattern (Entity Component System), and uses the
 /// `specs` crate as the implementation. An entity is an id that is used to index components within a `World` data structure.
-/// More implementation details can be found in the `specs` crate documentation.
+/// More implementation details about `specs` and the ECS pattern can be found in the [`specs` crate documentation](https://specs.amethyst.rs/docs/tutorials/).
 ///
 /// The runmd data model consists of two main components, `Identifier`'s and `Properties`'s. An entity with
 /// these two components is referred to as an `Object`. The compiler converts blocks of runmd into objects and
@@ -51,8 +44,8 @@ mod states {
 ///
 /// Next, the `plugin` attribute can be used to define components.
 ///
-/// The following defines a component called `Println`. 
-/// 
+/// The following defines a component called `Println`.
+///
 /// **Note** -- Extensions defined previously are used to annotate the properties defined by `Println`.
 ///
 /// ```runmd
@@ -87,7 +80,7 @@ mod states {
 #[tokio::main]
 async fn main() -> Result<()> {
     // Uncomment to see logging
-    // enable_logging();
+    enable_logging();
 
     let mut compiler = Compiler::new().with_docs();
 
@@ -101,14 +94,14 @@ async fn main() -> Result<()> {
     // For demonstration purposes this loop will call instances, but typically this can be used from a System or via DispatchRef
     for instance in compiler
         .as_ref()
-        .system_data::<states::PrintlnInstanceSystemData>()
-        .state_vec::<states::PrintlnInstance>()
+        .system_data::<PrintlnProvider>()
+        .state_vec::<PrintlnInstance>()
         .iter()
     {
         instance.1.ty.call().await.ok();
     }
 
-    // This should print, 
+    // This should print,
     //
     // Hello World
     // Hello World 2

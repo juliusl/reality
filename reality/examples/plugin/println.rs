@@ -3,7 +3,7 @@ use reality::v2::prelude::*;
 use crate::plugin::Plugin;
 
 /// Component that prints messages to stderr and stdout,
-/// 
+///
 #[derive(Runmd, Debug, Clone, Component)]
 #[storage(specs::VecStorage)]
 #[compile(ThunkCall)]
@@ -28,25 +28,29 @@ pub struct Println {
 impl reality::v2::Call for Println {
     async fn call(&self) -> Result<Properties> {
         for out in self.stdout.iter() {
-            self.plugin.apply_formatting("fmt", "stdout", out).map_or_else(
-                || {
-                    println!("{out}");
-                },
-                |f| {
-                    println!("{f}");
-                },
-            );
+            self.plugin
+                .apply_formatting("fmt", "stdout", out)
+                .map_or_else(
+                    || {
+                        println!("{out}");
+                    },
+                    |f| {
+                        println!("{f}");
+                    },
+                );
         }
 
         for err in self.stderr.iter() {
-            self.plugin.apply_formatting("fmt", "stderr", err).map_or_else(
-                || {
-                    eprintln!("{err}");
-                },
-                |f| {
-                    eprintln!("{f}");
-                },
-            );
+            self.plugin
+                .apply_formatting("fmt", "stderr", err)
+                .map_or_else(
+                    || {
+                        eprintln!("{err}");
+                    },
+                    |f| {
+                        eprintln!("{f}");
+                    },
+                );
         }
 
         Err(Error::skip())
@@ -55,7 +59,7 @@ impl reality::v2::Call for Println {
 
 impl Println {
     /// Returns a new empty Println component,
-    /// 
+    ///
     pub const fn new() -> Self {
         Self {
             println: String::new(),

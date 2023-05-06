@@ -1,4 +1,6 @@
 use specs::Component;
+use tracing::trace;
+use tracing::warn;
 
 mod bootstrap;
 pub use bootstrap::Bootstrap;
@@ -74,6 +76,8 @@ pub use thunk::Update;
 
 use crate::Identifier;
 
+use self::prelude::Load;
+use self::prelude::Provider;
 use self::prelude::Visit;
 
 mod data;
@@ -125,12 +129,12 @@ impl GetMatches for () {
 }
 
 /// Enumeration of instance states for an entity,
-/// 
+///
 #[derive(Component, Debug)]
 #[storage(specs::storage::DenseVecStorage)]
 pub enum Instance {
     /// The instance has been compiled and has all thunks applied,
-    /// 
+    ///
     Ready,
     // TODO -- Should this be used to track state?
 }
@@ -142,39 +146,67 @@ where
     for<'a> &'a Self: Visit,
     <Self as Component>::Storage: Default,
 {
+    /// Associated type for the loadable instance type,
+    /// 
+    type Instance<'a>: Load + 'a;
+    
+    /// Associated type for the instance system data type,
+    /// 
+    type InstanceSystemData<'a>: Provider<'a, <Self::Instance<'a> as Load>::Layout>;
+
     /// Associated type for pattern matching w/ a build log,
     ///
     type Extensions: for<'a> Visit<CompilerEvents<'a, Self>> + GetMatches + std::fmt::Debug;
 
-    /// Finishes building runmd type w/ compiler,
+    /// Name of the concrete type,
     /// 
+    /// **Note** The lowercase version of the name will be used as the custom attribute symbol,
+    /// 
+    fn type_name() -> &'static str;
+
+    /// Finishes building runmd type w/ compiler,
+    ///
     fn runmd(&self, compiler: &mut Compiler) -> Result<(), crate::Error> {
         use specs::Entities;
+        use specs::Join;
         use specs::LazyUpdate;
         use specs::Read;
         use specs::ReadStorage;
         use specs::WorldExt;
-        use specs::Join;
 
         compiler.as_mut().exec(
-            |(lz, entities, linker_events, components): (
+            |(lz, entities, identifiers, linker_events): (
                 Read<LazyUpdate>,
                 Entities,
-                ReadStorage<LinkerEvents>,
-                ReadStorage<Self>,
+                ReadStorage<Identifier>,
+                ReadStorage<LinkerEvents<Self>>,
             )| {
-                for (e, c, event) in (&entities, &components, &linker_events).join() {
+                for (e, ident, event) in (&entities, &identifiers, &linker_events).join() {
                     match event {
-                        LinkerEvents::Ready => {
+                        LinkerEvents::Ready(c) => {
                             let c = c.clone();
                             lz.exec_mut(move |w| {
                                 let mut wrapper = WorldWrapper::from(w);
+                                let mut disp = wrapper.get_ref(e);
+                                disp.store(c.clone()).expect("should be able to insert component");
 
-                                c.dispatch(wrapper.get_ref(e))
+                                c.dispatch(disp)
                                     .expect("should be able to dispatch");
                             });
+                            trace!(
+                                ident = format!("{:#}", ident), 
+                                entity_id=e.id(), 
+                                entity_gen=e.gen().id(), 
+                                "Completed building"
+                            );
                         }
                         _ => {
+                            warn!(
+                                ident = format!("{:#}", ident), 
+                                entity_id=e.id(), 
+                                entity_gen=e.gen().id(),
+                                "Unhandled linker events"
+                            );
                             continue;
                         }
                     }

@@ -97,7 +97,6 @@ impl Compiler {
         world.register::<ThunkUpdate>();
         world.register::<ThunkListen>();
         world.register::<ThunkCompile>();
-        world.register::<LinkerEvents>();
         world.insert(None::<tokio::runtime::Handle>);
         Compiler {
             world,

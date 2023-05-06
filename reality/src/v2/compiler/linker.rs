@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use specs::shred::SetupHandler;
 use specs::Component;
 use specs::Entities;
 use specs::Entity;
@@ -10,7 +11,6 @@ use specs::System;
 use specs::VecStorage;
 use specs::WorldExt;
 use specs::WriteStorage;
-use specs::shred::SetupHandler;
 
 use tracing::trace;
 
@@ -29,16 +29,21 @@ use super::DispatchRef;
 ///
 #[derive(Component)]
 #[storage(VecStorage)]
-pub enum LinkerEvents {
+pub enum LinkerEvents<T>
+where
+    T: Runmd,
+    for<'b> &'b T: Visit,
+    <T as Component>::Storage: Default,
+{
     /// Entity has config to add,
-    /// 
+    ///
     AddConfig(Properties),
     /// Component should be created,
-    /// 
+    ///
     Create(Properties),
-    /// Components are ready,
-    /// 
-    Ready,
+    /// Component is ready and the linker will no longer process this entity any further,
+    ///
+    Ready(T),
 }
 
 /// A Linker wraps a runmd component T and scans the build log index for entities that are related,
@@ -109,11 +114,19 @@ where
             return Ok(());
         }
 
-        if let Some(d) = self.dispatch.as_mut().and_then(|d| d.world_ref.as_mut()) {
+        // Register components w/ world storage,
+        //
+        {
+            let d = self
+                .dispatch
+                .as_mut()
+                .and_then(|d| d.world_ref.as_mut())
+                .expect("should be activated");
             d.as_mut().register::<T>();
+            d.as_mut().register::<LinkerEvents<T>>();
         }
 
-        // Map linker events from derived compiler events, 
+        // Map linker events from derived compiler events,
         //
         for (id, m, _) in matches {
             // Note: Visiting the identifier will set the entity,
@@ -128,7 +141,11 @@ where
                         .map(move |p| {
                             let mut properties = Properties::empty();
                             // load_m.visit(CompilerEvents::Load(p), properties);
-                            <T::Extensions as Visit<CompilerEvents<T>>>::visit(&load_m, CompilerEvents::Load(p), &mut properties)?;
+                            <T::Extensions as Visit<CompilerEvents<T>>>::visit(
+                                &load_m,
+                                CompilerEvents::Load(p),
+                                &mut properties,
+                            )?;
                             Ok(LinkerEvents::Create(properties))
                         })
                         .transmute::<Properties>()
@@ -143,7 +160,7 @@ where
         }
 
         // Prepare the base type and consume linker events to finish creating new components,
-        // 
+        //
         if let Some(mut dispatch) = self.dispatch.take() {
             dispatch.dispatch_mut(|t, lz| {
                 let base = t.clone();
@@ -158,16 +175,15 @@ where
 
                         // Properties are applied to the final version and written to storage
                         i.visit_properties(&ip);
-                        w.write_component().insert(e, i).expect("should be able to insert component");
-                        w.write_component().insert(e, LinkerEvents::Ready).expect("should be able to insert component");
+                        w.write_component()
+                            .insert(e, LinkerEvents::<T>::Ready(i))
+                            .expect("should be able to insert component");
                     }
                 });
                 Ok(())
             })?;
 
-            self.dispatch = Some(
-                dispatch
-            );
+            self.dispatch = Some(dispatch);
         }
 
         Ok(())
@@ -188,7 +204,11 @@ where
                 .dispatch
                 .take()
                 .map(|d| d.with_entity(e).map(|_| Ok(identifier.clone())));
-            trace!("Setting entity to -- {:?}", e);
+            trace!(
+                "Setting active dispatcher entity: {:#} --> {:?}",
+                identifier,
+                e
+            );
         }
     }
 
@@ -218,34 +238,41 @@ where
     <T as Component>::Storage: Default,
 {
     fn setup(world: &mut specs::World) {
-        world.register::<LinkerEvents>();
+        world.register::<LinkerEvents<T>>();
         world.insert(None::<T>);
     }
 }
 
 /// Struct containing the base type and instances created by the linker,
-/// 
+///
+/// Implements a system that will consume linker events to creates instances of the base type T.
+///
+/// Instances are pushed to a stack, which the linker will use in the final build pass.
+///
 #[derive(Debug)]
 struct Type<T>
 where
     T: Runmd,
     for<'b> &'b T: Visit,
-    <T as Component>::Storage: Default 
+    <T as Component>::Storage: Default,
 {
     base: T,
     instances: Vec<(Entity, T)>,
 }
 
-impl<T> Type<T> 
+impl<T> Type<T>
 where
     T: Runmd,
     for<'b> &'b T: Visit,
-    <T as Component>::Storage: Default  
+    <T as Component>::Storage: Default,
 {
     /// Returns a new struct,
-    /// 
+    ///
     pub(super) const fn new(base: T) -> Self {
-        Self { base, instances: vec![] }
+        Self {
+            base,
+            instances: vec![],
+        }
     }
 }
 
@@ -255,34 +282,55 @@ where
     for<'b> &'b T: Visit,
     <T as Component>::Storage: Default,
 {
-    type SystemData = (Entities<'a>, WriteStorage<'a, LinkerEvents>, ReadStorage<'a, Properties>);
+    type SystemData = (
+        Entities<'a>,
+        WriteStorage<'a, LinkerEvents<T>>,
+        ReadStorage<'a, Properties>,
+    );
 
     fn run(&mut self, (entities, mut events, properties): Self::SystemData) {
         let mut create_queue = vec![];
         for (e, p, event) in (&entities, &properties, events.drain()).join() {
             match event {
                 LinkerEvents::AddConfig(config) => {
-                    trace!("Adding config config from -- {:?}", e);
+                    trace!(
+                        "[Type::<{}>::System] Adding config config from -- {:?} {:#}",
+                        <T as Runmd>::type_name(),
+                        e,
+                        config.owner()
+                    );
                     self.base.visit_properties(&config);
-                },
+                }
                 LinkerEvents::Create(mut properties) => {
-                    trace!("Creating for -- {:?}", e);
+                    trace!(
+                        "[Type::<{}>::System] Creating for -- {:?}",
+                        <T as Runmd>::type_name(),
+                        e
+                    );
                     // The final config will be performed in the create queue
                     for (n, p) in p.iter_properties() {
                         properties.visit_property(n, p);
                     }
                     create_queue.push((e, properties));
-                },
+                }
                 _ => {}
             }
         }
 
         for (e, properties) in create_queue.iter() {
-            trace!("Creating -- {:?}", e);
+            trace!(
+                "[Type::<{}>::System] Creating -- {:?}",
+                <T as Runmd>::type_name(),
+                e
+            );
             let mut base = self.base.clone();
             base.visit_properties(properties);
 
-            trace!("Created -- {:#?}", base);
+            trace!(
+                "[Type::<{}>::System] Created -- {:#?}",
+                <T as Runmd>::type_name(),
+                base
+            );
             self.instances.push((*e, base));
         }
     }
