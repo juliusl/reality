@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
     for (idx, (id, e)) in log.index().iter().enumerate() {
         println!("BuildLog[{idx}]: {:#}", id);
         println!("BuildLog[{idx}]: {:?}", e);
-        compiler.compiled().state::<Object>(*e).map(|o| {
+        compiler.compiled().state::<states::Object>(*e).map(|o| {
             println!("BuildLog[{idx}]: {}", o.properties());
         });
 

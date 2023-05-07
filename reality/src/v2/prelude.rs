@@ -1,4 +1,5 @@
 pub use crate::v2::Call;
+pub use crate::v2::Build;
 pub use crate::v2::Dispatch;
 pub use crate::v2::DispatchResult;
 pub use crate::v2::Properties;
@@ -30,7 +31,10 @@ pub use crate::v2::command::export_toml;
 pub use crate::v2::command::import_toml;
 pub use crate::v2::property_list;
 pub use crate::v2::property_value;
-pub use crate::v2::states::*;
+
+pub mod states {
+    pub use crate::v2::states::*;
+}
 
 mod ext {
     pub use crate::v2::thunk::DispatchcallExt;

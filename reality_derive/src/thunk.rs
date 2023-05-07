@@ -643,16 +643,19 @@ impl ThunkTraitFn {
                 default: false,
                 ..
             } => {
-                let closure = dispatch_ref_stmts::recv_with_closure(
-                    *mutable_with,
+                // TODO: This needs some cleanup
+                let closure =  dispatch_ref_stmts::recv_with_closure(
                     recv_type,
                     with_ty.ty.deref(),
                     name,
                 );
 
                 return match output_type {
-                    Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
+                    Type::Tuple(tuplety) if tuplety.elems.is_empty() && *mutable_with => {
                         dispatch_ref_stmts::write_with_stmt(&closure, &with_ty.ty)
+                    }
+                    Type::Tuple(tuplety) if tuplety.elems.is_empty() && !mutable_with => {                        
+                        dispatch_ref_stmts::read_with_stmt(&closure, &with_ty.ty)
                     }
                     _ => dispatch_ref_stmts::map_with_stmt(&closure, output_type, false),
                 };
@@ -740,14 +743,14 @@ impl ThunkTraitFn {
             },
             ThunkTraitFn {
                 output_type,
-                with_type: Some(..),
+                with_type: Some(with_type),
                 mutable_recv: false,
                 mutable_with: false,
                 is_async,
                 ..
             } => match output_type {
                 Type::Tuple(tuplety) if tuplety.elems.is_empty() => {
-                    dispatch_ref_stmts::read_with_stmt(&closure)
+                    dispatch_ref_stmts::read_with_stmt(&closure, &with_type.ty)
                 }
                 _ => dispatch_ref_stmts::map_with_stmt(&closure, output_type, *is_async),
             },
@@ -811,7 +814,6 @@ impl Parse for ThunkTraitFn {
 
         let mut lazy_update_pos = None;
         let mut lazy_builder_pos = None;
-        let mut with_mut = false;
         let mut with_type = match other_fields.next() {
             Some(pat) => match pat.ty.deref() {
                 Type::Path(p) => {
@@ -822,12 +824,6 @@ impl Parse for ThunkTraitFn {
                         lazy_builder_pos = Some(0);
                         None
                     } else {
-                        match pat.ty.deref() {
-                            Type::Reference(r) if r.mutability.is_some() => {
-                                with_mut = true;
-                            }
-                            _ => {}
-                        }
                         Some(pat)
                     }
                 }
@@ -844,12 +840,6 @@ impl Parse for ThunkTraitFn {
                     } else if p.path.is_ident("LazyBuilder") {
                         lazy_builder_pos = Some(0);
                     } else if with_type.is_none() {
-                        match other_type.ty.deref() {
-                            Type::Reference(r) if r.mutability.is_some() => {
-                                with_mut = true;
-                            }
-                            _ => {}
-                        }
                         with_type = Some(other_type);
                     }
                 }
@@ -918,7 +908,12 @@ impl Parse for ThunkTraitFn {
             name,
             return_type: return_type.clone(),
             mutable_recv,
-            mutable_with: with_mut,
+            mutable_with: with_type.as_ref().map(|t| match &t.ty.deref() {
+                Type::Reference(r) => {
+                    r.mutability.is_some()
+                },
+                _ => false,
+            }).unwrap_or_default(),
             with_type,
             output_type,
             attributes: vec![],
@@ -948,6 +943,7 @@ pub mod dispatch_ref_stmts {
     use quote::quote_spanned;
     use quote::ToTokens;
     use syn::Type;
+    use syn::spanned::Spanned;
 
     /// Returns an async dispatch sequence for stmts,
     ///
@@ -987,7 +983,7 @@ pub mod dispatch_ref_stmts {
         stmts: impl Iterator<Item = TokenStream>,
     ) -> TokenStream {
         let begin = quote_spanned! {thunk_type.span()=>
-            .transmute::<#thunk_type>()
+            .transmute()
         };
 
         let stmts = stmts.map(|s| {
@@ -1083,23 +1079,17 @@ pub mod dispatch_ref_stmts {
     }
 
     pub fn recv_with_closure(
-        is_mut: bool,
         with: &Ident,
         recv: &Type,
         fn_ident: &Ident,
     ) -> TokenStream {
-        let reference_ty = if is_mut {
-            quote! { &mut }
-        } else {
-            quote! { & }
-        };
-
         quote_spanned! {fn_ident.span()=>
-            |recv: #recv, with: #reference_ty #with| {
+            |recv: #recv, with: &#with| {
                 with.#fn_ident(recv)
             }
         }
     }
+
     pub fn recv_closure(is_mut: bool, recv: &Ident, fn_ident: &Ident) -> TokenStream {
         let reference_ty = if is_mut {
             quote! { &mut }
@@ -1237,8 +1227,8 @@ pub mod dispatch_ref_stmts {
 
     /// Generates a `read_with` statement,
     ///
-    pub fn read_with_stmt(closure: &TokenStream) -> TokenStream {
-        quote! {
+    pub fn read_with_stmt(closure: &TokenStream, with_ty: &Type) -> TokenStream {
+        quote_spanned! {with_ty.span()=>
             .read_with(#closure)
         }
     }
@@ -1246,17 +1236,8 @@ pub mod dispatch_ref_stmts {
     /// Generates a `write_with` statement,
     ///
     pub fn write_with_stmt(closure: &TokenStream, with_ty: &Type) -> TokenStream {
-        match with_ty {
-            Type::Reference(r) if r.mutability.is_some() => {
-                let with_ty = &r.elem;
-                quote! {
-                .transmute::<#with_ty>()
-                .write_with(#closure)
-                }
-            }
-            _ => quote! {
-                .write_with(#closure)
-            },
+        quote_spanned! {with_ty.span()=>
+            .write_with(#closure)
         }
     }
 

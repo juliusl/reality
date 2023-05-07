@@ -92,13 +92,27 @@ async fn main() -> Result<()> {
 
     // Also generated is a SystemData struct that can be used to load "instances" of this component
     // For demonstration purposes this loop will call instances, but typically this can be used from a System or via DispatchRef
-    for instance in compiler
+    let instances = compiler
         .as_ref()
         .system_data::<PrintlnProvider>()
         .state_vec::<PrintlnInstance>()
         .iter()
-    {
-        instance.1.ty.call().await.ok();
+        .map(|c| c.0)
+        .collect::<Vec<_>>();
+
+    for i in instances {
+        compiler.dispatch_ref(i)
+            .enable_async()
+            .call().await?
+            // TODO -- Ensure doc comments are moved over to the extension trait,
+            .example1()?
+            .example2()?
+            .example3()?
+            .example4()?
+            .example5()?
+            .example1()?
+            .example6()?
+            .example4()?;
     }
 
     // This should print,

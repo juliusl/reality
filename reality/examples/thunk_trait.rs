@@ -14,22 +14,20 @@ pub trait TestA {
 }
 
 #[derive(Runmd, Component, Clone)]
-#[compile(ThunkTestA)]
+#[compile(TestA)]
 #[storage(VecStorage)]
 pub struct ATest {
     param: usize,
 }
 
 impl ATest {
-    ///
-    ///
     pub fn print_self(&self) -> Result<()> {
         println!("param: {}", self.param);
-
         Ok(())
     }
 
     pub async fn print_self_async(&self) -> Result<()> {
+        println!("from_async -- param: {}", self.param);
         Ok(())
     }
 }

@@ -444,8 +444,6 @@ struct Test {
             r#"
             /// Doc comment
             pub trait MyTrait 
-            where
-                Self: Clone
             {
                 /// test
                 fn test(&self) -> Result<Properties>;
@@ -453,6 +451,8 @@ struct Test {
                 fn test2() -> String {
                     String::new()
                 }
+
+                fn test3(&self, properties: &mut Properties) -> Result<()>;
 
                 #[skip]
                 fn my_trait() -> Result<Test>;
@@ -464,7 +464,7 @@ struct Test {
         let input = parse2::<ThunkMacro>(ts).unwrap();
 
         println!("{:#}", input.trait_impl());
-        println!("{:#}", input.impl_dispatch_exprs());
+        // println!("{:#}", input.impl_dispatch_exprs());
     }
 
     #[test]

@@ -2,9 +2,6 @@ use specs::Component;
 use tracing::trace;
 use tracing::warn;
 
-mod bootstrap;
-pub use bootstrap::Bootstrap;
-
 mod action;
 pub use action::Action;
 

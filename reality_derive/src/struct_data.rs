@@ -296,7 +296,7 @@ impl StructData {
         let name = &self.name;
 
         let bootstraps = self.compile.iter().filter_map(|c| {
-            if let Some(ident) = c.get_ident().filter(|i| i.to_string().starts_with("Thunk")) {
+            if let Some(ident) = c.get_ident() {
                 let ty_name = ident.to_string().replace("Thunk", "");
                 let ty = format_ident!("{}", ty_name);
                 Some(quote! {
@@ -308,38 +308,7 @@ impl StructData {
         });
 
         let map = self.compile.iter().filter_map(|c| {
-            if c.is_ident("ThunkCall") || c.is_ident("Call") {
-                Some(quote! {
-                    .map(|b| {
-                        Ok(reality::v2::thunk_call(b.clone()))
-                    })
-                })
-            } else if c.is_ident("ThunkCompile") || c.is_ident("Compile") {
-                Some(quote! {
-                    .map(|b| {
-                        Ok(reality::v2::thunk_compile(b.clone()))
-                    })
-                })
-            } else if c.is_ident("ThunkBuild") || c.is_ident("Build") {
-                Some(quote! {
-                    .map(|b| {
-                        Ok(reality::v2::thunk_build(b.clone()))
-                    })
-                })
-            } else if c.is_ident("ThunkUpdate") || c.is_ident("Update") {
-                Some(quote! {
-                    .map(|b| {
-                        Ok(reality::v2::thunk_update(b.clone()))
-                    })
-                })
-            } else if c.is_ident("ThunkListen") || c.is_ident("Listen") {
-                Some(quote! {
-                    .map(|b| {
-                        Ok(reality::v2::thunk_listen(b.clone()))
-                    })
-                })
-            } else if let Some(ident) = c.get_ident().filter(|i| i.to_string().starts_with("Thunk"))
-            {
+            if let Some(ident) = c.get_ident() {
                 let ty_name = ident.to_string().replace("Thunk", "");
                 let name = format_ident!("thunk_{}", ty_name.to_lowercase());
                 Some(quote! {

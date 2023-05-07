@@ -287,7 +287,7 @@ impl Compiler {
         let builds = {
             let compiled = self.compiled();
             compiled
-                .state_vec::<crate::v2::prelude::Build>()
+                .state_vec::<crate::v2::prelude::states::Build>()
                 .iter()
                 .map(|b| (b.0, b.1.build_log.clone()))
                 .collect::<Vec<_>>()
