@@ -281,6 +281,16 @@ impl Visitor for () {
     }
 }
 
+impl Visitor for Option<String> {
+    fn visit_symbol(&mut self, _: &str, _: Option<usize>, symbol: &String) {
+        *self = Some(symbol.to_string());
+    }
+
+    fn visit_text_buffer(&mut self, _: &str, _: Option<usize>, text_buffer: &String) {
+        *self = Some(text_buffer.to_string());
+    }
+}
+
 impl Visitor for String {
     fn visit_symbol(&mut self, _: &str, _: Option<usize>, symbol: &String) {
         *self = symbol.to_string();

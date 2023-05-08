@@ -7,13 +7,14 @@ use specs::LazyUpdate;
 use specs::VecStorage;
 use std::sync::Arc;
 
+mod thunk_table;
+pub use thunk_table::ThunkTable;
+
 mod call;
-pub use call::Call;
-pub use call::DispatchcallExt;
+pub use call::*;
 
 mod build;
-pub use build::Build;
-pub use build::DispatchThunkBuild;
+pub use build::*;
 
 mod dispatch;
 pub use dispatch::AsyncDispatch;
@@ -115,14 +116,6 @@ pub struct Thunk<T: Send + Sync + 'static> {
     pub thunk: T,
 }
 
-/// Type-alias for a thunk call component,
-///
-pub type ThunkCall = Thunk<Arc<dyn Call>>;
-
-/// Type-alias for a thunk build component,
-///
-pub type ThunkBuild = Thunk<Arc<dyn Build>>;
-
 /// Type-alias for a thunk update component,
 ///
 pub type ThunkUpdate = Thunk<Arc<dyn Update>>;
@@ -134,22 +127,6 @@ pub type ThunkListen = Thunk<Arc<dyn Listen>>;
 /// Type-alias for a thunk compile component,
 ///
 pub type ThunkCompile = Thunk<Arc<dyn AsyncDispatch>>;
-
-/// Creates a thunk call from a type that implements Call,
-///
-pub fn thunk_call(call: impl Call + 'static) -> ThunkCall {
-    Thunk {
-        thunk: Arc::new(call),
-    }
-}
-
-/// Creates a thunk build from a type that implements Build,
-///
-pub fn thunk_build(build: impl Build + 'static) -> ThunkBuild {
-    Thunk {
-        thunk: Arc::new(build),
-    }
-}
 
 /// Creates a thunk update from a type that implements Update,
 ///

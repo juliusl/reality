@@ -26,6 +26,8 @@ use specs::Entity;
 use specs::LazyUpdate;
 use specs::World;
 use specs::WorldExt;
+use std::borrow::Borrow;
+use std::borrow::BorrowMut;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -331,6 +333,24 @@ impl PacketHandler for Compiler {
         }
 
         Ok(())
+    }
+}
+
+impl Borrow<World> for Compiler {
+    fn borrow(&self) -> &World {
+        self.as_ref()
+    }
+}
+
+impl BorrowMut<World> for Compiler {
+    fn borrow_mut(&mut self) -> &mut World {
+        self.as_mut()
+    }
+}
+
+impl Into<World> for Compiler {
+    fn into(self) -> World {
+        self.world
     }
 }
 

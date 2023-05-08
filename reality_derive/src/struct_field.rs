@@ -484,7 +484,6 @@ impl Parse for StructField {
                 block,
                 root,
                 ext,
-                // config: config_attr,
                 doc,
             })
         } else if input.peek(Ident::peek_any) {
@@ -514,7 +513,6 @@ impl Parse for StructField {
                     block,
                     root,
                     ext,
-                    // config: config_attr,
                     doc,
                 })
             } else {
@@ -534,7 +532,6 @@ impl Parse for StructField {
                     block,
                     root,
                     ext,
-                    // config: config_attr,
                     doc,
                 })
             }
@@ -554,7 +551,6 @@ impl Parse for StructField {
                 block,
                 root,
                 ext,
-                // config: config_attr,
                 doc,
             })
         }

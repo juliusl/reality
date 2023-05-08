@@ -4,6 +4,9 @@ use quote::format_ident;
 use quote::quote_spanned;
 use syn::ExprLit;
 use syn::Lit;
+use syn::braced;
+use syn::bracketed;
+use syn::parse::Parse;
 use syn::parse_macro_input;
 use syn::Item;
 use syn::ItemEnum;
@@ -81,6 +84,36 @@ pub fn derive_load(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let struct_data = parse_macro_input!(input as StructData);
 
     struct_data.load_trait().into()
+}
+
+#[proc_macro]
+pub fn engine(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let engine = parse_macro_input!(input as EngineLoop);
+
+    quote::quote! {
+        
+    }.into()
+}
+
+
+struct EngineLoop {
+    bracket: syn::token::Bracket,
+    braces: syn::token::Brace,
+    types: TokenStream,
+    content: TokenStream,
+}
+
+impl Parse for EngineLoop {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let types;
+        let content;
+        Ok(Self {
+            bracket: bracketed!(types in input),
+            braces: braced!(content in input),
+            types: types.parse()?,
+            content: content.parse()?,
+        })
+    }
 }
 
 /// Derives config trait,
@@ -362,6 +395,7 @@ fn parse_runmd_from_docs(item: &Item) -> TokenStream {
 
 #[allow(unused_imports)]
 mod tests {
+    use crate::EngineLoop;
     use crate::parse_runmd_from_docs;
     use crate::thunk::ThunkMacro;
     use crate::thunk::ThunkTraitFn;
@@ -408,6 +442,28 @@ mod tests {
         let item = parse2::<Item>(ts).unwrap();
 
         parse_runmd_from_docs(&item);
+    }
+
+    #[test]
+    fn test_engine_macro()  {
+        let ts = <proc_macro2::TokenStream as std::str::FromStr>::from_str(
+            r#"
+            [Println, Process] {
+                "greet" => |disp| {
+
+                },
+                "setup" => |disp| {
+
+                },
+            }
+            "#,
+        )
+        .unwrap();
+
+        let eloop = parse2::<EngineLoop>(ts).unwrap();
+
+        println!("{}", eloop.content);
+        println!("{}", eloop.types);
     }
 
     #[test]

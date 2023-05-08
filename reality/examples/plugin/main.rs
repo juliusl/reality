@@ -1,8 +1,10 @@
-use reality::v2::prelude::*;
+use reality::v2::{prelude::*, AsyncDispatch};
 
 mod plugin;
 mod println;
 use println::*;
+use reality_derive::engine;
+use specs::AsyncDispatcher;
 
 /// This example shows how to consume extensions and components described with runmd w/ the reality compiler,
 ///
@@ -70,6 +72,9 @@ use println::*;
 /// : othername             .fmt        World 2
 /// :                       .stdout     Hello {name}
 /// :                       .stdout     Hello {othername}
+/// <plugin>                .println    part2
+/// : name                  .fmt        Other World
+/// :                       .stdout     Hello {name}
 /// ```
 ///
 /// Even though the plugin attribute only defines two extensions in this example, it can be extended to include additional extensions in subsequent builds.
@@ -101,19 +106,39 @@ async fn main() -> Result<()> {
         .collect::<Vec<_>>();
 
     for i in instances {
-        compiler.dispatch_ref(i)
-            .enable_async()
-            .call().await?
-            // TODO -- Ensure doc comments are moved over to the extension trait,
-            .example1()?
-            .example2()?
-            .example3()?
-            .example4()?
-            .example5()?
-            .example1()?
-            .example6()?
-            .example4()?;
+        test_d(compiler.dispatch_ref(i)).await?;
     }
+
+    // engine!([Println] {
+    //     "greet" => |disp| {
+    //         disp.enable_async()
+    //             .call().await?
+    //             .greet().await
+    //     },
+    //     "setup" => |disp| {
+    //         disp.enable_async()
+    //             .call().await?
+    //             .enable_async()
+    //             .setup().await
+    //     }
+    // });
+
+    /*
+    Engine![Println] {
+        "greet" => |disp| {
+            disp.enable_async()
+                .call().await?
+                .greet().await
+        },
+        "setup" => |disp| {
+            disp.enable_async()
+                .call().await?
+                .enable_async()
+                .setup().await
+        }
+    }
+    
+     */
 
     // This should print,
     //
@@ -122,6 +147,23 @@ async fn main() -> Result<()> {
     //
 
     Ok(())
+}
+
+/// 
+/// 
+async fn test_d(disp: DispatchRef<'_, Properties>) -> DispatchResult<'_> {
+    disp.enable_async()
+        .call()
+        .await?
+        // TODO -- Ensure doc comments are moved over to the extension trait,
+        .example1()?
+        .example2()?
+        .example3()?
+        .example4()?
+        .example5()?
+        .example1()?
+        .example6()?
+        .example4()
 }
 
 /// Enables logging
