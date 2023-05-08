@@ -428,19 +428,20 @@ impl Identifier {
         let mut map = BTreeMap::<String, String>::default();
         let buf = if let Some(start) = sint.start {
             if start > buf.len() {
-                trace!("start > buf.len() {} > {}, remaining: {:?}", start, buf.len(), sint.tokens);
+                trace!("start > buf.len() ({} > {}), remaining: {:?}", start, buf.len(), sint.tokens);
 
-                if sint.tokens.len() > 1 {
-                    return None;
-                } else if sint.tokens.len() == 1 {
-                    if let Some(StringInterpolationTokens::OptionalSuffixAssignment(_)) = sint.tokens.pop() {
-                        return Some(map);
+                while let Some(token) = sint.tokens.pop() {
+                    match token {
+                        StringInterpolationTokens::OptionalSuffixAssignment(_) | StringInterpolationTokens::Break => {
+                            continue;
+                        },
+                        _ => {
+                            return None;
+                        }
                     }
-                } else if sint.tokens.is_empty() {
-                    return Some(map);
                 }
 
-                return None;
+                return Some(map);
             }
 
             let (_, rest) = buf.split_at(start);
@@ -1216,5 +1217,15 @@ mod tests {
             .unwrap();
 
         let _ = test.interpolate("#root#.(?root).(subject)");
+    }
+    
+    #[test]
+    fn test_buf_empty() {
+        let test = r##"test.#block#.host.#root#"##
+        .parse::<Identifier>()
+        .unwrap();
+
+        let map = test.interpolate("#block#.#root#.host.(?name);");
+        assert!(map.is_some())
     }
 }

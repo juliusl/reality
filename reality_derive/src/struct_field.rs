@@ -329,6 +329,8 @@ impl StructField {
         }
     }
 
+    /// Generates interpolation variants for components of an extension,
+    /// 
     pub(crate) fn extension_interpolation_variant(&self, subject: &Ident) -> TokenStream {
         if let Some(ident) = self.ty.get_ident() {
             let root_pattern = format!(
@@ -353,12 +355,16 @@ impl StructField {
             let pattern = LitStr::new(pattern.as_str(), Span::call_site());
 
             quote_spanned! {self.span=>
+                /// Matches the root of the extension,
+                /// 
                 #[interpolate(#root_pattern)]
                 #root_ident,
-                // #[interpolate(#root_config_pattern)]
-                // #root_config_ident,
+                /// Matches an extension defined in the root,
+                /// 
                 #[interpolate(#config_pattern)]
                 #config_ident,
+                /// Matches usage of the extension in non-root blocks,
+                /// 
                 #[interpolate(#pattern)]
                 #ident
             }
@@ -367,7 +373,7 @@ impl StructField {
             }
         }
     }
-
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
     pub(crate) fn visit_property_expr(&self) -> TokenStream {
         let prop = &self.name;
         let prop_lit = LitStr::new(&prop.get_ident().unwrap().to_string(), Span::call_site());
