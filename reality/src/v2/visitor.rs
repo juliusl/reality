@@ -19,7 +19,7 @@ use crate::Result;
 /// Trait to visit a reference to a Visitor impl,
 /// 
 pub trait Visit<T = ()> {
-    /// 
+    /// Call's visitor api's under context of T, returns an error if unsuccessful
     /// 
     fn visit(&self, context: T, visitor: &mut impl Visitor) -> Result<()>;
 }
@@ -66,7 +66,6 @@ pub struct NameIndex<'a>(&'a str, Option<usize>);
 impl<'a> Visit<Name<'a>> for Property {
     fn visit(&self, name: Name, visitor: &mut impl Visitor) -> Result<()> {
         visitor.visit_property(&name, self);
-
         Ok(())
     }
 }
@@ -74,7 +73,6 @@ impl<'a> Visit<Name<'a>> for Property {
 impl<'a> Visit<NameIndex<'a>> for String {
     fn visit(&self, NameIndex(name, idx): NameIndex<'a>, visitor: &mut impl Visitor) -> Result<()> {
         visitor.visit_symbol(&name, idx, self);
-
         Ok(())
     }
 }

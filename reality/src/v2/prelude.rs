@@ -71,6 +71,7 @@ pub use specs::WriteStorage;
 pub use specs::Write;
 pub use specs::Read;
 pub use specs::LazyUpdate;
+pub use specs::Builder;
 pub use specs::storage::VecStorage;
 pub use specs::storage::HashMapStorage;
 pub use specs::join::MaybeJoin;

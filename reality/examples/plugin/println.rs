@@ -24,6 +24,20 @@ pub struct Println {
     plugin: Plugin,
 }
 
+#[derive(Runmd, Debug, Clone, Component)]
+#[storage(specs::VecStorage)]
+#[compile(Call)]
+pub struct Example {
+
+}
+
+#[async_trait]
+impl reality::v2::Call for Example {
+    async fn call(&self) -> Result<Properties> {
+        Err(Error::skip())
+    }
+}
+
 #[async_trait]
 impl reality::v2::Call for Println {
     async fn call(&self) -> Result<Properties> {
@@ -98,6 +112,8 @@ impl ExampleAPI for Println {
     }
 }
 
+/// Example API to test various thunk code generation,
+/// 
 #[thunk]
 pub trait ExampleAPI {
     /// This example shows a trait_fn that is converted into a read_with that loads the Properties component,

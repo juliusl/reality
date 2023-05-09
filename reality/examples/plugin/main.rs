@@ -1,10 +1,9 @@
-use reality::v2::{prelude::*, AsyncDispatch};
+use reality::v2::prelude::*;
 
 mod plugin;
 mod println;
 use println::*;
 use reality_derive::engine;
-use specs::AsyncDispatcher;
 
 /// This example shows how to consume extensions and components described with runmd w/ the reality compiler,
 ///
@@ -66,7 +65,7 @@ use specs::AsyncDispatcher;
 /// **Note** -- The `example` block identifier will not be rendered by the markdown renderer.
 ///
 /// ```runmd example
-/// +                       .symbol     Example                   # Creating a simple root called Usage,
+/// +                       .symbol     Example                   # Creating a simple root called Example,
 /// <plugin>                .println    
 /// : name                  .fmt        World
 /// : othername             .fmt        World 2
@@ -93,7 +92,7 @@ async fn main() -> Result<()> {
     let _ = compile_runmd_main(&mut compiler)?;
 
     // Println uses `derive(Runmd)` to generate code that the compiler can use to link it to entities
-    compiler.link(Println::new()).unwrap();
+    compiler.link(Println::new())?;
 
     // Also generated is a SystemData struct that can be used to load "instances" of this component
     // For demonstration purposes this loop will call instances, but typically this can be used from a System or via DispatchRef
@@ -104,41 +103,30 @@ async fn main() -> Result<()> {
         .iter()
         .map(|c| c.0)
         .collect::<Vec<_>>();
-
-    for i in instances {
-        test_d(compiler.dispatch_ref(i)).await?;
+    
+    async fn __entrypoint2(disp: DispatchRef<'_, Properties>) -> DispatchResult<'_> {
+        todo!()
     }
 
-    // engine!([Println] {
-    //     "greet" => |disp| {
-    //         disp.enable_async()
-    //             .call().await?
-    //             .greet().await
-    //     },
-    //     "setup" => |disp| {
-    //         disp.enable_async()
-    //             .call().await?
-    //             .enable_async()
-    //             .setup().await
-    //     }
-    // });
-
-    /*
-    Engine![Println] {
-        "greet" => |disp| {
-            disp.enable_async()
+    for i in instances {
+        __entrypoint2(compiler.dispatch_ref(i)).await?;
+    }
+    
+    engine!([Println] {
+        /// 
+        /// 
+        greet => {
+            greet.enable_async()
                 .call().await?
                 .greet().await
         },
-        "setup" => |disp| {
-            disp.enable_async()
+        setup => {
+            setup.enable_async()
                 .call().await?
                 .enable_async()
                 .setup().await
         }
-    }
-    
-     */
+    });
 
     // This should print,
     //
@@ -146,24 +134,26 @@ async fn main() -> Result<()> {
     // Hello World 2
     //
 
+
+
     Ok(())
 }
 
 /// 
 /// 
-async fn test_d(disp: DispatchRef<'_, Properties>) -> DispatchResult<'_> {
+async fn entrypoint(disp: DispatchRef<'_, Properties>) -> DispatchResult<'_> {
     disp.enable_async()
         .call()
-        .await?
+        .await
         // TODO -- Ensure doc comments are moved over to the extension trait,
-        .example1()?
-        .example2()?
-        .example3()?
-        .example4()?
-        .example5()?
-        .example1()?
-        .example6()?
-        .example4()
+        // .example1()?
+        // .example2()?
+        // .example3()?
+        // .example4()?
+        // .example5()?
+        // .example1()?
+        // .example6()?
+        // .example4()
 }
 
 /// Enables logging
