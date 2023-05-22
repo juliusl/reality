@@ -71,6 +71,7 @@ impl reality::v2::Call for Println {
     }
 }
 
+#[async_trait]
 impl ExampleAPI for Println {
     fn example1(&self, properties: &Properties) -> Result<()>  {
         println!("{:?}", self);
@@ -110,11 +111,16 @@ impl ExampleAPI for Println {
         pr.println = String::from("Testing map");
         Ok(pr)
     }
+
+    async fn example7(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// Example API to test various thunk code generation,
 /// 
 #[thunk]
+#[async_trait]
 pub trait ExampleAPI {
     /// This example shows a trait_fn that is converted into a read_with that loads the Properties component,
     /// 
@@ -139,6 +145,10 @@ pub trait ExampleAPI {
     /// This example shows a trait_fn that is converted into a map that updates the underlying Println component,
     /// 
     fn example6(&self) -> Result<Println>;
+
+    /// This example shows an async fn that is converted into an async dispatch example
+    /// 
+    async fn example7(&self) -> Result<()>;
 }
 
 impl Println {
