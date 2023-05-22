@@ -81,24 +81,35 @@ impl Parse for StructData {
 }
 
 impl StructData {
-    pub(crate) fn extensions_enum_ident(&self) -> Ident {
-        format_ident!("{}Extensions", self.name)
+    pub(crate) fn linker_ty_ident(&self) -> Ident {
+        format_ident!("{}Linker", self.name)
     }
 
     pub(crate) fn extensions_enum(&self) -> TokenStream {
-        let ty_ident = self.extensions_enum_ident();
+        let ty_ident = self.linker_ty_ident();
+
+        // Extension components that link to this type
         let extensions = self.fields.iter().filter(|f| !f.ignore && f.ext).map(|f| {
             let i = f.extension_interpolation_variant(&self.name);
             quote_spanned! {f.span=>
                 #i
             }
         });
+
+        let roots = self.fields.iter().filter(|f|!f.ignore && f.root).map(|f| {
+            let i = f.root_interpolation_variant();
+            quote_spanned! {f.span=>
+                #i
+            }
+        });
+
         let vis = &self.vis;
+        let doc_comment = LitStr::new(format!("Enumeration of identifier patterns that link to {}", self.name.to_string()).as_str(), self.name.span());
         quote_spanned! {self.name.span()=>
-            /// Enumeration of extension patterns,
-            ///
+            #[doc = #doc_comment]
             #[patterns]
             #vis enum #ty_ident {
+                #( #roots ),*
                 #( #extensions ),*
             }
         }
@@ -556,7 +567,7 @@ impl StructData {
         let visitor_trait = self.visitor_trait();
         let compile_trait = self.compile_trait();
         let extensions_enum = self.extensions_enum();
-        let extensions_enum_ident = self.extensions_enum_ident();
+        let extensions_enum_ident = self.linker_ty_ident();
         let visit_trait = self.visit_trait();
         let visit_extensions_trait = self.visit_extensions_trait();
         let runmd_instance_state = self.runmd_instance_state();
@@ -577,7 +588,7 @@ impl StructData {
                 
                 type Instance<'instance> = #mod_name::#instance_name<'instance>;
                 
-                type Extensions = #extensions_enum_ident;
+                type Linker = #extensions_enum_ident;
 
                 fn type_name() -> &'static str {
                     #name_lit
@@ -742,7 +753,7 @@ impl StructData {
     fn visit_extensions_trait(&self) -> TokenStream {
         let name = &self.name;
         let type_alias_ident = format_ident!("{}CompilerEvents", self.name);
-        let extensions_enum = format_ident!("{}Extensions", self.name);
+        let linker_ident = format_ident!("{}Linker", self.name);
 
         let config_fields = self.fields.iter().filter(|f| !f.ignore && f.ext).map(|f| {
             let match_arms = f.visit_config_extensions(&self.name);
@@ -767,7 +778,7 @@ impl StructData {
         quote! {
             type #type_alias_ident<'a> = reality::v2::prelude::CompilerEvents<'a, #name>;
 
-            impl<'linking> reality::v2::prelude::Visit<#type_alias_ident<'linking>> for #extensions_enum {
+            impl<'linking> reality::v2::prelude::Visit<#type_alias_ident<'linking>> for #linker_ident {
                 fn visit(&self, context: #type_alias_ident<'linking>, visitor: &mut impl reality::v2::prelude::Visitor) -> reality::Result<()> {
                     match context {
                         CompilerEvents::Config(properties) => match self {

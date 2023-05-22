@@ -223,6 +223,10 @@ impl StructField {
         format_ident!("{}", root_ident.to_string().to_lowercase())
     }
 
+    /// Returns the str literal for the name of the field
+    ///
+    /// Will use the value from `#[config(rename = "")]` if set.
+    ///
     pub(crate) fn name_str_literal(&self) -> LitStr {
         let name = &self.name;
         let name = name.get_ident().unwrap();
@@ -231,17 +235,41 @@ impl StructField {
         self.rename.clone().unwrap_or(name)
     }
 
+    pub(crate) fn name_ident(&self, casing: Casing) -> Ident {
+        let name = &self.name;
+        let name = name.get_ident().unwrap();
+        let name = format_ident!("{}", name);
+
+        let name = self
+            .rename
+            .as_ref()
+            .map(|r| format_ident!("{}", r.value()))
+            .unwrap_or(name);
+
+        match casing {
+            Casing::Default => name,
+            Casing::PascalCase => {
+                format_ident!("{}", naive_pascal_casing(name.to_string().as_str()))
+            }
+            Casing::camelCase => todo!(),
+        }
+    }
+
     pub(crate) fn visit_config_extensions(&self, subject: &Ident) -> TokenStream {
         if let Some(ident) = self.ty.get_ident() {
-            let extensions = format_ident!("{}Extensions", subject);
+            let linker_ident = format_ident!("{}Linker", subject);
 
-            let root_ident = format!("{}::{}Root", extensions, ident);
+            let root_ident = format!("{}::{}ConfigRoot", linker_ident, ident);
             let root_ident = parse_str::<Path>(&root_ident).unwrap();
-            let config_ident = format!("{}::{}Config", extensions, ident);
+            let config_ident = format!("{}::{}Config", linker_ident, ident);
             let config_ident = parse_str::<Path>(&config_ident).unwrap();
 
-            let ident_lit = LitStr::new(ident.to_string().to_lowercase().as_str(), Span::call_site());
-            let ident_config_lit = LitStr::new(format!("{}.{{}}.{{}}", ident.to_string().to_lowercase()).as_str(), Span::call_site());
+            let ident_lit =
+                LitStr::new(ident.to_string().to_lowercase().as_str(), Span::call_site());
+            let ident_config_lit = LitStr::new(
+                format!("{}.{{}}.{{}}", ident.to_string().to_lowercase()).as_str(),
+                Span::call_site(),
+            );
 
             quote_spanned! {subject.span()=>
                 #root_ident { } => {
@@ -250,7 +278,7 @@ impl StructField {
                     } else {
                         visitor.visit_property(#ident_lit, &reality::v2::prelude::Property::Empty);
                     }
-                    
+
                     return Ok(());
                 },
                 #config_ident { config, property } => {
@@ -273,12 +301,15 @@ impl StructField {
     pub(crate) fn visit_load_extensions(&self, subject: &Ident) -> TokenStream {
         if let Some(ident) = self.ty.get_ident() {
             let name = &self.name;
-            let extensions = format_ident!("{}Extensions", subject);
+            let linker_ident = format_ident!("{}Linker", subject);
 
-            let load_ident = format!("{}::{}", extensions, ident);
+            let load_ident = format!("{}::{}", linker_ident, ident);
             let load_ident = parse_str::<Path>(&load_ident).unwrap();
 
-            let subject_lit = LitStr::new(subject.to_string().to_lowercase().as_str(), Span::call_site());
+            let subject_lit = LitStr::new(
+                subject.to_string().to_lowercase().as_str(),
+                Span::call_site(),
+            );
 
             quote_spanned! {subject.span()=>
                 #load_ident { property: Some(property), value: None } => {
@@ -303,7 +334,7 @@ impl StructField {
         }
     }
 
-    /// Generates code like this, 
+    /// Generates code like this,
     ///
     /// ```
     /// impl Visit<&TestExtension> for Test {
@@ -312,7 +343,7 @@ impl StructField {
     ///     }
     /// }
     /// ```
-    /// 
+    ///
     pub(crate) fn visit_trait(&self, subject: &Ident) -> TokenStream {
         if let Some(ident) = self.ty.get_ident() {
             quote_spanned! {subject.span()=>
@@ -329,51 +360,64 @@ impl StructField {
         }
     }
 
-    /// Generates interpolation variants for components of an extension,
-    /// 
-    pub(crate) fn extension_interpolation_variant(&self, subject: &Ident) -> TokenStream {
-        if let Some(ident) = self.ty.get_ident() {
-            let root_pattern = format!(
-                r##"!#block#.#root#.{}.{};"##,
-                ident.to_string().to_lowercase(),
-                subject.to_string().to_lowercase()
-            );
-            let root_ident = format_ident!("{}Root", ident);
+    pub(crate) fn root_interpolation_variant(&self) -> TokenStream {
+        let name = self.name_ident(Casing::PascalCase);
 
-            let config_pattern = format!(
-                r##"!#block#.#root#.{}.{}.(config).(property);"##,
-                ident.to_string().to_lowercase(),
-                subject.to_string().to_lowercase()
-            );
-            let config_ident = format_ident!("{}Config", ident);
+        let root_pattern = format!(
+            r##"#block#.#root#.{}.(?name);"##,
+            name.to_string().to_lowercase(),
+        );
 
-            let pattern = format!(
-                r##"#block#.#root#.{}.{}.(?property).(?value);"##,
-                ident.to_string().to_lowercase(),
-                subject.to_string().to_lowercase()
-            );
-            let pattern = LitStr::new(pattern.as_str(), Span::call_site());
+        let root_ident = format_ident!("{}Root", name);
 
-            quote_spanned! {self.span=>
-                /// Matches the root of the extension,
-                /// 
-                #[interpolate(#root_pattern)]
-                #root_ident,
-                /// Matches an extension defined in the root,
-                /// 
-                #[interpolate(#config_pattern)]
-                #config_ident,
-                /// Matches usage of the extension in non-root blocks,
-                /// 
-                #[interpolate(#pattern)]
-                #ident
-            }
-        } else {
-            quote_spanned! {self.span=>
-            }
+        quote_spanned! {self.span=>
+            #[interpolate(#root_pattern)]
+            #root_ident,
         }
     }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+
+    /// Generates interpolation variants for components of an extension,
+    ///
+    pub(crate) fn extension_interpolation_variant(&self, subject: &Ident) -> TokenStream {
+        let ident = self.name_ident(Casing::PascalCase);
+
+        let root_pattern = format!(
+            r##"!#block#.#root#.{}.{};"##,
+            ident.to_string().to_lowercase(),
+            subject.to_string().to_lowercase()
+        );
+        let root_ident = format_ident!("{}ConfigRoot", ident);
+
+        let config_pattern = format!(
+            r##"!#block#.#root#.{}.{}.(config).(property);"##,
+            ident.to_string().to_lowercase(),
+            subject.to_string().to_lowercase()
+        );
+        let config_ident = format_ident!("{}Config", ident);
+
+        let pattern = format!(
+            r##"#block#.#root#.{}.{}.(?property).(?value);"##,
+            ident.to_string().to_lowercase(),
+            subject.to_string().to_lowercase()
+        );
+        let pattern = LitStr::new(pattern.as_str(), Span::call_site());
+
+        quote_spanned! {self.span=>
+            /// Matches the root of the extension,
+            ///
+            #[interpolate(#root_pattern)]
+            #root_ident,
+            /// Matches an extension defined in the root,
+            ///
+            #[interpolate(#config_pattern)]
+            #config_ident,
+            /// Matches usage of the extension in non-root blocks,
+            ///
+            #[interpolate(#pattern)]
+            #ident
+        }
+    }
+
     pub(crate) fn visit_property_expr(&self) -> TokenStream {
         let prop = &self.name;
         let prop_lit = LitStr::new(&prop.get_ident().unwrap().to_string(), Span::call_site());
@@ -561,4 +605,31 @@ impl Parse for StructField {
             })
         }
     }
+}
+
+#[allow(non_camel_case_types)]
+pub(crate) enum Casing {
+    Default,
+    PascalCase,
+    camelCase,
+}
+
+/// Naively converts s to pascal casing by capitalizing the first letter,
+///
+/// TODO: Need to handle snake casing as well
+///
+fn naive_pascal_casing(s: &str) -> String {
+    let f = &s.to_uppercase()[0..1];
+    let rest = &s[1..];
+
+    format!("{f}{rest}")
+}
+
+#[test]
+fn test_capitalize() {
+    let str = "hello_world";
+
+    let str = naive_pascal_casing(str);
+
+    assert_eq!("Hello_world", str);
 }

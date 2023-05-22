@@ -149,9 +149,9 @@ where
     /// 
     type InstanceSystemData<'a>: Provider<'a, <Self::Instance<'a> as Load>::Layout>;
 
-    /// Associated type for pattern matching w/ a build log,
-    ///
-    type Extensions: for<'a> Visit<CompilerEvents<'a, Self>> + GetMatches + std::fmt::Debug;
+    /// Associated type for the runmd linker type,
+    /// 
+    type Linker: for<'a> Visit<CompilerEvents<'a, Self>> + GetMatches + std::fmt::Debug;
 
     /// Name of the concrete type,
     /// 

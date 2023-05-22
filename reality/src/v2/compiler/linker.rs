@@ -108,7 +108,7 @@ where
     pub fn link(&mut self) -> Result<()> {
         // Scan build log for relevant types for config,
         //
-        let matches = <T::Extensions as GetMatches>::get_matches(&self.build_log);
+        let matches = <T::Linker as GetMatches>::get_matches(&self.build_log);
 
         if matches.is_empty() {
             return Ok(());
@@ -141,7 +141,7 @@ where
                         .map(move |p| {
                             let mut properties = Properties::empty();
                             // load_m.visit(CompilerEvents::Load(p), properties);
-                            <T::Extensions as Visit<CompilerEvents<T>>>::visit(
+                            <T::Linker as Visit<CompilerEvents<T>>>::visit(
                                 &load_m,
                                 CompilerEvents::Load(p),
                                 &mut properties,
