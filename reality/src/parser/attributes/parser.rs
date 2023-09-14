@@ -1,12 +1,15 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
+use std::ops::Deref;
 use std::str::FromStr;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{Value, Attribute};
+use crate::value::v2::ValueContainer;
+use crate::{Value, Attribute, Block};
 use logos::Lexer;
 use logos::Logos;
+use specs::shred::ResourceId;
 use specs::{World, WorldExt, Entity, LazyUpdate};
-use tracing::event;
+use tracing::{event, trace, debug, error};
 use tracing::Level;
 
 use crate::SpecialAttribute;
@@ -18,25 +21,48 @@ use super::CustomAttribute;
 /// Parser for parsing attributes
 ///
 #[derive(Default, Clone)]
-pub struct AttributeParser {
-    /// Entity id
+pub struct AttributeParser<Attr = Attribute, Val = Value> {
+    /// Resource Id of the output container,
+    /// 
+    resource_id: u64,
+    /// Id of this attribute,
+    /// 
     id: u32,
     /// Defaults to Value::Empty
-    value: Value,
-    /// Attribute name
+    /// 
+    value: Val,
+    /// Attribute name, can also be referred to as tag
+    /// 
     name: Option<String>,
-    /// Transient symbol
+    /// Transient symbol,
+    /// 
     symbol: Option<String>,
     /// Transient value
-    edit: Option<Value>,
+    edit: Option<Val>,
     /// The parsed stable attribute
-    parsed: Option<Attribute>,
+    parsed: Option<Attr>,
     /// Stack of transient attribute properties
-    properties: Vec<Attribute>,
+    properties: Vec<Attr>,
     /// Custom attribute parsers
-    custom_attributes: HashMap<String, CustomAttribute>,
+    attribute_table: HashMap<String, CustomAttribute>,
     /// Reference to world being edited
-    world: Option<Arc<World>>,
+    storage: Option<Arc<World>>,
+}
+
+impl std::fmt::Debug for AttributeParser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AttributeParser")
+            .field("id", &self.id)
+            .field("value", &self.value)
+            .field("name", &self.name)
+            .field("symbol", &self.symbol)
+            .field("edit", &self.edit)
+            .field("parsed", &self.parsed)
+            .field("properties", &self.properties)
+            .field("attribute_table", &self.attribute_table)
+            .field("storage", &self.storage.is_some())
+            .finish()
+    }
 }
 
 impl AttributeParser {
@@ -48,7 +74,7 @@ impl AttributeParser {
     /// Parses content, updating internal state
     ///
     pub fn parse(&mut self, content: impl AsRef<str>) -> &mut Self {
-        let custom_attributes = self.custom_attributes.clone();
+        let custom_attributes = self.attribute_table.clone();
 
         let mut lexer = Attributes::lexer_with_extras(content.as_ref(), self.clone());
 
@@ -122,6 +148,12 @@ impl AttributeParser {
         self
     }
 
+    /// Sets the resource id for this parser,
+    /// 
+    pub fn set_resource_id(&mut self, resource_id: u64) {
+        self.resource_id = resource_id;
+    }
+
     /// Adds a custom attribute parser and returns self,
     ///
     pub fn with_custom<C>(&mut self) -> &mut Self 
@@ -137,7 +169,7 @@ impl AttributeParser {
     pub fn add_custom(&mut self, custom_attr: impl Into<CustomAttribute>)
     {
         let custom_attr = custom_attr.into();
-        self.custom_attributes.insert(custom_attr.ident(), custom_attr);
+        self.attribute_table.insert(custom_attr.ident(), custom_attr);
     }
 
     /// Adds a custom attribute parser, 
@@ -186,14 +218,14 @@ impl AttributeParser {
 
     /// Sets the current transient value for the parser
     ///
-    pub fn set_edit(&mut self, value: Value) {
-        self.edit = Some(value);
+    pub fn set_edit(&mut self, value:  impl Into<Value>) {
+        self.edit = Some(value.into());
     }
 
     /// Sets the current world being edited,
     /// 
     pub fn set_world(&mut self, world: Arc<World>) {
-        self.world = Some(world);
+        self.storage = Some(world);
     }
 
     /// Returns the name,
@@ -223,7 +255,7 @@ impl AttributeParser {
     /// Returns an immutable reference to world,
     /// 
     pub fn world(&self) -> Option<&Arc<World>> {
-        self.world.as_ref()
+        self.storage.as_ref()
     }
 
     /// Returns the entity that owns this parser,
@@ -331,7 +363,7 @@ impl AttributeParser {
     /// Returns an iterator over special attributes installed on this parser,
     /// 
     pub fn iter_special_attributes(&self) -> impl Iterator<Item = (&String, &CustomAttribute)>{
-        self.custom_attributes.iter()
+        self.attribute_table.iter()
     }
 
     /// Lazily executes exec mut fn w/ world if the world is set,
@@ -648,4 +680,135 @@ impl Into<Vec<Attribute>> for AttributeParser {
         attrs.append(&mut self.properties);
         attrs
     }
+}
+
+use runmd::prelude::*;
+
+/// Resource for storing custom attribute parse functions
+/// 
+#[derive(Clone)]
+pub struct CustomAttributeContainer(HashSet<CustomAttribute>);
+
+#[runmd::prelude::async_trait]
+impl ExtensionLoader for super::AttributeParser {
+    async fn load_extension(&self, extension: &str, input: Option<&str>) -> Option<BoxedNode> {
+        let mut parser = self.clone();
+
+        // Forwards-compatibility support
+        const V1_ATTRIBUTES_EXTENSION: &'static str = "application/repo.reality.attributes.v1";
+        if extension == V1_ATTRIBUTES_EXTENSION {
+            debug!("Enabling v1 attribute parsers");
+            parser.with_custom::<ValueContainer<bool>>()
+                .with_custom::<ValueContainer<i32>>()
+                .with_custom::<ValueContainer<[i32; 2]>>()
+                .with_custom::<ValueContainer<[i32; 3]>>()
+                .with_custom::<ValueContainer<f32>>()
+                .with_custom::<ValueContainer<[f32; 2]>>()
+                .with_custom::<ValueContainer<[f32; 3]>>()
+                .with_custom::<ValueContainer<String>>()
+                .with_custom::<ValueContainer<&'static str>>()
+                .with_custom::<ValueContainer<Vec<u8>>>()
+                .with_custom::<ValueContainer<BTreeSet<String>>>();
+            parser.add_custom_with("true", |parser, _| parser.set_value(true));
+            parser.add_custom_with("false", |parser, _| parser.set_value(false));
+            parser.add_custom_with("int_pair", ValueContainer::<[i32; 2]>::parse);
+            parser.add_custom_with("int_range", ValueContainer::<[i32; 3]>::parse);
+            parser.add_custom_with("float_pair", ValueContainer::<[f32; 2]>::parse);
+            parser.add_custom_with("float_range", ValueContainer::<[f32; 3]>::parse);
+        }
+
+        // V2 "Plugin" model
+        // application/repo.reality.attributes.v1.custom.<plugin-name>;
+        /*
+            <application/repo.reality.attributes.v1.custom>
+            <..request>
+        */
+        if extension.starts_with("application/repo.reality.attributes.v1.custom") {
+            if let Some((prefix, plugin)) = extension.rsplit_once('.') {
+                if prefix == "application/repo.reality.attributes.v1" && plugin == "custom" { 
+                    if let Some(plugins) = parser.storage.clone().and_then(|world| world.try_fetch::<CustomAttributeContainer>().map(|c| c.deref().clone())) {
+                        debug!("Loading plugins");
+                        for plugin in plugins.0.iter() {
+                            parser.add_custom(plugin.clone());
+                        }
+
+                        // Increment the id since this is a new extension
+                        parser.id += 1;
+                    }
+                } else if prefix == "application/repo.reality.attributes.v1.custom" {
+                    if let Some(plugin) = self.attribute_table.get(plugin) {
+                        plugin.parse(&mut parser, input.unwrap_or_default());
+                    }
+                } else {
+
+                }
+            }
+        }
+
+        Some(Box::pin(parser))
+    }
+}
+
+impl Node for super::AttributeParser {
+    fn set_info(&mut self, node_info: NodeInfo, _block_info: BlockInfo) {
+        if self.id == 0 {
+            if let Some(parent) = node_info.parent_idx.as_ref() {
+                self.set_id(*parent as u32);
+            } else {
+                self.set_id(node_info.idx as u32);
+            }
+        } else {
+            // Only set if this node originates from loading a custom plugin extension
+        }
+    }
+
+    fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>) {
+        if let Some(tag) = tag.as_ref() {
+            self.set_name(tag);
+            self.set_symbol(name);
+        } else {
+            self.set_name(name);
+        }
+
+        match self.attribute_table.get(name).cloned() {
+            Some(cattr) => {
+                cattr.parse(self, input.unwrap_or_default());
+                self.parse_attribute();
+            },
+            None => {
+                trace!(attr_ty=name, "Did not have attribute");
+            },
+        }
+    }
+
+    fn completed(mut self: Box<Self>) {
+        let mut attrs = vec![];
+        while let Some(next) = self.next() {
+            attrs.push(next);
+        }
+
+        let resource_id = ResourceId::new_with_dynamic_id::<Block>(self.resource_id);
+        self.lazy_exec_mut(move |_world| {
+            if let Some(mut block) = _world.try_fetch_mut_by_id::<Block>(resource_id) {
+                for attr in attrs.iter(){
+                    block.add_attribute(attr);
+                }
+            } else {
+                error!("Could not retrieve block");
+            }
+        });
+
+        // TODO -- Make actual storage dependency swappable here.
+    }
+}
+
+#[tokio::test]
+async fn test_v2_parser() {
+    let parser = AttributeParser::default();
+
+    let mut parser = parser.load_extension("application/repo.reality.attributes.v1", None).await.expect("should return a node");
+    parser.define_property("int", Some("test"), Some("256"));
+    parser.define_property("float", Some("test-2"), Some("256.0"));
+
+    println!("{:#?}", parser);
 }

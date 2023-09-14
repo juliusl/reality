@@ -253,6 +253,8 @@ impl Parser {
     /// Parses .runmd content, updating internal state, and returns self
     ///
     pub fn parse(self, content: impl AsRef<str>) -> Self {
+        // runmd::prelude::Parser::new(blocks, nodes)
+
         let mut lexer = Keywords::lexer_with_extras(content.as_ref(), self);
         while let Some(token) = lexer.next() {
             event!(Level::TRACE, "Parsed token, {:?}", token);
@@ -397,6 +399,7 @@ impl Parser {
         self.parser_stack.last_mut()
     }
 }
+
 
 #[test]
 fn test_parser() {

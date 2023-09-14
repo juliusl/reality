@@ -164,19 +164,18 @@ impl From<BTreeSet<String>> for Value {
     }
 }
 
-impl From<&'static str> for Value {
-    /// Symbols are typically declared in code
-    ///
-    fn from(s: &'static str) -> Self {
-        Value::Symbol(s.to_string())
-    }
-}
-
 impl From<usize> for Value {
     fn from(c: usize) -> Self {
         Value::Int(c as i32)
     }
 }
+
+impl From<i32> for Value {
+    fn from(value: i32) -> Self {
+        Value::Int(value)
+    }
+}
+
 
 impl Eq for Value {}
 
@@ -250,5 +249,161 @@ impl Hash for Value {
             Value::Symbol(r) => r.hash(state),
             Value::Complex(r) => r.hash(state),
         };
+    }
+}
+
+pub mod v2 {
+    use std::{str::FromStr, marker::PhantomData, collections::BTreeSet};
+
+    use crate::SpecialAttribute;
+
+    /// Struct for a value container,
+    /// 
+    pub struct ValueContainer<T>(PhantomData<T>);
+
+    fn from_comma_sep<T>(input: &str) -> Vec<T>
+    where
+        T: FromStr,
+    {
+        input
+            .split(",")
+            .filter_map(|i| i.trim().parse().ok())
+            .collect()
+    }
+
+    macro_rules! impl_attr {
+        ($ident:literal, $ty:ty, $default:literal) => {
+            impl SpecialAttribute for ValueContainer<$ty> {
+                fn ident() -> &'static str {
+                    $ident
+                }
+        
+                fn parse(parser: &mut crate::AttributeParser, content: impl AsRef<str>) {
+                    if let Some(v) = content.as_ref().parse::<$ty>().ok() {
+                        parser.set_edit(v);
+                    } else {
+                        parser.set_edit($default);
+                    }
+                }
+            }
+        };
+        ($ident:literal, $ty:ty, $default:literal, $value_ty:ident) => {
+            impl SpecialAttribute for ValueContainer<$ty> {
+                fn ident() -> &'static str {
+                    $ident
+                }
+        
+                fn parse(parser: &mut crate::AttributeParser, content: impl AsRef<str>) {
+                    if let Some(v) = content.as_ref().parse::<$ty>().ok() {
+                        parser.set_edit(v);
+                    } else {
+                        parser.set_edit($default);
+                    }
+                }
+            }
+
+            impl From<$ty> for super::Value {
+                fn from(value: $ty) -> Self {
+                    super::Value::$value_ty(value)
+                }
+            }            
+        };
+        ($ident:literal, $ty:ty, $default:literal, $value_ty:ident, $into_ty:ty) => {
+            impl SpecialAttribute for ValueContainer<$ty> {
+                fn ident() -> &'static str {
+                    $ident
+                }
+        
+                fn parse(parser: &mut crate::AttributeParser, content: impl AsRef<str>) {
+                    if let Some(v) = content.as_ref().parse::<$into_ty>().ok() {
+                        parser.set_edit(v);
+                    } else {
+                        parser.set_edit($default);
+                    }
+                }
+            }
+
+            impl From<$ty> for super::Value {
+                fn from(value: $ty) -> Self {
+                    super::Value::$value_ty(<$ty as Into<$into_ty>>::into(value))
+                }
+            }            
+        };
+    }
+
+    macro_rules! impl_attr_pair {
+        ($ident:literal, $ty:ty, $default:literal, $value_ty:ident, $into_ty:ty) => {
+            impl SpecialAttribute for ValueContainer<$ty> {
+                fn ident() -> &'static str {
+                    $ident
+                }
+        
+                fn parse(parser: &mut crate::AttributeParser, content: impl AsRef<str>) {
+                    if let [v0, v1, ..] = from_comma_sep::<$into_ty>(content.as_ref())[..2] {
+                        let pair = super::Value::$value_ty(v0, v1);
+                        parser.set_edit(pair);
+                    } else {
+                        parser.set_edit(super::Value::$value_ty($default, $default));
+                    }
+                }
+            }
+        };
+    }
+
+    macro_rules! impl_attr_range {
+        ($ident:literal, $ty:ty, $default:literal, $value_ty:ident, $into_ty:ty) => {
+            impl SpecialAttribute for ValueContainer<$ty> {
+                fn ident() -> &'static str {
+                    $ident
+                }
+        
+                fn parse(parser: &mut crate::AttributeParser, content: impl AsRef<str>) {
+                    if let [v0, v1, v2, ..] = from_comma_sep::<$into_ty>(content.as_ref())[..2] {
+                        let range = super::Value::$value_ty(v0, v1, v2);
+                        parser.set_edit(range);
+                    } else {
+                        parser.set_edit(super::Value::$value_ty($default, $default, $default));
+                    }
+                }
+            }
+        };
+    }
+
+    impl_attr!("bool", bool, false);
+    impl_attr!("int", i32, 0i32);
+    impl_attr_pair!("int2", [i32; 2], 0i32, IntPair, i32);
+    impl_attr_range!("int3", [i32; 3], 0i32, IntRange, i32);
+    impl_attr!("float", f32, 0f32, Float);
+    impl_attr_pair!("float2", [f32; 2], 0f32, FloatPair, f32);
+    impl_attr_range!("float3", [f32; 3], 0f32, FloatRange, f32);
+    impl_attr!("text", String, "", TextBuffer);
+    impl_attr!("symbol", &str, "", Symbol, String);
+
+    impl SpecialAttribute for ValueContainer<Vec<u8>> {
+        fn ident() -> &'static str {
+            "bin"
+        }
+
+        fn parse(parser: &mut crate::AttributeParser, content: impl AsRef<str>) {
+            let binary = match base64::decode(content.as_ref()) {
+                Ok(content) => super::Value::BinaryVector(content),
+                Err(_) => super::Value::BinaryVector(vec![]),
+            };
+            parser.set_value(binary);
+        }
+    }
+
+    impl SpecialAttribute for ValueContainer<BTreeSet<String>> {
+        fn ident() -> &'static str {
+            "complex"
+        }
+
+        fn parse(parser: &mut crate::AttributeParser, content: impl AsRef<str>) {
+            let binary = match base64::decode(content.as_ref()) {
+                Ok(content) => super::Value::BinaryVector(content),
+                Err(_) => super::Value::BinaryVector(vec![]),
+            };
+            parser.set_value(binary);
+        }
     }
 }
