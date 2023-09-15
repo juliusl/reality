@@ -3,22 +3,13 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use tracing::{event, Level};
 
-use logos::Logos;
-
 use crate::{Block, BlockIndex, BlockProperties};
 
 mod attributes;
 pub use attributes::AttributeParser;
-pub use attributes::Attributes;
-pub use attributes::BlobDescriptor;
 pub use attributes::CustomAttribute;
-pub use attributes::SpecialAttribute;
-
-mod keywords;
-pub use keywords::Keywords;
-
-mod elements;
-pub use elements::Elements;
+pub use attributes::AttributeType;
+pub use attributes::StorageTarget;
 
 /// Parser for .runmd
 ///
@@ -37,9 +28,9 @@ pub struct Parser {
     parsing: Option<Entity>,
     /// Vector of custom attribute parsers to add to the default,
     /// attribute parser
-    custom_attributes: Vec<CustomAttribute>,
+    custom_attributes: Vec<CustomAttribute<World>>,
     /// Stack of attribute parsers,
-    parser_stack: Vec<AttributeParser>,
+    parser_stack: Vec<AttributeParser<World>>,
     /// Setting this field will interpret the root block implicitly as a control block, and control blocks as event blocks,
     /// Using the value of this field as the symbol.
     ///
@@ -129,7 +120,7 @@ impl Parser {
     ///
     pub fn with_special_attr<S>(mut self) -> Self
     where
-        S: SpecialAttribute,
+        S: AttributeType<World>,
     {
         self.add_custom_attribute(CustomAttribute::new::<S>());
         self
@@ -137,7 +128,7 @@ impl Parser {
 
     /// Adds a custom attribute parser,
     /// 
-    pub fn add_custom_attribute(&mut self, custom: CustomAttribute) {
+    pub fn add_custom_attribute(&mut self, custom: CustomAttribute<World>) {
         self.custom_attributes.push(custom);
     }
 
@@ -255,12 +246,13 @@ impl Parser {
     pub fn parse(self, content: impl AsRef<str>) -> Self {
         // runmd::prelude::Parser::new(blocks, nodes)
 
-        let mut lexer = Keywords::lexer_with_extras(content.as_ref(), self);
-        while let Some(token) = lexer.next() {
-            event!(Level::TRACE, "Parsed token, {:?}", token);
-        }
+        // let mut lexer = Keywords::lexer_with_extras(content.as_ref(), self);
+        // while let Some(token) = lexer.next() {
+        //     event!(Level::TRACE, "Parsed token, {:?}", token);
+        // }
 
-        lexer.extras
+        // lexer.extras
+        todo!()
     }
 
     /// Gets a block from the parser
@@ -284,10 +276,10 @@ impl Parser {
     /// Will set the id to the current block entity.
     /// This parser will be at the top of the stack.
     ///
-    pub fn new_attribute(&mut self) -> &mut AttributeParser {
+    pub fn new_attribute(&mut self) -> &mut AttributeParser<World> {
         let mut attr_parser = AttributeParser::default();
 
-        attr_parser.set_world(self.world.clone());
+        attr_parser.set_storage(self.world.clone());
 
         for custom_attr in self.custom_attributes.iter().cloned() {
             event!(
@@ -387,7 +379,7 @@ impl Parser {
     /// new special attributes could've been enabled for subsequent property
     /// definitions.
     ///
-    fn parse_property(&mut self) -> &mut AttributeParser {
+    fn parse_property(&mut self) -> &mut AttributeParser<World> {
         if !self.parser_stack.is_empty() {
             self.parser_top().unwrap()
         } else {
@@ -395,180 +387,26 @@ impl Parser {
         }
     }
 
-    fn parser_top(&mut self) -> Option<&mut AttributeParser> {
+    fn parser_top(&mut self) -> Option<&mut AttributeParser<World>> {
         self.parser_stack.last_mut()
     }
 }
 
-
-#[test]
-fn test_parser() {
-    use crate::Value;
-
-    let content = r#"
-    ``` call host 
-    <>
-    add address .text localhost 
-    : ipv6 .enable 
-    : path .text api/test 
-    :: name .text test_name
-    ``` guest 
-    + address .text localhost
-    : ipv4 .enable
-    : path .text api/test2
-    ```
-
-    ``` test host 
-    add address .text localhost
-    ``` 
-
-    ```
-    + debug         .enable  
-    + test          .map    Everything after this is ignored when parsed 
-    : name         .text   Test map 
-    : description  .text   This tests the .map type, which is an alias for .empty 
-    
-    <``` guest>
-    : name .text cool guest host
-    + address .text testhost
-    <```>
-    "#;
-
-    // Tests the lexer logic
-    let parser = Parser::new();
-    let mut lexer = Keywords::lexer_with_extras(content, parser);
-
-    /*
-     ``` call host
-    add address .text localhost
-    :: ipv6 .enable
-    :: path .text api/test
-    ``` guest
-    + address .text localhost
-    :: ipv4 .enable
-    :: path .text api/test2
-    ```
-    */
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
-    assert_eq!(lexer.next(), Some(Keywords::Extension));
-    assert_eq!(lexer.next(), Some(Keywords::Add));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
-    assert_eq!(lexer.next(), Some(Keywords::Add));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
-
-    /*
-    ``` test host
-    add address .text localhost
-    ```
-    */
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
-    assert_eq!(lexer.next(), Some(Keywords::Add));
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
-
-    /*
-    ```
-    + debug .enable
-    + test          .map    Everything after this is ignored when parsed
-    :: name         .text   Test map
-    :: description  .text   This tests the .map type, which is an alias for .empty
-    ``` guest
-    :: name .text cool guest host
-    + address .text testhost
-    ```
-    */
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
-    assert_eq!(lexer.next(), Some(Keywords::Add));
-    assert_eq!(lexer.next(), Some(Keywords::Add));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
-    assert_eq!(lexer.next(), Some(Keywords::Define));
-    assert_eq!(lexer.next(), Some(Keywords::Add));
-    assert_eq!(lexer.next(), Some(Keywords::BlockDelimitter));
-
-    // Tests parsing logic
-    let mut parser = Parser::new().parse(content);
-
-    let address = parser.get_block("call", "host").map_transient("address");
-    assert_eq!(address.get("ipv6"), Some(&Value::Bool(true)));
-    assert_eq!(
-        address.get("path"),
-        Some(&Value::TextBuffer("api/test".to_string()))
-    );
-    assert_eq!(
-        address.get("name"),
-        Some(&Value::TextBuffer("test_name".to_string()))
-    );
-
-    let address = parser.get_block("call", "guest").map_transient("address");
-    assert_eq!(
-        address.get("ipv4"),
-        Some(&Value::Bool(true)),
-        "{:?}",
-        address
-    );
-    assert_eq!(
-        address.get("path"),
-        Some(&Value::TextBuffer("api/test2".to_string()))
-    );
-
-    let guest = parser.get_block("call", "guest").map_stable();
-    assert_eq!(
-        guest.get("address"),
-        Some(&Value::TextBuffer("localhost".to_string()))
-    );
-    assert_eq!(
-        parser.root().map_stable().get("debug"),
-        Some(&Value::Bool(true))
-    );
-
-    // Tests .map alias
-    assert_eq!(
-        parser.root().map_transient("test").get("name"),
-        Some(&Value::TextBuffer("Test map".to_string())),
-        "{:#?}",
-        parser.root()
-    );
-
-    let root_guest = parser.get_block("", "guest").map_stable();
-    assert_eq!(
-        root_guest.get("address"),
-        Some(&Value::TextBuffer("testhost".to_string()))
-    );
-
-    let root_guest_control = parser.get_block("", "guest").map_control();
-    assert_eq!(
-        root_guest_control.get("name"),
-        Some(&Value::TextBuffer("cool guest host".to_string())),
-        "{:#?}\n{:#?}",
-        root_guest_control,
-        parser
-            .get_block("", "guest")
-            .iter_attributes()
-            .collect::<Vec<_>>(),
-    );
-}
-
 mod tests {
-    use specs::WorldExt;
+    use specs::{WorldExt, World};
 
-    use crate::SpecialAttribute;
+    use crate::AttributeType;
 
     struct TestChild;
 
-    impl SpecialAttribute for TestChild {
+    impl AttributeType<World> for TestChild {
         fn ident() -> &'static str {
             "test_child"
         }
 
-        fn parse(parser: &mut crate::AttributeParser, _: impl AsRef<str>) {
-            let child = parser.world().expect("should have a world").entities().create();
-            parser.define_child(child, "is_child", true);
+        fn parse(parser: &mut crate::AttributeParser<World>, _: impl AsRef<str>) {
+            let child = parser.storage().expect("should have storage").entities().create();
+            parser.define_child(child.id(), "is_child", true);
         }
     }
 

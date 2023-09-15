@@ -1,21 +1,19 @@
-use crate::{Attribute, Value};
-use std::collections::BTreeMap;
-use specs::{Entity, Component};
-use specs::storage::DefaultVecStorage;
-use serde::{Serialize, Deserialize};
-
 mod block_index;
 pub use block_index::BlockIndex;
 
 mod block_properties;
 pub use block_properties::BlockProperties;
 pub use block_properties::BlockProperty;
-pub use block_properties::Documentation;
 
-mod block_object;
-pub use block_object::BlockObject;
+use std::collections::BTreeMap;
+use specs::Component;
+use specs::Entity;
+use specs::storage::DefaultVecStorage;
+use serde::Deserialize;
+use serde::Serialize;
 
-pub mod wire;
+use crate::Value;
+use crate::Attribute;
 
 /// Data structure parsed from .runmd, 
 /// 

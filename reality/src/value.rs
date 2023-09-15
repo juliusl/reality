@@ -253,32 +253,36 @@ impl Hash for Value {
 }
 
 pub mod v2 {
-    use std::{str::FromStr, marker::PhantomData, collections::BTreeSet};
+    use std::collections::BTreeSet;
+    use std::marker::PhantomData;
+    use std::str::FromStr;
 
-    use crate::SpecialAttribute;
+    use crate::AttributeType;
+    use crate::StorageTarget;
 
     /// Struct for a value container,
     /// 
     pub struct ValueContainer<T>(PhantomData<T>);
 
+    /// Split and parse a comma-seperated list,
+    /// 
     fn from_comma_sep<T>(input: &str) -> Vec<T>
     where
         T: FromStr,
     {
-        input
-            .split(",")
+        input.split_terminator(',')
             .filter_map(|i| i.trim().parse().ok())
             .collect()
     }
 
     macro_rules! impl_attr {
         ($ident:literal, $ty:ty, $default:literal) => {
-            impl SpecialAttribute for ValueContainer<$ty> {
+            impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S> for ValueContainer<$ty> {
                 fn ident() -> &'static str {
                     $ident
                 }
         
-                fn parse(parser: &mut crate::AttributeParser, content: impl AsRef<str>) {
+                fn parse(parser: &mut crate::AttributeParser<S>, content: impl AsRef<str>) {
                     if let Some(v) = content.as_ref().parse::<$ty>().ok() {
                         parser.set_edit(v);
                     } else {
@@ -288,12 +292,12 @@ pub mod v2 {
             }
         };
         ($ident:literal, $ty:ty, $default:literal, $value_ty:ident) => {
-            impl SpecialAttribute for ValueContainer<$ty> {
+            impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S> for ValueContainer<$ty> {
                 fn ident() -> &'static str {
                     $ident
                 }
         
-                fn parse(parser: &mut crate::AttributeParser, content: impl AsRef<str>) {
+                fn parse(parser: &mut crate::AttributeParser<S>, content: impl AsRef<str>) {
                     if let Some(v) = content.as_ref().parse::<$ty>().ok() {
                         parser.set_edit(v);
                     } else {
@@ -309,12 +313,12 @@ pub mod v2 {
             }            
         };
         ($ident:literal, $ty:ty, $default:literal, $value_ty:ident, $into_ty:ty) => {
-            impl SpecialAttribute for ValueContainer<$ty> {
+            impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S> for ValueContainer<$ty> {
                 fn ident() -> &'static str {
                     $ident
                 }
         
-                fn parse(parser: &mut crate::AttributeParser, content: impl AsRef<str>) {
+                fn parse(parser: &mut crate::AttributeParser<S>, content: impl AsRef<str>) {
                     if let Some(v) = content.as_ref().parse::<$into_ty>().ok() {
                         parser.set_edit(v);
                     } else {
@@ -333,12 +337,12 @@ pub mod v2 {
 
     macro_rules! impl_attr_pair {
         ($ident:literal, $ty:ty, $default:literal, $value_ty:ident, $into_ty:ty) => {
-            impl SpecialAttribute for ValueContainer<$ty> {
+            impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S> for ValueContainer<$ty> {
                 fn ident() -> &'static str {
                     $ident
                 }
         
-                fn parse(parser: &mut crate::AttributeParser, content: impl AsRef<str>) {
+                fn parse(parser: &mut crate::AttributeParser<S>, content: impl AsRef<str>) {
                     if let [v0, v1, ..] = from_comma_sep::<$into_ty>(content.as_ref())[..2] {
                         let pair = super::Value::$value_ty(v0, v1);
                         parser.set_edit(pair);
@@ -352,12 +356,12 @@ pub mod v2 {
 
     macro_rules! impl_attr_range {
         ($ident:literal, $ty:ty, $default:literal, $value_ty:ident, $into_ty:ty) => {
-            impl SpecialAttribute for ValueContainer<$ty> {
+            impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S> for ValueContainer<$ty> {
                 fn ident() -> &'static str {
                     $ident
                 }
         
-                fn parse(parser: &mut crate::AttributeParser, content: impl AsRef<str>) {
+                fn parse(parser: &mut crate::AttributeParser<S>, content: impl AsRef<str>) {
                     if let [v0, v1, v2, ..] = from_comma_sep::<$into_ty>(content.as_ref())[..2] {
                         let range = super::Value::$value_ty(v0, v1, v2);
                         parser.set_edit(range);
@@ -379,12 +383,12 @@ pub mod v2 {
     impl_attr!("text", String, "", TextBuffer);
     impl_attr!("symbol", &str, "", Symbol, String);
 
-    impl SpecialAttribute for ValueContainer<Vec<u8>> {
+    impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S> for ValueContainer<Vec<u8>> {
         fn ident() -> &'static str {
             "bin"
         }
 
-        fn parse(parser: &mut crate::AttributeParser, content: impl AsRef<str>) {
+        fn parse(parser: &mut crate::AttributeParser<S>, content: impl AsRef<str>) {
             let binary = match base64::decode(content.as_ref()) {
                 Ok(content) => super::Value::BinaryVector(content),
                 Err(_) => super::Value::BinaryVector(vec![]),
@@ -393,12 +397,12 @@ pub mod v2 {
         }
     }
 
-    impl SpecialAttribute for ValueContainer<BTreeSet<String>> {
+    impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S> for ValueContainer<BTreeSet<String>> {
         fn ident() -> &'static str {
             "complex"
         }
 
-        fn parse(parser: &mut crate::AttributeParser, content: impl AsRef<str>) {
+        fn parse(parser: &mut crate::AttributeParser<S>, content: impl AsRef<str>) {
             let binary = match base64::decode(content.as_ref()) {
                 Ok(content) => super::Value::BinaryVector(content),
                 Err(_) => super::Value::BinaryVector(vec![]),

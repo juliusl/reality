@@ -233,63 +233,63 @@ impl BlockIndex {
     }
 }
 
-#[test]
-#[tracing_test::traced_test]
-fn test_block_index() {
-    use tracing::event;
-    use tracing::Level;
+// #[test]
+// #[tracing_test::traced_test]
+// fn test_block_index() {
+//     use tracing::event;
+//     use tracing::Level;
 
-    let mut parser = crate::Parser::new().parse(
-    r#"
-    ``` test block
-    + test_attr .empty
-    :: general      .complex name, type
-    :: computation  .complex type, factor, enabled
-    :: name         .symbol test_block
-    :: type         .symbol block_example_1
-    :: factor       .int 10
+//     let mut parser = crate::Parser::new().parse(
+//     r#"
+//     ``` test block
+//     + test_attr .empty
+//     :: general      .complex name, type
+//     :: computation  .complex type, factor, enabled
+//     :: name         .symbol test_block
+//     :: type         .symbol block_example_1
+//     :: factor       .int 10
 
-    + test_attr .empty
-    :: name .symbol test_block_2
-    ```
-    "#,
-    );
+//     + test_attr .empty
+//     :: name .symbol test_block_2
+//     ```
+//     "#,
+//     );
 
-    parser.evaluate_stack();
+//     parser.evaluate_stack();
 
-    let index = BlockIndex::index(parser.get_block("test", "block"));
-    event!(Level::TRACE, "{:#?}", index);
+//     let index = BlockIndex::index(parser.get_block("test", "block"));
+//     event!(Level::TRACE, "{:#?}", index);
 
-    // Test that complex lookup works
-    //
-    let index = index.get(0).expect("should be a block index at pos 0");
-    let general_complex = index.as_complex("general").expect("should exist");
-    assert_eq!(
-        general_complex.property("name"),
-        Some(&crate::block::BlockProperty::Single(Value::Symbol(
-            "test_block".to_string()
-        )))
-    );
-    assert_eq!(
-        general_complex.property("type"),
-        Some(&crate::block::BlockProperty::Single(Value::Symbol(
-            "block_example_1".to_string()
-        )))
-    );
+//     // Test that complex lookup works
+//     //
+//     let index = index.get(0).expect("should be a block index at pos 0");
+//     let general_complex = index.as_complex("general").expect("should exist");
+//     assert_eq!(
+//         general_complex.property("name"),
+//         Some(&crate::block::BlockProperty::Single(Value::Symbol(
+//             "test_block".to_string()
+//         )))
+//     );
+//     assert_eq!(
+//         general_complex.property("type"),
+//         Some(&crate::block::BlockProperty::Single(Value::Symbol(
+//             "block_example_1".to_string()
+//         )))
+//     );
 
-    let computation_complex = index.as_complex("computation").expect("should exist");
-    assert_eq!(
-        computation_complex.property("type"),
-        Some(&crate::block::BlockProperty::Single(Value::Symbol(
-            "block_example_1".to_string()
-        )))
-    );
-    assert_eq!(
-        computation_complex.property("factor"),
-        Some(&crate::block::BlockProperty::Single(Value::Int(10)))
-    );
-    assert_eq!(
-        computation_complex.property("enabled"),
-        Some(&crate::block::BlockProperty::Single(Value::Empty))
-    );
-}
+//     let computation_complex = index.as_complex("computation").expect("should exist");
+//     assert_eq!(
+//         computation_complex.property("type"),
+//         Some(&crate::block::BlockProperty::Single(Value::Symbol(
+//             "block_example_1".to_string()
+//         )))
+//     );
+//     assert_eq!(
+//         computation_complex.property("factor"),
+//         Some(&crate::block::BlockProperty::Single(Value::Int(10)))
+//     );
+//     assert_eq!(
+//         computation_complex.property("enabled"),
+//         Some(&crate::block::BlockProperty::Single(Value::Empty))
+//     );
+// }

@@ -1,19 +1,19 @@
-use std::fmt::Display;
 use crate::Value;
-use logos::Logos;
 
 mod custom;
 pub use custom::CustomAttribute;
-pub use custom::SpecialAttribute;
-
-mod cache;
-pub use cache::Cache;
-
-mod blob;
-pub use blob::BlobDescriptor;
+pub use custom::AttributeType;
 
 mod parser;
 pub use parser::AttributeParser;
+
+mod storage_target;
+pub use storage_target::StorageTarget;
+
+mod container;
+pub use container::Container;
+
+use std::fmt::Display;
 
 /// Enumeration of value types that parse into an attribute,
 ///
@@ -36,81 +36,55 @@ pub use parser::AttributeParser;
 /// ex. name        .symbol attr_name
 /// ex. custom name .symbol attr_name
 ///
-#[derive(Logos, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-#[logos(extras = AttributeParser)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum Attributes {
     /// Empty value
     /// 
-    #[token(".empty", parser::on_empty_attr)]
     Empty = 0x00,
     ///Bool element parses remaining as bool
     /// 
-    #[token(".enable", parser::on_bool_enable)]
-    #[token(".disable", parser::on_bool_disable)]
-    #[token(".true", parser::on_bool_enable)]
-    #[token(".false", parser::on_bool_disable)]
-    #[token(".bool", parser::on_bool_attr)]
     Bool = 0x01,
     /// Int element parses remaining as i32
     /// 
-    #[token(".int", parser::on_int_attr)]
     Int = 0x02,
     /// Int pair element parses remaining as 2 comma-delimmited i32's
     /// 
-    #[token(".int_pair", parser::on_int_pair_attr)]
     IntPair = 0x03,
     /// Int range element parses remaining as 3 comma-delimitted i32's
     /// 
-    #[token(".int_range", parser::on_int_range_attr)]
     IntRange = 0x04,
     /// Float element parses remaining as f32
     /// 
-    #[token(".float", parser::on_float_attr)]
     Float = 0x05,
     /// Float pair element parses reamining as 2 comma delimitted f32's
     /// 
-    #[token(".float_pair", parser::on_float_pair_attr)]
     FloatPair = 0x06,
     /// Float range element parses remaining as 3 comma delimitted f32's
     /// 
-    #[token(".float_range", parser::on_float_range_attr)]
     FloatRange = 0x07,
     /// Symbol is an attribute value that refers to an identifier,
     /// 
-    #[token(".symbol", parser::on_symbol_attr)]
     Symbol = 0x08,
     /// Complex type, this is used to filter mapped attribute properties
     /// 
-    #[token(".complex", parser::on_complex_attr)]
     Complex = 0x09,
 
     /// Text buffer of UTF8 characters,
     ///
-    #[token(".text", parser::on_text_attr)]
     Text = 0x0A,
     /// Binary data of u8 bytes,
     ///
     /// If stored directly in .runmd, should be a base64 encoded string.
     ///
-    #[token(".bin", parser::on_binary_vec_attr)]
-    #[token(".base64", parser::on_binary_vec_attr)]
     BinaryVector = 0x0B,
 
     /// Bumps the parser until `>` is found
     /// 
-    #[token("<", parser::on_comment_start)]
     Comment = 0xF0,    
     /// Identifier string, that follows a strict format
     ///
-    #[regex("[A-Za-z]+[A-Za-z-;._:/@#+=$0-9]*", parser::on_identifier)]
     Identifier = 0xF1,
 
-    // Logos requires one token variant to handle errors,
-    // it can be named anything you wish.
-    #[error]
-    // We can also use this variant to define whitespace,
-    // or any other matches we wish to skip.
-    #[regex(r"[ \t\n\f]+", logos::skip)]
     Error = 0xFF,
 }
 
@@ -154,7 +128,7 @@ impl From<u8> for Attributes {
             0x0B => Attributes::BinaryVector,
             0xF0 => Attributes::Comment,
             0xF1 => Attributes::Identifier,
-            _ => Attributes::Error,
+            _ => Attributes::Error
         }
     }
 }

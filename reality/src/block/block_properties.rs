@@ -9,9 +9,6 @@ mod block_property;
 pub use block_property::BlockProperty;
 pub use block_property::display_value;
 
-mod documentation;
-pub use documentation::Documentation;
-
 /// Wrapper type for a collection of block property attributes
 ///
 #[derive(Component, Hash, Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
