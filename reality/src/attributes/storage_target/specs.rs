@@ -46,6 +46,19 @@ impl StorageTarget for World {
         }
     }
 
+    fn put_resource<T: Send + Sync + 'static>(&mut self, resource: T, resource_id: Option<u64>) {
+        if let Some(resource_id) = resource_id {
+            let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_id);
+            self.insert_by_id(resource_id, resource);
+        } else {
+            self.insert(resource);
+        }
+    }
+
+    fn enable_dispatching(&mut self) where Self: 'static {
+        // No-op
+    }
+    
     fn lazy_dispatch<F: FnOnce(&Self) + 'static + Send + Sync>(&self, exec: F){
         let lazy_update = self.read_resource::<LazyUpdate>();
         lazy_update.exec(|world| exec(world));
@@ -56,12 +69,7 @@ impl StorageTarget for World {
         lazy_update.exec_mut(exec);
     }
 
-    fn put_resource<T: Send + Sync + 'static>(&mut self, resource: T, resource_id: Option<u64>) {
-        if let Some(resource_id) = resource_id {
-            let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_id);
-            self.insert_by_id(resource_id, resource);
-        } else {
-            self.insert(resource);
-        }
+    fn drain_dispatch_queues(&mut self) where Self: 'static {
+        self.maintain();
     }
 }

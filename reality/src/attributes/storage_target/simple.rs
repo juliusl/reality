@@ -10,8 +10,8 @@ use std::ops::DerefMut;
 
 use crate::{Attribute, StorageTarget};
 
-/// Simple storage target,
-///
+/// Simple storage target implementation,
+/// 
 #[derive(Default)]
 pub struct Simple {
     /// Map of resources,
@@ -20,12 +20,12 @@ pub struct Simple {
 }
 
 impl Simple {
-    /// Creates a new simple storage target,
+    /// Creates a new empty simple storage target w/ dispatching enabled,
     /// 
     pub fn new() -> Self {
         let mut simple = Self::default();
 
-        simple.enable_default_dispatch_queues();
+        simple.enable_dispatching();
         simple
     }
 }
@@ -131,7 +131,7 @@ fn test_simple_storage_target_resource_store() {
     let test_resource: Vec<u32> = vec![0, 1, 2, 3];
     
     let mut simple = Simple::default();
-    simple.enable_default_dispatch_queues();
+    simple.enable_dispatching();
     simple.put_resource(test_resource, None);
 
     // Test inserting and mutating a resource
@@ -161,6 +161,20 @@ fn test_simple_storage_target_resource_store() {
         if s.resource_mut::<u64>(None).map(|mut r| *r += 1).is_none() {
             s.put_resource(0u64, None)
         }
+
+        s.lazy_dispatch(|s| {
+            let res = s.resource::<u64>(None);
+            println!("dispatched after inc -- {:?}", res);
+        });
+
+        s.lazy_dispatch_mut(|s: &mut Simple| {
+            s.resource_mut::<u64>(None).map(|mut r| *r += 1);
+
+            s.lazy_dispatch(|s| {
+                let res = s.resource::<u64>(None);
+                println!("dispatched after inc -- {:?}", res);
+            });
+        });
     };
 
     {
@@ -169,11 +183,11 @@ fn test_simple_storage_target_resource_store() {
         simple.lazy_dispatch_mut(fun);
         simple.lazy_dispatch_mut(fun);
     }
-
-    simple.drain_default_dispatch_queues();
+    simple.drain_dispatch_queues();
 
     {
         let res = simple.resource::<u64>(None);
         assert_eq!(Some(3), res.as_deref().copied());
     }
+    simple.drain_dispatch_queues();
 }
