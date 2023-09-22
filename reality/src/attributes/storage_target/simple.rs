@@ -19,6 +19,17 @@ pub struct Simple {
     resources: HashMap<u64, RefCell<Box<dyn Send + Sync + 'static>>>,
 }
 
+impl Simple {
+    /// Creates a new simple storage target,
+    /// 
+    pub fn new() -> Self {
+        let mut simple = Self::default();
+
+        simple.enable_default_dispatch_queues();
+        simple
+    }
+}
+
 impl StorageTarget for Simple {
     type Attribute = Attribute;
 
@@ -86,19 +97,11 @@ impl StorageTarget for Simple {
         }
     }
 
-    fn lazy_dispatch(&self, exec: impl FnOnce(&Self) + 'static + Send + Sync) {
-        todo!()
-    }
-
-    fn lazy_dispatch_mut(&self, exec: impl FnOnce(&mut Self) + 'static + Send + Sync) {
-        todo!()
-    }
-
     fn put_resource<T: Send + Sync + 'static>(
-        mut self,
+        &mut self,
         resource: T,
         resource_id: Option<u64>,
-    ) -> Self {
+    ) {
         let type_id = std::any::TypeId::of::<T>();
         let mut hasher = DefaultHasher::new();
         type_id.hash(&mut hasher);
@@ -109,10 +112,8 @@ impl StorageTarget for Simple {
 
         self.resources
             .insert(hasher.finish(), RefCell::new(Box::new(resource)));
-        self
     }
 }
-
 /// Convert a borrow to a raw pointer,
 ///
 const fn from_ref<T: ?Sized>(r: &T) -> *const T {
@@ -128,8 +129,10 @@ fn from_ref_mut<T: ?Sized>(r: &mut T) -> *mut T {
 #[test]
 fn test_simple_storage_target_resource_store() {
     let test_resource: Vec<u32> = vec![0, 1, 2, 3];
-    println!("{:?}", test_resource);
-    let mut simple = Simple::default().put_resource(test_resource, None);
+    
+    let mut simple = Simple::default();
+    simple.enable_default_dispatch_queues();
+    simple.put_resource(test_resource, None);
 
     // Test inserting and mutating a resource
     {
@@ -152,5 +155,25 @@ fn test_simple_storage_target_resource_store() {
         if let Some(resource) = resource {
             assert_eq!(vec![0, 1, 2, 3, 5, 6], resource[..]);
         }
+    }
+
+    let fun = |s: &mut Simple| {
+        if s.resource_mut::<u64>(None).map(|mut r| *r += 1).is_none() {
+            s.put_resource(0u64, None)
+        }
+    };
+
+    {
+        simple.lazy_dispatch_mut(fun);
+        simple.lazy_dispatch_mut(fun);
+        simple.lazy_dispatch_mut(fun);
+        simple.lazy_dispatch_mut(fun);
+    }
+
+    simple.drain_default_dispatch_queues();
+
+    {
+        let res = simple.resource::<u64>(None);
+        assert_eq!(Some(3), res.as_deref().copied());
     }
 }
