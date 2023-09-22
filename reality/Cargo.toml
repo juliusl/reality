@@ -5,6 +5,10 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = [ "specs_storage_target" ]
+specs_storage_target = [ "specs" ]
+
 [dependencies]
 base64 = "0.13.0"
 bytes = "1.2.1"
@@ -12,6 +16,11 @@ bytemuck = "1.12.1"
 tracing = "0.1.36"
 tracing-test = "0.2.3"
 serde = { version = "1.0.144", features = ["derive"] }
-specs = { git = "https://github.com/amethyst/specs", features = ["default", "derive", "shred-derive"] }
 tokio = { version = "1.19.2", features = ["default", "rt-multi-thread", "sync", "fs", "process", "io-util", "io-std", "macros"] }
 runmd = { path = "../../runmd" }
+
+# Feature: specs_storage_target
+[dependencies.specs]
+git = "https://github.com/amethyst/specs"
+features = ["default", "derive", "shred-derive"]
+optional = true

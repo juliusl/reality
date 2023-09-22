@@ -1,8 +1,7 @@
-mod block;
-pub use block::Block;
-pub use block::BlockIndex;
-pub use block::BlockProperty;
-pub use block::BlockProperties;
+#[doc(hidden)]
+#[macro_use]
+pub mod macros;
+pub use macros::*;
 
 mod attributes;
 pub use attributes::AttributeParser;

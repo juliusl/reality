@@ -1,5 +1,3 @@
-use specs::shred::ResourceId;
-use specs::World;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -15,7 +13,6 @@ use super::CustomAttribute;
 use super::StorageTarget;
 use crate::value::v2::ValueContainer;
 use crate::AttributeType;
-use crate::Block;
 
 /// Resource for storing custom attribute parse functions
 ///
@@ -400,36 +397,28 @@ impl<S: StorageTarget<Attribute = crate::Attribute> + Send + Sync + 'static> Nod
             attrs.push(next);
         }
 
-        if let Some(storage) = self.storage() {
-        }
-
-        let resource_id = ResourceId::new_with_dynamic_id::<Block>(self.resource_id);
         // if let Some(storage) = self.storage() {
-        //     storage.lazy_dispatch_mut(move |_world| {
-        //         if let Some(mut block) = _world.try_fetch_mut_by_id::<Block>(resource_id) {
-        //             for attr in attrs.iter() {
-        //                 block.add_attribute(attr);
-        //             }
-        //         } else {
-        //             error!("Could not retrieve block");
+        //     if let Some(mut block) = storage.resource_mut::<Block>(Some(self.resource_id)) {
+        //         for attr in attrs {
+        //             block.add_attribute(&attr);
         //         }
-        //     });
+        //     } else {
+        //         error!("Block does not exist, {}", self.resource_id);
+        //     }
         // }
-
-        // TODO -- Make actual storage dependency swappable here.
     }
 }
 
-#[tokio::test]
-async fn test_v2_parser() {
-    let parser = AttributeParser::<World>::default();
+// #[tokio::test]
+// async fn test_v2_parser() {
+//     let parser = AttributeParser::<World>::default();
 
-    let mut parser = parser
-        .load_extension("application/repo.reality.attributes.v1", None)
-        .await
-        .expect("should return a node");
-    parser.define_property("int", Some("test"), Some("256"));
-    parser.define_property("float", Some("test-2"), Some("256.0"));
+//     let mut parser = parser
+//         .load_extension("application/repo.reality.attributes.v1", None)
+//         .await
+//         .expect("should return a node");
+//     parser.define_property("int", Some("test"), Some("256"));
+//     parser.define_property("float", Some("test-2"), Some("256.0"));
 
-    println!("{:#?}", parser);
-}
+//     println!("{:#?}", parser);
+// }
