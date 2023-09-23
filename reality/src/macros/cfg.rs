@@ -13,3 +13,19 @@ macro_rules! cfg_specs {
         )*
     };
 }
+
+#[macro_export]
+macro_rules! cfg_async_dispatcher {
+    ($($item:expr;)*) => {
+        $(
+            #[cfg(feature = "async_dispatcher")]
+            $item;
+        )*
+    };
+    ($($item:item)*) => {
+        $(
+            #[cfg(feature = "async_dispatcher")]
+            $item
+        )*
+    };
+}

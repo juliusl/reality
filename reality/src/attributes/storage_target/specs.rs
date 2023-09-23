@@ -72,4 +72,13 @@ impl StorageTarget for World {
     fn drain_dispatch_queues(&mut self) where Self: 'static {
         self.maintain();
     }
+
+    fn take_resource<T: Send + Sync + 'static>(&mut self, resource_id: Option<u64>) -> Option<T> {
+        if let Some(resource_id) = resource_id {
+            let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_id);
+            self.remove_by_id(resource_id)
+        } else {
+            self.remove()
+        }
+    }
 }

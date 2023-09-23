@@ -20,16 +20,16 @@ pub trait AttributeType<S: StorageTarget> {
     fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>);
 }
 
-/// Struct for passing types that implement SpecialAttribute
-///
-pub struct CustomAttribute<S: StorageTarget>(
+/// Struct containing a function for parsing a specific AttributeType,
+/// 
+pub struct AttributeTypeParser<S: StorageTarget>(
     /// Identifier
     String,
     /// Parse function
     fn(&mut AttributeParser<S>, String),
 );
 
-impl<S: StorageTarget> CustomAttribute<S> {
+impl<S: StorageTarget> AttributeTypeParser<S> {
     /// Returns a new struct from a special attribute type
     ///
     pub fn new<A>() -> Self
@@ -56,14 +56,14 @@ impl<S: StorageTarget> CustomAttribute<S> {
     }
 }
 
-impl<S: StorageTarget> Clone for CustomAttribute<S> {
+impl<S: StorageTarget> Clone for AttributeTypeParser<S> {
     fn clone(&self) -> Self {
         Self(self.0.clone(), self.1.clone())
     }
 }
 
-impl<S: StorageTarget> Debug for CustomAttribute<S> {
+impl<S: StorageTarget> Debug for AttributeTypeParser<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("CustomAttribute").field(&self.0).finish()
+        f.debug_tuple("AttributeTypeParser").field(&self.0).finish()
     }
 }

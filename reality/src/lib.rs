@@ -6,12 +6,17 @@ pub use macros::*;
 mod attributes;
 pub use attributes::AttributeParser;
 pub use attributes::AttributeType;
-pub use attributes::CustomAttribute;
+pub use attributes::AttributeTypeParser;
 pub use attributes::StorageTarget;
 pub use attributes::Simple as SimpleStorageTarget;
 
 cfg_specs! {
     pub use attributes::specs::*;
+}
+
+cfg_async_dispatcher! {
+    pub use attributes::AsyncStorageTarget;
+    pub use attributes::Dispatcher;
 }
 
 mod attribute;

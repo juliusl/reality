@@ -7,15 +7,20 @@ use crate::{Attribute, Value};
 /// Trait for types that act as a container for a value,
 ///
 pub trait Container: Clone + Sized {
-    /// Numeric-like identifier,
-    ///
-    type Id: std::ops::AddAssign<Self::Id>
+    /// Identifier type that can be used to map and uniquely identify a container type,
+    /// 
+    type Id: std::ops::AddAssign<u32>
+        + std::ops::Sub<u32, Output = u32>
+        + From<u32>
         + Default
         + Ord
         + Eq
         + std::hash::Hash
         + std::fmt::Debug
-        + Copy;
+        + Copy
+        + Send
+        + Sync
+        + 'static;
 
     /// Type used as labels for the container,
     ///
@@ -150,55 +155,6 @@ pub trait Container: Clone + Sized {
         } else {
             None
         }
-    }
-}
-
-impl TryFrom<Option<Attribute>> for Attribute {
-    type Error = ();
-
-    fn try_from(value: Option<Attribute>) -> Result<Self, Self::Error> {
-        if let Some(value) = value {
-            Ok(value)
-        } else {
-            Err(())
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct Label(String);
-
-impl AsRef<str> for Label {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl From<Label> for Value {
-    fn from(value: Label) -> Self {
-        match value.as_ref() {
-            "bool" => Value::Bool(false),
-            "text" => Value::TextBuffer(String::new()),
-            "int" => Value::Int(0),
-            "int2" => Value::IntPair(0, 0),
-            "int3" => Value::IntRange(0, 0, 0),
-            "float" => Value::Float(0.0),
-            "float2" => Value::FloatPair(0.0, 0.0),
-            "float3" => Value::FloatRange(0.0, 0.0, 0.0),
-            "bin" => Value::BinaryVector(vec![]),
-            "reference" => Value::Reference(0),
-            "symbol" => Value::Symbol(String::new()),
-            "complex" => Value::Complex(BTreeSet::new()),
-            _ => Value::Empty,
-        }
-    }
-}
-
-impl FromStr for Label {
-    type Err = Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Label(s.to_string()))
     }
 }
 
@@ -337,4 +293,66 @@ impl Container for Attribute {
         Attribute::commit(&mut committing);
         Some(committing)
     }
+}
+
+impl TryFrom<Option<Attribute>> for Attribute {
+    type Error = ();
+
+    fn try_from(value: Option<Attribute>) -> Result<Self, Self::Error> {
+        if let Some(value) = value {
+            Ok(value)
+        } else {
+            Err(())
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Label(String);
+
+impl AsRef<str> for Label {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<Label> for Value {
+    fn from(value: Label) -> Self {
+        match value.as_ref() {
+            "bool" => Value::Bool(false),
+            "text" => Value::TextBuffer(String::new()),
+            "int" => Value::Int(0),
+            "int2" => Value::IntPair(0, 0),
+            "int3" => Value::IntRange(0, 0, 0),
+            "float" => Value::Float(0.0),
+            "float2" => Value::FloatPair(0.0, 0.0),
+            "float3" => Value::FloatRange(0.0, 0.0, 0.0),
+            "bin" => Value::BinaryVector(vec![]),
+            "reference" => Value::Reference(0),
+            "symbol" => Value::Symbol(String::new()),
+            "complex" => Value::Complex(BTreeSet::new()),
+            _ => Value::Empty,
+        }
+    }
+}
+
+impl FromStr for Label {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Label(s.to_string()))
+    }
+}
+
+#[test]
+fn test() {
+    let a = 99u64;
+    let b = 108u64;
+    let c = 34u64;
+    let ab = a ^ b;
+    let abc =  a ^ b ^ c;
+    println!("{:b} ^ {:b} ^ {:b} = {:b} ({})", a, b, c, abc, abc);
+
+    let _ab = abc ^ c;
+    println!("{:b} ({}) == {:b} ({})", ab, ab, _ab, _ab);
 }

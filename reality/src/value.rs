@@ -8,7 +8,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 /// Enumeration of possible attribute value types.
-/// 
+///
 #[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub enum Value {
     #[default]
@@ -29,61 +29,61 @@ pub enum Value {
 
 impl Value {
     /// Returns an empty tuple if value is an Empty type,
-    /// 
+    ///
     pub fn empty(&self) -> Option<()> {
         match self {
             Self::Empty => Some(()),
-            _ => None
+            _ => None,
         }
     }
 
     /// Returns a bool if this value is a bool literal,
-    /// 
+    ///
     pub fn bool(&self) -> Option<bool> {
         match self {
             Self::Bool(b) => Some(*b),
-            _ => None
+            _ => None,
         }
     }
 
     /// Returns a String if this value is a text buffer,
-    /// 
+    ///
     pub fn text(&self) -> Option<String> {
         match self {
             Self::TextBuffer(buffer) => Some(buffer.to_string()),
-            _ => None
+            _ => None,
         }
     }
 
     /// Returns an i32 if this value is an int,
-    /// 
+    ///
     pub fn int(&self) -> Option<i32> {
         match self {
-            Self::Int(i) => Some(*i), 
-            _ => None 
+            Self::Int(i) => Some(*i),
+            _ => None,
         }
     }
 
     /// Returns an tuple (i32, i32) if this value is an int pair,
-    /// 
+    ///
     pub fn int_pair(&self) -> Option<(i32, i32)> {
         match self {
-            Self::IntPair(a, b) => Some((*a, *b)), 
+            Self::IntPair(a, b) => Some((*a, *b)),
             _ => None,
         }
     }
 
     /// Returns a tuple (i32, i32, i32) if this value is an int range,
-    /// 
+    ///
     pub fn int_range(&self) -> Option<(i32, i32, i32)> {
         match self {
-            Self::IntRange(a, b, c) => Some((*a, *b, *c)), 
+            Self::IntRange(a, b, c) => Some((*a, *b, *c)),
             _ => None,
         }
     }
 
     /// Returns an f32 if this value is a float,
-    /// 
+    ///
     pub fn float(&self) -> Option<f32> {
         match self {
             Self::Float(a) => Some(*a),
@@ -91,8 +91,8 @@ impl Value {
         }
     }
 
-    /// Returns a tuple (f32, f32) if this value is a float pair, 
-    /// 
+    /// Returns a tuple (f32, f32) if this value is a float pair,
+    ///
     pub fn float_pair(&self) -> Option<(f32, f32)> {
         match self {
             Self::FloatPair(a, b) => Some((*a, *b)),
@@ -101,7 +101,7 @@ impl Value {
     }
 
     /// Returns a tuple (f32, f32, f32) if this value is a float range,
-    /// 
+    ///
     pub fn float_range(&self) -> Option<(f32, f32, f32)> {
         match self {
             Self::FloatRange(a, b, c) => Some((*a, *b, *c)),
@@ -109,30 +109,29 @@ impl Value {
         }
     }
 
-
     /// Returns a STring if this value is a symbol,
-    /// 
+    ///
     pub fn symbol(&self) -> Option<String> {
         match self {
             Self::Symbol(symbol) => Some(symbol.to_string()),
             _ => None,
         }
     }
-    
+
     /// Returns a vector of bytes if this values is a binary vector,
-    /// 
+    ///
     pub fn binary(&self) -> Option<Vec<u8>> {
         match self {
             Self::BinaryVector(vec) => Some(vec.to_vec()),
-            _ => None, 
+            _ => None,
         }
     }
 
     /// Returns a btree set if this value is a complex,
-    /// 
+    ///
     pub fn complex(&self) -> Option<BTreeSet<String>> {
         match self {
-            Self::Complex(c) => Some(c.clone()) ,
+            Self::Complex(c) => Some(c.clone()),
             _ => None,
         }
     }
@@ -175,7 +174,6 @@ impl From<i32> for Value {
         Value::Int(value)
     }
 }
-
 
 impl Eq for Value {}
 
@@ -254,34 +252,41 @@ impl Hash for Value {
 
 pub mod v2 {
     use std::collections::BTreeSet;
+    use std::convert::Infallible;
     use std::marker::PhantomData;
     use std::str::FromStr;
 
+    use crate::attributes::Container;
+    use crate::AsyncStorageTarget;
     use crate::AttributeType;
+    use crate::Dispatcher;
     use crate::StorageTarget;
 
     /// Struct for a value container,
-    /// 
+    ///
     pub struct ValueContainer<T>(PhantomData<T>);
 
     /// Split and parse a comma-seperated list,
-    /// 
+    ///
     fn from_comma_sep<T>(input: &str) -> Vec<T>
     where
         T: FromStr,
     {
-        input.split_terminator(',')
+        input
+            .split_terminator(',')
             .filter_map(|i| i.trim().parse().ok())
             .collect()
     }
 
     macro_rules! impl_attr {
         ($ident:literal, $ty:ty, $default:literal) => {
-            impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S> for ValueContainer<$ty> {
+            impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S>
+                for ValueContainer<$ty>
+            {
                 fn ident() -> &'static str {
                     $ident
                 }
-        
+
                 fn parse(parser: &mut crate::AttributeParser<S>, content: impl AsRef<str>) {
                     if let Some(v) = content.as_ref().parse::<$ty>().ok() {
                         parser.set_edit(v);
@@ -292,11 +297,13 @@ pub mod v2 {
             }
         };
         ($ident:literal, $ty:ty, $default:literal, $value_ty:ident) => {
-            impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S> for ValueContainer<$ty> {
+            impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S>
+                for ValueContainer<$ty>
+            {
                 fn ident() -> &'static str {
                     $ident
                 }
-        
+
                 fn parse(parser: &mut crate::AttributeParser<S>, content: impl AsRef<str>) {
                     if let Some(v) = content.as_ref().parse::<$ty>().ok() {
                         parser.set_edit(v);
@@ -310,14 +317,16 @@ pub mod v2 {
                 fn from(value: $ty) -> Self {
                     super::Value::$value_ty(value)
                 }
-            }            
+            }
         };
         ($ident:literal, $ty:ty, $default:literal, $value_ty:ident, $into_ty:ty) => {
-            impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S> for ValueContainer<$ty> {
+            impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S>
+                for ValueContainer<$ty>
+            {
                 fn ident() -> &'static str {
                     $ident
                 }
-        
+
                 fn parse(parser: &mut crate::AttributeParser<S>, content: impl AsRef<str>) {
                     if let Some(v) = content.as_ref().parse::<$into_ty>().ok() {
                         parser.set_edit(v);
@@ -331,17 +340,19 @@ pub mod v2 {
                 fn from(value: $ty) -> Self {
                     super::Value::$value_ty(<$ty as Into<$into_ty>>::into(value))
                 }
-            }            
+            }
         };
     }
 
     macro_rules! impl_attr_pair {
         ($ident:literal, $ty:ty, $default:literal, $value_ty:ident, $into_ty:ty) => {
-            impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S> for ValueContainer<$ty> {
+            impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S>
+                for ValueContainer<$ty>
+            {
                 fn ident() -> &'static str {
                     $ident
                 }
-        
+
                 fn parse(parser: &mut crate::AttributeParser<S>, content: impl AsRef<str>) {
                     if let [v0, v1, ..] = from_comma_sep::<$into_ty>(content.as_ref())[..2] {
                         let pair = super::Value::$value_ty(v0, v1);
@@ -356,11 +367,13 @@ pub mod v2 {
 
     macro_rules! impl_attr_range {
         ($ident:literal, $ty:ty, $default:literal, $value_ty:ident, $into_ty:ty) => {
-            impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S> for ValueContainer<$ty> {
+            impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S>
+                for ValueContainer<$ty>
+            {
                 fn ident() -> &'static str {
                     $ident
                 }
-        
+
                 fn parse(parser: &mut crate::AttributeParser<S>, content: impl AsRef<str>) {
                     if let [v0, v1, v2, ..] = from_comma_sep::<$into_ty>(content.as_ref())[..2] {
                         let range = super::Value::$value_ty(v0, v1, v2);
@@ -397,7 +410,9 @@ pub mod v2 {
         }
     }
 
-    impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S> for ValueContainer<BTreeSet<String>> {
+    impl<S: StorageTarget<Attribute = crate::Attribute>> AttributeType<S>
+        for ValueContainer<BTreeSet<String>>
+    {
         fn ident() -> &'static str {
             "complex"
         }
@@ -408,6 +423,118 @@ pub mod v2 {
                 Err(_) => super::Value::BinaryVector(vec![]),
             };
             parser.set_value(binary);
+        }
+    }
+
+    /// Container for an attribute type w/ a dedicated dispatcher,
+    ///
+    pub struct Attribute<
+        S: StorageTarget,
+        V: AttributeType<S>
+            + Unpin
+            + Default
+            + Send
+            + Sync
+            + Clone
+            + std::fmt::Debug
+            + From<std::string::String>
+            + 'static,
+    > {
+        /// Value,
+        ///
+        value: V,
+        /// Next value,
+        ///
+        next: Option<V>,
+        /// Dispatcher to dispatch state changes for this attribute,
+        ///
+        dispatcher: Option<Dispatcher<S, V>>,
+    }
+
+    impl<
+            S: StorageTarget + 'static,
+            V: AttributeType<S>
+                + Unpin
+                + Default
+                + Send
+                + Sync
+                + Clone
+                + std::fmt::Debug
+                + From<std::string::String>
+                + 'static,
+        > Clone for Attribute<S, V>
+    {
+        fn clone(&self) -> Self {
+            Self {
+                value: self.value.clone(),
+                next: self.next.clone(),
+                dispatcher: self.dispatcher.clone(),
+            }
+        }
+    }
+
+    impl<S, V> Container for Attribute<S, V>
+    where
+        S: StorageTarget + 'static,
+        V: AttributeType<S>
+            + Unpin
+            + Default
+            + Send
+            + Sync
+            + Clone
+            + std::fmt::Debug
+            + From<std::string::String>
+            + 'static,
+        Self: TryFrom<Option<Attribute<S, V>>>
+    {
+        type Id = u32;
+
+        type Label = String;
+
+        type Value = V;
+
+        type Created = Option<Self>;
+
+        type Committed = Option<Self>;
+
+        fn create(id: Self::Id, ty: impl Into<Self::Label>) -> Self::Created {
+            todo!()
+        }
+
+        fn set_value(&mut self, value: Self::Value) -> Option<Self::Value> {
+            todo!()
+        }
+
+        fn value(&self) -> &Self::Value {
+            todo!()
+        }
+
+        fn id(&self) -> Self::Id {
+            todo!()
+        }
+
+        fn pending(&self) -> Option<&Self::Value> {
+            todo!()
+        }
+
+        fn get_label(&self, name: &str) -> Option<Self::Label> {
+            todo!()
+        }
+
+        fn set_label(&mut self, name: &str, label: impl Into<Self::Label>) -> Option<Self::Label> {
+            todo!()
+        }
+
+        fn labels(&self) -> Vec<(&str, Self::Label)> {
+            todo!()
+        }
+
+        fn edit(&mut self, value: Self::Value) {
+            todo!()
+        }
+
+        fn commit(&self) -> Self::Committed {
+            todo!()
         }
     }
 }

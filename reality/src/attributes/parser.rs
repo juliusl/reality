@@ -3,13 +3,12 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::debug;
-use tracing::error;
 use tracing::trace;
 
 use runmd::prelude::*;
 
 use super::Container;
-use super::CustomAttribute;
+use super::AttributeTypeParser;
 use super::StorageTarget;
 use crate::value::v2::ValueContainer;
 use crate::AttributeType;
@@ -17,7 +16,7 @@ use crate::AttributeType;
 /// Resource for storing custom attribute parse functions
 ///
 #[derive(Clone)]
-pub struct CustomAttributeContainer<S: StorageTarget>(HashSet<CustomAttribute<S>>);
+pub struct CustomAttributeContainer<S: StorageTarget>(HashSet<AttributeTypeParser<S>>);
 
 /// Parser for parsing attributes,
 ///
@@ -53,7 +52,7 @@ pub struct AttributeParser<Storage: StorageTarget> {
     parsed: Vec<Storage::Attribute>,
     /// Table of attribute parsers,
     ///
-    attribute_table: HashMap<String, CustomAttribute<Storage>>,
+    attribute_table: HashMap<String, AttributeTypeParser<Storage>>,
     /// Reference to centralized-storage,
     ///
     storage: Option<Arc<Storage>>,
@@ -104,13 +103,13 @@ impl<S: StorageTarget> AttributeParser<S> {
     where
         C: AttributeType<S>,
     {
-        self.add_custom(CustomAttribute::new::<C>());
+        self.add_custom(AttributeTypeParser::new::<C>());
         self
     }
 
     /// Adds a custom attribute parser,
     ///
-    pub fn add_custom(&mut self, custom_attr: impl Into<CustomAttribute<S>>) {
+    pub fn add_custom(&mut self, custom_attr: impl Into<AttributeTypeParser<S>>) {
         let custom_attr = custom_attr.into();
         self.attribute_table
             .insert(custom_attr.ident(), custom_attr);
@@ -124,8 +123,8 @@ impl<S: StorageTarget> AttributeParser<S> {
         &mut self,
         ident: impl AsRef<str>,
         parse: fn(&mut AttributeParser<S>, String),
-    ) -> CustomAttribute<S> {
-        let attr = CustomAttribute::new_with(ident, parse);
+    ) -> AttributeTypeParser<S> {
+        let attr = AttributeTypeParser::new_with(ident, parse);
         self.add_custom(attr.clone());
         attr
     }
@@ -204,7 +203,7 @@ impl<S: StorageTarget> AttributeParser<S> {
 
     /// Returns an iterator over special attributes installed on this parser,
     ///
-    pub fn iter_special_attributes(&self) -> impl Iterator<Item = (&String, &CustomAttribute<S>)> {
+    pub fn iter_special_attributes(&self) -> impl Iterator<Item = (&String, &AttributeTypeParser<S>)> {
         self.attribute_table.iter()
     }
 
@@ -298,8 +297,7 @@ impl<S: StorageTarget> AttributeParser<S> {
 }
 
 #[runmd::prelude::async_trait]
-impl<S: StorageTarget<Attribute = crate::Attribute> + Send + Sync + 'static> ExtensionLoader for super::AttributeParser<S>
-{
+impl<S: StorageTarget<Attribute = crate::Attribute> + Send + Sync + 'static> ExtensionLoader for super::AttributeParser<S> {
     async fn load_extension(&self, extension: &str, input: Option<&str>) -> Option<BoxedNode> {
         let mut parser = self.clone();
 

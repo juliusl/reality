@@ -1,29 +1,49 @@
-use std::ops::DerefMut;
-use std::ops::Deref;
-use std::fmt::Debug;
-use super::Container;
-
 cfg_specs! {
     pub mod specs;
 }
 
+cfg_async_dispatcher! {
+    use tokio::sync::RwLock;
+
+    mod async_dispatcher;
+    pub use async_dispatcher::AsyncStorageTarget;
+    pub use async_dispatcher::Dispatcher;
+}
+
+use super::Container;
+use std::fmt::Debug;
+use std::hash::Hash;
+use std::hash::Hasher;
+use std::mem::size_of;
+use std::ops::Deref;
+use std::ops::DerefMut;
+use std::sync::Arc;
+
 pub mod simple;
 pub use simple::Simple;
 
+/// Struct to store an atomic-reference counter,
+///
+#[derive(Default, Clone)]
+struct EntityCounter(std::sync::Arc<()>);
+
 /// Type-alias for a thread safe dispatch queue,
-/// 
-type DispatchQueue<S> = std::sync::Mutex<std::collections::VecDeque<Box<dyn FnOnce(&S) + 'static + Send + Sync>>>;
+///
+type DispatchQueue<S> =
+    std::sync::Mutex<std::collections::VecDeque<Box<dyn FnOnce(&S) + 'static + Send + Sync>>>;
 
 /// Type-alias for a thread safe dispatch-mut queue,
-/// 
-type DispatchMutQueue<S> = std::sync::Mutex<std::collections::VecDeque<Box<dyn FnOnce(&mut S) + 'static + Send + Sync>>>;
-
+///
+type DispatchMutQueue<S> =
+    std::sync::Mutex<std::collections::VecDeque<Box<dyn FnOnce(&mut S) + 'static + Send + Sync>>>;
 
 /// Trait generalizing an Entity-Component-System storage backend,
-/// 
+///
 pub trait StorageTarget {
     /// Attribute container type,
-    /// 
+    ///
+    /// An attribute is a stateful single-value container w/ a name and labels.
+    ///
     type Attribute: Container + Send + Sync + Clone + Debug;
 
     /// Container for borrowing a resource from the storage target,
@@ -39,63 +59,131 @@ pub trait StorageTarget {
         Self: 'a;
 
     /// Convert the id used by an attribute to a u64,
-    /// 
+    ///
     fn entity(&self, id: <Self::Attribute as Container>::Id) -> u64;
 
-    /// Creates a new entity,
-    /// 
-    fn create_entity(&self) -> <Self::Attribute as Container>::Id;
+    /// Create a new entity,
+    ///
+    fn create_entity(&self) -> <Self::Attribute as crate::attributes::Container>::Id
+    where
+        Self: 'static,
+    {
+        if let Some(entity) = self.resource::<EntityCounter>(None) {
+            let next = entity.clone();
+
+            let mut next_id = <Self::Attribute as crate::attributes::Container>::Id::default();
+            next_id += std::sync::Arc::strong_count(&entity.deref().0) as u32;
+
+            let resource_id = next_id - 1u32;
+
+            self.lazy_dispatch_mut(move |s| {
+                s.put_resource(next, Some(resource_id as u64));
+            });
+
+            <Self::Attribute as crate::attributes::Container>::Id::from(resource_id as u32)
+        } else {
+            <Self::Attribute as crate::attributes::Container>::Id::default()
+        }
+    }
 
     /// Put a resource in storage,
-    /// 
+    ///
+    /// Will always override the existing value,
+    ///
     fn put_resource<T: Send + Sync + 'static>(&mut self, resource: T, resource_id: Option<u64>);
+
+    /// Take a resource from the storage target casting it back to it's original type,
+    ///
+    fn take_resource<T: Send + Sync + 'static>(&mut self, resource_id: Option<u64>) -> Option<T>;
 
     /// Get read-access to a resource owned by the storage target,
     ///
-    /// -- **Panics** -- 
-    /// 
+    /// -- **Panics** --
+    ///
     /// Will panic if the resource has a mutable borrow.
-    /// 
+    ///
     /// --
-    /// 
+    ///
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
         resource_id: Option<u64>,
     ) -> Option<Self::BorrowResource<'b, T>>;
 
     /// Get read/write access to a resource owned by the storage target,
-    /// 
-    /// -- **Panics** -- 
-    /// 
+    ///
+    /// -- **Panics** --
+    ///
     /// Will panic if the resource is already being borrowed.
-    /// 
+    ///
     /// --
-    /// 
+    ///
     fn resource_mut<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a mut self,
         resource_id: Option<u64>,
     ) -> Option<Self::BorrowMutResource<'b, T>>;
 
+    /// Returns a hashed key by Type and optional resource_id,
+    ///
+    fn key<T: 'static>(resource_id: Option<u64>) -> u64
+    where
+        Self: Sized,
+    {
+        let type_id = std::any::TypeId::of::<T>();
+        let mut hasher = std::collections::hash_map::DefaultHasher::default();
+        type_id.hash(&mut hasher);
+        size_of::<T>().hash(&mut hasher);
+
+        let mut key = hasher.finish();
+        let _key = key;
+        if let Some(resource_id) = resource_id {
+            key ^= resource_id;
+            debug_assert_eq!(_key, key ^ resource_id);
+        }
+
+        key
+    }
+
+    /// Enable entities,
+    ///
+    fn enable_entities(&mut self)
+    where
+        Self: 'static,
+    {
+        self.put_resource(EntityCounter::default(), None);
+    }
+
     /// Enables built-in dispatch queues,
-    /// 
-    /// -- **Note** -- 
-    /// 
+    ///
+    /// -- **Note** --
+    ///
     /// If not called, then `lazy_dispatch`/`lazy_dispatch_mut`/`drain_default_dispatch_queues` will be no-ops,
-    /// 
+    ///
     /// In this case `lazy_dispatch` and `lazy_dispatch_mut` must be overridden.
-    /// 
+    ///
     /// --
-    /// 
-    fn enable_dispatching(&mut self) where Self: 'static {
+    ///
+    fn enable_dispatching(&mut self)
+    where
+        Self: 'static,
+    {
         self.put_resource(DispatchQueue::<Self>::default(), None);
         self.put_resource(DispatchMutQueue::<Self>::default(), None);
     }
 
-    /// Lazily dispatch a fn w/ a reference to the storage target,
-    /// 
-    fn lazy_dispatch<F: FnOnce(&Self) + 'static + Send + Sync>(&self, exec: F) 
+    /// Lazily initialize a resource that is `Default`,
+    ///
+    fn lazy_initialize_resource<T: Default + Send + Sync + 'static>(&self, resource_id: Option<u64>)
     where
-        Self: 'static
+        Self: 'static,
+    {
+        self.lazy_dispatch_mut(move |s| s.put_resource(T::default(), resource_id));
+    }
+
+    /// Lazily dispatch a fn w/ a reference to the storage target,
+    ///
+    fn lazy_dispatch<F: FnOnce(&Self) + 'static + Send + Sync>(&self, exec: F)
+    where
+        Self: 'static,
     {
         if let Some(queue) = self.resource::<DispatchQueue<Self>>(None) {
             if let Ok(mut queue) = queue.lock() {
@@ -105,10 +193,10 @@ pub trait StorageTarget {
     }
 
     /// Lazily dispatch a fn w/ a mutable reference to the storage target,
-    /// 
-    fn lazy_dispatch_mut<F: FnOnce(&mut Self) + 'static + Send + Sync>(&self, exec: F) 
+    ///
+    fn lazy_dispatch_mut<F: FnOnce(&mut Self) + 'static + Send + Sync>(&self, exec: F)
     where
-        Self: 'static
+        Self: 'static,
     {
         if let Some(queue) = self.resource::<DispatchMutQueue<Self>>(None) {
             if let Ok(mut queue) = queue.lock() {
@@ -118,18 +206,21 @@ pub trait StorageTarget {
     }
 
     /// Drains all dispatch queues,
-    /// 
+    ///
     /// ## Notes on Default implementation
-    /// 
+    ///
     /// The default implementation will call the mutable dispatches first and then call the non-mutable dispatches after.
-    /// 
+    ///
     /// In this case if `lazy_dispatch` is called inside of `lazy_dispatch_mut`, it will immediately be called after all mutable dispatches have completed.
-    /// 
+    ///
     /// If `lazy_dispatch_mut` is called inside of `lazy_dispatch_mut`, then these dispatches will not be called until the next `drain_dispatch_queues`.
-    /// 
+    ///
     /// If overriden, this behavior cannot be gurranteed.
-    /// 
-    fn drain_dispatch_queues(&mut self) where Self: 'static {
+    ///
+    fn drain_dispatch_queues(&mut self)
+    where
+        Self: 'static,
+    {
         let mut tocall = vec![];
         {
             let queue = self.resource_mut::<DispatchMutQueue<Self>>(None);
@@ -163,5 +254,19 @@ pub trait StorageTarget {
                 call(self);
             }
         }
+    }
+
+    /// Consume the storage target returning a thread safe version,
+    /// 
+    /// This enables individual dispatchers to be created for stored resources, and for a cloneable reference to the underlying storage target
+    /// 
+    /// **Requires the `async_dispatcher` feature**
+    /// 
+    #[cfg(feature = "async_dispatcher")]
+    fn into_thread_safe(self) -> AsyncStorageTarget<Self>
+    where
+        Self: Sized,
+    {
+        AsyncStorageTarget(Arc::new(RwLock::new(self)))
     }
 }
