@@ -172,15 +172,6 @@ async fn test_simple_storage_target_resource_store() {
         assert_eq!(Some(4), res.as_deref().copied());
     }
     simple.drain_dispatch_queues();
-
-    let next = simple.create_entity();
-    println!("{next}");
-
-    let next = simple.create_entity();
-    println!("{next}");
-
-    let next = simple.create_entity();
-    println!("{next}");
 }
 
 #[cfg(feature = "async_dispatcher")]

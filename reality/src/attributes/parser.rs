@@ -112,7 +112,7 @@ impl<S: StorageTarget> AttributeParser<S> {
     pub fn add_custom(&mut self, custom_attr: impl Into<AttributeTypeParser<S>>) {
         let custom_attr = custom_attr.into();
         self.attribute_table
-            .insert(custom_attr.ident(), custom_attr);
+            .insert(custom_attr.ident().to_string(), custom_attr);
     }
 
     /// Adds a custom attribute parser,

@@ -17,7 +17,8 @@ bytemuck = "1.12.1"
 tracing = "0.1.36"
 tracing-test = "0.2.3"
 serde = { version = "1.0.144", features = ["derive"] }
-runmd = { path = "../../runmd" }
+runmd = { path = "../runmd" }
+uuid = { version = "1.4.1", features = ["v4"] }
 
 # Feature: async_dispatcher
 [dependencies.tokio]
@@ -27,6 +28,6 @@ optional = true
 
 # Feature: specs_storage_target
 [dependencies.specs]
-git = "https://github.com/amethyst/specs"
+version = "0.20.0"
 features = ["default", "derive", "shred-derive"]
 optional = true
