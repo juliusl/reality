@@ -17,7 +17,6 @@ pub use parser::Attributes;
 
 pub mod wire;
 pub mod store;
-pub mod state;
 
 pub mod compile;
 
