@@ -1,48 +1,9 @@
-cfg_specs! {
-    pub mod specs;
-}
-
-cfg_async_dispatcher! {
-    use tokio::sync::RwLock;
-
-    mod async_dispatcher;
-    pub use async_dispatcher::AsyncStorageTarget;
-    pub use async_dispatcher::Dispatcher;
-}
-
-use super::Container;
-use std::fmt::Debug;
-use std::hash::Hash;
-use std::hash::Hasher;
-use std::mem::size_of;
-use std::ops::Deref;
-use std::ops::DerefMut;
-use std::sync::Arc;
-
-pub mod simple;
-pub use simple::Simple;
-
-/// Struct to store an atomic-reference counter,
-///
-#[derive(Default, Clone)]
-struct EntityCounter(std::sync::Arc<()>);
-
-/// Type-alias for a thread safe dispatch queue,
-///
-type DispatchQueue<S> =
-    std::sync::Mutex<std::collections::VecDeque<Box<dyn FnOnce(&S) + 'static + Send + Sync>>>;
-
-/// Type-alias for a thread safe dispatch-mut queue,
-///
-type DispatchMutQueue<S> =
-    std::sync::Mutex<std::collections::VecDeque<Box<dyn FnOnce(&mut S) + 'static + Send + Sync>>>;
+use super::prelude::*;
 
 /// Trait generalizing an Entity-Component-System storage backend,
 ///
 pub trait StorageTarget {
-    /// Attribute container type,
-    ///
-    /// An attribute is a stateful single-value container w/ a name and labels.
+    /// Value container type,
     ///
     type Attribute: Container + Send + Sync + Clone + Debug;
 
@@ -58,33 +19,17 @@ pub trait StorageTarget {
     where
         Self: 'a;
 
-    /// Convert the id used by an attribute to a u64,
-    ///
-    fn entity(&self, id: <Self::Attribute as Container>::Id) -> u64;
+    /// Adds a new block to the storage target,
+    /// 
+    fn add_block(&mut self) -> () {}
 
-    /// Create a new entity,
-    ///
-    fn create_entity(&self) -> <Self::Attribute as crate::attributes::Container>::Id
-    where
-        Self: 'static,
-    {
-        if let Some(entity) = self.resource::<EntityCounter>(None) {
-            let next = entity.clone();
+    /// Returns access to a stored block,
+    /// 
+    fn block(&self) {}
 
-            let mut next_id = <Self::Attribute as crate::attributes::Container>::Id::default();
-            next_id += std::sync::Arc::strong_count(&entity.deref().0) as u32;
-
-            let resource_id = next_id - 1u32;
-
-            self.lazy_dispatch_mut(move |s| {
-                s.put_resource(next, Some(resource_id as u64));
-            });
-
-            <Self::Attribute as crate::attributes::Container>::Id::from(resource_id as u32)
-        } else {
-            <Self::Attribute as crate::attributes::Container>::Id::default()
-        }
-    }
+    /// Returns mutable access to a stored block,
+    /// 
+    fn block_mut(&mut self) {}
 
     /// Put a resource in storage,
     ///
@@ -141,15 +86,6 @@ pub trait StorageTarget {
         }
 
         key
-    }
-
-    /// Enable entities,
-    ///
-    fn enable_entities(&mut self)
-    where
-        Self: 'static,
-    {
-        self.put_resource(EntityCounter::default(), None);
     }
 
     /// Enables built-in dispatch queues,

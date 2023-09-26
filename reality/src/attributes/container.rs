@@ -7,21 +7,6 @@ use crate::{Attribute, Value};
 /// Trait for types that act as a container for a value,
 ///
 pub trait Container: Clone + Sized {
-    /// Identifier type that can be used to map and uniquely identify a container type,
-    /// 
-    type Id: std::ops::AddAssign<u32>
-        + std::ops::Sub<u32, Output = u32>
-        + From<u32>
-        + Default
-        + Ord
-        + Eq
-        + std::hash::Hash
-        + std::fmt::Debug
-        + Copy
-        + Send
-        + Sync
-        + 'static;
-
     /// Type used as labels for the container,
     ///
     type Label: std::fmt::Debug + FromStr<Err = Infallible> + AsRef<str>;
@@ -38,9 +23,9 @@ pub trait Container: Clone + Sized {
     ///
     type Committed: Clone + Sized + TryInto<Self>;
 
-    /// Creates a new container w/ id and provided type,
+    /// Create a new container w/ id and provided type,
     ///
-    fn create(id: Self::Id, ty: impl Into<Self::Label>) -> Self::Created;
+    fn create(id: u64, ty: impl Into<Self::Label>) -> Self::Created;
 
     /// Set the value of this container,
     ///
@@ -54,7 +39,7 @@ pub trait Container: Clone + Sized {
 
     /// Returns the id of this value,
     ///
-    fn id(&self) -> Self::Id;
+    fn id(&self) -> u64;
 
     /// Returns the pending value if it exists,
     ///
@@ -89,7 +74,7 @@ pub trait Container: Clone + Sized {
     /// **Note** If the name is not set, than the implementation can assume that `ty` is the name,
     ///
     fn new(
-        id: Self::Id,
+        id: u64,
         ty: impl AsRef<str>,
         name: Option<&str>,
         value: Option<Self::Value>,
@@ -119,13 +104,13 @@ pub trait Container: Clone + Sized {
     /// **Note**: Implementing this is opt-in because to allow the flexibility for a parent/child relationship between containers to exist
     ///
     #[allow(unused_variables)]
-    fn set_parent(&mut self, id: Self::Id) -> Option<Self::Id> {
+    fn set_parent(&mut self, id: u64) -> Option<u64> {
         None
     }
 
     /// Returns the parent of this container,
     ///
-    fn parent(&self) -> Option<Self::Id> {
+    fn parent(&self) -> Option<u64> {
         None
     }
 
@@ -159,8 +144,6 @@ pub trait Container: Clone + Sized {
 }
 
 impl Container for Attribute {
-    type Id = u32;
-
     type Label = Label;
 
     type Value = Value;
@@ -169,7 +152,8 @@ impl Container for Attribute {
 
     type Committed = Option<Attribute>;
 
-    fn create(id: Self::Id, ty: impl Into<Self::Label>) -> Self::Created {
+    fn create(id: u64, ty: impl Into<Self::Label>) -> Self::Created {
+        let id = id as u32;
         let ty = ty.into();
         Some(Attribute {
             id,
@@ -195,8 +179,8 @@ impl Container for Attribute {
     }
 
     #[inline]
-    fn id(&self) -> Self::Id {
-        self.id
+    fn id(&self) -> u64 {
+        self.id as u64
     }
 
     #[inline]
@@ -342,17 +326,4 @@ impl FromStr for Label {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Label(s.to_string()))
     }
-}
-
-#[test]
-fn test() {
-    let a = 99u64;
-    let b = 108u64;
-    let c = 34u64;
-    let ab = a ^ b;
-    let abc =  a ^ b ^ c;
-    println!("{:b} ^ {:b} ^ {:b} = {:b} ({})", a, b, c, abc, abc);
-
-    let _ab = abc ^ c;
-    println!("{:b} ({}) == {:b} ({})", ab, ab, _ab, _ab);
 }

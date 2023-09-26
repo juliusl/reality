@@ -252,14 +252,9 @@ impl Hash for Value {
 
 pub mod v2 {
     use std::collections::BTreeSet;
-    use std::convert::Infallible;
     use std::marker::PhantomData;
     use std::str::FromStr;
-
-    use crate::attributes::Container;
-    use crate::AsyncStorageTarget;
     use crate::AttributeType;
-    use crate::Dispatcher;
     use crate::StorageTarget;
 
     /// Struct for a value container,
@@ -423,118 +418,6 @@ pub mod v2 {
                 Err(_) => super::Value::BinaryVector(vec![]),
             };
             parser.set_value(binary);
-        }
-    }
-
-    /// Container for an attribute type w/ a dedicated dispatcher,
-    ///
-    pub struct Attribute<
-        S: StorageTarget,
-        V: AttributeType<S>
-            + Unpin
-            + Default
-            + Send
-            + Sync
-            + Clone
-            + std::fmt::Debug
-            + From<std::string::String>
-            + 'static,
-    > {
-        /// Value,
-        ///
-        value: V,
-        /// Next value,
-        ///
-        next: Option<V>,
-        /// Dispatcher to dispatch state changes for this attribute,
-        ///
-        dispatcher: Option<Dispatcher<S, V>>,
-    }
-
-    impl<
-            S: StorageTarget + 'static,
-            V: AttributeType<S>
-                + Unpin
-                + Default
-                + Send
-                + Sync
-                + Clone
-                + std::fmt::Debug
-                + From<std::string::String>
-                + 'static,
-        > Clone for Attribute<S, V>
-    {
-        fn clone(&self) -> Self {
-            Self {
-                value: self.value.clone(),
-                next: self.next.clone(),
-                dispatcher: self.dispatcher.clone(),
-            }
-        }
-    }
-
-    impl<S, V> Container for Attribute<S, V>
-    where
-        S: StorageTarget + 'static,
-        V: AttributeType<S>
-            + Unpin
-            + Default
-            + Send
-            + Sync
-            + Clone
-            + std::fmt::Debug
-            + From<std::string::String>
-            + 'static,
-        Self: TryFrom<Option<Attribute<S, V>>>
-    {
-        type Id = u32;
-
-        type Label = String;
-
-        type Value = V;
-
-        type Created = Option<Self>;
-
-        type Committed = Option<Self>;
-
-        fn create(id: Self::Id, ty: impl Into<Self::Label>) -> Self::Created {
-            todo!()
-        }
-
-        fn set_value(&mut self, value: Self::Value) -> Option<Self::Value> {
-            todo!()
-        }
-
-        fn value(&self) -> &Self::Value {
-            todo!()
-        }
-
-        fn id(&self) -> Self::Id {
-            todo!()
-        }
-
-        fn pending(&self) -> Option<&Self::Value> {
-            todo!()
-        }
-
-        fn get_label(&self, name: &str) -> Option<Self::Label> {
-            todo!()
-        }
-
-        fn set_label(&mut self, name: &str, label: impl Into<Self::Label>) -> Option<Self::Label> {
-            todo!()
-        }
-
-        fn labels(&self) -> Vec<(&str, Self::Label)> {
-            todo!()
-        }
-
-        fn edit(&mut self, value: Self::Value) {
-            todo!()
-        }
-
-        fn commit(&self) -> Self::Committed {
-            todo!()
         }
     }
 }

@@ -6,9 +6,7 @@ use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 use tokio::task::LocalSet;
 
-use super::DispatchMutQueue;
-use super::DispatchQueue;
-use super::StorageTarget;
+use super::prelude::*;
 
 /// Wrapper for a thread_safe wrapper over a storage target type,
 ///
@@ -77,6 +75,7 @@ pub struct Dispatcher<Storage: StorageTarget, T: Send + Sync + 'static> {
     /// Handles lock acquisition,
     ///
     tasks: JoinSet<()>,
+    // Unused
     _u: PhantomData<T>,
 }
 

@@ -4,10 +4,9 @@ use specs::LazyUpdate;
 use specs::shred::ResourceId;
 use specs::shred::FetchMut;
 use specs::shred::Fetch;
-use crate::Attribute;
-use crate::attributes::Container;
 
-use super::StorageTarget;
+use super::prelude::*;
+use crate::Attribute;
 
 impl StorageTarget for World {
     type Attribute = Attribute;
@@ -15,14 +14,6 @@ impl StorageTarget for World {
     type BorrowResource<'a, T: Send + Sync + 'static> = Fetch<'a, T>;
     
     type BorrowMutResource<'a, T: Send + Sync + 'static> = FetchMut<'a, T>;
-
-    fn entity(&self, id: <Self::Attribute as Container>::Id) -> u64 {
-        self.entities().entity(id).id() as u64
-    }
-
-    fn create_entity(&self) -> <Self::Attribute as Container>::Id {
-        self.entities().create().id() as u32
-    }
 
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,

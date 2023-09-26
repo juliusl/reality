@@ -22,7 +22,6 @@ impl Simple {
     pub fn new() -> Self {
         let mut simple = Self::default();
         simple.enable_dispatching();
-        simple.enable_entities();
         simple
     }
 }
@@ -34,9 +33,9 @@ impl StorageTarget for Simple {
 
     type BorrowMutResource<'a, T: Send + Sync + 'static> = RefMut<'a, T>;
 
-    fn entity(&self, id: <Self::Attribute as crate::attributes::Container>::Id) -> u64 {
-        todo!()
-    }
+    // fn entity(&self, id: <Self::Attribute as crate::attributes::Container>::Id) -> u64 {
+    //     todo!()
+    // }
 
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
