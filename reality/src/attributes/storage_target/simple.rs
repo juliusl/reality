@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::ops::DerefMut;
 
-use crate::{Attribute, StorageTarget};
+use crate::Complex;
+use crate::StorageTarget;
+use crate::Attribute;
 
 /// Simple storage target implementation,
 ///
@@ -32,11 +34,29 @@ impl StorageTarget for Simple {
     type BorrowResource<'a, T: Send + Sync + 'static> = Ref<'a, T>;
 
     type BorrowMutResource<'a, T: Send + Sync + 'static> = RefMut<'a, T>;
+    
+    cfg_async_dispatcher! {
+        type Namespace = Complex;
+    }
 
-    // fn entity(&self, id: <Self::Attribute as crate::attributes::Container>::Id) -> u64 {
-    //     todo!()
-    // }
+    cfg_not_async_dispatcher! {
+        type Namespace = Self;
+    }
 
+    fn create_namespace(&self, namespace: impl Into<String>, resource_id: Option<u64>) -> Option<Self::Namespace> {
+        #[cfg(feature="async_dispatcher")]
+        if self.resource::<Self::Namespace>(resource_id).is_some() {
+            // If the consumer of StorageTarget can and is reserving namespaces, than do not 
+            // return a namespace if one already exists
+            return None;
+        } 
+
+        let mut ns = Self::Namespace::default();
+        ns.put_resource(namespace.into(), None);
+
+        Some(ns)
+    }
+    
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
         resource_id: Option<u64>,

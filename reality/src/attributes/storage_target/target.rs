@@ -1,6 +1,6 @@
 use super::prelude::*;
 
-/// Trait generalizing an Entity-Component-System storage backend,
+/// Trait generalizing a storage target that can be used to initialize and store application resources,
 ///
 pub trait StorageTarget {
     /// Value container type,
@@ -19,17 +19,33 @@ pub trait StorageTarget {
     where
         Self: 'a;
 
-    /// Adds a new block to the storage target,
-    /// 
-    fn add_block(&mut self) -> () {}
+    /// Storage target type for handling namespaces,
+    ///
+    type Namespace: StorageTarget + 'static;
 
-    /// Returns access to a stored block,
-    /// 
-    fn block(&self) {}
+    /// Creates a new StorageTarget namespace,
+    ///
+    /// Returns None if the namespace is no-longer available (reserved) or if the storage target does not support creating `Namespace` a namespace,
+    ///
+    /// **Note**: To reserve a namespace, it must be put into this storage target as a resource.
+    ///
+    /// That implies only `Namespace` types that are `Send + Sync` can be reserved in such a manner.
+    ///
+    #[allow(unused_variables)] // Optional trait fn
+    fn create_namespace(
+        &self,
+        namespace: impl Into<String>,
+        resource_id: Option<u64>,
+    ) -> Option<Self::Namespace> {
+        None
+    }
 
-    /// Returns mutable access to a stored block,
+    /// Put a resource in storage w/ key
     /// 
-    fn block_mut(&mut self) {}
+    fn put_resource_at<T: Send + Sync + 'static>(&mut self, key: u128, resource: T) {
+        // encode ident to a resource_id
+        // store addr as a key,
+    }
 
     /// Put a resource in storage,
     ///
@@ -112,7 +128,16 @@ pub trait StorageTarget {
     where
         Self: 'static,
     {
-        self.lazy_dispatch_mut(move |s| s.put_resource(T::default(), resource_id));
+        self.lazy_put_resource(T::default(), resource_id)
+    }
+
+    /// Lazily puts a resource into the storage target
+    /// 
+    fn lazy_put_resource<T: Send + Sync + 'static>(&self, resource: T, resource_id: Option<u64>)
+    where
+        Self: 'static,
+    {
+        self.lazy_dispatch_mut(move |s| s.put_resource(resource, resource_id));
     }
 
     /// Lazily dispatch a fn w/ a reference to the storage target,
@@ -193,11 +218,11 @@ pub trait StorageTarget {
     }
 
     /// Consume the storage target returning a thread safe version,
-    /// 
+    ///
     /// This enables individual dispatchers to be created for stored resources, and for a cloneable reference to the underlying storage target
-    /// 
+    ///
     /// **Requires the `async_dispatcher` feature**
-    /// 
+    ///
     #[cfg(feature = "async_dispatcher")]
     fn into_thread_safe(self) -> AsyncStorageTarget<Self>
     where

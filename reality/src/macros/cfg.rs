@@ -29,3 +29,20 @@ macro_rules! cfg_async_dispatcher {
         )*
     };
 }
+
+
+#[macro_export]
+macro_rules! cfg_not_async_dispatcher {
+    ($($item:expr;)*) => {
+        $(
+            #[cfg(not(feature = "async_dispatcher"))]
+            $item;
+        )*
+    };
+    ($($item:item)*) => {
+        $(
+            #[cfg(not(feature = "async_dispatcher"))]
+            $item
+        )*
+    };
+}

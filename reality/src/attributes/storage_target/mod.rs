@@ -5,6 +5,7 @@ cfg_async_dispatcher! {
     pub mod async_dispatcher;
 }
 pub mod simple;
+pub mod complex;
 pub mod target;
 
 pub mod prelude {
@@ -34,7 +35,8 @@ pub mod prelude {
 
 
     cfg_async_dispatcher! {
-        pub use tokio::sync::RwLock;   
+        pub use tokio::sync::RwLock;
+        pub use super::complex::Complex;
         pub use super::async_dispatcher::AsyncStorageTarget;
         pub use super::async_dispatcher::Dispatcher;
     }

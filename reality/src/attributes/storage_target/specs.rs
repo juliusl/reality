@@ -15,6 +15,8 @@ impl StorageTarget for World {
     
     type BorrowMutResource<'a, T: Send + Sync + 'static> = FetchMut<'a, T>;
 
+    type Namespace = World;
+
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
         resource_id: Option<u64>,

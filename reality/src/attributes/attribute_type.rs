@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::str::FromStr;
 
 use super::StorageTarget;
 use super::AttributeParser;
@@ -56,6 +57,15 @@ impl<S: StorageTarget> AttributeTypeParser<S> {
     pub fn parse(&self, parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
         (self.1)(parser, content.as_ref().trim().to_string())
     }
+
+    /// Returns an attribute parser for a parseable type,
+    /// 
+    pub fn parseable<T: FromStr + Send + Sync + 'static>() -> Self 
+    where
+        S: 'static
+    {
+        Self::new::<Parsable<T>>()
+    }
 }
 
 impl<S: StorageTarget> Clone for AttributeTypeParser<S> {
@@ -67,5 +77,44 @@ impl<S: StorageTarget> Clone for AttributeTypeParser<S> {
 impl<S: StorageTarget> Debug for AttributeTypeParser<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("AttributeTypeParser").field(&self.0).finish()
+    }
+}
+
+/// Adapter for types that implement FromStr into an AttributeType,
+/// 
+pub struct Parsable<T: FromStr + Send + Sync + 'static> {
+    /// Parsed value,
+    /// 
+    value: Option<T>,
+    /// Parsing error,
+    /// 
+    error: Option<<T as FromStr>::Err>,
+}
+
+impl<S: StorageTarget + 'static, T: FromStr + Send + Sync + 'static> AttributeType<S> for Parsable<T> {
+    fn ident() -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
+    fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
+        let parsed = match content.as_ref().parse::<T>() {
+            Ok(value) => {
+                Parsable { value: Some(value), error: None::<<T as FromStr>::Err> }
+            },
+            Err(err) => {
+                Parsable { value: None::<T>, error: Some(err) }
+            },
+        };
+
+        match (parser.storage(), parsed) {
+            (Some(storage), Parsable { value: Some(value), error: None }) => {
+                storage.lazy_dispatch_mut(move |s| {
+                    s.put_resource(value, None);
+                });
+            },
+            _ => {
+
+            }
+        }
     }
 }

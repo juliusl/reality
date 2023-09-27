@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::str::FromStr;
 use std::sync::Arc;
 use tracing::debug;
 use tracing::trace;
@@ -10,6 +11,7 @@ use runmd::prelude::*;
 use super::Container;
 use super::AttributeTypeParser;
 use super::StorageTarget;
+use super::attribute_type::Parsable;
 use crate::value::v2::ValueContainer;
 use crate::AttributeType;
 
@@ -127,6 +129,44 @@ impl<S: StorageTarget> AttributeParser<S> {
         let attr = AttributeTypeParser::new_with(ident, parse);
         self.add_type(attr.clone());
         attr
+    }
+
+    /// Returns attribute parser with a parseable type, chainable
+    /// 
+    pub fn with_parseable<T: FromStr + Send + Sync + 'static>(&mut self) -> &mut Self 
+    where
+        S: 'static
+    {
+        self.add_parseable::<T>();
+        self
+    }
+
+    /// Adds an attribute type that implements FromStr,
+    /// 
+    pub fn add_parseable<T: FromStr + Send + Sync + 'static>(&mut self) 
+    where 
+        S: 'static 
+    {        
+        self.add_type(AttributeTypeParser::parseable::<bool>());
+    }
+
+    /// Returns attribute parser with a parseable type, registered to ident, chainable
+    /// 
+    pub fn with_parseable_as<T: FromStr + Send + Sync + 'static>(&mut self, ident: impl Into<String>) -> &mut Self 
+    where
+        S: 'static
+    {
+        self.add_parseable_with::<T>(ident.into());
+        self
+    }
+
+    /// Adds an attribute type that implements FromStr w/ ident
+    /// 
+    pub fn add_parseable_with<T: FromStr + Send + Sync + 'static>(&mut self, ident: impl Into<String>) 
+    where 
+        S: 'static 
+    {        
+        self.add_type_with(ident.into(), Parsable::<T>::parse);
     }
 
     /// Returns the next attribute from the stack
@@ -260,8 +300,8 @@ impl<S: StorageTarget> AttributeParser<S> {
     fn parse_attribute(&mut self) {
         let value = self.value.clone();
         let name = self.name.clone();
-        let symbol = self.symbol.take();
-        let edit = self.edit.take();
+        let symbol = Option::take(&mut self.symbol);
+        let edit = Option::take(&mut self.edit);
 
         match (name, symbol, value, edit) {
             (Some(name), Some(symbol), value, Some(edit)) => {
