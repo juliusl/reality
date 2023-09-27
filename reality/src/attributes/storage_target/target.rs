@@ -1,16 +1,5 @@
 use super::prelude::*;
 
-#[derive(Copy, Clone)]
-pub struct ResourceKey {
-    key: u128
-}
-
-impl ResourceKey {
-    pub fn get_key(&self) -> u64 {
-        u64::from_ne_bytes(*uuid::Uuid::from_u128(self.key).as_fields().3)
-    }
-}
-
 /// Trait generalizing a storage target that can be used to initialize and store application resources,
 ///
 pub trait StorageTarget {
@@ -32,7 +21,7 @@ pub trait StorageTarget {
 
     /// Storage target type for handling namespaces,
     ///
-    type Namespace: StorageTarget + 'static;
+    type Namespace: StorageTarget + Send + Sync + 'static;
 
     /// Creates a new StorageTarget namespace,
     ///
@@ -46,14 +35,14 @@ pub trait StorageTarget {
     fn create_namespace(
         &self,
         namespace: impl Into<String>,
-        resource_key: Option<ResourceKey>,
+        resource_key: Option<ResourceKey<Self::Namespace>>,
     ) -> Option<Self::Namespace> {
         None
     }
 
     /// Put a resource in storage w/ key
     /// 
-    fn put_resource_at<T: Send + Sync + 'static>(&mut self, key: ResourceKey, resource: T) {
+    fn put_resource_at<T: Send + Sync + 'static>(&mut self, key: ResourceKey<T>, resource: T) {
         // encode ident to a resource_id
         // store addr as a key,
     }
@@ -62,11 +51,11 @@ pub trait StorageTarget {
     ///
     /// Will always override the existing value,
     ///
-    fn put_resource<T: Send + Sync + 'static>(&mut self, resource: T, resource_key: Option<ResourceKey>);
+    fn put_resource<T: Send + Sync + 'static>(&mut self, resource: T, resource_key: Option<ResourceKey<T>>);
 
     /// Take a resource from the storage target casting it back to it's original type,
     ///
-    fn take_resource<T: Send + Sync + 'static>(&mut self, resource_key: Option<ResourceKey>) -> Option<T>;
+    fn take_resource<T: Send + Sync + 'static>(&mut self, resource_key: Option<ResourceKey<T>>) -> Option<T>;
 
     /// Get read-access to a resource owned by the storage target,
     ///
@@ -78,7 +67,7 @@ pub trait StorageTarget {
     ///
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
-        resource_key: Option<ResourceKey>,
+        resource_key: Option<ResourceKey<T>>,
     ) -> Option<Self::BorrowResource<'b, T>>;
 
     /// Get read/write access to a resource owned by the storage target,
@@ -91,12 +80,13 @@ pub trait StorageTarget {
     ///
     fn resource_mut<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a mut self,
-        resource_key: Option<ResourceKey>,
+        resource_key: Option<ResourceKey<T>>,
     ) -> Option<Self::BorrowMutResource<'b, T>>;
 
     /// Returns a hashed key by Type and optional resource_id,
     ///
-    fn key<T: 'static>(resource_key: Option<ResourceKey>) -> u64
+    fn key<T: Send + Sync + 'static>(
+        resource_key: Option<ResourceKey<T>>) -> u64
     where
         Self: Sized,
     {
@@ -110,7 +100,7 @@ pub trait StorageTarget {
         let mut key = hasher.finish();
         let _key = key;
         if let Some(resource_key) = resource_key {
-            let resource_id = u64::from_be_bytes(*uuid::Uuid::from_u128(resource_key.key).as_fields().3);
+            let resource_id = resource_key.key();
             key ^= resource_id;
             debug_assert_eq!(_key, key ^ resource_id);
         }
@@ -138,7 +128,7 @@ pub trait StorageTarget {
 
     /// Lazily initialize a resource that is `Default`,
     ///
-    fn lazy_initialize_resource<T: Default + Send + Sync + 'static>(&self, resource_key: Option<ResourceKey>)
+    fn lazy_initialize_resource<T: Default + Send + Sync + 'static>(&self, resource_key: Option<ResourceKey<T>>)
     where
         Self: 'static,
     {
@@ -147,7 +137,7 @@ pub trait StorageTarget {
 
     /// Lazily puts a resource into the storage target
     /// 
-    fn lazy_put_resource<T: Send + Sync + 'static>(&self, resource: T, resource_key: Option<ResourceKey>)
+    fn lazy_put_resource<T: Send + Sync + 'static>(&self, resource: T, resource_key: Option<ResourceKey<T>>)
     where
         Self: 'static,
     {

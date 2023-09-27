@@ -7,6 +7,7 @@ cfg_async_dispatcher! {
 pub mod simple;
 pub mod complex;
 pub mod target;
+pub mod resource_key;
 
 pub mod prelude {
     pub(super) use std::fmt::Debug;
@@ -31,7 +32,7 @@ pub mod prelude {
 
     pub use super::simple::Simple;
     pub use super::target::StorageTarget;
-    pub use super::target::ResourceKey;
+    pub use super::resource_key::ResourceKey;
 
     cfg_async_dispatcher! {
         pub use tokio::sync::RwLock;

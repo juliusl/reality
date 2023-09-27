@@ -47,7 +47,7 @@ impl StorageTarget for Simple {
     fn create_namespace(
         &self, 
         namespace: impl Into<String>, 
-        resource_key: Option<ResourceKey>
+        resource_key: Option<ResourceKey<Self::Namespace>>
     ) -> Option<Self::Namespace> {
         #[cfg(feature="async_dispatcher")]
         if self.resource::<Self::Namespace>(resource_key).is_some() {
@@ -64,7 +64,7 @@ impl StorageTarget for Simple {
     
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
-        resource_key: Option<ResourceKey>
+        resource_key: Option<ResourceKey<T>>
     ) -> Option<Self::BorrowResource<'b, T>> {
         let key = Self::key::<T>(resource_key);
 
@@ -83,7 +83,7 @@ impl StorageTarget for Simple {
 
     fn resource_mut<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a mut self,
-        resource_key: Option<ResourceKey>
+        resource_key: Option<ResourceKey<T>>
     ) -> Option<Self::BorrowMutResource<'b, T>> {
         let key = Self::key::<T>(resource_key);
 
@@ -103,7 +103,7 @@ impl StorageTarget for Simple {
     fn put_resource<T: Send + Sync + 'static>(
         &mut self, 
         resource: T,
-        resource_key: Option<ResourceKey>
+        resource_key: Option<ResourceKey<T>>
     ) {
         let key = Self::key::<T>(resource_key);
         self.resources.insert(key, RefCell::new(Box::new(resource)));
@@ -111,7 +111,7 @@ impl StorageTarget for Simple {
 
     fn take_resource<T: Send + Sync + 'static>(
         &mut self,
-        resource_key: Option<ResourceKey>
+        resource_key: Option<ResourceKey<T>>
     ) -> Option<T> {
         let key = Self::key::<T>(resource_key);
         let resource = self.resources.remove(&key);

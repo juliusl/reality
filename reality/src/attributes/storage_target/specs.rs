@@ -19,10 +19,10 @@ impl StorageTarget for World {
 
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
-        resource_key: Option<ResourceKey>,
+        resource_key: Option<ResourceKey<T>>
     ) -> Option<Self::BorrowResource<'b, T>> {
         if let Some(resource_key) = resource_key {
-            self.try_fetch_by_id::<T>(ResourceId::new_with_dynamic_id::<T>(resource_key.get_key()))
+            self.try_fetch_by_id::<T>(ResourceId::new_with_dynamic_id::<T>(resource_key.key()))
         } else {
             self.try_fetch::<T>()
         }
@@ -30,10 +30,10 @@ impl StorageTarget for World {
 
     fn resource_mut<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a mut self,
-        resource_key: Option<ResourceKey>,
+        resource_key: Option<ResourceKey<T>>
     ) -> Option<Self::BorrowMutResource<'b, T>> {
         if let Some(resource_key) = resource_key {
-            self.try_fetch_mut_by_id(ResourceId::new_with_dynamic_id::<T>(resource_key.get_key()))
+            self.try_fetch_mut_by_id(ResourceId::new_with_dynamic_id::<T>(resource_key.key()))
         } else {
             self.try_fetch_mut()
         }
@@ -42,10 +42,10 @@ impl StorageTarget for World {
     fn put_resource<T: Send + Sync + 'static>(
         &mut self, 
         resource: T, 
-        resource_key: Option<ResourceKey>
+        resource_key: Option<ResourceKey<T>>
     ) {
         if let Some(resource_key) = resource_key {
-            let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_key.get_key());
+            let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_key.key());
             self.insert_by_id(resource_id, resource);
         } else {
             self.insert(resource);
@@ -72,10 +72,10 @@ impl StorageTarget for World {
 
     fn take_resource<T: Send + Sync + 'static>(
         &mut self, 
-        resource_key: Option<ResourceKey>
+        resource_key: Option<ResourceKey<T>>
     ) -> Option<T> {
         if let Some(resource_key) = resource_key {
-            let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_key.get_key());
+            let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_key.key());
             self.remove_by_id(resource_id)
         } else {
             self.remove()

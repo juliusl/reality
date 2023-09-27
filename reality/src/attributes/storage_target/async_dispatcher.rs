@@ -27,7 +27,7 @@ impl<S: StorageTarget + 'static> AsyncStorageTarget<S> {
     ///
     pub async fn dispatcher<T: Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey>,
+        resource_key: Option<ResourceKey<T>>
     ) -> Dispatcher<S, T> {
         let mut disp = Dispatcher {
             storage: self.clone(),
@@ -45,7 +45,7 @@ impl<S: StorageTarget + 'static> AsyncStorageTarget<S> {
     ///
     pub async fn intialize_dispatcher<T: Default + Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey>,
+        resource_key: Option<ResourceKey<T>>
     ) -> Dispatcher<S, T> {
         let dispatcher = self.dispatcher(resource_key.clone()).await;
 
@@ -69,7 +69,7 @@ pub struct Dispatcher<Storage: StorageTarget, T: Send + Sync + 'static> {
     storage: AsyncStorageTarget<Storage>,
     /// Optional, resource_id of the resource as well as queues,
     ///
-    resource_key: Option<ResourceKey>,
+    resource_key: Option<ResourceKey<T>>,
     /// Allows tasks to be executed on the same thread,
     ///
     local: LocalSet,
@@ -110,7 +110,7 @@ macro_rules! queue {
         let _local_set_guard = local.enter();
 
         tasks.spawn_local(async move {
-            if let Some(queue) = storage.deref().read().await.resource::<$queue>(resource_id) {
+            if let Some(queue) = storage.deref().read().await.resource::<$queue>(resource_id.map(|r| r.transmute())) {
                 if let Ok(mut queue) = queue.lock() {
                     queue.push_back(Box::new($exec));
                 }
@@ -133,12 +133,12 @@ macro_rules! enable_queue {
             $(
                 let checking = storage.read().await;
                 if checking
-                    .resource::<$queue_ty>(*resource_key)
+                    .resource::<$queue_ty>(resource_key.map(|r| r.transmute()))
                     .is_none()
                 {
                     drop(checking);
                     let mut storage = storage.deref().write().await;
-                    storage.put_resource(<$queue_ty as Default>::default(), *resource_key);
+                    storage.put_resource(<$queue_ty as Default>::default(), resource_key.map(|r| r.transmute()));
                 }
             )*
         }
@@ -158,7 +158,7 @@ macro_rules! dispatch {
         let mut tocall = vec![];
         {
             let mut storage = storage.deref().write().await;
-            let queue = storage.resource_mut::<$queue_ty<$resource_ty>>(*resource_key);
+            let queue = storage.resource_mut::<$queue_ty<$resource_ty>>(resource_key.map(|r| r.transmute()));
             if let Some(queue) = queue {
                 if let Ok(mut queue) = queue.lock() {
                     while let Some(func) = queue.pop_front() {
@@ -168,7 +168,7 @@ macro_rules! dispatch {
             }
         }
         {
-            if let Some(mut resource) = storage.deref().write().await.resource_mut::<$resource_ty>(*resource_key) {
+            if let Some(mut resource) = storage.deref().write().await.resource_mut::<$resource_ty>(resource_key.map(|r| r.transmute())) {
                 for call in tocall.drain(..) {
                     call(&mut resource);
                 }

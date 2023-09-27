@@ -32,7 +32,7 @@ impl StorageTarget for Complex {
     fn put_resource<T: Send + Sync + 'static>(
         &mut self, 
         resource: T,
-        resource_key: Option<ResourceKey>
+        resource_key: Option<ResourceKey<T>>
     ) {
         let key = Self::key::<T>(resource_key);
 
@@ -41,7 +41,7 @@ impl StorageTarget for Complex {
 
     fn take_resource<T: Send + Sync + 'static>(
         &mut self,
-        resource_key: Option<ResourceKey>
+        resource_key: Option<ResourceKey<T>>
     ) -> Option<T> {
         let key = Self::key::<T>(resource_key);
         let resource = self.resources.remove(&key);
@@ -74,7 +74,7 @@ impl StorageTarget for Complex {
 
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
-        resource_key: Option<ResourceKey>
+        resource_key: Option<ResourceKey<T>>
     ) -> Option<Self::BorrowResource<'b, T>> {
         let key = Self::key::<T>(resource_key);
 
@@ -96,7 +96,7 @@ impl StorageTarget for Complex {
 
     fn resource_mut<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a mut self,
-        resource_key: Option<ResourceKey>
+        resource_key: Option<ResourceKey<T>>
     ) -> Option<Self::BorrowMutResource<'b, T>> {
         let key = Self::key::<T>(resource_key);
 
@@ -133,30 +133,31 @@ fn from_ref_mut<T: ?Sized>(r: &mut T) -> *mut T {
 #[tokio::test]
 async fn test_complex() {
     let mut complex = Complex::default();
-    complex.put_resource(0u64, None);
+    let resource_key = Some(ResourceKey::with_label("hello-complex"));
+    complex.put_resource(0u64, resource_key);
     {
-        let resource = complex.resource_mut::<u64>(None);
+        let resource = complex.resource_mut::<u64>(resource_key);
         if let Some(mut r) = resource {
             *r += 2;
         }
     }
 
     {
-        let resource = complex.resource::<u64>(None);
+        let resource = complex.resource::<u64>(resource_key);
         if let Some(r) = resource {
             println!("{r}");
         }
     }
 
     {
-        let resource = complex.resource_mut::<u64>(None);
+        let resource = complex.resource_mut::<u64>(resource_key);
         if let Some(mut r) = resource {
             *r += 2;
         }
     }
 
     {
-        let resource = complex.resource::<u64>(None);
+        let resource = complex.resource::<u64>(resource_key);
         if let Some(r) = resource {
             println!("{r}");
         }

@@ -19,6 +19,7 @@ tracing-test = "0.2.3"
 serde = { version = "1.0.144", features = ["derive"] }
 runmd = { path = "../runmd" }
 uuid = "1.4.1"
+bitflags = "2.4.0"
 
 # Feature: async_dispatcher
 [dependencies.tokio]
