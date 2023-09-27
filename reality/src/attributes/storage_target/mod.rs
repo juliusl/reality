@@ -10,7 +10,6 @@ pub mod target;
 
 pub mod prelude {
     pub(super) use std::fmt::Debug;
-    pub(super) use std::hash::Hash;
     pub(super) use std::hash::Hasher;
     pub(super) use std::mem::size_of;
     pub(super) use std::ops::Deref;
@@ -32,7 +31,7 @@ pub mod prelude {
 
     pub use super::simple::Simple;
     pub use super::target::StorageTarget;
-
+    pub use super::target::ResourceKey;
 
     cfg_async_dispatcher! {
         pub use tokio::sync::RwLock;

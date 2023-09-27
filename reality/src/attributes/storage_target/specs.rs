@@ -19,10 +19,10 @@ impl StorageTarget for World {
 
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
-        resource_id: Option<u64>,
+        resource_key: Option<ResourceKey>,
     ) -> Option<Self::BorrowResource<'b, T>> {
-        if let Some(resource_id) = resource_id {
-            self.try_fetch_by_id::<T>(ResourceId::new_with_dynamic_id::<T>(resource_id))
+        if let Some(resource_key) = resource_key {
+            self.try_fetch_by_id::<T>(ResourceId::new_with_dynamic_id::<T>(resource_key.get_key()))
         } else {
             self.try_fetch::<T>()
         }
@@ -30,18 +30,22 @@ impl StorageTarget for World {
 
     fn resource_mut<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a mut self,
-        resource_id: Option<u64>,
+        resource_key: Option<ResourceKey>,
     ) -> Option<Self::BorrowMutResource<'b, T>> {
-        if let Some(resource_id) = resource_id {
-            self.try_fetch_mut_by_id(ResourceId::new_with_dynamic_id::<T>(resource_id))
+        if let Some(resource_key) = resource_key {
+            self.try_fetch_mut_by_id(ResourceId::new_with_dynamic_id::<T>(resource_key.get_key()))
         } else {
             self.try_fetch_mut()
         }
     }
 
-    fn put_resource<T: Send + Sync + 'static>(&mut self, resource: T, resource_id: Option<u64>) {
-        if let Some(resource_id) = resource_id {
-            let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_id);
+    fn put_resource<T: Send + Sync + 'static>(
+        &mut self, 
+        resource: T, 
+        resource_key: Option<ResourceKey>
+    ) {
+        if let Some(resource_key) = resource_key {
+            let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_key.get_key());
             self.insert_by_id(resource_id, resource);
         } else {
             self.insert(resource);
@@ -66,9 +70,12 @@ impl StorageTarget for World {
         self.maintain();
     }
 
-    fn take_resource<T: Send + Sync + 'static>(&mut self, resource_id: Option<u64>) -> Option<T> {
-        if let Some(resource_id) = resource_id {
-            let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_id);
+    fn take_resource<T: Send + Sync + 'static>(
+        &mut self, 
+        resource_key: Option<ResourceKey>
+    ) -> Option<T> {
+        if let Some(resource_key) = resource_key {
+            let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_key.get_key());
             self.remove_by_id(resource_id)
         } else {
             self.remove()

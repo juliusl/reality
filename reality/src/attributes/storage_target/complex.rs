@@ -7,9 +7,9 @@ use tokio::sync::RwLockMappedWriteGuard;
 use tokio::sync::RwLockReadGuard;
 use tokio::sync::RwLock;
 use tokio::sync::RwLockWriteGuard;
-use uuid::Uuid;
 
 use crate::{StorageTarget, Attribute};
+use super::prelude::*;
 
 /// Complex thread-safe storage target using Arc and tokio::RwLock,
 /// 
@@ -29,14 +29,21 @@ impl StorageTarget for Complex {
 
     type Namespace = Complex;
 
-    fn put_resource<T: Send + Sync + 'static>(&mut self, resource: T, resource_id: Option<u64>) {
-        let key = Self::key::<T>(resource_id);
+    fn put_resource<T: Send + Sync + 'static>(
+        &mut self, 
+        resource: T,
+        resource_key: Option<ResourceKey>
+    ) {
+        let key = Self::key::<T>(resource_key);
 
         self.resources.insert(key, Arc::new(RwLock::new(Box::new(resource))));
     }
 
-    fn take_resource<T: Send + Sync + 'static>(&mut self, resource_id: Option<u64>) -> Option<T> {
-        let key = Self::key::<T>(resource_id);
+    fn take_resource<T: Send + Sync + 'static>(
+        &mut self,
+        resource_key: Option<ResourceKey>
+    ) -> Option<T> {
+        let key = Self::key::<T>(resource_key);
         let resource = self.resources.remove(&key);
 
         match resource {
@@ -67,9 +74,9 @@ impl StorageTarget for Complex {
 
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
-        resource_id: Option<u64>,
+        resource_key: Option<ResourceKey>
     ) -> Option<Self::BorrowResource<'b, T>> {
-        let key = Self::key::<T>(resource_id);
+        let key = Self::key::<T>(resource_key);
 
         if let Some(resource) = self.resources.get(&key) {
             resource.try_read().ok().and_then(|r| {
@@ -89,9 +96,9 @@ impl StorageTarget for Complex {
 
     fn resource_mut<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a mut self,
-        resource_id: Option<u64>,
+        resource_key: Option<ResourceKey>
     ) -> Option<Self::BorrowMutResource<'b, T>> {
-        let key = Self::key::<T>(resource_id);
+        let key = Self::key::<T>(resource_key);
 
         if let Some(resource) = self.resources.get(&key) {
             resource.try_write().ok().and_then(|r| {
@@ -158,7 +165,7 @@ async fn test_complex() {
 
         let p = (IDENT.as_ptr() as u64, IDENT.len());
 
-        let uuid = Uuid::from_fields(p.1 as u32, 0, 0, &p.0.to_be_bytes());
+        let uuid = uuid::Uuid::from_fields(p.1 as u32, 0, 0, &p.0.to_be_bytes());
         println!("{}", uuid);
     }
 }

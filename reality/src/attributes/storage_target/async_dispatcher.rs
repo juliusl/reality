@@ -27,11 +27,11 @@ impl<S: StorageTarget + 'static> AsyncStorageTarget<S> {
     ///
     pub async fn dispatcher<T: Send + Sync + 'static>(
         &self,
-        resource_id: Option<u64>,
+        resource_key: Option<ResourceKey>,
     ) -> Dispatcher<S, T> {
         let mut disp = Dispatcher {
             storage: self.clone(),
-            resource_id,
+            resource_key,
             local: LocalSet::new(),
             tasks: JoinSet::new(),
             _u: PhantomData,
@@ -45,16 +45,17 @@ impl<S: StorageTarget + 'static> AsyncStorageTarget<S> {
     ///
     pub async fn intialize_dispatcher<T: Default + Send + Sync + 'static>(
         &self,
-        resource_id: Option<u64>,
+        resource_key: Option<ResourceKey>,
     ) -> Dispatcher<S, T> {
-        let dispatcher = self.dispatcher(resource_id).await;
+        let dispatcher = self.dispatcher(resource_key.clone()).await;
 
         dispatcher
             .storage
             .0
+            .deref()
             .write()
             .await
-            .put_resource(T::default(), resource_id);
+            .put_resource(T::default(), resource_key);
 
         dispatcher
     }
@@ -68,7 +69,7 @@ pub struct Dispatcher<Storage: StorageTarget, T: Send + Sync + 'static> {
     storage: AsyncStorageTarget<Storage>,
     /// Optional, resource_id of the resource as well as queues,
     ///
-    resource_id: Option<u64>,
+    resource_key: Option<ResourceKey>,
     /// Allows tasks to be executed on the same thread,
     ///
     local: LocalSet,
@@ -83,7 +84,7 @@ impl<Storage: StorageTarget + 'static, T: Send + Sync + 'static> Clone for Dispa
     fn clone(&self) -> Self {
         Self {
             storage: self.storage.clone(),
-            resource_id: self.resource_id.clone(),
+            resource_key: self.resource_key.clone(),
             local: LocalSet::new(),
             tasks: JoinSet::new(),
             _u: self._u.clone(),
@@ -97,19 +98,19 @@ macro_rules! queue {
     ($rcv:ident, $queue:path, $exec:ident) => {
         let Self {
             storage: AsyncStorageTarget(storage),
-            resource_id,
+            resource_key,
             local,
             tasks,
             ..
         } = $rcv;
 
         let storage = storage.clone();
-        let resource_id = resource_id.clone();
+        let resource_id = resource_key.clone();
 
         let _local_set_guard = local.enter();
 
         tasks.spawn_local(async move {
-            if let Some(queue) = storage.read().await.resource::<$queue>(resource_id) {
+            if let Some(queue) = storage.deref().read().await.resource::<$queue>(resource_id) {
                 if let Ok(mut queue) = queue.lock() {
                     queue.push_back(Box::new($exec));
                 }
@@ -125,19 +126,19 @@ macro_rules! enable_queue {
         {
             let Self {
                 storage: AsyncStorageTarget(storage),
-                resource_id,
+                resource_key,
                 ..
             } = $rcv;
 
             $(
                 let checking = storage.read().await;
                 if checking
-                    .resource::<$queue_ty>(*resource_id)
+                    .resource::<$queue_ty>(*resource_key)
                     .is_none()
                 {
                     drop(checking);
-                    let mut storage = storage.write().await;
-                    storage.put_resource(<$queue_ty as Default>::default(), *resource_id);
+                    let mut storage = storage.deref().write().await;
+                    storage.put_resource(<$queue_ty as Default>::default(), *resource_key);
                 }
             )*
         }
@@ -150,14 +151,14 @@ macro_rules! dispatch {
     ($rcv:ident, $queue_ty:ident, $resource_ty:ident) => {
         let Self {
             storage: AsyncStorageTarget(storage),
-            resource_id,
+            resource_key,
             ..
         } = $rcv;
 
         let mut tocall = vec![];
         {
-            let mut storage = storage.write().await;
-            let queue = storage.resource_mut::<$queue_ty<$resource_ty>>(*resource_id);
+            let mut storage = storage.deref().write().await;
+            let queue = storage.resource_mut::<$queue_ty<$resource_ty>>(*resource_key);
             if let Some(queue) = queue {
                 if let Ok(mut queue) = queue.lock() {
                     while let Some(func) = queue.pop_front() {
@@ -167,7 +168,7 @@ macro_rules! dispatch {
             }
         }
         {
-            if let Some(mut resource) = storage.write().await.resource_mut::<$resource_ty>(*resource_id) {
+            if let Some(mut resource) = storage.deref().write().await.resource_mut::<$resource_ty>(*resource_key) {
                 for call in tocall.drain(..) {
                     call(&mut resource);
                 }

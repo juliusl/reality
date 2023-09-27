@@ -8,6 +8,7 @@ use std::ops::DerefMut;
 use crate::Complex;
 use crate::StorageTarget;
 use crate::Attribute;
+use super::prelude::*;
 
 /// Simple storage target implementation,
 ///
@@ -43,9 +44,13 @@ impl StorageTarget for Simple {
         type Namespace = Self;
     }
 
-    fn create_namespace(&self, namespace: impl Into<String>, resource_id: Option<u64>) -> Option<Self::Namespace> {
+    fn create_namespace(
+        &self, 
+        namespace: impl Into<String>, 
+        resource_key: Option<ResourceKey>
+    ) -> Option<Self::Namespace> {
         #[cfg(feature="async_dispatcher")]
-        if self.resource::<Self::Namespace>(resource_id).is_some() {
+        if self.resource::<Self::Namespace>(resource_key).is_some() {
             // If the consumer of StorageTarget can and is reserving namespaces, than do not 
             // return a namespace if one already exists
             return None;
@@ -59,9 +64,9 @@ impl StorageTarget for Simple {
     
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
-        resource_id: Option<u64>,
+        resource_key: Option<ResourceKey>
     ) -> Option<Self::BorrowResource<'b, T>> {
-        let key = Self::key::<T>(resource_id);
+        let key = Self::key::<T>(resource_key);
 
         if let Some(resource) = self.resources.get(&key) {
             Ref::filter_map(resource.borrow(), |r| {
@@ -78,9 +83,9 @@ impl StorageTarget for Simple {
 
     fn resource_mut<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a mut self,
-        resource_id: Option<u64>,
+        resource_key: Option<ResourceKey>
     ) -> Option<Self::BorrowMutResource<'b, T>> {
-        let key = Self::key::<T>(resource_id);
+        let key = Self::key::<T>(resource_key);
 
         if let Some(resource) = self.resources.get(&key) {
             RefMut::filter_map(resource.borrow_mut(), |r| {
@@ -95,13 +100,20 @@ impl StorageTarget for Simple {
         }
     }
 
-    fn put_resource<T: Send + Sync + 'static>(&mut self, resource: T, resource_id: Option<u64>) {
-        let key = Self::key::<T>(resource_id);
+    fn put_resource<T: Send + Sync + 'static>(
+        &mut self, 
+        resource: T,
+        resource_key: Option<ResourceKey>
+    ) {
+        let key = Self::key::<T>(resource_key);
         self.resources.insert(key, RefCell::new(Box::new(resource)));
     }
 
-    fn take_resource<T: Send + Sync + 'static>(&mut self, resource_id: Option<u64>) -> Option<T> {
-        let key = Self::key::<T>(resource_id);
+    fn take_resource<T: Send + Sync + 'static>(
+        &mut self,
+        resource_key: Option<ResourceKey>
+    ) -> Option<T> {
+        let key = Self::key::<T>(resource_key);
         let resource = self.resources.remove(&key);
 
         resource.map(|r| {

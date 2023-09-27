@@ -1,5 +1,16 @@
 use super::prelude::*;
 
+#[derive(Copy, Clone)]
+pub struct ResourceKey {
+    key: u128
+}
+
+impl ResourceKey {
+    pub fn get_key(&self) -> u64 {
+        u64::from_ne_bytes(*uuid::Uuid::from_u128(self.key).as_fields().3)
+    }
+}
+
 /// Trait generalizing a storage target that can be used to initialize and store application resources,
 ///
 pub trait StorageTarget {
@@ -35,14 +46,14 @@ pub trait StorageTarget {
     fn create_namespace(
         &self,
         namespace: impl Into<String>,
-        resource_id: Option<u64>,
+        resource_key: Option<ResourceKey>,
     ) -> Option<Self::Namespace> {
         None
     }
 
     /// Put a resource in storage w/ key
     /// 
-    fn put_resource_at<T: Send + Sync + 'static>(&mut self, key: u128, resource: T) {
+    fn put_resource_at<T: Send + Sync + 'static>(&mut self, key: ResourceKey, resource: T) {
         // encode ident to a resource_id
         // store addr as a key,
     }
@@ -51,11 +62,11 @@ pub trait StorageTarget {
     ///
     /// Will always override the existing value,
     ///
-    fn put_resource<T: Send + Sync + 'static>(&mut self, resource: T, resource_id: Option<u64>);
+    fn put_resource<T: Send + Sync + 'static>(&mut self, resource: T, resource_key: Option<ResourceKey>);
 
     /// Take a resource from the storage target casting it back to it's original type,
     ///
-    fn take_resource<T: Send + Sync + 'static>(&mut self, resource_id: Option<u64>) -> Option<T>;
+    fn take_resource<T: Send + Sync + 'static>(&mut self, resource_key: Option<ResourceKey>) -> Option<T>;
 
     /// Get read-access to a resource owned by the storage target,
     ///
@@ -67,7 +78,7 @@ pub trait StorageTarget {
     ///
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
-        resource_id: Option<u64>,
+        resource_key: Option<ResourceKey>,
     ) -> Option<Self::BorrowResource<'b, T>>;
 
     /// Get read/write access to a resource owned by the storage target,
@@ -80,15 +91,17 @@ pub trait StorageTarget {
     ///
     fn resource_mut<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a mut self,
-        resource_id: Option<u64>,
+        resource_key: Option<ResourceKey>,
     ) -> Option<Self::BorrowMutResource<'b, T>>;
 
     /// Returns a hashed key by Type and optional resource_id,
     ///
-    fn key<T: 'static>(resource_id: Option<u64>) -> u64
+    fn key<T: 'static>(resource_key: Option<ResourceKey>) -> u64
     where
         Self: Sized,
     {
+        use std::hash::Hash;
+
         let type_id = std::any::TypeId::of::<T>();
         let mut hasher = std::collections::hash_map::DefaultHasher::default();
         type_id.hash(&mut hasher);
@@ -96,7 +109,8 @@ pub trait StorageTarget {
 
         let mut key = hasher.finish();
         let _key = key;
-        if let Some(resource_id) = resource_id {
+        if let Some(resource_key) = resource_key {
+            let resource_id = u64::from_be_bytes(*uuid::Uuid::from_u128(resource_key.key).as_fields().3);
             key ^= resource_id;
             debug_assert_eq!(_key, key ^ resource_id);
         }
@@ -124,20 +138,20 @@ pub trait StorageTarget {
 
     /// Lazily initialize a resource that is `Default`,
     ///
-    fn lazy_initialize_resource<T: Default + Send + Sync + 'static>(&self, resource_id: Option<u64>)
+    fn lazy_initialize_resource<T: Default + Send + Sync + 'static>(&self, resource_key: Option<ResourceKey>)
     where
         Self: 'static,
     {
-        self.lazy_put_resource(T::default(), resource_id)
+        self.lazy_put_resource(T::default(), resource_key)
     }
 
     /// Lazily puts a resource into the storage target
     /// 
-    fn lazy_put_resource<T: Send + Sync + 'static>(&self, resource: T, resource_id: Option<u64>)
+    fn lazy_put_resource<T: Send + Sync + 'static>(&self, resource: T, resource_key: Option<ResourceKey>)
     where
         Self: 'static,
     {
-        self.lazy_dispatch_mut(move |s| s.put_resource(resource, resource_id));
+        self.lazy_dispatch_mut(move |s| s.put_resource(resource, resource_key));
     }
 
     /// Lazily dispatch a fn w/ a reference to the storage target,
