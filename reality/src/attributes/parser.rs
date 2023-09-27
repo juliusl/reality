@@ -154,7 +154,8 @@ impl<S: StorageTarget> AttributeParser<S> {
     /// 
     pub fn with_parseable_as<T: FromStr + Send + Sync + 'static>(&mut self, ident: impl Into<String>) -> &mut Self 
     where
-        S: 'static
+        S: 'static,
+        <T as FromStr>::Err: Send + Sync + 'static
     {
         self.add_parseable_with::<T>(ident.into());
         self
@@ -164,7 +165,8 @@ impl<S: StorageTarget> AttributeParser<S> {
     /// 
     pub fn add_parseable_with<T: FromStr + Send + Sync + 'static>(&mut self, ident: impl Into<String>) 
     where 
-        S: 'static 
+        S: 'static,
+        <T as FromStr>::Err: Send + Sync + 'static
     {        
         self.add_type_with(ident.into(), Parsable::<T>::parse);
     }

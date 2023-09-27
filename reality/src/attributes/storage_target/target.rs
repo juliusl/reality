@@ -1,3 +1,7 @@
+use std::str::FromStr;
+
+use crate::{Handler, Callback, CallbackMut};
+
 use super::prelude::*;
 
 /// Trait generalizing a storage target that can be used to initialize and store application resources,
@@ -41,7 +45,7 @@ pub trait StorageTarget {
     }
 
     /// Put a resource in storage w/ key
-    /// 
+    ///
     fn put_resource_at<T: Send + Sync + 'static>(&mut self, key: ResourceKey<T>, resource: T) {
         // encode ident to a resource_id
         // store addr as a key,
@@ -51,11 +55,18 @@ pub trait StorageTarget {
     ///
     /// Will always override the existing value,
     ///
-    fn put_resource<T: Send + Sync + 'static>(&mut self, resource: T, resource_key: Option<ResourceKey<T>>);
+    fn put_resource<T: Send + Sync + 'static>(
+        &mut self,
+        resource: T,
+        resource_key: Option<ResourceKey<T>>,
+    );
 
     /// Take a resource from the storage target casting it back to it's original type,
     ///
-    fn take_resource<T: Send + Sync + 'static>(&mut self, resource_key: Option<ResourceKey<T>>) -> Option<T>;
+    fn take_resource<T: Send + Sync + 'static>(
+        &mut self,
+        resource_key: Option<ResourceKey<T>>,
+    ) -> Option<T>;
 
     /// Get read-access to a resource owned by the storage target,
     ///
@@ -85,8 +96,7 @@ pub trait StorageTarget {
 
     /// Returns a hashed key by Type and optional resource_id,
     ///
-    fn key<T: Send + Sync + 'static>(
-        resource_key: Option<ResourceKey<T>>) -> u64
+    fn key<T: Send + Sync + 'static>(resource_key: Option<ResourceKey<T>>) -> u64
     where
         Self: Sized,
     {
@@ -128,17 +138,22 @@ pub trait StorageTarget {
 
     /// Lazily initialize a resource that is `Default`,
     ///
-    fn lazy_initialize_resource<T: Default + Send + Sync + 'static>(&self, resource_key: Option<ResourceKey<T>>)
-    where
+    fn lazy_initialize_resource<T: Default + Send + Sync + 'static>(
+        &self,
+        resource_key: Option<ResourceKey<T>>,
+    ) where
         Self: 'static,
     {
         self.lazy_put_resource(T::default(), resource_key)
     }
 
     /// Lazily puts a resource into the storage target
-    /// 
-    fn lazy_put_resource<T: Send + Sync + 'static>(&self, resource: T, resource_key: Option<ResourceKey<T>>)
-    where
+    ///
+    fn lazy_put_resource<T: Send + Sync + 'static>(
+        &self,
+        resource: T,
+        resource_key: Option<ResourceKey<T>>,
+    ) where
         Self: 'static,
     {
         self.lazy_dispatch_mut(move |s| s.put_resource(resource, resource_key));
@@ -233,5 +248,14 @@ pub trait StorageTarget {
         Self: Sized,
     {
         AsyncStorageTarget(Arc::new(RwLock::new(self)))
+    }
+
+    /// Adds a callback as a resource,
+    /// 
+    fn add_callback<Arg: Send + Sync + 'static, H: Handler<Self, Arg>>(&mut self, resource_key: Option<ResourceKey<Callback<Self, Arg>>>)
+    where
+        Self: Sized + 'static,
+    {
+        self.put_resource(Callback::new::<H>(), resource_key)
     }
 }

@@ -4,6 +4,9 @@ use std::hash::Hasher;
 
 pub use attribute_type::AttributeType;
 pub use attribute_type::AttributeTypeParser;
+pub use attribute_type::Handler;
+pub use attribute_type::Callback;
+pub use attribute_type::CallbackMut;
 
 mod storage_target;
 pub use storage_target::prelude::*;

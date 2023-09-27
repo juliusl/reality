@@ -181,6 +181,18 @@ impl<T: Send + Sync + 'static> From<uuid::Uuid> for ResourceKey<T> {
     }
 }
 
+impl<T: Send + Sync + 'static> TryFrom<Option<&'static str>> for ResourceKey<T> {
+    type Error = Option<ResourceKey<T>>;
+
+    fn try_from(value: Option<&'static str>) -> Result<Self, Self::Error> {
+        if let Some(value) = value {
+            Ok(ResourceKey::with_label(value))
+        } else {
+            Err(None)
+        }
+    }
+}
+
 impl<T: Send + Sync + 'static> Copy for ResourceKey<T> {}
 
 impl<T: Send + Sync + 'static> Clone for ResourceKey<T> {
