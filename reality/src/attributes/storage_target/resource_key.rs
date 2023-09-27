@@ -1,5 +1,7 @@
 use core::slice;
-use std::{collections::hash_map::DefaultHasher, hash::Hasher, marker::PhantomData};
+use std::hash::Hasher;
+use std::marker::PhantomData;
+use std::collections::hash_map::DefaultHasher;
 
 /// Struct containing properties of a resource key,
 ///
@@ -9,17 +11,6 @@ pub struct ResourceKey<T: Send + Sync + 'static> {
     _t: PhantomData<T>,
 }
 
-impl<T: Send + Sync + 'static> Copy for ResourceKey<T> {}
-
-impl<T: Send + Sync + 'static> Clone for ResourceKey<T> {
-    fn clone(&self) -> Self {
-        Self {
-            data: self.data.clone(),
-            _t: self._t.clone(),
-        }
-    }
-}
-
 impl<T: Send + Sync + 'static> ResourceKey<T> {
     /// Creates a new resource-key for a type,
     ///
@@ -27,7 +18,12 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         let type_key = Self::type_key();
         let (sizes, flags) = Self::type_sizes();
 
-        uuid::Uuid::from_fields(sizes, 0, flags.bits(), &type_key.to_ne_bytes()).into()
+        uuid::Uuid::from_fields(
+            sizes, 
+            0, 
+            flags.bits(), 
+            &type_key.to_ne_bytes()
+        ).into()
     }
 
     /// Creates a new resource-key deriving w/ associated label,
@@ -40,12 +36,17 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
 
         let (sizes, flags) = Self::label_sizes(label);
 
-        uuid::Uuid::from_fields(sizes, 0, flags.bits(), &key.to_ne_bytes()).into()
+        uuid::Uuid::from_fields(
+            sizes, 
+            0, 
+            flags.bits(), 
+            &key.to_ne_bytes()
+        ).into()
     }
 
     /// Transmute a resource-key to a different resource key type, 
     /// 
-    /// If a label was set, transfers the label to the new key.
+    /// If a label was set, transfers the label to the new key, otherwise just creates a new key.
     /// 
     pub fn transmute<B: Send + Sync + 'static>(&self) -> ResourceKey<B> {
         if let Some((key, len)) = self.label_parts() {
@@ -76,7 +77,6 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
             unsafe {
                 let slice = slice::from_raw_parts(key, len);
                 let str = std::str::from_utf8(slice);
-
                 str.ok()
             }
         } else {
@@ -90,11 +90,6 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         if !self.flags().contains(ResourceKeyFlags::WITH_LABEL) {
             None
         } else {
-            let type_key = Self::type_key();
-            println!("-- {}", type_key);
-
-            let type_key = Self::type_key();
-            println!("-- {}", type_key);
             let key = self.key() ^ Self::type_key();
 
             let len = if self
@@ -186,6 +181,17 @@ impl<T: Send + Sync + 'static> From<uuid::Uuid> for ResourceKey<T> {
     }
 }
 
+impl<T: Send + Sync + 'static> Copy for ResourceKey<T> {}
+
+impl<T: Send + Sync + 'static> Clone for ResourceKey<T> {
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+            _t: self._t.clone(),
+        }
+    }
+}
+
 bitflags::bitflags! {
     struct ResourceKeyFlags: u16 {
         const WITH_LABEL = 1;
@@ -199,11 +205,9 @@ fn test_resource_key() {
     struct Test;
 
     let id = std::any::TypeId::of::<Test>();
-
     println!("{:x}", std::ptr::addr_of!(id) as u64);
     println!("{:?}", std::any::type_name::<Test>().as_ptr());
 
     let key = ResourceKey::<Test>::with_label("test_label");
-
     println!("{:?}", key.label());
 }
