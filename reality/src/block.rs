@@ -1,3 +1,5 @@
+use tokio::task::JoinHandle;
+
 use crate::{AttributeTypeParser, StorageTarget};
 
 /// Struct containing all attributes,
@@ -5,38 +7,27 @@ use crate::{AttributeTypeParser, StorageTarget};
 pub struct Block {}
 
 pub trait BlockObject<Storage: StorageTarget> {
-    /// Return a list of properties this block object can define,
-    ///
+    /// Return a list of properties that can be defined w/ this object,
+    /// 
     fn properties() -> Vec<AttributeTypeParser<Storage>>;
+
+    /// Allows for a block object to be loaded as an extension,
+    /// 
+    #[cfg(feature = "async_dispatcher")]
+    fn load_async() -> Result<JoinHandle<Self>, Self>
+    where
+        Self: Sized;
 }
 
 impl<Storage: StorageTarget> BlockObject<Storage> for () {
     fn properties() -> Vec<AttributeTypeParser<Storage>> {
-        
-        let b = "".parse::<bool>();
-
-        vec![
-            AttributeTypeParser::new_with("bool", |parser, input| {
-                if let Some(storage) = parser.storage() {
-                }
-            })]
-    }
-}
-
-impl<S: StorageTarget + 'static> crate::AttributeType<S> for Block {
-    fn ident() -> &'static str {
-        todo!()
+        vec![]
     }
 
-    fn parse(parser: &mut crate::AttributeParser<S>, content: impl AsRef<str>) {
-        // Each attribute in the block can add extensions they support
-        // Extensions share the same storage target
-        // Attributes do not share storage targets w/ other attributes
-        // Blocks can access all storage targets
-
-        // First, parse content and if successful, editable properties
-
-        // Then, add parsers for any properties this type can parse
-        parser.with_parseable_as::<bool>("debug");
+    fn load_async() -> Result<JoinHandle<Self>, Self>
+    where
+        Self: Sized,
+    {
+        Err(())
     }
 }

@@ -10,13 +10,6 @@ pub mod target;
 pub mod resource_key;
 
 pub mod prelude {
-    pub(super) use std::fmt::Debug;
-    pub(super) use std::hash::Hasher;
-    pub(super) use std::mem::size_of;
-    pub(super) use std::ops::Deref;
-    pub(super) use std::ops::DerefMut;
-    pub(super) use std::sync::Arc;
-    
     pub(super) use crate::attributes::Container;
 
     /// Type-alias for a thread safe dispatch queue,
@@ -32,6 +25,7 @@ pub mod prelude {
 
     pub use super::simple::Simple;
     pub use super::target::StorageTarget;
+    pub use super::target::StorageTargetCallbackProvider;
     pub use super::resource_key::ResourceKey;
 
     cfg_async_dispatcher! {

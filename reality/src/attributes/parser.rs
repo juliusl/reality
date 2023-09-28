@@ -11,7 +11,9 @@ use runmd::prelude::*;
 use super::Container;
 use super::AttributeTypeParser;
 use super::StorageTarget;
-use super::attribute_type::Parsable;
+use super::attribute_type::OnParseField;
+use super::attribute_type::ParsableField;
+use super::storage_target::target::StorageTargetCallbackProvider;
 use crate::value::v2::ValueContainer;
 use crate::AttributeType;
 
@@ -133,42 +135,44 @@ impl<S: StorageTarget> AttributeParser<S> {
 
     /// Returns attribute parser with a parseable type, chainable
     /// 
-    pub fn with_parseable<T: FromStr + Send + Sync + 'static>(&mut self) -> &mut Self 
+    pub fn with_parseable<const FIELD_OFFSET: usize, Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static, T: FromStr + Send + Sync + 'static>(&mut self) -> &mut Self 
     where
-        S: 'static
+        S: StorageTargetCallbackProvider + Send + Sync + 'static,
+        <T as FromStr>::Err: Send + Sync + 'static,
     {
-        self.add_parseable::<T>();
+        self.add_parseable::<FIELD_OFFSET, Owner, T>();
         self
     }
 
     /// Adds an attribute type that implements FromStr,
     /// 
-    pub fn add_parseable<T: FromStr + Send + Sync + 'static>(&mut self) 
+    pub fn add_parseable<const FIELD_OFFSET: usize, Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static, T: FromStr + Send + Sync + 'static>(&mut self) 
     where 
-        S: 'static 
+        S: StorageTargetCallbackProvider + Send + Sync + 'static,
+        <T as FromStr>::Err: Send + Sync + 'static,
     {        
-        self.add_type(AttributeTypeParser::parseable::<bool>());
+        self.add_type(AttributeTypeParser::parseable::<FIELD_OFFSET, Owner, T>());
     }
 
     /// Returns attribute parser with a parseable type, registered to ident, chainable
     /// 
-    pub fn with_parseable_as<T: FromStr + Send + Sync + 'static>(&mut self, ident: impl Into<String>) -> &mut Self 
+    pub fn with_parseable_as<const FIELD_OFFSET: usize, Owner: OnParseField<FIELD_OFFSET,T> + Send + Sync + 'static, T: FromStr + Send + Sync + 'static>(&mut self, ident: impl Into<String>) -> &mut Self 
     where
-        S: 'static,
+        S: StorageTargetCallbackProvider + Send + Sync + 'static,
         <T as FromStr>::Err: Send + Sync + 'static
     {
-        self.add_parseable_with::<T>(ident.into());
+        self.add_parseable_with::<FIELD_OFFSET, Owner, T>(ident.into());
         self
     }
 
     /// Adds an attribute type that implements FromStr w/ ident
     /// 
-    pub fn add_parseable_with<T: FromStr + Send + Sync + 'static>(&mut self, ident: impl Into<String>) 
+    pub fn add_parseable_with<const FIELD_OFFSET: usize, Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static, T: FromStr + Send + Sync + 'static>(&mut self, ident: impl Into<String>) 
     where 
-        S: 'static,
+        S: StorageTargetCallbackProvider + Send + Sync + 'static,
         <T as FromStr>::Err: Send + Sync + 'static
-    {        
-        self.add_type_with(ident.into(), Parsable::<T>::parse);
+    {   
+        self.add_type_with(ident.into(), ParsableField::<FIELD_OFFSET, Owner, T>::parse);
     }
 
     /// Returns the next attribute from the stack
@@ -324,7 +328,7 @@ impl<S: StorageTarget> AttributeParser<S> {
 }
 
 #[runmd::prelude::async_trait]
-impl<S: StorageTarget<Attribute = crate::Attribute> + Send + Sync + 'static> ExtensionLoader for super::AttributeParser<S> {
+impl<S: StorageTarget<Attribute = crate::Attribute> + StorageTargetCallbackProvider + Send + Sync + 'static> ExtensionLoader for super::AttributeParser<S> {
     async fn load_extension(&self, extension: &str, input: Option<&str>) -> Option<BoxedNode> {
         let mut parser = self.clone();
 
@@ -384,7 +388,7 @@ impl<S: StorageTarget<Attribute = crate::Attribute> + Send + Sync + 'static> Ext
     }
 }
 
-impl<S: StorageTarget<Attribute = crate::Attribute> + Send + Sync + 'static> Node for super::AttributeParser<S> {
+impl<S: StorageTarget<Attribute = crate::Attribute> + StorageTargetCallbackProvider + Send + Sync + 'static> Node for super::AttributeParser<S> {
     fn set_info(&mut self, node_info: NodeInfo, _block_info: BlockInfo) {
         if self.id == 0 {
             if let Some(parent) = node_info.parent_idx.as_ref() {

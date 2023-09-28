@@ -217,7 +217,7 @@ async fn test_simple_async_dispatcher() {
         .to_lowercase()
     );
 
-    let simple = Simple::new().into_thread_safe();
+    let simple = Complex::default().into_thread_safe();
 
     // Test initalizing a resource dispatcher and queueing dispatches
     let mut dispatcher = simple.intialize_dispatcher::<(u64, u64)>(None).await;
@@ -238,21 +238,21 @@ async fn test_simple_async_dispatcher() {
 
     // Test that the queued dispatch executed
     {
-        let res = simple.0.read().await;
+        let res = simple.storage.read().await;
         let res = res.resource::<(u64, u64)>(None);
         assert_eq!(Some((1, 2)), res.as_deref().copied());
     }
 
     // Test that we can remove the resource
     {
-        let mut res = simple.0.write().await;
+        let mut res = simple.storage.write().await;
         let res = res.take_resource::<(u64, u64)>(None);
         assert_eq!(Some((1, 2)), res);
     }
 
     // Test that the resource was removed
     {
-        let res = simple.0.read().await;
+        let res = simple.storage.read().await;
         let res = res.resource::<(u64, u64)>(None);
         assert_eq!(None, res.as_deref().copied());
     }

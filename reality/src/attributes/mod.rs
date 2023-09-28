@@ -1,14 +1,13 @@
 mod attribute_type;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
 
 pub use attribute_type::AttributeType;
 pub use attribute_type::AttributeTypeParser;
-pub use attribute_type::Handler;
 pub use attribute_type::Callback;
 pub use attribute_type::CallbackMut;
+pub use attribute_type::Handler;
 
 mod storage_target;
+use reality_derive::AttributeType;
 pub use storage_target::prelude::*;
 
 mod container;
@@ -17,26 +16,15 @@ pub use container::Container;
 mod parser;
 pub use parser::AttributeParser;
 
-pub struct Test {
+use self::attribute_type::OnParseField;
+
+#[derive(AttributeType)]
+pub struct Test<T: Send + Sync + 'static> {
+    /// Name for test,
+    /// 
     name: String,
-}
-
-impl<S: StorageTarget<Namespace = Complex> + 'static> AttributeType<S> for Test {
-    fn ident() -> &'static str {
-        "test"
-    }
-
-    fn parse(parser: &mut AttributeParser<S>, _: impl AsRef<str>) {
-        parser.add_parseable_with::<String>("name");
-
-        if let Some(storage) = parser.storage() {
-            if let Some(namespace) =
-                storage.create_namespace(<Test as AttributeType<S>>::ident(), None)
-            {
-                let thread_safe = namespace.into_thread_safe();
-
-                storage.lazy_put_resource(thread_safe, None);
-            }
-        }
-    }
+    /// Value 
+    /// 
+    #[reality(ignore)]
+    _value: T,
 }

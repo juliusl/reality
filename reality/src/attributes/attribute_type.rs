@@ -1,31 +1,33 @@
 use std::fmt::Debug;
-use std::ops::Deref;
+use std::marker::PhantomData;
+use std::ops::DerefMut;
 use std::str::FromStr;
 
-use super::StorageTarget;
+use super::storage_target::target::StorageTargetCallbackProvider;
 use super::AttributeParser;
+use super::StorageTarget;
 
 /// Trait to implement a type as an AttributeType,
-/// 
+///
 pub trait AttributeType<S: StorageTarget> {
     /// Identifier of the attribute type,
-    /// 
+    ///
     /// This identifier will be used by runmd to load this type
-    /// 
+    ///
     fn ident() -> &'static str;
 
     /// Parse content received by the runmd node into state w/ an attribute parser,
     ///
     /// The attribute parser will be given access to the storage target for the block this
     /// attribute declaration belongs to.
-    /// 
+    ///
     fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>);
 }
 
 /// Struct for a concrete conversion of a type that implements AttributeType,
-/// 
+///
 /// Allows the parse function to be stored and recalled
-/// 
+///
 pub struct AttributeTypeParser<S: StorageTarget>(
     /// Identifier
     String,
@@ -34,8 +36,8 @@ pub struct AttributeTypeParser<S: StorageTarget>(
 );
 
 impl<S: StorageTarget> AttributeTypeParser<S> {
-    /// Creates a new parser 
-    /// 
+    /// Creates a new parser
+    ///
     pub fn new<A>() -> Self
     where
         A: AttributeType<S>,
@@ -52,21 +54,25 @@ impl<S: StorageTarget> AttributeTypeParser<S> {
     pub fn ident(&self) -> &str {
         self.0.as_str()
     }
+}
 
+impl<S: StorageTargetCallbackProvider> AttributeTypeParser<S> {
     /// Executes the stored parse function,
-    /// 
+    ///
     pub fn parse(&self, parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
         (self.1)(parser, content.as_ref().trim().to_string())
     }
 
     /// Returns an attribute parser for a parseable type,
-    /// 
-    pub fn parseable<T: FromStr + Send + Sync + 'static>() -> Self 
+    ///
+    pub fn parseable<const IDX: usize, Owner, T>() -> Self
     where
-        S: 'static,
-        <T as FromStr>::Err: Send + Sync + 'static
+        S: Send + Sync + 'static,
+        <T as FromStr>::Err: Send + Sync + 'static,
+        Owner: OnParseField<IDX, T> + Send + Sync + 'static,
+        T: FromStr + Send + Sync + 'static,
     {
-        Self::new::<Parsable<T>>()
+        Self::new::<ParsableField<IDX, Owner, T>>()
     }
 }
 
@@ -83,140 +89,194 @@ impl<S: StorageTarget> Debug for AttributeTypeParser<S> {
 }
 
 /// Adapter for types that implement FromStr into an AttributeType,
-/// 
-pub struct Parsable<T: FromStr + Send + Sync + 'static> {
+///
+pub struct ParsableField<const FIELD_OFFSET: usize, Owner, T>
+where
+    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
+    T: FromStr + Send + Sync + 'static,
+{
     /// Optional, label for use w/ resource keys
-    /// 
+    ///
     label: Option<&'static str>,
     /// Parsed value,
-    /// 
+    ///
     value: Option<T>,
     /// Parsing error,
-    /// 
+    ///
     error: Option<<T as FromStr>::Err>,
+    /// Called when this field is parsed successfully and the owner exists,
+    ///
+    _owner: PhantomData<Owner>,
 }
 
-impl<S: StorageTarget + 'static, T: FromStr + Send + Sync + 'static> AttributeType<S> for Parsable<T> 
+impl<const FIELD_OFFSET: usize, Owner, S, T> AttributeType<S> for ParsableField<FIELD_OFFSET, Owner, T>
 where
-    <T as FromStr>::Err: Send + Sync + 'static
+    <T as FromStr>::Err: Send + Sync + 'static,
+    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
+    S: StorageTargetCallbackProvider + Send + Sync + 'static,
+    T: FromStr + Send + Sync + 'static,
 {
     fn ident() -> &'static str {
-        std::any::type_name::<Self>()
+        Owner::field_name()
     }
 
     fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
+        let label = Some(<Self as AttributeType<S>>::ident());
+
         let parsed = match content.as_ref().parse::<T>() {
-            Ok(value) => {
-                Parsable { label: None, value: Some(value), error: None::<<T as FromStr>::Err> }
+            Ok(value) => ParsableField {
+                label,
+                value: Some(value),
+                error: None::<<T as FromStr>::Err>,
+                _owner: PhantomData::<Owner>,
             },
-            Err(err) => {
-                Parsable { label: None, value: None::<T>, error: Some(err) }
+            Err(err) => ParsableField {
+                label,
+                value: None::<T>,
+                error: Some(err),
+                _owner: PhantomData,
             },
         };
 
         match (parser.storage(), parsed) {
-            (Some(storage), Parsable { value: Some(value), error: None, label}) => {
+            (
+                Some(storage),
+                ParsableField {
+                    value: Some(value),
+                    error: None,
+                    ..
+                },
+            ) => {
                 storage.lazy_dispatch_mut(move |s| {
-                    s.put_resource(value, label.try_into().ok());
+                    if let Some(mut owner) = s.resource_mut::<Owner>(None) {
+                        owner.deref_mut().on_parse(value);
+                    }
                 });
-            },
-            (Some(storage), Parsable { value: None, error: Some(error), label }) => {
-                if let Some(callback) = storage.resource::<CallbackMut<S, <T as FromStr>::Err>>(label.try_into().ok()) {
-                    let callback = callback.deref().clone();
-                    storage.lazy_dispatch_mut(move |s| {
-                        callback.handle(s, error);
-                    })
-                } else if let Some(callback) = storage.resource::<Callback<S, <T as FromStr>::Err>>(label.try_into().ok()) {
-                    let callback = callback.deref().clone();
-                    storage.lazy_dispatch(move |s| {
-                        callback.handle(s, error);
-                    })
+            }
+            (
+                Some(storage),
+                ParsableField {
+                    value: None,
+                    error: Some(error),
+                    label,
+                    ..
+                },
+            ) => {
+                type ParserError<T> = <T as FromStr>::Err;
+
+                if let Some(cb) = storage.callback_mut::<ParserError<T>>(label.try_into().ok()) {
+                    storage.lazy_callback_mut(cb, error)
+                } else if let Some(cb) = storage.callback::<ParserError<T>>(label.try_into().ok()) {
+                    storage.lazy_callback(cb, error)
                 }
             }
-            _ => {
-
-            }
+            _ => {}
         }
     }
 }
 
 /// Helper trait for constructing concrete callback types,
-/// 
+///
 pub trait Handler<S: StorageTarget + 'static, Arg: Send + Sync + 'static> {
     /// Handler function w/ a mutable reference to storage,
-    /// 
+    ///
     fn handle_mut(storage: &mut S, arg: Arg);
 
     /// Handler function w/ borrowed access to storage,
-    /// 
+    ///
     fn handle(storage: &S, arg: Arg);
 }
 
-/// Struct wrapping a handler that can be treated as a resource,
+/// Trait to allow for deriving an AttributeType implementation w/ each callback as a seperate resource,
 /// 
-pub struct CallbackMut<S: StorageTarget + 'static, Arg: Send + Sync + 'static> {
-    handler: fn(&mut S, Arg)
+pub trait OnParseField<const FIELD_OFFSET: usize, T: FromStr + Send + Sync + 'static> {
+    /// Name of the field,
+    ///
+    fn field_name() -> &'static str;
+
+    /// Function called when a value is parsed correctly,
+    ///
+    fn on_parse(&mut self, value: T);
 }
 
-impl<S: StorageTarget + 'static, Arg: Send + Sync + 'static> CallbackMut<S, Arg> {
+/// Struct wrapping a handler that can be treated as a resource,
+///
+pub struct CallbackMut<S, Arg>
+where
+    S: StorageTarget + 'static,
+    Arg: Send + Sync + 'static,
+{
+    handler: fn(&mut S, Arg),
+}
+
+impl<S, Arg> CallbackMut<S, Arg>
+where
+    S: StorageTarget + 'static,
+    Arg: Send + Sync + 'static,
+{
     /// Creates a new callback,
-    /// 
+    ///
     pub fn new<H: Handler<S, Arg>>() -> Self {
-        Self { handler: H::handle_mut }
+        Self {
+            handler: H::handle_mut,
+        }
     }
 
     /// Calls the inner handler,
-    /// 
+    ///
     pub fn handle(&self, s: &mut S, arg: Arg) {
         (self.handler)(s, arg)
     }
 }
 
-impl<S: StorageTarget + 'static, Arg: Send + Sync + 'static> Clone for CallbackMut<S, Arg> {
+impl<S, Arg> Clone for CallbackMut<S, Arg>
+where
+    S: StorageTarget + 'static,
+    Arg: Send + Sync + 'static,
+{
     fn clone(&self) -> Self {
-        Self { handler: self.handler.clone() }
+        Self {
+            handler: self.handler.clone(),
+        }
     }
 }
 
 /// Struct wrapping a handler that can be treated as a resource,
-/// 
-pub struct Callback<S: StorageTarget + 'static, Arg: Send + Sync + 'static> {
-    handler: fn(&S, Arg)
+///
+pub struct Callback<S, Arg>
+where
+    S: StorageTarget + 'static,
+    Arg: Send + Sync + 'static,
+{
+    handler: fn(&S, Arg),
 }
 
-impl<S: StorageTarget + 'static, Arg: Send + Sync + 'static> Callback<S, Arg> {
+impl<S, Arg> Callback<S, Arg>
+where
+    S: StorageTarget + 'static,
+    Arg: Send + Sync + 'static,
+{
     /// Creates a new callback,
-    /// 
+    ///
     pub fn new<H: Handler<S, Arg>>() -> Self {
         Self { handler: H::handle }
     }
 
     /// Calls the inner handler,
-    /// 
+    ///
     pub fn handle(&self, s: &S, arg: Arg) {
         (self.handler)(s, arg)
     }
 }
 
-impl<S: StorageTarget + 'static, Arg: Send + Sync + 'static> Clone for Callback<S, Arg> {
+impl<S, Arg> Clone for Callback<S, Arg>
+where
+    S: StorageTarget + 'static,
+    Arg: Send + Sync + 'static,
+{
     fn clone(&self) -> Self {
-        Self { handler: self.handler.clone() }
-    }
-}
-
-#[test]
-fn test_err_type() {
-    struct Test; 
-
-    impl<S: StorageTarget + 'static> Handler<S, <u64 as FromStr>::Err> for Test {
-        fn handle_mut(storage: &mut S, arg: <u64 as FromStr>::Err) {
-            todo!()
-        }
-
-        fn handle(storage: &S, arg: <u64 as FromStr>::Err) {
-            todo!()
+        Self {
+            handler: self.handler.clone(),
         }
     }
-
-    let callback = CallbackMut::<crate::Simple, std::num::ParseIntError>::new::<Test>();
 }

@@ -1,10 +1,7 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
-
-use tokio::pin;
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
-use tokio::task::LocalSet;
 
 use super::prelude::*;
 
@@ -12,27 +9,32 @@ use super::prelude::*;
 ///
 /// Provides a `dispatcher<T>` fn that enables and returns a dispatching queue for a stored resource.
 ///
-pub struct AsyncStorageTarget<S: StorageTarget>(pub Arc<RwLock<S>>);
+pub struct AsyncStorageTarget<S: StorageTarget> {
+    pub storage: Arc<RwLock<S>>,
+    pub runtime: Option<Arc<tokio::runtime::Runtime>>,
+}
 
 impl<S: StorageTarget> Clone for AsyncStorageTarget<S> {
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self {
+            storage: self.storage.clone(),
+            runtime: self.runtime.clone(),
+        }
     }
 }
 
-impl<S: StorageTarget + 'static> AsyncStorageTarget<S> {
+impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
     /// Returns a dispatcher for a specific resource type,
     ///
     /// **Note**: If the dispatching queues were not already present this fn will add them.
     ///
     pub async fn dispatcher<T: Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey<T>>
+        resource_key: Option<ResourceKey<T>>,
     ) -> Dispatcher<S, T> {
         let mut disp = Dispatcher {
             storage: self.clone(),
             resource_key,
-            local: LocalSet::new(),
             tasks: JoinSet::new(),
             _u: PhantomData,
         };
@@ -45,13 +47,15 @@ impl<S: StorageTarget + 'static> AsyncStorageTarget<S> {
     ///
     pub async fn intialize_dispatcher<T: Default + Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey<T>>
+        resource_key: Option<ResourceKey<T>>,
     ) -> Dispatcher<S, T> {
+        use std::ops::Deref;
+        
         let dispatcher = self.dispatcher(resource_key.clone()).await;
 
         dispatcher
             .storage
-            .0
+            .storage
             .deref()
             .write()
             .await
@@ -61,18 +65,23 @@ impl<S: StorageTarget + 'static> AsyncStorageTarget<S> {
     }
 }
 
+impl<S: StorageTarget> Drop for AsyncStorageTarget<S> {
+    fn drop(&mut self) {
+        if let Some(runtime) = Option::take(&mut self.runtime).and_then(|a| Arc::try_unwrap(a).ok()) {
+            runtime.shutdown_background();
+        }
+    }
+}
+
 /// Trait for a storage target to return a dispatcher for a stored resource,
 ///
-pub struct Dispatcher<Storage: StorageTarget, T: Send + Sync + 'static> {
+pub struct Dispatcher<Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'static> {
     /// Thread-safe reference to the storage target,
     ///
     storage: AsyncStorageTarget<Storage>,
     /// Optional, resource_id of the resource as well as queues,
     ///
     resource_key: Option<ResourceKey<T>>,
-    /// Allows tasks to be executed on the same thread,
-    ///
-    local: LocalSet,
     /// Handles lock acquisition,
     ///
     tasks: JoinSet<()>,
@@ -80,12 +89,13 @@ pub struct Dispatcher<Storage: StorageTarget, T: Send + Sync + 'static> {
     _u: PhantomData<T>,
 }
 
-impl<Storage: StorageTarget + 'static, T: Send + Sync + 'static> Clone for Dispatcher<Storage, T> {
+impl<Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'static> Clone
+    for Dispatcher<Storage, T>
+{
     fn clone(&self) -> Self {
         Self {
             storage: self.storage.clone(),
             resource_key: self.resource_key.clone(),
-            local: LocalSet::new(),
             tasks: JoinSet::new(),
             _u: self._u.clone(),
         }
@@ -96,36 +106,44 @@ impl<Storage: StorageTarget + 'static, T: Send + Sync + 'static> Clone for Dispa
 ///
 macro_rules! queue {
     ($rcv:ident, $queue:path, $exec:ident) => {
-        let Self {
-            storage: AsyncStorageTarget(storage),
+        use std::ops::Deref;
+
+        if let Self {
+            storage: AsyncStorageTarget { storage, runtime: Some(runtime) },
             resource_key,
-            local,
             tasks,
             ..
-        } = $rcv;
-
-        let storage = storage.clone();
-        let resource_id = resource_key.clone();
-
-        let _local_set_guard = local.enter();
-
-        tasks.spawn_local(async move {
-            if let Some(queue) = storage.deref().read().await.resource::<$queue>(resource_id.map(|r| r.transmute())) {
-                if let Ok(mut queue) = queue.lock() {
-                    queue.push_back(Box::new($exec));
+        } = $rcv {
+            let storage = storage.clone();
+            let resource_id = resource_key.clone();
+    
+            let _local_set_guard = runtime.enter();
+    
+            tasks.spawn(async move {
+                if let Some(queue) = storage
+                    .deref()
+                    .read()
+                    .await
+                    .resource::<$queue>(resource_id.map(|r| r.transmute()))
+                {
+                    if let Ok(mut queue) = queue.lock() {
+                        queue.push_back(Box::new($exec));
+                    }
                 }
-            }
-        });
+            });
+        }
     };
 }
 
 /// Macro for enabling dispatch queues,
-/// 
+///
 macro_rules! enable_queue {
     ($rcv:ident, [$($queue_ty:path),*]) => {
         {
+            use std::ops::Deref;
+
             let Self {
-                storage: AsyncStorageTarget(storage),
+                storage: AsyncStorageTarget { storage, .. },
                 resource_key,
                 ..
             } = $rcv;
@@ -146,11 +164,13 @@ macro_rules! enable_queue {
 }
 
 /// Macro for applying dispatches from a queue
-/// 
+///
 macro_rules! dispatch {
     ($rcv:ident, $queue_ty:ident, $resource_ty:ident) => {
+        use std::ops::Deref;
+
         let Self {
-            storage: AsyncStorageTarget(storage),
+            storage: AsyncStorageTarget { storage, .. },
             resource_key,
             ..
         } = $rcv;
@@ -158,7 +178,8 @@ macro_rules! dispatch {
         let mut tocall = vec![];
         {
             let mut storage = storage.deref().write().await;
-            let queue = storage.resource_mut::<$queue_ty<$resource_ty>>(resource_key.map(|r| r.transmute()));
+            let queue = storage
+                .resource_mut::<$queue_ty<$resource_ty>>(resource_key.map(|r| r.transmute()));
             if let Some(queue) = queue {
                 if let Ok(mut queue) = queue.lock() {
                     while let Some(func) = queue.pop_front() {
@@ -168,7 +189,12 @@ macro_rules! dispatch {
             }
         }
         {
-            if let Some(mut resource) = storage.deref().write().await.resource_mut::<$resource_ty>(resource_key.map(|r| r.transmute())) {
+            if let Some(mut resource) = storage
+                .deref()
+                .write()
+                .await
+                .resource_mut::<$resource_ty>(resource_key.map(|r| r.transmute()))
+            {
                 for call in tocall.drain(..) {
                     call(&mut resource);
                 }
@@ -177,7 +203,9 @@ macro_rules! dispatch {
     };
 }
 
-impl<'a, Storage: StorageTarget + 'static, T: Send + Sync + 'static> Dispatcher<Storage, T> {
+impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'static>
+    Dispatcher<Storage, T>
+{
     /// Dispatches all queued dispatches,
     ///
     /// ## Notes on Default implementation
@@ -204,16 +232,14 @@ impl<'a, Storage: StorageTarget + 'static, T: Send + Sync + 'static> Dispatcher<
     /// Needs to be called before `dispatch_*_queued`.
     ///
     pub async fn handle_tasks(&mut self) {
-        // Required to pin because we do not want to consume the reference
-        let local = &mut self.local;
-        pin!(local);
+        if let Some(runtime) = self.storage.runtime.as_ref() {
+            let _enter = runtime.enter();
 
-        local.await;
-
-        while let Some(_) = self.tasks.join_next().await {}
+            while let Some(_) = self.tasks.join_next().await {}
+        }
     }
 
-        /// Queues a dispatch fn w/ a reference to the storage target,
+    /// Queues a dispatch fn w/ a reference to the storage target,
     ///
     pub fn queue_dispatch(&mut self, exec: impl FnOnce(&T) + 'static + Send + Sync)
     where
