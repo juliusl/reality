@@ -1,5 +1,4 @@
 use crate::{Handler, Callback, CallbackMut};
-use std::fmt::Debug;
 use std::ops::Deref;
 use std::ops::DerefMut;
 use super::prelude::*;
@@ -7,10 +6,6 @@ use super::prelude::*;
 /// Trait generalizing a storage target that can be used to initialize and store application resources,
 ///
 pub trait StorageTarget {
-    /// Value container type,
-    ///
-    type Attribute: Container + Send + Sync + Clone + Debug;
-
     /// Container for borrowing a resource from the storage target,
     ///
     type BorrowResource<'a, T: Send + Sync + 'static>: Deref<Target = T>
@@ -66,7 +61,7 @@ pub trait StorageTarget {
     fn take_resource<T: Send + Sync + 'static>(
         &mut self,
         resource_key: Option<ResourceKey<T>>,
-    ) -> Option<T>;
+    ) -> Option<Box<T>>;
 
     /// Get read-access to a resource owned by the storage target,
     ///
@@ -250,21 +245,19 @@ pub trait StorageTarget {
     {
         use std::sync::Arc;
 
-        let runtime = tokio::runtime::Runtime::new().expect("should be able to create a new tokio runtime");
-
         AsyncStorageTarget {
             storage: Arc::new(RwLock::new(self)),
-            runtime: Some(Arc::new(runtime))
+            runtime: Some(tokio::runtime::Handle::current())
         }
     }
-}
 
-/// Convenience trait for providing callback functions on a storage target,
-/// 
-pub trait StorageTargetCallbackProvider : StorageTarget + Sized + 'static {
+    
      /// Adds a callback as a resource,
     /// 
-    fn add_callback<Arg: Send + Sync + 'static, H: Handler<Self, Arg>>(&mut self, resource_key: Option<ResourceKey<Callback<Self, Arg>>>) {
+    fn add_callback<Arg: Send + Sync + 'static, H: Handler<Self, Arg>>(&mut self, resource_key: Option<ResourceKey<Callback<Self, Arg>>>) 
+    where
+        Self: Sized + 'static
+    {
         self.put_resource(Callback::new::<H>(), resource_key)
     }
 
@@ -272,7 +265,10 @@ pub trait StorageTargetCallbackProvider : StorageTarget + Sized + 'static {
     /// 
     /// Returns true if a callback exists and was queued
     /// 
-    fn callback<Arg: Send + Sync + 'static>(&self, resource_key: Option<ResourceKey<Callback<Self, Arg>>>) -> Option<Callback<Self, Arg>> {
+    fn callback<Arg: Send + Sync + 'static>(&self, resource_key: Option<ResourceKey<Callback<Self, Arg>>>) -> Option<Callback<Self, Arg>> 
+    where
+        Self: Sized + 'static
+    {
         self.resource(resource_key).map(|c| c.deref().clone())
     }
 
@@ -280,7 +276,10 @@ pub trait StorageTargetCallbackProvider : StorageTarget + Sized + 'static {
     /// 
     /// Returns true if a callback exists and was queued,
     /// 
-    fn callback_mut<Arg: Send + Sync + 'static>(&self, resource_key: Option<ResourceKey<CallbackMut<Self, Arg>>>) -> Option<CallbackMut<Self, Arg>> {
+    fn callback_mut<Arg: Send + Sync + 'static>(&self, resource_key: Option<ResourceKey<CallbackMut<Self, Arg>>>) -> Option<CallbackMut<Self, Arg>> 
+    where
+        Self: Sized + 'static
+    {
         self.resource(resource_key).map(|c| c.deref().clone())
     }
 
@@ -288,7 +287,10 @@ pub trait StorageTargetCallbackProvider : StorageTarget + Sized + 'static {
     /// 
     /// Returns true if a callback exists and was queued
     /// 
-    fn lazy_callback<Arg: Send + Sync + 'static>(&self, callback: Callback<Self, Arg>, arg: Arg) {
+    fn lazy_callback<Arg: Send + Sync + 'static>(&self, callback: Callback<Self, Arg>, arg: Arg) 
+    where
+        Self: Sized + 'static
+    {
         self.lazy_dispatch(move |s| { callback.handle(s, arg)})
     }
 
@@ -296,7 +298,10 @@ pub trait StorageTargetCallbackProvider : StorageTarget + Sized + 'static {
     /// 
     /// Returns true if a callback exists and was queued,
     /// 
-    fn lazy_callback_mut<Arg: Send + Sync + 'static>(&self, callback: CallbackMut<Self, Arg>, arg: Arg) {
+    fn lazy_callback_mut<Arg: Send + Sync + 'static>(&self, callback: CallbackMut<Self, Arg>, arg: Arg) 
+    where
+        Self: Sized + 'static
+    {
         self.lazy_dispatch_mut(move |s| { callback.handle(s, arg)})
     }
 }

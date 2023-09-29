@@ -1,33 +1,28 @@
-use tokio::task::JoinHandle;
-
-use crate::{AttributeTypeParser, StorageTarget};
+use crate::AttributeType;
+use crate::ResourceKey;
+use crate::AttributeTypePackage;
+use crate::StorageTarget;
 
 /// Struct containing all attributes,
 ///
 pub struct Block {}
 
-pub trait BlockObject<Storage: StorageTarget> {
-    /// Return a list of properties that can be defined w/ this object,
+pub trait BlockPackage<S: StorageTarget + 'static> {
+    /// Resource key for the block package, 
     /// 
-    fn properties() -> Vec<AttributeTypeParser<Storage>>;
+    fn resource_key() -> ResourceKey<AttributeTypePackage<S>>;
 
-    /// Allows for a block object to be loaded as an extension,
+    /// Initialized package,
     /// 
-    #[cfg(feature = "async_dispatcher")]
-    fn load_async() -> Result<JoinHandle<Self>, Self>
-    where
-        Self: Sized;
+    fn package() -> AttributeTypePackage<S>;
 }
 
-impl<Storage: StorageTarget> BlockObject<Storage> for () {
-    fn properties() -> Vec<AttributeTypeParser<Storage>> {
-        vec![]
-    }
-
-    fn load_async() -> Result<JoinHandle<Self>, Self>
-    where
-        Self: Sized,
-    {
-        Err(())
-    }
+/// Object type that lives inside of a runmd block,
+/// 
+/// Initiated w/ the `+` keyword,
+/// 
+pub trait BlockObject<Storage: StorageTarget + 'static> : AttributeType<Storage> 
+where
+    Self: Sized + Send + Sync + 'static
+{
 }

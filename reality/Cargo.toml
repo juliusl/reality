@@ -21,6 +21,7 @@ serde = { version = "1.0.144", features = ["derive"] }
 runmd = { path = "../runmd" }
 uuid = "1.4.1"
 bitflags = "2.4.0"
+futures-util = "0.3.28"
 
 [dependencies.reality_derive]
 path = "../reality_derive"
@@ -29,7 +30,7 @@ optional = true
 # Feature: async_dispatcher
 [dependencies.tokio]
 version = "1.19.2"
-features = ["default", "rt-multi-thread", "sync", "fs", "process", "io-util", "io-std", "macros"]
+features = ["default", "rt-multi-thread", "sync", "fs", "time", "process", "io-util", "io-std", "macros"]
 optional = true
 
 # Feature: specs_storage_target

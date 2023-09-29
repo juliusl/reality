@@ -6,11 +6,8 @@ use specs::shred::FetchMut;
 use specs::shred::Fetch;
 
 use super::prelude::*;
-use crate::Attribute;
 
 impl StorageTarget for World {
-    type Attribute = Attribute;
-
     type BorrowResource<'a, T: Send + Sync + 'static> = Fetch<'a, T>;
     
     type BorrowMutResource<'a, T: Send + Sync + 'static> = FetchMut<'a, T>;
@@ -73,12 +70,12 @@ impl StorageTarget for World {
     fn take_resource<T: Send + Sync + 'static>(
         &mut self, 
         resource_key: Option<ResourceKey<T>>
-    ) -> Option<T> {
+    ) -> Option<Box<T>> {
         if let Some(resource_key) = resource_key {
             let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_key.key());
-            self.remove_by_id(resource_id)
+            self.remove_by_id::<T>(resource_id).map(Box::new)
         } else {
-            self.remove()
+            self.remove::<T>().map(Box::new)
         }
     }
 }

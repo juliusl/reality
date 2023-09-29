@@ -1,11 +1,14 @@
 use proc_macro2::Ident;
 use proc_macro2::Span;
+use quote::ToTokens;
+use syn::Path;
 use syn::parse::Parse;
 use syn::Attribute;
 use syn::LitStr;
 use syn::Token;
 use syn::Type;
 use syn::Visibility;
+use syn::parse2;
 
 /// Parses a struct field such as,
 ///
@@ -34,9 +37,21 @@ pub(crate) struct StructField {
     /// If set, will ignore this field
     /// 
     pub ignore: bool,
+    /// Attribute Type,
+    /// 
+    pub attribute_type: Option<Path>,
+    /// Parse callback,
+    /// 
+    pub parse_callback: Option<Path>,
     /// Location of this field,
     /// 
     pub span: Span,
+}
+
+impl StructField {
+    pub fn field_name_lit_str(&self) -> LitStr {
+        self.rename.clone().unwrap_or(LitStr::new(self.name.to_string().as_str(), Span::call_site()))
+    }
 }
 
 impl Parse for StructField {
@@ -45,7 +60,17 @@ impl Parse for StructField {
         let attributes = Attribute::parse_outer(input)?;
         let mut rename = None::<LitStr>;
         let mut ignore = false;
+        let mut callback = None;
+        let mut attribute_type = None;
         let span = input.span();
+
+        let visibility = input.parse::<Visibility>().ok();
+
+        // Name of this struct field
+        let name = input.parse::<Ident>()?;
+        input.parse::<Token![:]>()?;
+
+        let ty = input.parse::<Type>()?;
 
         for attribute in attributes {
             // #[reality(ignore, rename = "SOME_NAME")]
@@ -61,20 +86,28 @@ impl Parse for StructField {
                         rename = Some(_r);
                     }
 
+                    if meta.path.is_ident("parse") {
+                        meta.input.parse::<Token![=]>()?;
+                        callback = meta.input.parse::<Path>().ok();
+                    }
+
+                    if meta.path.is_ident("attribute_type") {
+                        if let Ok(_) = meta.input.parse::<Token![=]>() {
+                            attribute_type = meta.input.parse::<Path>().ok();
+                        } else {
+                            attribute_type = parse2::<Path>(ty.to_token_stream()).ok();
+                        }
+                    }
+
                     Ok(())
                 })?;
             }
         }
 
-        let visibility = input.parse::<Visibility>().ok();
-
-        // Name of this struct field
-        let name = input.parse::<Ident>()?;
-        input.parse::<Token![:]>()?;
-
-        let ty = input.parse::<Type>()?;
         Ok(Self {
             rename,
+            parse_callback: callback,
+            attribute_type,
             span,
             ignore,
             visibility,

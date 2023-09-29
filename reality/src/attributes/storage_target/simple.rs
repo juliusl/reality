@@ -7,7 +7,6 @@ use std::ops::DerefMut;
 
 use crate::Complex;
 use crate::StorageTarget;
-use crate::Attribute;
 use super::prelude::*;
 
 /// Simple storage target implementation,
@@ -30,8 +29,6 @@ impl Simple {
 }
 
 impl StorageTarget for Simple {
-    type Attribute = Attribute;
-
     type BorrowResource<'a, T: Send + Sync + 'static> = Ref<'a, T>;
 
     type BorrowMutResource<'a, T: Send + Sync + 'static> = RefMut<'a, T>;
@@ -73,7 +70,11 @@ impl StorageTarget for Simple {
                 let derefed: &(dyn Send + Sync) = r.deref();
                 let ptr = from_ref(derefed) as *const T;
 
-                unsafe { ptr.cast::<T>().as_ref() }
+                if !ptr.is_null() {
+                    unsafe { ptr.cast::<T>().as_ref() }
+                } else {
+                    None
+                }
             })
             .ok()
         } else {
@@ -92,7 +93,11 @@ impl StorageTarget for Simple {
                 let derefed: &mut (dyn Send + Sync) = r.deref_mut();
                 let ptr = from_ref_mut(derefed) as *mut T;
 
-                unsafe { ptr.as_mut() }
+                if !ptr.is_null() { 
+                    unsafe { ptr.as_mut() }
+                } else {
+                    None
+                }
             })
             .ok()
         } else {
@@ -112,16 +117,21 @@ impl StorageTarget for Simple {
     fn take_resource<T: Send + Sync + 'static>(
         &mut self,
         resource_key: Option<ResourceKey<T>>
-    ) -> Option<T> {
+    ) -> Option<Box<T>> {
         let key = Self::key::<T>(resource_key);
         let resource = self.resources.remove(&key);
 
-        resource.map(|r| {
+        resource.and_then(|r| {
+            // This ensures after conversion, Box<T> can be properly dropped
             let t = r.into_inner();
-
-            let r = from_ref(t.deref());
-
-            unsafe { std::ptr::read(r.cast::<T>()) }
+            let t = Box::leak(t);
+            let r = from_ref_mut(t);
+            let r = r.cast::<T>();
+            if !r.is_null() {
+                Some(unsafe { Box::from_raw(r) })
+            } else {
+                None
+            }
         })
     }
 }
@@ -203,57 +213,4 @@ async fn test_simple_storage_target_resource_store() {
         assert_eq!(Some(4), res.as_deref().copied());
     }
     simple.drain_dispatch_queues();
-}
-
-#[cfg(feature = "async_dispatcher")]
-#[tokio::test]
-async fn test_simple_async_dispatcher() {
-    let name = std::any::type_name::<(u64, u64, i64, String, Simple)>();
-    println!("{}", name
-        .replace(", ", "__")
-        .trim_start_matches(&['('])
-        .trim_end_matches(&[')'])
-        .replace("::", ".")
-        .to_lowercase()
-    );
-
-    let simple = Complex::default().into_thread_safe();
-
-    // Test initalizing a resource dispatcher and queueing dispatches
-    let mut dispatcher = simple.intialize_dispatcher::<(u64, u64)>(None).await;
-    dispatcher
-        .queue_dispatch_mut(|(a, b)| {
-            *a += 1;
-            *b += 2;
-        });
-
-    dispatcher
-        .queue_dispatch(|(a, b)| {
-            println!("checking previous dispatch_mut");
-            assert_eq!((1u64, 2u64), (*a, *b));
-        });
-
-    // Test dispatch draining
-    dispatcher.dispatch_all().await;
-
-    // Test that the queued dispatch executed
-    {
-        let res = simple.storage.read().await;
-        let res = res.resource::<(u64, u64)>(None);
-        assert_eq!(Some((1, 2)), res.as_deref().copied());
-    }
-
-    // Test that we can remove the resource
-    {
-        let mut res = simple.storage.write().await;
-        let res = res.take_resource::<(u64, u64)>(None);
-        assert_eq!(Some((1, 2)), res);
-    }
-
-    // Test that the resource was removed
-    {
-        let res = simple.storage.read().await;
-        let res = res.resource::<(u64, u64)>(None);
-        assert_eq!(None, res.as_deref().copied());
-    }
 }

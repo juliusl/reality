@@ -1,7 +1,7 @@
 use core::slice;
+use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use std::marker::PhantomData;
-use std::collections::hash_map::DefaultHasher;
 
 /// Struct containing properties of a resource key,
 ///
@@ -18,12 +18,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         let type_key = Self::type_key();
         let (sizes, flags) = Self::type_sizes();
 
-        uuid::Uuid::from_fields(
-            sizes, 
-            0, 
-            flags.bits(), 
-            &type_key.to_ne_bytes()
-        ).into()
+        uuid::Uuid::from_fields(sizes, 0, flags.bits(), &type_key.to_ne_bytes()).into()
     }
 
     /// Creates a new resource-key deriving w/ associated label,
@@ -36,24 +31,49 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
 
         let (sizes, flags) = Self::label_sizes(label);
 
-        uuid::Uuid::from_fields(
-            sizes, 
-            0, 
-            flags.bits(), 
-            &key.to_ne_bytes()
-        ).into()
+        uuid::Uuid::from_fields(sizes, 0, flags.bits(), &key.to_ne_bytes()).into()
     }
 
-    /// Transmute a resource-key to a different resource key type, 
+    /// Creates a new resource-key derived from hashable input,
     /// 
-    /// If a label was set, transfers the label to the new key, otherwise just creates a new key.
+    pub fn with_hash(hashable: impl std::hash::Hash) -> Self {
+        let mut key = DefaultHasher::new();
+        hashable.hash(&mut key);
+
+        let key = key.finish();
+        let type_key = Self::type_key();
+        let key = type_key ^ key;
+
+        uuid::Uuid::from_fields(0, 0, ResourceKeyFlags::HASHED.bits(), &key.to_ne_bytes()).into()
+    }
+
+    /// Creates a new resource_key set w/ a hash value,
     /// 
+    pub fn with_hash_value(hash: u64) -> Self {
+        let key = hash;
+        let type_key = Self::type_key();
+        let key = type_key ^ key;
+
+        uuid::Uuid::from_fields(0, 0, ResourceKeyFlags::HASHED.bits(), &key.to_ne_bytes()).into()
+    }
+
+    /// Transmute a resource-key to a different resource key type,
+    ///
+    /// If a label was set, transfers the label to the new key, 
+    /// 
+    /// If hashed, transfers the hash key over,
+    /// 
+    /// Otherwise, creates a new key.
+    ///
     pub fn transmute<B: Send + Sync + 'static>(&self) -> ResourceKey<B> {
         if let Some((key, len)) = self.label_parts() {
             let bsize = std::mem::size_of::<B>();
 
             let (size, flags) = if bsize ^ len == 0 {
-                (len as u32, ResourceKeyFlags::WITH_LABEL | ResourceKeyFlags::TYPE_SIZE_EQ_LABEL_LEN)
+                (
+                    len as u32,
+                    ResourceKeyFlags::WITH_LABEL | ResourceKeyFlags::TYPE_SIZE_EQ_LABEL_LEN,
+                )
             } else {
                 ((bsize ^ len) as u32, ResourceKeyFlags::WITH_LABEL)
             };
@@ -65,6 +85,8 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
                 &(ResourceKey::<B>::type_key() ^ key as u64).to_ne_bytes(),
             )
             .into()
+        } else if let Some(hash) = self.hashed_parts() {
+            ResourceKey::<B>::with_hash(hash)
         } else {
             ResourceKey::<B>::new()
         }
@@ -85,7 +107,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
     }
 
     /// Returns the raw label parts if they are set,
-    /// 
+    ///
     fn label_parts(&self) -> Option<(*const u8, usize)> {
         if !self.flags().contains(ResourceKeyFlags::WITH_LABEL) {
             None
@@ -102,6 +124,18 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
             };
 
             Some((key as *const u8, len as usize))
+        }
+    }
+
+    /// Returns the hash value from the resource-key,
+    /// 
+    fn hashed_parts(&self) -> Option<u64> {
+        if !self.flags().contains(ResourceKeyFlags::HASHED) {
+            None
+        } else {
+            let hashed = self.key() ^ Self::type_key();
+
+            Some(hashed)
         }
     }
 
@@ -209,6 +243,7 @@ bitflags::bitflags! {
         const WITH_LABEL = 1;
         const TYPE_SIZE_EQ_LABEL_LEN = 1 << 1;
         const TYPE_SIZE_EQ_TYPE_NAME_LEN = 1 << 2;
+        const HASHED = 1 << 3;
     }
 }
 
@@ -221,5 +256,13 @@ fn test_resource_key() {
     println!("{:?}", std::any::type_name::<Test>().as_ptr());
 
     let key = ResourceKey::<Test>::with_label("test_label");
-    println!("{:?}", key.label());
+    let key_with_label = key.key();
+    println!("{:?} {}", key.label(), key_with_label);
+
+    let key = ResourceKey::<Test>::with_hash("test_label");
+    let key_with_hash = key.key();
+    println!("{}", key_with_hash);
+
+    // Even though the above keys use the same value, they should produce different keys
+    assert_ne!(key_with_label, key_with_hash);
 }

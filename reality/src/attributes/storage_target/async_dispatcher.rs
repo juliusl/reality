@@ -1,7 +1,11 @@
+use futures_util::stream::FuturesOrdered;
+use futures_util::Future;
+use tokio::runtime::Handle;
 use std::marker::PhantomData;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio::task::JoinSet;
+use tokio::task::JoinHandle;
 
 use super::prelude::*;
 
@@ -11,7 +15,7 @@ use super::prelude::*;
 ///
 pub struct AsyncStorageTarget<S: StorageTarget> {
     pub storage: Arc<RwLock<S>>,
-    pub runtime: Option<Arc<tokio::runtime::Runtime>>,
+    pub runtime: Option<Handle>,
 }
 
 impl<S: StorageTarget> Clone for AsyncStorageTarget<S> {
@@ -35,7 +39,7 @@ impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
         let mut disp = Dispatcher {
             storage: self.clone(),
             resource_key,
-            tasks: JoinSet::new(),
+            tasks: FuturesOrdered::new(),
             _u: PhantomData,
         };
 
@@ -50,7 +54,7 @@ impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
         resource_key: Option<ResourceKey<T>>,
     ) -> Dispatcher<S, T> {
         use std::ops::Deref;
-        
+
         let dispatcher = self.dispatcher(resource_key.clone()).await;
 
         dispatcher
@@ -65,14 +69,6 @@ impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
     }
 }
 
-impl<S: StorageTarget> Drop for AsyncStorageTarget<S> {
-    fn drop(&mut self) {
-        if let Some(runtime) = Option::take(&mut self.runtime).and_then(|a| Arc::try_unwrap(a).ok()) {
-            runtime.shutdown_background();
-        }
-    }
-}
-
 /// Trait for a storage target to return a dispatcher for a stored resource,
 ///
 pub struct Dispatcher<Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'static> {
@@ -84,7 +80,7 @@ pub struct Dispatcher<Storage: StorageTarget + Send + Sync + 'static, T: Send + 
     resource_key: Option<ResourceKey<T>>,
     /// Handles lock acquisition,
     ///
-    tasks: JoinSet<()>,
+    tasks: FuturesOrdered<JoinHandle<()>>,
     // Unused
     _u: PhantomData<T>,
 }
@@ -96,7 +92,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'static> C
         Self {
             storage: self.storage.clone(),
             resource_key: self.resource_key.clone(),
-            tasks: JoinSet::new(),
+            tasks: FuturesOrdered::new(),
             _u: self._u.clone(),
         }
     }
@@ -109,17 +105,20 @@ macro_rules! queue {
         use std::ops::Deref;
 
         if let Self {
-            storage: AsyncStorageTarget { storage, runtime: Some(runtime) },
+            storage:
+                AsyncStorageTarget {
+                    storage,
+                    runtime: Some(runtime),
+                },
             resource_key,
             tasks,
             ..
-        } = $rcv {
+        } = $rcv
+        {
             let storage = storage.clone();
             let resource_id = resource_key.clone();
-    
-            let _local_set_guard = runtime.enter();
-    
-            tasks.spawn(async move {
+
+            tasks.push_back(runtime.spawn(async move {
                 if let Some(queue) = storage
                     .deref()
                     .read()
@@ -130,7 +129,7 @@ macro_rules! queue {
                         queue.push_back(Box::new($exec));
                     }
                 }
-            });
+            }));
         }
     };
 }
@@ -203,6 +202,46 @@ macro_rules! dispatch {
     };
 }
 
+/// Macro for applying dispatches from a queue
+///
+macro_rules! dispatch_async {
+    ($rcv:ident, $queue_ty:ident, $resource_ty:ident) => {
+        use std::ops::Deref;
+
+        let Self {
+            storage: AsyncStorageTarget { storage, .. },
+            resource_key,
+            ..
+        } = $rcv;
+
+        let mut tocall = vec![];
+        {
+            let mut storage = storage.deref().write().await;
+            let queue = storage
+                .resource_mut::<$queue_ty<$resource_ty>>(resource_key.map(|r| r.transmute()));
+            if let Some(queue) = queue {
+                if let Ok(mut queue) = queue.lock() {
+                    while let Some(func) = queue.pop_front() {
+                        tocall.push(func);
+                    }
+                }
+            }
+        }
+        {
+            if let Some(mut resource) = storage
+                .deref()
+                .write()
+                .await
+                .resource_mut::<$resource_ty>(resource_key.map(|r| r.transmute()))
+            {
+                for call in tocall.drain(..) {
+                    call(&mut resource).await;
+                }
+            }
+        }
+    };
+}
+
 impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'static>
     Dispatcher<Storage, T>
 {
@@ -224,7 +263,9 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
     {
         self.handle_tasks().await;
         self.dispatch_mut_queued().await;
+        self.dispatch_mut_task_queued().await;
         self.dispatch_queued().await;
+        self.dispatch_task_queued().await;
     }
 
     /// Handle any pending tasks,
@@ -232,14 +273,16 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
     /// Needs to be called before `dispatch_*_queued`.
     ///
     pub async fn handle_tasks(&mut self) {
+        use futures_util::StreamExt;
+
         if let Some(runtime) = self.storage.runtime.as_ref() {
             let _enter = runtime.enter();
 
-            while let Some(_) = self.tasks.join_next().await {}
+            while let Some(_) = self.tasks.next().await {}
         }
     }
 
-    /// Queues a dispatch fn w/ a reference to the storage target,
+    /// Queues a dispatch fn w/ a reference to the target resource,
     ///
     pub fn queue_dispatch(&mut self, exec: impl FnOnce(&T) + 'static + Send + Sync)
     where
@@ -248,7 +291,7 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
         queue!(self, DispatchQueue<T>, exec);
     }
 
-    /// Queues a dispatch fn w/ a mutable reference to the storage target,
+    /// Queues a dispatch fn w/ a mutable reference to the target resource,
     ///
     pub fn queue_dispatch_mut(&mut self, exec: impl FnOnce(&mut T) + 'static + Send + Sync)
     where
@@ -257,10 +300,46 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
         queue!(self, DispatchMutQueue<T>, exec);
     }
 
+    /// Queues a dispatch task fn w/ a mutable reference to the target resource,
+    /// 
+    /// **Note**: There is no performance benefit over using this, since queues are synchronous when drained.
+    /// 
+    /// The only benefit is being able to use async code in the closure.
+    /// 
+    pub fn queue_dispatch_mut_task(
+        &mut self,
+        exec: impl FnOnce(&mut T) -> Pin<Box<dyn Future<Output = ()> + Sync + Send + 'static>>
+            + Send
+            + Sync
+            + 'static,
+    ) where
+        Self: 'static,
+    {
+        queue!(self, DispatchMutTaskQueue<T>, exec);
+    }
+
+    /// Queues a dispatch task fn w/ a reference to the storage target resource,
+    ///
+    /// **Note**: There is no performance benefit over using this, since queues are synchronous when drained.
+    /// 
+    /// The only benefit is being able to use async code in the closure.
+    /// 
+    pub fn queue_dispatch_task(
+        &mut self,
+        exec: impl FnOnce(&T) -> Pin<Box<dyn Future<Output = ()> + Sync + Send + 'static>>
+            + Send
+            + Sync
+            + 'static,
+    ) where
+        Self: 'static,
+    {
+        queue!(self, DispatchTaskQueue<T>, exec);
+    }
+
     /// Enables dispatching for a resource type,
     ///
     pub async fn enable(&mut self) {
-        enable_queue!(self, [DispatchQueue<T>,  DispatchMutQueue<T>]);
+        enable_queue!(self, [DispatchQueue<T>,  DispatchMutQueue<T>, DispatchTaskQueue<T>, DispatchMutTaskQueue<T>]);
     }
 
     /// Dispatches the mutable queue,
@@ -279,5 +358,23 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
         Self: 'static,
     {
         dispatch!(self, DispatchQueue, T);
+    }
+
+    /// Dispatches the mutable task queue,
+    ///
+    pub async fn dispatch_mut_task_queued(&mut self)
+    where
+        Self: 'static,
+    {
+        dispatch_async!(self, DispatchMutTaskQueue, T);
+    }
+
+    /// Dispatches the non-mutable task queue,
+    ///
+    pub async fn dispatch_task_queued(&mut self)
+    where
+        Self: 'static,
+    {
+        dispatch_async!(self, DispatchTaskQueue, T);
     }
 }
