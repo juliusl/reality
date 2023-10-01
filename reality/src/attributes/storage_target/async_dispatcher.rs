@@ -75,7 +75,7 @@ pub struct Dispatcher<Storage: StorageTarget + Send + Sync + 'static, T: Send + 
     /// Thread-safe reference to the storage target,
     ///
     storage: AsyncStorageTarget<Storage>,
-    /// Optional, resource_id of the resource as well as queues,
+    /// Optional, resource_key of the resource as well as queues,
     ///
     resource_key: Option<ResourceKey<T>>,
     /// Handles lock acquisition,
@@ -259,7 +259,7 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
     ///
     pub async fn dispatch_all(&mut self)
     where
-        Self: 'static,
+        Self: Send + Sync + 'static,
     {
         self.handle_tasks().await;
         self.dispatch_mut_queued().await;
@@ -275,11 +275,7 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
     pub async fn handle_tasks(&mut self) {
         use futures_util::StreamExt;
 
-        if let Some(runtime) = self.storage.runtime.as_ref() {
-            let _enter = runtime.enter();
-
-            while let Some(_) = self.tasks.next().await {}
-        }
+        while let Some(_) = self.tasks.next().await {}
     }
 
     /// Queues a dispatch fn w/ a reference to the target resource,

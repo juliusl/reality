@@ -10,21 +10,25 @@ use tokio::sync::RwLockWriteGuard;
 use super::prelude::*;
 use crate::StorageTarget;
 
-/// Complex thread-safe storage target using Arc and tokio::RwLock,
+/// Shared thread-safe storage target using Arc and tokio::RwLock,
 ///
-#[derive(Default)]
-pub struct Complex {
+#[derive(Clone, Default)]
+pub struct Shared {
     /// Thread-safe resources,
     ///
     resources: HashMap<u64, Arc<RwLock<Box<dyn Send + Sync + 'static>>>>,
 }
 
-impl StorageTarget for Complex {
+impl StorageTarget for Shared {
     type BorrowResource<'a, T: Send + Sync + 'static> = RwLockReadGuard<'a, T>;
 
     type BorrowMutResource<'a, T: Send + Sync + 'static> = RwLockMappedWriteGuard<'a, T>;
 
-    type Namespace = Complex;
+    type Namespace = Shared;
+
+    fn create_namespace() -> Self::Namespace {
+        Shared::default()
+    }
 
     fn put_resource<T: Send + Sync + 'static>(
         &mut self,
@@ -129,61 +133,39 @@ fn from_ref_mut<T: ?Sized>(r: &mut T) -> *mut T {
 
 #[tokio::test]
 async fn test_complex() {
-    let mut complex = Complex::default();
+    let mut shared = Shared::default();
     let resource_key = Some(ResourceKey::with_label("hello-complex"));
-    complex.put_resource(0u64, resource_key);
-    {
-        let resource = complex.resource_mut::<u64>(resource_key);
-        if let Some(mut r) = resource {
-            *r += 2;
-        }
-    }
+    shared.put_resource(0u64, resource_key);
 
-    {
-        let resource = complex.resource::<u64>(resource_key);
-        if let Some(r) = resource {
-            println!("{r}");
-        }
-    }
+    borrow_mut!(shared, u64, "hello-complex", |r| => {
+        *r += 2;
+    });
+   
+    borrow!(shared, u64, "hello-complex", |r| => {
+        println!("{r}");
+    });
 
-    {
-        let resource = complex.resource_mut::<u64>(resource_key);
-        if let Some(mut r) = resource {
-            *r += 2;
-        }
-    }
+    borrow_mut!(shared, u64, "hello-complex", |r| => {
+        *r += 2;
+    });
 
-    {
-        let resource = complex.resource::<u64>(resource_key);
-        if let Some(r) = resource {
-            println!("{r}");
-        }
+    let mut _r = 0u64;
+    borrow!(shared, u64, "hello-complex", |r| => {
+        println!("{r}");
+        _r = *r;
+    });
 
-        const IDENT: &'static str = "test1234";
+    assert_eq!(4, _r);
 
-        let p = (IDENT.as_ptr() as u64, IDENT.len());
-
-        let uuid = uuid::Uuid::from_fields(p.1 as u32, 0, 0, &p.0.to_be_bytes());
-        println!("{}", uuid);
-    }
+    ()
 }
 
 #[tokio::test]
 async fn test_async_dispatcher() {
-    let name = std::any::type_name::<(u64, u64, i64, String, Simple)>();
-    println!(
-        "{}",
-        name.replace(", ", "__")
-            .trim_start_matches(&['('])
-            .trim_end_matches(&[')'])
-            .replace("::", ".")
-            .to_lowercase()
-    );
-
-    let simple = Complex::default().into_thread_safe();
+    let shared = Shared::default().into_thread_safe();
 
     // Test initalizing a resource dispatcher and queueing dispatches
-    let mut dispatcher = simple.intialize_dispatcher::<(u64, u64)>(None).await;
+    let mut dispatcher = shared.intialize_dispatcher::<(u64, u64)>(None).await;
     dispatcher.queue_dispatch_mut(|(a, b)| {
         *a += 1;
         *b += 2;
@@ -194,47 +176,40 @@ async fn test_async_dispatcher() {
         assert_eq!((4u64, 3u64), (*a, *b));
     });
 
-    dispatcher.queue_dispatch_task(task!(|(a, b)| => {
+    task!(dispatcher |(a, b)| => {
         let a = *a;
         let b = *b;
         println!("checking previous dispatch_mut_task");
         assert_eq!((4u64, 3u64), (a, b));
-        async move { tokio::time::sleep(std::time::Duration::from_secs(a + b)).await; }
-    }));
+        async move { tokio::time::sleep(std::time::Duration::from_millis(a + b)).await; }
+    });
 
     // Note that since this is a dispatch_mut, it will be executed before any non-mut dispatches, even though they are 
     // queued prior to this dispatch.
-    dispatcher.queue_dispatch_mut_task(task_mut!(|tuple| => {
+    task_mut!(dispatcher |tuple| => {
         tuple.0 += 3;
         tuple.1 += 1;
         let a = tuple.0;
         let b = tuple.1;
         async move {
-            tokio::time::sleep(std::time::Duration::from_secs(a + b)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(a + b)).await;
         }
-    }));
+    });
 
     // Test dispatch draining
     dispatcher.dispatch_all().await;
 
     // Test that the queued dispatch executed
-    {
-        let res = simple.storage.read().await;
-        let res = res.resource::<(u64, u64)>(None);
-        assert_eq!(Some((4, 3)), res.as_deref().copied());
-    }
+    borrow!(async shared (u64, u64), |res| => {
+        assert_eq!((4, 3), *res);
+    });
 
-    // Test that we can remove the resource
-    {
-        let mut res = simple.storage.write().await;
-        let res = res.take_resource::<(u64, u64)>(None);
-        assert_eq!(Some(&(4, 3)), res.as_deref());
-    }
+    assert_eq!(Some(Box::new((4, 3))), take!(async shared, (u64, u64)));
 
     // Test that the resource was removed
-    {
-        let res = simple.storage.read().await;
-        let res = res.resource::<(u64, u64)>(None);
-        assert_eq!(None, res.as_deref().copied());
-    }
+    borrow!(async shared (u64, u64), |_res| => {
+        assert!(false, "should not be called");
+    });
+
+    ()
 }

@@ -240,9 +240,17 @@ impl<T: Send + Sync + 'static> Clone for ResourceKey<T> {
 
 bitflags::bitflags! {
     struct ResourceKeyFlags: u16 {
+        /// Resource key was created with a label
+        /// 
         const WITH_LABEL = 1;
+        /// Type size is equal to the length of the label,
+        /// 
         const TYPE_SIZE_EQ_LABEL_LEN = 1 << 1;
+        /// Type size is equal to the length of the type name len,
+        /// 
         const TYPE_SIZE_EQ_TYPE_NAME_LEN = 1 << 2;
+        /// Resource key was created from hashing a value,
+        /// 
         const HASHED = 1 << 3;
     }
 }

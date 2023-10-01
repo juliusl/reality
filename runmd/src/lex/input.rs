@@ -2,7 +2,7 @@ use super::prelude::*;
 
 /// Enumeration of Input variants to attributes or extension containers,
 ///
-#[derive(Logos, Debug, Clone, PartialEq)]
+#[derive(Hash, Logos, Debug, Clone, PartialEq)]
 #[logos(extras = Context<'s>)]
 pub enum Input<'source> {
     /// Text value,

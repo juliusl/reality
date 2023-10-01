@@ -1,8 +1,7 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::RwLock;
 use tracing::trace;
 
 use runmd::prelude::*;
@@ -12,12 +11,20 @@ use super::attribute_type::ParsableAttributeTypeField;
 use super::attribute_type::ParsableField;
 use super::AttributeTypeParser;
 use super::StorageTarget;
+use crate::block::BlockObjectHandler;
+use crate::AsyncStorageTarget;
 use crate::AttributeType;
+use crate::ResourceKey;
 
 /// Resource for storing attribute types,
 ///
-#[derive(Clone)]
 pub struct AttributeTypePackage<S: StorageTarget>(HashSet<AttributeTypeParser<S>>);
+
+impl<S: StorageTarget> Clone for AttributeTypePackage<S> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 /// Maintains attribute types and matches runmd nodes to the corresponding attribute type parser,
 ///
@@ -31,10 +38,13 @@ pub struct AttributeParser<Storage: StorageTarget> {
     tag: Option<String>,
     /// Table of attribute type parsers,
     ///
-    attribute_types: HashMap<String, AttributeTypeParser<Storage>>,
+    attribute_types: BTreeMap<String, AttributeTypeParser<Storage>>,
+    /// Stack of block object handlers to call on specific events,
+    ///
+    handlers: Vec<BlockObjectHandler<Storage::Namespace>>,
     /// Reference to centralized-storage,
     ///
-    storage: Option<Arc<std::sync::RwLock<Storage>>>,
+    storage: Option<Arc<tokio::sync::RwLock<Storage>>>,
 }
 
 impl<S: StorageTarget> Clone for AttributeParser<S> {
@@ -43,6 +53,7 @@ impl<S: StorageTarget> Clone for AttributeParser<S> {
             tag: self.tag.clone(),
             name: self.name.clone(),
             attribute_types: self.attribute_types.clone(),
+            handlers: self.handlers.clone(),
             storage: self.storage.clone(),
         }
     }
@@ -208,7 +219,7 @@ impl<S: StorageTarget> AttributeParser<S> {
     /// Sets the current storage,
     ///
     pub fn set_storage(&mut self, storage: S) {
-        self.storage = Some(Arc::new(RwLock::new(storage)));
+        self.storage = Some(Arc::new(tokio::sync::RwLock::new(storage)));
     }
 
     /// Returns the current tag,
@@ -232,9 +243,9 @@ impl<S: StorageTarget> AttributeParser<S> {
 
     /// Returns an immutable reference to centralized-storage,
     ///
-    pub fn storage(&self) -> Option<std::sync::RwLockReadGuard<S>> {
+    pub fn storage<'a: 'b, 'b>(&'a self) -> Option<tokio::sync::RwLockReadGuard<'b, S>> {
         if let Some(storage) = self.storage.as_ref() {
-            storage.read().ok()
+            storage.try_read().ok()
         } else {
             None
         }
@@ -242,28 +253,48 @@ impl<S: StorageTarget> AttributeParser<S> {
 
     /// Returns a mutable reference to centralized storage,
     ///
-    pub fn storage_mut(&mut self) -> Option<std::sync::RwLockWriteGuard<S>> {
+    pub fn storage_mut<'a: 'b, 'b>(&'a mut self) -> Option<tokio::sync::RwLockWriteGuard<'b, S>> {
         if let Some(storage) = self.storage.as_ref() {
-            storage.write().ok()
+            storage.try_write().ok()
         } else {
             None
         }
     }
-}
 
-#[runmd::prelude::async_trait]
-impl<S> ExtensionLoader for super::AttributeParser<S>
-where
-    S: StorageTarget + StorageTarget + Send + Sync + Unpin + 'static,
-{
-    async fn load_extension(&self, _extension: &str, _input: Option<&str>) -> Option<BoxedNode> {
-        let mut parser = self.clone();
+    /// Returns a shared namespace or creates one if one doesn't exist,
+    ///
+    /// Returns None if namespaces are disabled by the storage target.
+    ///
+    #[cfg(feature = "async_dispatcher")]
+    pub fn namespace(
+        &mut self,
+        namespace: impl Into<String>,
+    ) -> Option<AsyncStorageTarget<S::Namespace>>
+    where
+        S: 'static,
+    {
+        let namespace = namespace.into();
 
-        if let Some(mut storage) = parser.storage_mut() {
-            storage.drain_dispatch_queues();
+        // First, check if a namespace has been created previously
+        //
+        if let Some(storage) = self.storage() {
+            let async_target = storage.resource::<AsyncStorageTarget<S::Namespace>>(Some(
+                ResourceKey::with_hash(namespace.clone()),
+            ));
+            if let Some(async_target) = async_target {
+                return Some(async_target.clone());
+            }
         }
 
-        Some(Box::pin(parser))
+        // Otherwise, create a new namespace if enabled and add as a resource
+        //
+        if let Some(mut storage) = self.storage_mut() {
+            let ns = storage.shared_namespace(namespace.clone());
+            storage.drain_dispatch_queues();
+            Some(ns)
+        } else {
+            None
+        }
     }
 }
 
@@ -272,7 +303,7 @@ where
     S: StorageTarget + StorageTarget + Send + Sync + Unpin + 'static,
 {
     fn set_info(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {
-
+        let _resource_key = ResourceKey::<()>::with_hash(_node_info);
     }
 
     fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>) {
@@ -299,19 +330,59 @@ where
         if let Some(mut storage) = self.storage_mut() {
             storage.drain_dispatch_queues();
         }
+
+        for handler in self.handlers {
+            handler.on_completed();
+        }
     }
 }
 
-// #[tokio::test]
-// async fn test_v2_parser() {
-//     let parser = AttributeParser::<World>::default();
+#[runmd::prelude::async_trait]
+impl<S> ExtensionLoader for super::AttributeParser<S>
+where
+    S: StorageTarget + StorageTarget + Send + Sync + Unpin + 'static,
+    <S as StorageTarget>::Namespace: Send + Sync + 'static,
+{
+    async fn load_extension(&self, extension: &str, input: Option<&str>) -> Option<BoxedNode> {
+        let mut parser = self.clone();
 
-//     let mut parser = parser
-//         .load_extension("application/repo.reality.attributes.v1", None)
-//         .await
-//         .expect("should return a node");
-//     parser.define_property("int", Some("test"), Some("256"));
-//     parser.define_property("float", Some("test-2"), Some("256.0"));
+        // If there was a handler on the stack, call it's unload fn
+        if let Some(handler) = parser.handlers.last() {
+            handler.on_unload().await;
+        }
 
-//     println!("{:#?}", parser);
-// }
+        // If an attribute type exists, then parse it
+        if let Some(attribute_type) = parser.attribute_types.get(extension).cloned() {
+            attribute_type.parse(&mut parser, input.unwrap_or_default())
+        }
+
+        // Drain any dispatches before trying to load the rest of the resources
+        if let Some(mut storage) = parser.storage_mut() {
+            storage.drain_dispatch_queues();
+        }
+
+        // If a package exists, then add to the current parser
+        if let Some(package) = resource_owned!(parser, AttributeTypePackage<S>, extension) {
+            for attr_type in package.0.iter() {
+                parser.add_type(attr_type.clone());
+            }
+        }
+
+        // If a block object handler exists, then create a new namespace for the extension and call on_load for the handler
+        // Add handler to parser state
+        if let (Some(mut handler), Some(namespace)) = (
+            resource_owned!(parser, BlockObjectHandler<S::Namespace>, extension),
+            parser.namespace(extension),
+        ) {
+            handler.on_load(namespace).await;
+            parser.handlers.push(handler);
+        }
+
+        // Drain again to prepare the parser,
+        if let Some(mut storage) = parser.storage_mut() {
+            storage.drain_dispatch_queues();
+        }
+
+        Some(Box::pin(parser))
+    }
+}

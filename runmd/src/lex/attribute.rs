@@ -4,7 +4,7 @@ use super::prelude::*;
 /// 
 /// An attribute is simply a container w/ a name and an input value,
 ///
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Hash, Default, Debug, Clone, PartialEq)]
 pub struct Attribute<'a> {
     /// Name of this attribute,
     ///

@@ -4,8 +4,7 @@ cfg_specs! {
 cfg_async_dispatcher! {
     pub mod async_dispatcher;
 }
-pub mod simple;
-pub mod complex;
+pub mod shared;
 pub mod target;
 pub mod resource_key;
 
@@ -40,13 +39,12 @@ pub mod prelude {
     /// 
     pub(super) type DispatchMutTaskQueue<S> =  std::sync::Mutex<std::collections::VecDeque<MutTaskFn<S>>>;
 
-    pub use super::simple::Simple;
     pub use super::target::StorageTarget;
     pub use super::resource_key::ResourceKey;
 
     cfg_async_dispatcher! {
         pub use tokio::sync::RwLock;
-        pub use super::complex::Complex;
+        pub use super::shared::Shared;
         pub use super::async_dispatcher::AsyncStorageTarget;
         pub use super::async_dispatcher::Dispatcher;
     }

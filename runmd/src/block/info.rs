@@ -1,6 +1,6 @@
 /// Struct containing metadata information on a block being parsed,
 /// 
-#[derive(Clone, Debug)]
+#[derive(Hash, Clone, Debug)]
 pub struct Info<'a> {
     /// Index of the block,
     /// 

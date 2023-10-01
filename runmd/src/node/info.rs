@@ -2,7 +2,7 @@ use crate::lex::prelude::Line;
 
 /// Struct containing metadata of the node while it is being parsed,
 /// 
-#[derive(Debug, Clone)]
+#[derive(Hash, Debug, Clone)]
 pub struct Info<'a> {
     /// Index of this node,
     /// 

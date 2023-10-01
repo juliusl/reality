@@ -72,10 +72,6 @@ impl Parse for StructData {
 
                     Ok(())
                 })?;
-
-                // if compile.is_empty() {
-                //     compile.push(attr.path().clone());
-                // }
             }
         }
 
@@ -116,7 +112,7 @@ impl StructData {
         let ty_generics = ty_generics.clone();
         self.generics.params.push(
             parse2::<GenericParam>(
-                quote!(S: StorageTarget<Namespace = Complex> + Send + Sync + 'static)).expect("should be able to tokenize")
+                quote!(S: StorageTarget + Send + Sync + 'static)).expect("should be able to tokenize")
             );
 
         let (impl_generics, _, where_clause) = &self.generics.split_for_impl();
@@ -162,7 +158,7 @@ impl StructData {
                         quote!(
                             self.#name = value;
 
-                            if let Some(tag) = tag {
+                            if let Some(tag) = _tag {
                                 self.#name.set_tag(tag);
                             }
                         )
@@ -179,7 +175,7 @@ impl StructData {
 
             }, |c| {
                 quote! {
-                    #c(self, value, tag);
+                    #c(self, value, _tag);
                 }
             });
 
@@ -194,7 +190,7 @@ impl StructData {
                     }
                 
                     #[allow(unused_variables)]
-                    fn on_parse(&mut self, value: #ty, tag: Option<&String>) {
+                    fn on_parse(&mut self, value: #ty, _tag: Option<&String>) {
                         #callback
                     }
                 }

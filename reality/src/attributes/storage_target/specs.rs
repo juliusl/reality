@@ -14,6 +14,10 @@ impl StorageTarget for World {
 
     type Namespace = World;
 
+    fn create_namespace() -> Self::Namespace {
+        World::new()
+    }
+
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
         resource_key: Option<ResourceKey<T>>

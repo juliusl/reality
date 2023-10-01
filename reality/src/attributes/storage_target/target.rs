@@ -1,20 +1,23 @@
-use crate::{Handler, Callback, CallbackMut};
+use super::prelude::*;
+use crate::{Callback, CallbackMut, Handler};
 use std::ops::Deref;
 use std::ops::DerefMut;
-use super::prelude::*;
 
 /// Trait generalizing a storage target that can be used to initialize and store application resources,
 ///
 pub trait StorageTarget {
     /// Container for borrowing a resource from the storage target,
     ///
-    type BorrowResource<'a, T: Send + Sync + 'static>: Deref<Target = T>
+    type BorrowResource<'a, T: Send + Sync + 'static>: Deref<Target = T> + Send + Sync
     where
         Self: 'a;
 
     /// Container for mutably borrowing a resource from the storage target,
     ///
-    type BorrowMutResource<'a, T: Send + Sync + 'static>: Deref<Target = T> + DerefMut<Target = T>
+    type BorrowMutResource<'a, T: Send + Sync + 'static>: Deref<Target = T>
+        + DerefMut<Target = T>
+        + Send
+        + Sync
     where
         Self: 'a;
 
@@ -22,21 +25,31 @@ pub trait StorageTarget {
     ///
     type Namespace: StorageTarget + Send + Sync + 'static;
 
-    /// Creates a new StorageTarget namespace,
+    /// Creates the storage target implementation for namespace support,
     ///
-    /// Returns None if the namespace is no-longer available (reserved) or if the storage target does not support creating `Namespace` a namespace,
+    fn create_namespace() -> Self::Namespace;
+
+    /// Creates a shared namespace,
     ///
-    /// **Note**: To reserve a namespace, it must be put into this storage target as a resource.
+    /// Returns a thread safe storage target wrapper.
     ///
-    /// That implies only `Namespace` types that are `Send + Sync` can be reserved in such a manner.
-    ///
-    #[allow(unused_variables)] // Optional trait fn
-    fn create_namespace(
-        &self,
-        namespace: impl Into<String>,
-        resource_key: Option<ResourceKey<Self::Namespace>>,
-    ) -> Option<Self::Namespace> {
-        None
+    #[cfg(feature = "async_dispatcher")]
+    fn shared_namespace(&self, namespace: impl Into<String>) -> AsyncStorageTarget<Self::Namespace>
+    where
+        Self: 'static,
+    {
+        let namespace = namespace.into();
+        let resource_key =
+            ResourceKey::<AsyncStorageTarget<Self::Namespace>>::with_hash(&namespace);
+
+        if let Some(ns) = self.resource(Some(resource_key)) {
+            ns.clone()
+        } else {
+            let ns = Self::create_namespace();
+            let shared = ns.into_thread_safe();
+            self.lazy_put_resource(shared.clone(), Some(resource_key));
+            shared
+        }
     }
 
     /// Put a resource in storage w/ key
@@ -247,61 +260,71 @@ pub trait StorageTarget {
 
         AsyncStorageTarget {
             storage: Arc::new(RwLock::new(self)),
-            runtime: Some(tokio::runtime::Handle::current())
+            runtime: Some(tokio::runtime::Handle::current()),
         }
     }
 
-    
-     /// Adds a callback as a resource,
-    /// 
-    fn add_callback<Arg: Send + Sync + 'static, H: Handler<Self, Arg>>(&mut self, resource_key: Option<ResourceKey<Callback<Self, Arg>>>) 
-    where
-        Self: Sized + 'static
+    /// Adds a callback as a resource,
+    ///
+    fn add_callback<Arg: Send + Sync + 'static, H: Handler<Self, Arg>>(
+        &mut self,
+        resource_key: Option<ResourceKey<Callback<Self, Arg>>>,
+    ) where
+        Self: Sized + 'static,
     {
         self.put_resource(Callback::new::<H>(), resource_key)
     }
 
     /// Lazily queues a dispatch for a callback w/ Arg,
-    /// 
+    ///
     /// Returns true if a callback exists and was queued
-    /// 
-    fn callback<Arg: Send + Sync + 'static>(&self, resource_key: Option<ResourceKey<Callback<Self, Arg>>>) -> Option<Callback<Self, Arg>> 
+    ///
+    fn callback<Arg: Send + Sync + 'static>(
+        &self,
+        resource_key: Option<ResourceKey<Callback<Self, Arg>>>,
+    ) -> Option<Callback<Self, Arg>>
     where
-        Self: Sized + 'static
+        Self: Sized + 'static,
     {
         self.resource(resource_key).map(|c| c.deref().clone())
     }
 
     /// Lazily queues a mutable dispatch for a callback w/ Arg if one exists,
-    /// 
+    ///
     /// Returns true if a callback exists and was queued,
-    /// 
-    fn callback_mut<Arg: Send + Sync + 'static>(&self, resource_key: Option<ResourceKey<CallbackMut<Self, Arg>>>) -> Option<CallbackMut<Self, Arg>> 
+    ///
+    fn callback_mut<Arg: Send + Sync + 'static>(
+        &self,
+        resource_key: Option<ResourceKey<CallbackMut<Self, Arg>>>,
+    ) -> Option<CallbackMut<Self, Arg>>
     where
-        Self: Sized + 'static
+        Self: Sized + 'static,
     {
         self.resource(resource_key).map(|c| c.deref().clone())
     }
 
     /// Lazily queues a dispatch for a callback w/ Arg,
-    /// 
+    ///
     /// Returns true if a callback exists and was queued
-    /// 
-    fn lazy_callback<Arg: Send + Sync + 'static>(&self, callback: Callback<Self, Arg>, arg: Arg) 
+    ///
+    fn lazy_callback<Arg: Send + Sync + 'static>(&self, callback: Callback<Self, Arg>, arg: Arg)
     where
-        Self: Sized + 'static
+        Self: Sized + 'static,
     {
-        self.lazy_dispatch(move |s| { callback.handle(s, arg)})
+        self.lazy_dispatch(move |s| callback.handle(s, arg))
     }
 
     /// Lazily queues a mutable dispatch for a callback w/ Arg if one exists,
-    /// 
+    ///
     /// Returns true if a callback exists and was queued,
-    /// 
-    fn lazy_callback_mut<Arg: Send + Sync + 'static>(&self, callback: CallbackMut<Self, Arg>, arg: Arg) 
-    where
-        Self: Sized + 'static
+    ///
+    fn lazy_callback_mut<Arg: Send + Sync + 'static>(
+        &self,
+        callback: CallbackMut<Self, Arg>,
+        arg: Arg,
+    ) where
+        Self: Sized + 'static,
     {
-        self.lazy_dispatch_mut(move |s| { callback.handle(s, arg)})
+        self.lazy_dispatch_mut(move |s| callback.handle(s, arg))
     }
 }

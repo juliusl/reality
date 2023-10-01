@@ -8,3 +8,5 @@ pub use attributes::*;
 
 mod block;
 pub use block::Block;
+pub use block::BlockObject;
+pub use block::BlockObjectHandler;

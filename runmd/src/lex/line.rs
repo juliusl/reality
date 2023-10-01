@@ -2,7 +2,7 @@ use super::prelude::*;
 
 /// Contains line data derived by the lexer
 /// 
-#[derive(Default, Debug, Clone)]
+#[derive(Hash, Default, Debug, Clone)]
 pub struct Line<'a> {
     /// Instruction for this line,
     /// 

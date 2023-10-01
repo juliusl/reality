@@ -2,7 +2,7 @@ use super::prelude::*;
 
 /// Enumeration of instructions emitted by runmd,
 ///
-#[derive(Logos, Default, Debug, Clone, PartialEq)]
+#[derive(Hash, Logos, Default, Debug, Clone, PartialEq)]
 #[logos(skip r"[\n\r ]*")]
 #[logos(extras = Context<'s>)]
 pub enum Instruction {

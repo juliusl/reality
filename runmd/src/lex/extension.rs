@@ -6,7 +6,7 @@ use super::prelude::*;
 /// 
 /// If a suffix is set, then the media type is formatted by applying the suffix to the name of the extension.
 /// 
-#[derive(Default, Debug, Clone)]
+#[derive(Hash, Default, Debug, Clone)]
 pub struct Extension<'a> {
     /// Name of this extension,
     ///
