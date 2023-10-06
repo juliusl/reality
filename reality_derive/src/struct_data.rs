@@ -276,7 +276,7 @@ impl StructData {
         let on_completed = self.reality_on_completed.clone().map(|p| quote!(#p(storage))).unwrap_or(quote!(None));
 
         let object_type_trait = quote_spanned!(self.span=>
-            #[runmd::prelude::async_trait]
+            #[reality::runmd::async_trait]
             impl #impl_generics BlockObject<Storage> for #name #ty_generics #where_clause {
                 async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>) {
                     #on_load

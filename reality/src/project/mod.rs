@@ -19,7 +19,7 @@ pub type NodePlugin<S> = fn(Option<&str>, Option<&str>, &mut AttributeParser<S>)
 pub struct Project<Storage: StorageTarget + 'static> {
     root: Storage,
 
-    nodes:
+    pub nodes:
         std::sync::RwLock<HashMap<ResourceKey<()>, Arc<tokio::sync::RwLock<Storage::Namespace>>>>,
 }
 
@@ -203,6 +203,10 @@ use crate::BlockObject;
 use crate::OnParseField;
 use reality_derive::BlockObjectType;
 use runmd::prelude::{BlockInfo, NodeInfo};
+
+mod reality {
+    pub use crate::*;
+}
 
 #[derive(Debug, BlockObjectType)]
 #[reality(rename = "application/test")]

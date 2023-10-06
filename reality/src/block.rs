@@ -52,7 +52,7 @@ impl<Storage: StorageTarget + 'static> Clone for BlockObjectType<Storage> {
 
 /// Object type that lives inside of a runmd block,
 /// 
-#[runmd::prelude::async_trait]
+#[crate::runmd::async_trait]
 pub trait BlockObject<Storage>: AttributeType<Storage>
 where
     Self: Sized + Send + Sync + 'static,
