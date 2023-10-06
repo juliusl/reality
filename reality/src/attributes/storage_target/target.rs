@@ -264,6 +264,25 @@ pub trait StorageTarget {
         }
     }
 
+    /// Consume the storage target returning a thread safe version w/ specific runtime handle,
+    ///
+    /// This enables individual dispatchers to be created for stored resources, and for a cloneable reference to the underlying storage target
+    ///
+    /// **Requires the `async_dispatcher` feature**
+    ///
+    #[cfg(feature = "async_dispatcher")]
+    fn into_thread_safe_with(self, handle: tokio::runtime::Handle) -> AsyncStorageTarget<Self>
+    where
+        Self: Sized,
+    {
+        use std::sync::Arc;
+
+        AsyncStorageTarget {
+            storage: Arc::new(RwLock::new(self)),
+            runtime: Some(handle),
+        }
+    }
+
     /// Adds a callback as a resource,
     ///
     fn add_callback<Arg: Send + Sync + 'static, H: Handler<Self, Arg>>(
