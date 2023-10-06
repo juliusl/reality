@@ -28,7 +28,7 @@ pub trait AttributeType<S: StorageTarget> {
 ///
 /// Allows the parse function to be stored and recalled
 ///
-pub struct AttributeTypeParser<S: StorageTarget>(
+pub struct AttributeTypeParser<S: StorageTarget + 'static>(
     /// Identifier
     String,
     /// Parse function

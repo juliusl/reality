@@ -46,6 +46,15 @@ pub(crate) struct StructData {
     /// Reality attribute, resource-label,
     /// 
     reality_resource_label: Option<LitStr>,
+    /// Reality attribute, on_load fn path,
+    /// 
+    reality_on_load: Option<Path>,
+    /// Reality attribute, on_unload fn path,
+    /// 
+    reality_on_unload: Option<Path>,
+    /// Reality attribute, on_completed fn path,
+    /// 
+    reality_on_completed: Option<Path>,
 }
 
 impl Parse for StructData {
@@ -56,6 +65,9 @@ impl Parse for StructData {
 
         let mut reality_rename = None;
         let mut reality_resource_label = None;
+        let mut reality_on_load = None;
+        let mut reality_on_unload = None;
+        let mut reality_on_completed = None;
 
         for attr in derive_input.attrs.iter() {
             if attr.path().is_ident("reality") {
@@ -68,6 +80,21 @@ impl Parse for StructData {
                     if meta.path.is_ident("resource_label") {
                         meta.input.parse::<Token![=]>()?;
                         reality_resource_label = meta.input.parse::<LitStr>().ok();
+                    }
+
+                    if meta.path.is_ident("load") {
+                        meta.input.parse::<Token![=]>()?;
+                        reality_on_load = meta.input.parse::<Path>().ok();
+                    }
+
+                    if meta.path.is_ident("unload") {
+                        meta.input.parse::<Token![=]>()?;
+                        reality_on_unload = meta.input.parse::<Path>().ok();
+                    }
+
+                    if meta.path.is_ident("completed") {
+                        meta.input.parse::<Token![=]>()?;
+                        reality_on_completed = meta.input.parse::<Path>().ok();
                     }
 
                     Ok(())
@@ -97,6 +124,9 @@ impl Parse for StructData {
                 fields,
                 reality_rename,
                 reality_resource_label,
+                reality_on_load,
+                reality_on_unload,
+                reality_on_completed,
             })
         }
     }
@@ -224,6 +254,47 @@ impl StructData {
 
             #(#fields_on_parse_impl)*
         }
+    }
+
+     /// Returns token stream of generated AttributeType trait
+    /// 
+    pub(crate) fn object_type_trait(self) -> TokenStream {
+        let name = self.name.clone();
+        let original = self.generics.clone();
+        let (_, ty_generics, _) = original.split_for_impl();
+        let ty_generics = ty_generics.clone();
+        let mut generics = self.generics.clone();
+        generics.params.push(
+            parse2::<GenericParam>(
+                quote!(Storage: StorageTarget + Send + Sync + 'static)).expect("should be able to tokenize")
+            );
+
+        let (impl_generics, _, where_clause) = &generics.split_for_impl();
+
+        let on_load = self.reality_on_load.clone().map(|p| quote!(#p(storage).await;)).unwrap_or(quote!());
+        let on_unload = self.reality_on_unload.clone().map(|p| quote!(#p(storage).await;)).unwrap_or(quote!());
+        let on_completed = self.reality_on_completed.clone().map(|p| quote!(#p(storage))).unwrap_or(quote!(None));
+
+        let object_type_trait = quote_spanned!(self.span=>
+            #[runmd::prelude::async_trait]
+            impl #impl_generics BlockObject<Storage> for #name #ty_generics #where_clause {
+                async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>) {
+                    #on_load
+                }
+
+                async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>) {
+                    #on_unload
+                }
+
+                fn on_completed(storage: AsyncStorageTarget<Storage::Namespace>) -> Option<AsyncStorageTarget<Storage::Namespace>> {
+                    #on_completed
+                }
+            });
+
+
+        let mut attribute_type = self.attribute_type_trait();
+        attribute_type.extend(object_type_trait);
+        attribute_type
     }
 }
 

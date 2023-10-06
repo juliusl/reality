@@ -1,11 +1,44 @@
 use core::slice;
 use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
+use std::hash::{Hasher, Hash};
 use std::marker::PhantomData;
+
+/// Build a resource key,
+/// 
+pub struct ResourceKeyHashBuilder<T: Send + Sync + 'static, H: Hasher + Default> {
+    hasher: H,
+    _t: PhantomData<T>,
+}
+
+impl<T: Send + Sync + 'static, H: Hasher + Default> Into<ResourceKey<T>> for ResourceKeyHashBuilder<T, H> {
+    fn into(self) -> ResourceKey<T> {
+        ResourceKey::with_hash_value(self.hasher.finish())
+    }
+}
+
+impl<T: Send + Sync + 'static> ResourceKeyHashBuilder<T, DefaultHasher> {
+    /// Creates a new resource key hash builder,
+    /// 
+    pub fn new_default_hasher() -> Self {
+        Self { hasher: DefaultHasher::new(), _t: PhantomData }
+    }
+
+    /// Adds to hash state,
+    /// 
+    pub fn hash(&mut self, hashable: impl Hash) {
+        hashable.hash(&mut self.hasher);
+    }
+
+    /// Finishes building the resource key w/ hash,
+    /// 
+    pub fn finish(self) -> ResourceKey<T> {
+        self.into()
+    }
+}
 
 /// Struct containing properties of a resource key,
 ///
-#[derive(Hash)]
+#[derive(Debug, Hash, Eq, PartialEq, PartialOrd)]
 pub struct ResourceKey<T: Send + Sync + 'static> {
     data: u128,
     _t: PhantomData<T>,
@@ -206,6 +239,18 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
     }
 }
 
+impl<T: Send + Sync, H: Hasher + Default> Hasher for ResourceKeyHashBuilder<T, H> {
+    fn finish(&self) -> u64 {
+        self.hasher.finish()
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        use std::hash::Hash;
+
+        bytes.hash(&mut self.hasher);
+    }
+}
+
 impl<T: Send + Sync + 'static> From<uuid::Uuid> for ResourceKey<T> {
     fn from(value: uuid::Uuid) -> Self {
         Self {
@@ -227,7 +272,9 @@ impl<T: Send + Sync + 'static> TryFrom<Option<&'static str>> for ResourceKey<T> 
     }
 }
 
-impl<T: Send + Sync + 'static> Copy for ResourceKey<T> {}
+impl<T: Send + Sync + 'static> Copy for ResourceKey<T> {
+
+}
 
 impl<T: Send + Sync + 'static> Clone for ResourceKey<T> {
     fn clone(&self) -> Self {

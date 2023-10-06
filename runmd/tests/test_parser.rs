@@ -33,14 +33,20 @@ const SOURCE: &'static str = r"
 struct Test;
 
 impl BlockProvider for Test {
-    fn provide(&self, ty: Option<&str>, moniker: Option<&str>) -> Option<BoxedNode> {
-        trace!(ty, moniker, "provide_block");
+    fn provide(&self, block_info: BlockInfo) -> Option<BoxedNode> {
+        trace!("provide_block, {:?}", block_info);
         Some(Box::pin(Test))
     }
 }
 
 impl NodeProvider for Test {
-    fn provide(&self, name: &str, tag: Option<&str>, input: Option<&str>) -> Option<BoxedNode> {
+    fn provide(&self, 
+        name: &str, 
+        tag: Option<&str>, 
+        input: Option<&str>, 
+        _node_info: &NodeInfo, 
+        _block_info: &BlockInfo
+    ) -> Option<BoxedNode> {
         trace!(name, tag, input, "provide_node");
         Some(Box::pin(Test))
     }

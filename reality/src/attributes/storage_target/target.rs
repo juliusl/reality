@@ -23,7 +23,7 @@ pub trait StorageTarget {
 
     /// Storage target type for handling namespaces,
     ///
-    type Namespace: StorageTarget + Send + Sync + 'static;
+    type Namespace: StorageTarget + Unpin + Send + Sync + 'static;
 
     /// Creates the storage target implementation for namespace support,
     ///
@@ -34,18 +34,18 @@ pub trait StorageTarget {
     /// Returns a thread safe storage target wrapper.
     ///
     #[cfg(feature = "async_dispatcher")]
-    fn shared_namespace(&self, namespace: impl Into<String>) -> AsyncStorageTarget<Self::Namespace>
+    fn shared_namespace(&self, namespace: impl std::hash::Hash) -> AsyncStorageTarget<Self::Namespace>
     where
         Self: 'static,
     {
-        let namespace = namespace.into();
         let resource_key =
-            ResourceKey::<AsyncStorageTarget<Self::Namespace>>::with_hash(&namespace);
+            ResourceKey::<AsyncStorageTarget<Self::Namespace>>::with_hash(namespace);
 
         if let Some(ns) = self.resource(Some(resource_key)) {
             ns.clone()
         } else {
-            let ns = Self::create_namespace();
+            let mut ns = Self::create_namespace();
+            ns.enable_dispatching();
             let shared = ns.into_thread_safe();
             self.lazy_put_resource(shared.clone(), Some(resource_key));
             shared

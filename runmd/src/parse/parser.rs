@@ -109,7 +109,7 @@ impl Parser {
     /// Callback when processing a new block,
     ///
     fn on_block(&mut self, block_info: BlockInfo) {
-        if let Some(block) = self.block_provider.provide(block_info.ty, block_info.moniker) {
+        if let Some(block) = self.block_provider.provide(block_info) {
             self.graph.push(block);
         }
     }
@@ -130,6 +130,8 @@ impl Parser {
                 attr.name,
                 node_info.line.tag.as_ref().map(|t| t.0),
                 attr.input.clone().map(|i| i.input_str()),
+                &node_info,
+                &block_info
             );
             if let Some(mut node) = node {
                 {

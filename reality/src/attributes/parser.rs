@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
 use tracing::trace;
@@ -14,28 +13,22 @@ use super::StorageTarget;
 use crate::block::BlockObjectHandler;
 use crate::AsyncStorageTarget;
 use crate::AttributeType;
+use crate::BlockObject;
+use crate::BlockObjectType;
 use crate::ResourceKey;
-
-/// Resource for storing attribute types,
-///
-pub struct AttributeTypePackage<S: StorageTarget>(HashSet<AttributeTypeParser<S>>);
-
-impl<S: StorageTarget> Clone for AttributeTypePackage<S> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
 
 /// Maintains attribute types and matches runmd nodes to the corresponding attribute type parser,
 ///
-#[derive(Default)]
-pub struct AttributeParser<Storage: StorageTarget> {
+pub struct AttributeParser<Storage: StorageTarget + 'static> {
     /// Current name being parsed,
     ///
     name: Option<String>,
     /// Current tag being parsed,
     ///
     tag: Option<String>,
+    /// Block object types,
+    ///
+    block_object_types: BTreeMap<String, BlockObjectType<Storage>>,
     /// Table of attribute type parsers,
     ///
     attribute_types: BTreeMap<String, AttributeTypeParser<Storage>>,
@@ -47,12 +40,26 @@ pub struct AttributeParser<Storage: StorageTarget> {
     storage: Option<Arc<tokio::sync::RwLock<Storage>>>,
 }
 
-impl<S: StorageTarget> Clone for AttributeParser<S> {
+impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
+    fn default() -> Self {
+        Self {
+            name: Default::default(),
+            tag: Default::default(),
+            block_object_types: Default::default(),
+            attribute_types: Default::default(),
+            handlers: Default::default(),
+            storage: Default::default(),
+        }
+    }
+}
+
+impl<S: StorageTarget + 'static> Clone for AttributeParser<S> {
     fn clone(&self) -> Self {
         Self {
             tag: self.tag.clone(),
             name: self.name.clone(),
             attribute_types: self.attribute_types.clone(),
+            block_object_types: self.block_object_types.clone(),
             handlers: self.handlers.clone(),
             storage: self.storage.clone(),
         }
@@ -71,7 +78,23 @@ impl<S: StorageTarget> std::fmt::Debug for AttributeParser<S> {
 }
 
 impl<S: StorageTarget> AttributeParser<S> {
-    /// Adds a custom attribute parser and returns self,
+    /// Adds an object type to the parser,
+    ///
+    pub fn with_object_type<O: BlockObject<S>>(&mut self) -> &mut Self {
+        self.add_object_type(BlockObjectType::new::<O>());
+        self
+    }
+
+    /// Adds an object type to the parser,
+    ///
+    pub fn add_object_type(&mut self, object_ty: impl Into<BlockObjectType<S>>) {
+        let object_ty = object_ty.into();
+
+        self.block_object_types
+            .insert(object_ty.ident.to_string(), object_ty);
+    }
+
+    /// Adds an attribute type to the parser and returns self,
     ///
     pub fn with_type<C>(&mut self) -> &mut Self
     where
@@ -83,8 +106,8 @@ impl<S: StorageTarget> AttributeParser<S> {
 
     /// Adds a custom attribute parser,
     ///
-    pub fn add_type(&mut self, custom_attr: impl Into<AttributeTypeParser<S>>) {
-        let custom_attr = custom_attr.into();
+    pub fn add_type(&mut self, attr_ty: impl Into<AttributeTypeParser<S>>) {
+        let custom_attr = attr_ty.into();
         self.attribute_types
             .insert(custom_attr.ident().to_string(), custom_attr);
     }
@@ -218,8 +241,8 @@ impl<S: StorageTarget> AttributeParser<S> {
 
     /// Sets the current storage,
     ///
-    pub fn set_storage(&mut self, storage: S) {
-        self.storage = Some(Arc::new(tokio::sync::RwLock::new(storage)));
+    pub fn set_storage(&mut self, storage: Arc<tokio::sync::RwLock<S>>) {
+        self.storage = Some(storage);
     }
 
     /// Returns the current tag,
@@ -239,6 +262,12 @@ impl<S: StorageTarget> AttributeParser<S> {
     pub fn reset(&mut self) {
         Option::take(&mut self.tag);
         Option::take(&mut self.name);
+    }
+
+    /// Returns a clone of storage,
+    ///
+    pub fn clone_storage(&self) -> Option<Arc<tokio::sync::RwLock<S>>> {
+        self.storage.clone()
     }
 
     /// Returns an immutable reference to centralized-storage,
@@ -275,15 +304,12 @@ impl<S: StorageTarget> AttributeParser<S> {
     {
         let namespace = namespace.into();
 
-        // First, check if a namespace has been created previously
+        // Check if an async_target already exists,
         //
-        if let Some(storage) = self.storage() {
-            let async_target = storage.resource::<AsyncStorageTarget<S::Namespace>>(Some(
-                ResourceKey::with_hash(namespace.clone()),
-            ));
-            if let Some(async_target) = async_target {
-                return Some(async_target.clone());
-            }
+        let async_target =
+            resource_owned!(self, AsyncStorageTarget<S::Namespace>, namespace.clone());
+        if async_target.is_some() {
+            return async_target;
         }
 
         // Otherwise, create a new namespace if enabled and add as a resource
@@ -340,7 +366,7 @@ where
 #[runmd::prelude::async_trait]
 impl<S> ExtensionLoader for super::AttributeParser<S>
 where
-    S: StorageTarget + StorageTarget + Send + Sync + Unpin + 'static,
+    S: StorageTarget + Send + Sync + Unpin + 'static,
     <S as StorageTarget>::Namespace: Send + Sync + 'static,
 {
     async fn load_extension(&self, extension: &str, input: Option<&str>) -> Option<BoxedNode> {
@@ -349,38 +375,42 @@ where
         // If there was a handler on the stack, call it's unload fn
         if let Some(handler) = parser.handlers.last() {
             handler.on_unload().await;
-        }
 
-        // If an attribute type exists, then parse it
-        if let Some(attribute_type) = parser.attribute_types.get(extension).cloned() {
-            attribute_type.parse(&mut parser, input.unwrap_or_default())
-        }
-
-        // Drain any dispatches before trying to load the rest of the resources
-        if let Some(mut storage) = parser.storage_mut() {
-            storage.drain_dispatch_queues();
-        }
-
-        // If a package exists, then add to the current parser
-        if let Some(package) = resource_owned!(parser, AttributeTypePackage<S>, extension) {
-            for attr_type in package.0.iter() {
-                parser.add_type(attr_type.clone());
+            // Drain any dispatches before trying to load the rest of the resources
+            if let Some(mut storage) = parser.storage_mut() {
+                storage.drain_dispatch_queues();
             }
         }
 
-        // If a block object handler exists, then create a new namespace for the extension and call on_load for the handler
-        // Add handler to parser state
-        if let (Some(mut handler), Some(namespace)) = (
-            resource_owned!(parser, BlockObjectHandler<S::Namespace>, extension),
+        // Clear any pre-existing attribute types
+        parser.attribute_types.clear();
+
+        // If an block object-type exists, then begin to load
+        if let (
+            Some(BlockObjectType {
+                attribute_type,
+                mut handler,
+                ..
+            }),
+            Some(namespace),
+        ) = (
+            parser.block_object_types.get(extension).cloned(),
             parser.namespace(extension),
         ) {
+            attribute_type.parse(&mut parser, input.unwrap_or_default());
+
+            // Drain any dispatches before trying to load the rest of the resources
+            if let Some(mut storage) = parser.storage_mut() {
+                storage.drain_dispatch_queues();
+            }
+
             handler.on_load(namespace).await;
             parser.handlers.push(handler);
-        }
 
-        // Drain again to prepare the parser,
-        if let Some(mut storage) = parser.storage_mut() {
-            storage.drain_dispatch_queues();
+            // Drain any dispatches before trying to load the rest of the resources
+            if let Some(mut storage) = parser.storage_mut() {
+                storage.drain_dispatch_queues();
+            }
         }
 
         Some(Box::pin(parser))

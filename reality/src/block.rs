@@ -5,57 +5,81 @@ use reality_derive::AttributeType;
 use crate::AsyncStorageTarget;
 use crate::AttributeParser;
 use crate::AttributeType;
-use crate::AttributeTypePackage;
 use crate::AttributeTypeParser;
-use crate::ResourceKey;
 use crate::StorageTarget;
 
-/// Struct containing all attributes,
+/// Struct containing block object functions,
 ///
-pub struct Block {}
+pub struct BlockObjectType<Storage>
+where
+    Storage: StorageTarget + 'static,
+{
+    /// Attribute type ident,
+    /// 
+    pub ident: &'static str,
+    /// Attribute type parser,
+    /// 
+    pub attribute_type: AttributeTypeParser<Storage>,
+    /// Object event handlers,
+    /// 
+    pub handler: BlockObjectHandler<Storage::Namespace>,
+}
 
-pub trait BlockPackage<S: StorageTarget + 'static> {
-    /// Resource key for the block package,
-    ///
-    fn resource_key() -> ResourceKey<AttributeTypePackage<S>>;
+impl<Storage> BlockObjectType<Storage>
+where
+    Storage: StorageTarget + 'static,
+{
+    /// Creates a new block object type,
+    /// 
+    pub fn new<B: BlockObject<Storage>>() -> Self {
+        Self {
+            ident: <B as AttributeType<Storage>>::ident(),
+            attribute_type: B::attribute_type(),
+            handler: B::handler(),
+        }
+    }
+}
 
-    /// Initialized package,
-    ///
-    fn package() -> AttributeTypePackage<S>;
+impl<Storage: StorageTarget + 'static> Clone for BlockObjectType<Storage> {
+    fn clone(&self) -> Self {
+        Self {
+            ident: self.ident,
+            attribute_type: self.attribute_type.clone(),
+            handler: self.handler.clone(),
+        }
+    }
 }
 
 /// Object type that lives inside of a runmd block,
-///
-/// Initiated w/ the `+` keyword,
-///
+/// 
 #[runmd::prelude::async_trait]
 pub trait BlockObject<Storage>: AttributeType<Storage>
 where
     Self: Sized + Send + Sync + 'static,
-    Storage: StorageTarget + Send + Sync + 'static,
+    Storage: StorageTarget + 'static,
 {
-    /// Called when the block object is being loaded,
-    ///
-    async fn on_load(storage: AsyncStorageTarget<Storage>);
-
-    /// Called when the block object is being unloaded,
-    ///
-    async fn on_unload(storage: AsyncStorageTarget<Storage>);
-
-    /// Called when the block object's parent attribute has completed processing,
-    ///
-    fn on_completed(storage: AsyncStorageTarget<Storage>) -> Option<AsyncStorageTarget<Storage>>;
-
     /// Returns the attribute-type parser for the block-object type,
     ///
     fn attribute_type() -> AttributeTypeParser<Storage> {
         AttributeTypeParser::new::<Self>()
     }
 
+    /// Called when the block object is being loaded into it's namespace,
+    ///
+    async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>);
+
+    /// Called when the block object is being unloaded from it's namespace,
+    ///
+    async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>);
+
+    /// Called when the block object's parent attribute has completed processing,
+    ///
+    fn on_completed(storage: AsyncStorageTarget<Storage::Namespace>) -> Option<AsyncStorageTarget<Storage::Namespace>>;
+
     /// Returns an empty handler for this block object,
     ///
-    fn handler() -> BlockObjectHandler<Storage> {
-        BlockObjectHandler::new::<Self>()
+    fn handler() -> BlockObjectHandler<Storage::Namespace> {
+        BlockObjectHandler::<Storage::Namespace>::new::<Storage, Self>()
     }
 }
 
@@ -75,7 +99,7 @@ type BlockObjectCompletionFn<Storage> =
 ///
 pub struct BlockObjectHandler<Storage>
 where
-    Storage: StorageTarget + Send + Sync + 'static,
+    Storage: StorageTarget + 'static,
 {
     on_load: BlockObjectFn<Storage>,
     on_unload: BlockObjectFn<Storage>,
@@ -85,7 +109,7 @@ where
 
 impl<Storage> Clone for BlockObjectHandler<Storage>
 where
-    Storage: StorageTarget + Send + Sync + 'static,
+    Storage: StorageTarget + 'static,
 {
     fn clone(&self) -> Self {
         Self {
@@ -99,11 +123,13 @@ where
 
 impl<Storage> BlockObjectHandler<Storage>
 where
-    Storage: StorageTarget + Send + Sync + 'static,
+    Storage: StorageTarget + 'static,
 {
     /// Creates a new function resource from a block object,
     ///
-    pub fn new<B: BlockObject<Storage>>() -> Self {
+    pub fn new<BlockStorage: StorageTarget<Namespace = Storage> + 'static, B: BlockObject<BlockStorage>>() -> BlockObjectHandler<BlockStorage::Namespace> 
+    where 
+    {
         Self {
             on_load: B::on_load,
             on_unload: B::on_unload,
@@ -151,18 +177,18 @@ impl FromStr for Test {
 
 #[runmd::prelude::async_trait]
 impl<Storage: StorageTarget + Send + Sync + 'static> BlockObject<Storage> for Test {
-    async fn on_load(storage: AsyncStorageTarget<Storage>) {
+    async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>) {
         let dispatcher = storage.intialize_dispatcher::<()>(None).await;
         let mut storage = storage.storage.write().await;
         storage.put_resource(dispatcher, None);
     }
 
-    async fn on_unload(storage: AsyncStorageTarget<Storage>) {
+    async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>) {
         let mut disp = storage.dispatcher::<u64>(None).await;
         disp.dispatch_all().await;
     }
 
-    fn on_completed(storage: AsyncStorageTarget<Storage>) -> Option<AsyncStorageTarget<Storage>> {
+    fn on_completed(storage: AsyncStorageTarget<Storage::Namespace>) -> Option<AsyncStorageTarget<Storage::Namespace>> {
         Some(storage)
     }
 }

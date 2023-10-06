@@ -2,6 +2,22 @@
 /// 
 /// None; if the resource does not exist
 /// 
+/// # Examples
+/// 
+/// ```
+/// if let Some(resource) = resource_owned!(parser, u64, "test") {
+/// ...
+/// }
+/// 
+/// if let Some(resource) = resource_owned!(parser, u64, test) {
+/// ...
+/// }
+/// 
+/// if let Some(resource) = resource_owned!(parser, u64) {
+/// ...
+/// }
+/// ```
+/// 
 #[macro_export]
 macro_rules! resource_owned {
     ($parser:ident, $ty:path, $key:literal)=> {
@@ -12,6 +28,12 @@ macro_rules! resource_owned {
         })
     };
     ($parser:ident, $ty:path, $key:ident)=> {
+        $parser.storage().and_then(|s| {
+            s.resource::<$ty>(Some(ResourceKey::with_hash($key)))
+                .map(|h| h.clone())
+        })
+    };
+    ($parser:ident, $ty:path, $key:expr)=> {
         $parser.storage().and_then(|s| {
             s.resource::<$ty>(Some(ResourceKey::with_hash($key)))
                 .map(|h| h.clone())
