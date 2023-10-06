@@ -28,6 +28,12 @@ impl<S: StorageTarget> Clone for AsyncStorageTarget<S> {
 }
 
 impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
+    /// Creates an async storage target from its parts,
+    /// 
+    pub fn from_parts(storage: Arc<RwLock<S>>, runtime: tokio::runtime::Handle) -> Self {
+        Self { storage, runtime: Some(runtime) }
+    }
+
     /// Returns a dispatcher for a specific resource type,
     ///
     /// **Note**: If the dispatching queues were not already present this fn will add them.
