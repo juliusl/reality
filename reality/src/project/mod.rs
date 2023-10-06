@@ -1,5 +1,6 @@
-use std::ops::Deref;
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::path::Path;
+use std::sync::Arc;
+use std::collections::HashMap;
 
 use crate::{AttributeParser, ResourceKey, ResourceKeyHashBuilder, StorageTarget};
 
@@ -132,7 +133,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> LoadingFile<Storage> {
         parser
     }
 
-    /// Applies a plugin to the
+    /// Applies a plugin to a parser,
     /// 
     fn apply_plugin(&self, name: &str, input: Option<&str>, tag: Option<&str>, parser: &mut AttributeParser<Storage::Namespace>) {
         let node_plugin_key = ResourceKey::<NodePlugin<Storage::Namespace>>::with_hash(name);
@@ -169,25 +170,16 @@ impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::NodeProvide
     ) -> Option<runmd::prelude::BoxedNode> {
         let mut parser = self.create_parser_for_block(block_info);
 
-        let node_plugin_key = ResourceKey::<NodePlugin<Storage::Namespace>>::with_hash(_name);
-        if let Some(node_plugin) = self
-            .0
-            .root
-            .resource::<NodePlugin<Storage::Namespace>>(Some(node_plugin_key))
-        {
-            node_plugin(input, tag, &mut parser);
-        }
+       self.apply_plugin(_name, input, tag, &mut parser);
 
         let mut key_builder = ResourceKeyHashBuilder::new_default_hasher();
-        key_builder.hash(node_info);
         key_builder.hash(block_info);
+        key_builder.hash(node_info);
 
         let key = key_builder.finish();
 
         if let Ok(mut nodes) = self.0.nodes.write() {
-            // Create new namespace --
-            let target = self.0.root.shared_namespace(node_info);
-            parser.with_object_type::<Test>();
+            let target = self.0.root.shared_namespace(key);
             parser.set_storage(target.storage);
 
             if let Some(storage) = parser.clone_storage() {
@@ -243,6 +235,10 @@ async fn test_project_parser() {
     tokio::fs::write(
         ".test/v2v2test.md",
         r#"
+        # Test document
+
+        This is a test of embedded runmd blocks.
+
         ```runmd
         + .test
         <application/test>
