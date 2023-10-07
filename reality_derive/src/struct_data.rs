@@ -149,13 +149,15 @@ impl StructData {
         let trait_ident = self.reality_rename.unwrap_or(LitStr::new(ident.to_string().to_lowercase().as_str(), self.span));
         let fields = self.fields.clone();
         let fields = fields.iter().enumerate().map(|(offset, f)| {
-            let ty = &f.ty;
+            let ty = &f.field_ty();
             if let Some(attribute_type) = f.attribute_type.as_ref() {
                 quote_spanned! {f.span=>
                     parser.add_parseable_attribute_type_field::<#offset, Self, #attribute_type>();
                 }
             } else {
+                let comment = LitStr::new(format!("Parsing field `{}`", f.name.to_string()).as_str(), Span::call_site());
                 quote_spanned! {f.span=>
+                    let _ = #comment;
                     parser.add_parseable_field::<#offset, Self, #ty>();
                 }
             }
@@ -170,44 +172,11 @@ impl StructData {
         //  Implementation for fields parsers,
         // 
         let fields_on_parse_impl = self.fields.iter().enumerate().map(|(offset, f)| {
-            let name = &f.name;
             let field_ident = f.field_name_lit_str();
-            let ty = &f.ty;
+            let ty = f.field_ty();
 
             // Callback to use
-            let callback = f.parse_callback.as_ref().map_or_else(|| {
-                if let Ok(path) = parse2::<Path>(ty.to_token_stream()) {
-
-                    let idents = path.segments.iter().fold(String::new(), |mut acc, v| {
-                        acc.push_str(&v.ident.to_string());
-                        acc.push(':');
-                        acc
-                    });
-
-                    if vec!["crate:Tag:", "reality:Tag:", "Tag:"].into_iter().find(|s| idents == *s).is_some() {
-                        quote!(
-                            self.#name = value;
-
-                            if let Some(tag) = _tag {
-                                self.#name.set_tag(tag);
-                            }
-                        )
-                    } else {
-                        quote!(
-                            self.#name = value;
-                        )
-                    }
-                } else {
-                    quote!(
-                        self.#name = value;
-                    )
-                }
-
-            }, |c| {
-                quote! {
-                    #c(self, value, _tag);
-                }
-            });
+            let callback = f.render_field_parse_callback();
 
             quote_spanned! {f.span=>
                 impl #original_impl_generics OnParseField<#offset, #ty> for #ident #ty_generics #where_clause {
