@@ -118,16 +118,16 @@ impl StructField {
         } else if let Some(_) = self.map_of.as_ref() {
             callback = quote_spanned! {self.span=>
                 if let Some(tag) = _tag {
-                    self.#name.insert(tag.to_string(), value);
+                    self.#name.insert(tag.to_string(), value.into());
                 }
             }
         } else if let Some(_) = self.vec_of.as_ref() {
             callback = quote_spanned! {self.span=>
-                self.#name.push(value);
+                self.#name.push(value.into());
             }
         } else if let Some(_) = self.option_of.as_ref() {
             callback = quote_spanned! {self.span=>
-                self.#name = Some(value);
+                self.#name = Some(value.into());
             }
         }
 
