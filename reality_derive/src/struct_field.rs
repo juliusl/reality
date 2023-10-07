@@ -1,9 +1,10 @@
+use std::vec;
+
 use proc_macro2::Ident;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
-use quote::quote;
-use quote::ToTokens;
 use quote::quote_spanned;
+use quote::ToTokens;
 use syn::parse::Parse;
 use syn::parse2;
 use syn::Attribute;
@@ -49,9 +50,12 @@ pub(crate) struct StructField {
     /// Parse as a vec_of Type,
     ///
     pub vec_of: Option<Type>,
-    /// Parse as a map_of (Key, Value)
+    /// Parse as a map_of (String, Type)
     ///
     pub map_of: Option<Type>,
+    /// Parse as an option_of Type,
+    ///
+    pub option_of: Option<Type>,
     /// Location of this field,
     ///
     pub span: Span,
@@ -66,9 +70,13 @@ impl StructField {
     }
 
     /// Returns the field type to use,
-    /// 
+    ///
     pub fn field_ty(&self) -> &Type {
-        self.vec_of.as_ref().or(self.map_of.as_ref()).unwrap_or(&self.ty)
+        self.vec_of
+            .as_ref()
+            .or(self.map_of.as_ref())
+            .or(self.option_of.as_ref())
+            .unwrap_or(&self.ty)
     }
 
     /// Renders the callback to use w/ ParseField trait,
@@ -102,7 +110,7 @@ impl StructField {
                 )
             }
         }
-        
+
         if let Some(cb) = self.parse_callback.as_ref() {
             callback = quote_spanned! {self.span=>
                 #cb(self, value, _tag);
@@ -116,6 +124,10 @@ impl StructField {
         } else if let Some(_) = self.vec_of.as_ref() {
             callback = quote_spanned! {self.span=>
                 self.#name.push(value);
+            }
+        } else if let Some(_) = self.option_of.as_ref() {
+            callback = quote_spanned! {self.span=>
+                self.#name = Some(value);
             }
         }
 
@@ -133,6 +145,7 @@ impl Parse for StructField {
         let mut attribute_type = None;
         let mut map_of = None;
         let mut vec_of = None;
+        let mut option_of = None;
         let span = input.span();
 
         let visibility = input.parse::<Visibility>().ok();
@@ -171,7 +184,7 @@ impl Parse for StructField {
                     }
 
                     if meta.path.is_ident("map_of") {
-                        if callback.is_some() || vec_of.is_some() {
+                        if callback.is_some() || vec_of.is_some() || option_of.is_some() {
                             return Err(syn::Error::new(meta.input.span(), "Can only have one of either, `parse`, `map_of`, of `list_of`"))
                         }
 
@@ -186,7 +199,7 @@ impl Parse for StructField {
                     }
 
                     if meta.path.is_ident("vec_of") {
-                        if callback.is_some() || map_of.is_some() {
+                        if callback.is_some() || map_of.is_some() || option_of.is_some() {
                             return Err(syn::Error::new(meta.input.span(), "Can only have one of either, `parse`, `map_of`, of `list_of`"))
                         }
 
@@ -201,30 +214,31 @@ impl Parse for StructField {
                         }
                     }
 
+                    if meta.path.is_ident("option_of") {
+                        if callback.is_some() || map_of.is_some() || vec_of.is_some() {
+                            return Err(syn::Error::new(meta.input.span(), "Can only have one of either, `parse`, `option_of`, `map_of`, of `list_of`"))
+                        }
+
+                        if let Ok(_) = meta.input.parse::<Token![=]>() {
+                            option_of = meta.input.parse::<syn::Type>().ok();
+                        } else {
+                            return Err(syn::Error::new(
+                                meta.input.span(),
+                                "Expecting a type for the value of the Vec",
+                            ));
+                        }
+                    }
+
                     Ok(())
                 })?;
             }
         }
 
-        //     if let Some((Ok(ident), Ok(generics))) = syn::parse::Parser::parse2(|input: &ParseBuffer| {
-        //         let ident = input.parse::<Ident>();
-        //         let generics = input.parse::<Generics>();
-
-        //         if ident.is_ok() && generics.is_ok() {
-        //             Ok((ident, generics))
-        //         } else {
-        //             Err(syn::Error::new(Span::call_site(), "noop"))
-        //         }
-        //    }, ty.to_token_stream()).ok() {
-        //         if ident.to_string().as_str() == "Vec" {
-
-        //         }
-        //    }
-
         Ok(Self {
             rename,
             vec_of,
             map_of,
+            option_of,
             parse_callback: callback,
             attribute_type,
             span,
