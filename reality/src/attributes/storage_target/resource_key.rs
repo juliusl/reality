@@ -138,6 +138,12 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
             None
         }
     }
+    
+    /// Returns true if this key has a cursor enabled,
+    /// 
+    pub fn is_cursor(&self) -> bool {
+        self.flags().contains(ResourceKeyFlags::ENABLE_CURSOR)
+    }
 
     /// Returns the raw label parts if they are set,
     ///
@@ -299,6 +305,14 @@ bitflags::bitflags! {
         /// Resource key was created from hashing a value,
         /// 
         const HASHED = 1 << 3;
+        /// Resource key will enable a cursor has a cursor enabled,
+        /// 
+        const ENABLE_CURSOR = 1 << 4;
+        /// Resource key is a hashed counter, meaning within the same namespace, it can store
+        /// multiple references to the same type under a hashkey plus index. This allows
+        /// resource_iter to be used.
+        /// 
+        const HASHED_COUNTER = ResourceKeyFlags::HASHED.bits() | ResourceKeyFlags::ENABLE_CURSOR.bits();
     }
 }
 

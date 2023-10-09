@@ -34,12 +34,14 @@ pub trait StorageTarget {
     /// Returns a thread safe storage target wrapper.
     ///
     #[cfg(feature = "async_dispatcher")]
-    fn shared_namespace(&self, namespace: impl std::hash::Hash) -> AsyncStorageTarget<Self::Namespace>
+    fn shared_namespace(
+        &self,
+        namespace: impl std::hash::Hash,
+    ) -> AsyncStorageTarget<Self::Namespace>
     where
         Self: 'static,
     {
-        let resource_key =
-            ResourceKey::<AsyncStorageTarget<Self::Namespace>>::with_hash(namespace);
+        let resource_key = ResourceKey::<AsyncStorageTarget<Self::Namespace>>::with_hash(namespace);
 
         if let Some(ns) = self.resource(Some(resource_key)) {
             ns.clone()

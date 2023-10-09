@@ -162,7 +162,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::NodeProvide
 {
     fn provide(
         &self,
-        _name: &str,
+        name: &str,
         tag: Option<&str>,
         input: Option<&str>,
         node_info: &NodeInfo,
@@ -170,7 +170,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::NodeProvide
     ) -> Option<runmd::prelude::BoxedNode> {
         let mut parser = self.create_parser_for_block(block_info);
 
-       self.apply_plugin(_name, input, tag, &mut parser);
+       self.apply_plugin(name, input, tag, &mut parser);
 
         let mut key_builder = ResourceKeyHashBuilder::new_default_hasher();
         key_builder.hash(block_info);
@@ -215,11 +215,29 @@ struct Test {
     file: PathBuf,
 }
 
+#[derive(Debug, BlockObjectType)]
+#[reality(rename = "application/test2")]
+struct Test2 {
+    name: String,
+    file: PathBuf,
+}
+
 impl FromStr for Test {
     type Err = Infallible;
 
     fn from_str(_: &str) -> Result<Self, Self::Err> {
         Ok(Test {
+            name: String::new(),
+            file: PathBuf::from(""),
+        })
+    }
+}
+
+impl FromStr for Test2 {
+    type Err = Infallible;
+
+    fn from_str(_: &str) -> Result<Self, Self::Err> {
+        Ok(Test2 {
             name: String::new(),
             file: PathBuf::from(""),
         })
@@ -232,6 +250,7 @@ async fn test_project_parser() {
 
     project.add_node_plugin("test", |_, _, parser| {
         parser.with_object_type::<Test>();
+        parser.with_object_type::<Test2>();
     });
 
     tokio::fs::create_dir_all(".test").await.unwrap();
@@ -248,6 +267,8 @@ async fn test_project_parser() {
         <application/test>
         : .name Hello World 2
         : .file .test/test-1.md
+        <application/test2>
+        : .name World Hello
 
         + .test
         <application/test>
@@ -273,12 +294,16 @@ async fn test_project_parser() {
 
     let mut _project = project.load_file(".test/v2v2test.md").await.unwrap();
 
-    println!("{:?}", _project.nodes.read().unwrap().keys());
+    println!("{:#?}", _project.nodes.read().unwrap().keys());
 
     for (k, node) in _project.nodes.write().unwrap().iter_mut() {
         let node = node.read().await;
-        let test = node.resource::<Test>(None);
         println!("{:?}", k);
+        // Node(node).attributes()
+        // Node(node).attributes_of::<Test>()
+        let test = node.resource::<Test>(None);
+        println!("{:?}", test);
+        let test = node.resource::<Test2>(None);
         println!("{:?}", test);
     }
     ()

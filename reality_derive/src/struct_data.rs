@@ -205,14 +205,14 @@ impl StructData {
                 fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
                     let mut enable = false;
                     {
-                    // Storage target must be enabled,
-                    if let Some(storage) = parser.storage() {
+                      // Storage target must be enabled,
+                      if let Some(storage) = parser.storage() {
                         // Initialize attribute type,
                         if let Ok(init) = content.as_ref().parse::<Self>() {
                             storage.lazy_put_resource(init, #resource_key);
                             enable = true;
                         }
-                    }
+                      }
                     }
 
                     if enable {

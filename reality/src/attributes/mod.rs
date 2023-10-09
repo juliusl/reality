@@ -1,4 +1,5 @@
 mod attribute_type;
+mod attribute;
 mod parser;
 mod storage_target;
 mod tag;

@@ -5,6 +5,7 @@ use tracing::trace;
 
 use runmd::prelude::*;
 
+use super::attribute::Attribute;
 use super::attribute_type::OnParseField;
 use super::attribute_type::ParsableAttributeTypeField;
 use super::attribute_type::ParsableField;
@@ -38,6 +39,9 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     /// Reference to centralized-storage,
     ///
     storage: Option<Arc<tokio::sync::RwLock<Storage>>>,
+    /// Attributes parsed,
+    /// 
+    attributes: Vec<ResourceKey<Attribute>>,
 }
 
 impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
@@ -49,6 +53,7 @@ impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
             attribute_types: Default::default(),
             handlers: Default::default(),
             storage: Default::default(),
+            attributes: vec![],
         }
     }
 }
@@ -62,6 +67,7 @@ impl<S: StorageTarget + 'static> Clone for AttributeParser<S> {
             block_object_types: self.block_object_types.clone(),
             handlers: self.handlers.clone(),
             storage: self.storage.clone(),
+            attributes: self.attributes.clone(),
         }
     }
 }
@@ -329,6 +335,8 @@ where
     S: StorageTarget + StorageTarget + Send + Sync + Unpin + 'static,
 {
     fn set_info(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {
+        trace!("{:#?}", _node_info);
+
         let _resource_key = ResourceKey::<()>::with_hash(_node_info);
     }
 
