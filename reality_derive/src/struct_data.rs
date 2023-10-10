@@ -163,9 +163,9 @@ impl StructData {
             }
         });
 
-        let resource_key = self.reality_resource_label.clone().map_or_else(|| quote!(None), |l| {
+        let config = self.reality_resource_label.clone().map_or_else(|| quote!(ResourceStorageConfig::new()), |l| {
             quote! {
-                Some(ResourceKey::with_label(#l))
+                ResourceStorageConfig::new().with_label(#l)
             }
         });
 
@@ -184,8 +184,8 @@ impl StructData {
                         #field_ident
                     }
 
-                    fn owner_resource_key() -> Option<ResourceKey<Self>> {
-                        #resource_key
+                    fn storage_config() -> ResourceStorageConfig<Self> {
+                        #config
                     }
                 
                     #[allow(unused_variables)]
@@ -203,17 +203,7 @@ impl StructData {
                 }
 
                 fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
-                    let mut enable = false;
-                    {
-                      // Storage target must be enabled,
-                      if let Some(storage) = parser.storage() {
-                        // Initialize attribute type,
-                        if let Ok(init) = content.as_ref().parse::<Self>() {
-                            storage.lazy_put_resource(init, #resource_key);
-                            enable = true;
-                        }
-                      }
-                    }
+                    let mut enable = parser.parse_attribute::<Self>(content);
 
                     if enable {
                         #(#fields)*

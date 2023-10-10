@@ -33,9 +33,9 @@ impl StorageTarget for Shared {
     fn put_resource<T: Send + Sync + 'static>(
         &mut self,
         resource: T,
-        resource_key: Option<ResourceKey<T>>,
+        config: ResourceStorageConfig<T>,
     ) {
-        let key = Self::key::<T>(resource_key);
+        let key = Self::key::<T>(config);
 
         self.resources
             .insert(key, Arc::new(RwLock::new(Box::new(resource))));
@@ -43,9 +43,9 @@ impl StorageTarget for Shared {
 
     fn take_resource<T: Send + Sync + 'static>(
         &mut self,
-        resource_key: Option<ResourceKey<T>>,
+        config: ResourceStorageConfig<T>,
     ) -> Option<Box<T>> {
-        let key = Self::key::<T>(resource_key);
+        let key = Self::key::<T>(config);
         let resource = self.resources.remove(&key);
 
         match resource {
@@ -75,9 +75,9 @@ impl StorageTarget for Shared {
 
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
-        resource_key: Option<ResourceKey<T>>,
+        config: ResourceStorageConfig<T>,
     ) -> Option<Self::BorrowResource<'b, T>> {
-        let key = Self::key::<T>(resource_key);
+        let key = Self::key::<T>(config);
 
         if let Some(resource) = self.resources.get(&key) {
             resource.try_read().ok().and_then(|r| {
@@ -97,9 +97,9 @@ impl StorageTarget for Shared {
 
     fn resource_mut<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a mut self,
-        resource_key: Option<ResourceKey<T>>,
+        config: ResourceStorageConfig<T>,
     ) -> Option<Self::BorrowMutResource<'b, T>> {
-        let key = Self::key::<T>(resource_key);
+        let key = Self::key::<T>(config);
 
         if let Some(resource) = self.resources.get(&key) {
             resource.try_write().ok().and_then(|r| {
@@ -135,7 +135,7 @@ fn from_ref_mut<T: ?Sized>(r: &mut T) -> *mut T {
 async fn test_complex() {
     let mut shared = Shared::default();
     let resource_key = Some(ResourceKey::with_label("hello-complex"));
-    shared.put_resource(0u64, resource_key);
+    shared.put_resource(0u64, ResourceStorageConfig::new());
 
     borrow_mut!(shared, u64, "hello-complex", |r| => {
         *r += 2;
@@ -165,7 +165,7 @@ async fn test_async_dispatcher() {
     let shared = Shared::default().into_thread_safe();
 
     // Test initalizing a resource dispatcher and queueing dispatches
-    let mut dispatcher = shared.intialize_dispatcher::<(u64, u64)>(None).await;
+    let mut dispatcher = shared.intialize_dispatcher::<(u64, u64)>(ResourceStorageConfig::new()).await;
     dispatcher.queue_dispatch_mut(|(a, b)| {
         *a += 1;
         *b += 2;

@@ -41,22 +41,22 @@ pub trait StorageTarget {
     where
         Self: 'static,
     {
-        let resource_key = ResourceKey::<AsyncStorageTarget<Self::Namespace>>::with_hash(namespace);
+        let config = ResourceStorageConfig::new().with_hash(namespace);
 
-        if let Some(ns) = self.resource(Some(resource_key)) {
+        if let Some(ns) = self.resource::<AsyncStorageTarget<Self::Namespace>>(config.transmute()) {
             ns.clone()
         } else {
             let mut ns = Self::create_namespace();
             ns.enable_dispatching();
             let shared = ns.into_thread_safe();
-            self.lazy_put_resource(shared.clone(), Some(resource_key));
+            self.lazy_put_resource(shared.clone(), config);
             shared
         }
     }
 
     /// Put a resource in storage w/ key
     ///
-    fn put_resource_at<T: Send + Sync + 'static>(&mut self, _key: ResourceKey<T>, _resource: T) {
+    fn put_resource_at<T: Send + Sync + 'static>(&mut self, _key: ResourceKey, _resource: T) {
         // encode ident to a resource_id
         // store addr as a key,
     }
@@ -68,14 +68,14 @@ pub trait StorageTarget {
     fn put_resource<T: Send + Sync + 'static>(
         &mut self,
         resource: T,
-        resource_key: Option<ResourceKey<T>>,
+        config: ResourceStorageConfig<T>,
     );
 
     /// Take a resource from the storage target casting it back to it's original type,
     ///
     fn take_resource<T: Send + Sync + 'static>(
         &mut self,
-        resource_key: Option<ResourceKey<T>>,
+        config: ResourceStorageConfig<T>,
     ) -> Option<Box<T>>;
 
     /// Get read-access to a resource owned by the storage target,
@@ -88,7 +88,7 @@ pub trait StorageTarget {
     ///
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
-        resource_key: Option<ResourceKey<T>>,
+        config: ResourceStorageConfig<T>,
     ) -> Option<Self::BorrowResource<'b, T>>;
 
     /// Get read/write access to a resource owned by the storage target,
@@ -101,12 +101,12 @@ pub trait StorageTarget {
     ///
     fn resource_mut<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a mut self,
-        resource_key: Option<ResourceKey<T>>,
+        config: ResourceStorageConfig<T>,
     ) -> Option<Self::BorrowMutResource<'b, T>>;
 
     /// Returns a hashed key by Type and optional resource_id,
     ///
-    fn key<T: Send + Sync + 'static>(resource_key: Option<ResourceKey<T>>) -> u64
+    fn key<T: Send + Sync + 'static>(config: ResourceStorageConfig<T>) -> u64
     where
         Self: Sized,
     {
@@ -120,7 +120,7 @@ pub trait StorageTarget {
 
         let mut key = hasher.finish();
         let _key = key;
-        if let Some(resource_key) = resource_key {
+        if let Some(resource_key) = config.variant_id() {
             let resource_id = resource_key.key();
             key ^= resource_id;
             debug_assert_eq!(_key, key ^ resource_id);
@@ -143,19 +143,19 @@ pub trait StorageTarget {
     where
         Self: 'static,
     {
-        self.put_resource(DispatchQueue::<Self>::default(), None);
-        self.put_resource(DispatchMutQueue::<Self>::default(), None);
+        self.put_resource(DispatchQueue::<Self>::default(), ResourceStorageConfig::new());
+        self.put_resource(DispatchMutQueue::<Self>::default(), ResourceStorageConfig::new());
     }
 
     /// Lazily initialize a resource that is `Default`,
     ///
     fn lazy_initialize_resource<T: Default + Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey<T>>,
+        config: ResourceStorageConfig<T>,
     ) where
         Self: 'static,
     {
-        self.lazy_put_resource(T::default(), resource_key)
+        self.lazy_put_resource(T::default(), config)
     }
 
     /// Lazily puts a resource into the storage target
@@ -163,11 +163,11 @@ pub trait StorageTarget {
     fn lazy_put_resource<T: Send + Sync + 'static>(
         &self,
         resource: T,
-        resource_key: Option<ResourceKey<T>>,
+        config: ResourceStorageConfig<T>,
     ) where
         Self: 'static,
     {
-        self.lazy_dispatch_mut(move |s| s.put_resource(resource, resource_key));
+        self.lazy_dispatch_mut(move |s| s.put_resource(resource, config));
     }
 
     /// Lazily dispatch a fn w/ a reference to the storage target,
@@ -176,7 +176,7 @@ pub trait StorageTarget {
     where
         Self: 'static,
     {
-        if let Some(queue) = self.resource::<DispatchQueue<Self>>(None) {
+        if let Some(queue) = self.resource::<DispatchQueue<Self>>(ResourceStorageConfig::new()) {
             if let Ok(mut queue) = queue.lock() {
                 queue.push_back(Box::new(exec));
             }
@@ -189,7 +189,7 @@ pub trait StorageTarget {
     where
         Self: 'static,
     {
-        if let Some(queue) = self.resource::<DispatchMutQueue<Self>>(None) {
+        if let Some(queue) = self.resource::<DispatchMutQueue<Self>>(ResourceStorageConfig::new()) {
             if let Ok(mut queue) = queue.lock() {
                 queue.push_back(Box::new(exec));
             }
@@ -214,7 +214,7 @@ pub trait StorageTarget {
     {
         let mut tocall = vec![];
         {
-            let queue = self.resource_mut::<DispatchMutQueue<Self>>(None);
+            let queue = self.resource_mut::<DispatchMutQueue<Self>>(ResourceStorageConfig::new());
             if let Some(queue) = queue {
                 if let Ok(mut queue) = queue.lock() {
                     while let Some(func) = queue.pop_front() {
@@ -231,7 +231,7 @@ pub trait StorageTarget {
 
         let mut tocall = vec![];
         {
-            let queue = self.resource_mut::<DispatchQueue<Self>>(None);
+            let queue = self.resource_mut::<DispatchQueue<Self>>(ResourceStorageConfig::new());
             if let Some(queue) = queue {
                 if let Ok(mut queue) = queue.lock() {
                     while let Some(func) = queue.pop_front() {
@@ -289,11 +289,11 @@ pub trait StorageTarget {
     ///
     fn add_callback<Arg: Send + Sync + 'static, H: Handler<Self, Arg>>(
         &mut self,
-        resource_key: Option<ResourceKey<Callback<Self, Arg>>>,
+        config: ResourceStorageConfig<Callback<Self, Arg>>,
     ) where
         Self: Sized + 'static,
     {
-        self.put_resource(Callback::new::<H>(), resource_key)
+        self.put_resource(Callback::new::<H>(), config)
     }
 
     /// Lazily queues a dispatch for a callback w/ Arg,
@@ -302,12 +302,12 @@ pub trait StorageTarget {
     ///
     fn callback<Arg: Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey<Callback<Self, Arg>>>,
+        config: ResourceStorageConfig<Callback<Self, Arg>>,
     ) -> Option<Callback<Self, Arg>>
     where
         Self: Sized + 'static,
     {
-        self.resource(resource_key).map(|c| c.deref().clone())
+        self.resource(config).map(|c| c.deref().clone())
     }
 
     /// Lazily queues a mutable dispatch for a callback w/ Arg if one exists,
@@ -316,12 +316,12 @@ pub trait StorageTarget {
     ///
     fn callback_mut<Arg: Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey<CallbackMut<Self, Arg>>>,
+        config: ResourceStorageConfig<CallbackMut<Self, Arg>>,
     ) -> Option<CallbackMut<Self, Arg>>
     where
         Self: Sized + 'static,
     {
-        self.resource(resource_key).map(|c| c.deref().clone())
+        self.resource(config).map(|c| c.deref().clone())
     }
 
     /// Lazily queues a dispatch for a callback w/ Arg,

@@ -5,12 +5,12 @@ use tracing::trace;
 
 use runmd::prelude::*;
 
-use super::attribute::Attribute;
 use super::attribute_type::OnParseField;
 use super::attribute_type::ParsableAttributeTypeField;
 use super::attribute_type::ParsableField;
 use super::AttributeTypeParser;
 use super::StorageTarget;
+use crate::ResourceStorageConfig;
 use crate::block::BlockObjectHandler;
 use crate::AsyncStorageTarget;
 use crate::AttributeType;
@@ -40,8 +40,8 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     ///
     storage: Option<Arc<tokio::sync::RwLock<Storage>>>,
     /// Attributes parsed,
-    /// 
-    attributes: Vec<ResourceKey<Attribute>>,
+    ///
+    attributes: Vec<ResourceKey>,
 }
 
 impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
@@ -84,6 +84,27 @@ impl<S: StorageTarget> std::fmt::Debug for AttributeParser<S> {
 }
 
 impl<S: StorageTarget> AttributeParser<S> {
+    /// Parses an attribute 
+    /// 
+    pub fn parse_attribute<T: FromStr + Send + Sync + 'static>(&mut self, content: impl AsRef<str>) -> bool {
+        let mut attribute_key = None;
+        // Storage target must be enabled,
+        if let Some(storage) = self.storage() {
+            // Initialize attribute type,
+            if let Ok(init) = content.as_ref().parse::<T>() {
+                // storage.lazy_put_resource(init, Some(resource_key));
+                // attribute_key = Some(_attribute_key);
+            }
+        }
+
+        if let Some(attribute_key) = attribute_key {
+            self.attributes.push(attribute_key);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Adds an object type to the parser,
     ///
     pub fn with_object_type<O: BlockObject<S>>(&mut self) -> &mut Self {
@@ -337,7 +358,7 @@ where
     fn set_info(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {
         trace!("{:#?}", _node_info);
 
-        let _resource_key = ResourceKey::<()>::with_hash(_node_info);
+        let _resource_key = ResourceKey::with_hash(_node_info);
     }
 
     fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>) {
@@ -361,6 +382,10 @@ where
     }
 
     fn completed(mut self: Box<Self>) {
+        if let Some(storage) = self.storage() {
+            storage.lazy_put_resource(self.attributes.clone(), ResourceStorageConfig::new());
+        }
+
         if let Some(mut storage) = self.storage_mut() {
             storage.drain_dispatch_queues();
         }

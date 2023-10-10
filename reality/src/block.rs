@@ -6,6 +6,7 @@ use crate::AsyncStorageTarget;
 use crate::AttributeParser;
 use crate::AttributeType;
 use crate::AttributeTypeParser;
+use crate::ResourceStorageConfig;
 use crate::StorageTarget;
 
 /// Struct containing block object functions,
@@ -178,13 +179,13 @@ impl FromStr for Test {
 #[runmd::prelude::async_trait]
 impl<Storage: StorageTarget + Send + Sync + 'static> BlockObject<Storage> for Test {
     async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>) {
-        let dispatcher = storage.intialize_dispatcher::<()>(None).await;
+        let dispatcher = storage.intialize_dispatcher::<()>(ResourceStorageConfig::new()).await;
         let mut storage = storage.storage.write().await;
-        storage.put_resource(dispatcher, None);
+        storage.put_resource(dispatcher, ResourceStorageConfig::new());
     }
 
     async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>) {
-        let mut disp = storage.dispatcher::<u64>(None).await;
+        let mut disp = storage.dispatcher::<u64>(ResourceStorageConfig::new()).await;
         disp.dispatch_all().await;
     }
 

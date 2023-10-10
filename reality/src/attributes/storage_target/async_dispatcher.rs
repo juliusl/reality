@@ -40,11 +40,11 @@ impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
     ///
     pub async fn dispatcher<T: Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey<T>>,
+        config: ResourceStorageConfig<T>,
     ) -> Dispatcher<S, T> {
         let mut disp = Dispatcher {
             storage: self.clone(),
-            resource_key,
+            config,
             tasks: FuturesOrdered::new(),
             _u: PhantomData,
         };
@@ -57,11 +57,11 @@ impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
     ///
     pub async fn intialize_dispatcher<T: Default + Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey<T>>,
+        config: ResourceStorageConfig<T>,
     ) -> Dispatcher<S, T> {
         use std::ops::Deref;
 
-        let dispatcher = self.dispatcher(resource_key.clone()).await;
+        let dispatcher = self.dispatcher(config.clone()).await;
 
         dispatcher
             .storage
@@ -69,7 +69,7 @@ impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
             .deref()
             .write()
             .await
-            .put_resource(T::default(), resource_key);
+            .put_resource(T::default(), config);
 
         dispatcher
     }
@@ -83,7 +83,7 @@ pub struct Dispatcher<Storage: StorageTarget + Send + Sync + 'static, T: Send + 
     storage: AsyncStorageTarget<Storage>,
     /// Optional, resource_key of the resource as well as queues,
     ///
-    resource_key: Option<ResourceKey<T>>,
+    config: ResourceStorageConfig<T>,
     /// Handles lock acquisition,
     ///
     tasks: FuturesOrdered<JoinHandle<()>>,
@@ -97,7 +97,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'static> C
     fn clone(&self) -> Self {
         Self {
             storage: self.storage.clone(),
-            resource_key: self.resource_key.clone(),
+            config: self.config.clone(),
             tasks: FuturesOrdered::new(),
             _u: self._u.clone(),
         }
@@ -116,20 +116,20 @@ macro_rules! queue {
                     storage,
                     runtime: Some(runtime),
                 },
-            resource_key,
+            config,
             tasks,
             ..
         } = $rcv
         {
             let storage = storage.clone();
-            let resource_id = resource_key.clone();
+            let config = config.clone();
 
             tasks.push_back(runtime.spawn(async move {
                 if let Some(queue) = storage
                     .deref()
                     .read()
                     .await
-                    .resource::<$queue>(resource_id.map(|r| r.transmute()))
+                    .resource::<$queue>(config.transmute())
                 {
                     if let Ok(mut queue) = queue.lock() {
                         queue.push_back(Box::new($exec));
@@ -149,19 +149,19 @@ macro_rules! enable_queue {
 
             let Self {
                 storage: AsyncStorageTarget { storage, .. },
-                resource_key,
+                config,
                 ..
             } = $rcv;
 
             $(
                 let checking = storage.read().await;
                 if checking
-                    .resource::<$queue_ty>(resource_key.map(|r| r.transmute()))
+                    .resource::<$queue_ty>(config.transmute())
                     .is_none()
                 {
                     drop(checking);
                     let mut storage = storage.deref().write().await;
-                    storage.put_resource(<$queue_ty as Default>::default(), resource_key.map(|r| r.transmute()));
+                    storage.put_resource(<$queue_ty as Default>::default(), config.transmute());
                 }
             )*
         }
@@ -176,7 +176,7 @@ macro_rules! dispatch {
 
         let Self {
             storage: AsyncStorageTarget { storage, .. },
-            resource_key,
+            config,
             ..
         } = $rcv;
 
@@ -184,7 +184,7 @@ macro_rules! dispatch {
         {
             let mut storage = storage.deref().write().await;
             let queue = storage
-                .resource_mut::<$queue_ty<$resource_ty>>(resource_key.map(|r| r.transmute()));
+                .resource_mut::<$queue_ty<$resource_ty>>(config.transmute());
             if let Some(queue) = queue {
                 if let Ok(mut queue) = queue.lock() {
                     while let Some(func) = queue.pop_front() {
@@ -198,7 +198,7 @@ macro_rules! dispatch {
                 .deref()
                 .write()
                 .await
-                .resource_mut::<$resource_ty>(resource_key.map(|r| r.transmute()))
+                .resource_mut::<$resource_ty>(config.transmute())
             {
                 for call in tocall.drain(..) {
                     call(&mut resource);
@@ -216,7 +216,7 @@ macro_rules! dispatch_async {
 
         let Self {
             storage: AsyncStorageTarget { storage, .. },
-            resource_key,
+            config,
             ..
         } = $rcv;
 
@@ -224,7 +224,7 @@ macro_rules! dispatch_async {
         {
             let mut storage = storage.deref().write().await;
             let queue = storage
-                .resource_mut::<$queue_ty<$resource_ty>>(resource_key.map(|r| r.transmute()));
+                .resource_mut::<$queue_ty<$resource_ty>>(config.transmute());
             if let Some(queue) = queue {
                 if let Ok(mut queue) = queue.lock() {
                     while let Some(func) = queue.pop_front() {
@@ -238,7 +238,7 @@ macro_rules! dispatch_async {
                 .deref()
                 .write()
                 .await
-                .resource_mut::<$resource_ty>(resource_key.map(|r| r.transmute()))
+                .resource_mut::<$resource_ty>(config.transmute())
             {
                 for call in tocall.drain(..) {
                     call(&mut resource).await;

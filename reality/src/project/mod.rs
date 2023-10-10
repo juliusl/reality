@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::collections::HashMap;
 
+use crate::ResourceStorageConfig;
 use crate::{AttributeParser, ResourceKey, ResourceKeyHashBuilder, StorageTarget};
 
 /// Block plugin fn,
@@ -20,7 +21,7 @@ pub struct Project<Storage: StorageTarget + 'static> {
     root: Storage,
 
     pub nodes:
-        std::sync::RwLock<HashMap<ResourceKey<()>, Arc<tokio::sync::RwLock<Storage::Namespace>>>>,
+        std::sync::RwLock<HashMap<ResourceKey, Arc<tokio::sync::RwLock<Storage::Namespace>>>>,
 }
 
 impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
@@ -48,19 +49,19 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
             ty,
             moniker,
         };
-        let key = ResourceKey::with_hash(block_info);
+        let config = ResourceStorageConfig::new().with_hash(block_info);
 
         self.root
-            .put_resource::<BlockPlugin<Storage::Namespace>>(plugin, Some(key));
+            .put_resource::<BlockPlugin<Storage::Namespace>>(plugin, config);
     }
 
     /// Adds a node plugin,
     ///
     pub fn add_node_plugin(&mut self, name: &str, plugin: NodePlugin<Storage::Namespace>) {
-        let key = ResourceKey::with_hash(name);
+        let config = ResourceStorageConfig::new().with_hash(name);
 
         self.root
-            .put_resource::<NodePlugin<Storage::Namespace>>(plugin, Some(key));
+            .put_resource::<NodePlugin<Storage::Namespace>>(plugin, config);
     }
 
     /// Load a file into the project,
@@ -112,12 +113,6 @@ impl<Storage: StorageTarget + Send + Sync + 'static> LoadingFile<Storage> {
     /// Creates a new parser for the block, 
     /// 
     fn create_parser_for_block(&self, block_info: &BlockInfo) -> AttributeParser<Storage::Namespace> {
-        let key = ResourceKey::with_hash(BlockInfo {
-            idx: 0,
-            ty: block_info.ty,
-            moniker: block_info.moniker,
-        });
-
         // Create a new attribute parser per-block
         let mut parser = AttributeParser::<Storage::Namespace>::default();
 
@@ -125,7 +120,11 @@ impl<Storage: StorageTarget + Send + Sync + 'static> LoadingFile<Storage> {
         if let Some(provider) = self
             .0
             .root
-            .resource::<BlockPlugin<Storage::Namespace>>(Some(key))
+            .resource::<BlockPlugin<Storage::Namespace>>(ResourceStorageConfig::new().with_hash(BlockInfo {
+                idx: 0,
+                ty: block_info.ty,
+                moniker: block_info.moniker,
+            }))
         {
             provider(&mut parser);
         }
@@ -136,11 +135,10 @@ impl<Storage: StorageTarget + Send + Sync + 'static> LoadingFile<Storage> {
     /// Applies a plugin to a parser,
     /// 
     fn apply_plugin(&self, name: &str, input: Option<&str>, tag: Option<&str>, parser: &mut AttributeParser<Storage::Namespace>) {
-        let node_plugin_key = ResourceKey::<NodePlugin<Storage::Namespace>>::with_hash(name);
         if let Some(node_plugin) = self
             .0
             .root
-            .resource::<NodePlugin<Storage::Namespace>>(Some(node_plugin_key))
+            .resource::<NodePlugin<Storage::Namespace>>(ResourceStorageConfig::new().with_hash(name))
         {
             node_plugin(input, tag, parser);
         }
@@ -246,6 +244,8 @@ impl FromStr for Test2 {
 
 #[tokio::test]
 async fn test_project_parser() {
+    use std::ops::Deref;
+    
     let mut project = Project::new(crate::Shared::default());
 
     project.add_node_plugin("test", |_, _, parser| {
@@ -267,7 +267,7 @@ async fn test_project_parser() {
         <application/test>
         : .name Hello World 2
         : .file .test/test-1.md
-        <application/test2>
+        <application/test>
         : .name World Hello
 
         + .test
@@ -299,12 +299,21 @@ async fn test_project_parser() {
     for (k, node) in _project.nodes.write().unwrap().iter_mut() {
         let node = node.read().await;
         println!("{:?}", k);
+
+        let parsed = node.resource::<Vec<ResourceKey>>(ResourceStorageConfig::new());
+        println!("PARSED::\n{:#?}", parsed);
+
+        if let Some(parsed) = parsed {
+            for p in parsed.deref() {
+                let test = node.resource::<Test>(ResourceStorageConfig::from(*p));
+                println!("{:?}", test);
+                let test = node.resource::<Test2>(ResourceStorageConfig::from(*p));
+                println!("{:?}", test);
+            }
+        }
+
         // Node(node).attributes()
         // Node(node).attributes_of::<Test>()
-        let test = node.resource::<Test>(None);
-        println!("{:?}", test);
-        let test = node.resource::<Test2>(None);
-        println!("{:?}", test);
     }
     ()
 }

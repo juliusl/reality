@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::ops::DerefMut;
 use std::str::FromStr;
 
-use crate::ResourceKey;
+use crate::ResourceStorageConfig;
 use super::AttributeParser;
 use super::StorageTarget;
 
@@ -178,7 +178,7 @@ where
                 },
             ) => {
                 storage.lazy_dispatch_mut(move |s| {
-                    if let Some(mut owner) = s.resource_mut::<Owner>(Owner::owner_resource_key()) {
+                    if let Some(mut owner) = s.resource_mut::<Owner>(Owner::storage_config()) {
                         owner.deref_mut().on_parse(value, tag.as_ref());
                     }
                 });
@@ -194,9 +194,15 @@ where
             ) => {
                 type ParserError<T> = <T as FromStr>::Err;
 
-                if let Some(cb) = storage.callback_mut::<ParserError<T>>(label.try_into().ok()) {
+                let config = if let Some(label) = label {
+                    ResourceStorageConfig::new()
+                } else {
+                    ResourceStorageConfig::new()
+                };
+
+                if let Some(cb) = storage.callback_mut::<ParserError<T>>(config.transmute()) {
                     storage.lazy_callback_mut(cb, error)
-                } else if let Some(cb) = storage.callback::<ParserError<T>>(label.try_into().ok()) {
+                } else if let Some(cb) = storage.callback::<ParserError<T>>(config) {
                     storage.lazy_callback(cb, error)
                 }
             }
@@ -226,10 +232,10 @@ where
         if let Some(storage) = parser.storage() {
             storage.lazy_dispatch_mut(move |s| {
                 // If set by parse, it must be set w/ a resource key set to None
-                let resource = { s.take_resource::<T>(None) };
+                let resource = { s.take_resource::<T>(ResourceStorageConfig::new()) };
 
                 if let Some(resource) = resource {
-                    if let Some(mut owner) = s.resource_mut(Owner::owner_resource_key()) {
+                    if let Some(mut owner) = s.resource_mut::<Owner>(Owner::storage_config()) {
                         owner.on_parse(*resource, tag.as_ref());
                     }
                 }
@@ -262,8 +268,8 @@ where
 
     /// Owner resource key to use when retrieving owner,
     ///
-    fn owner_resource_key() -> Option<ResourceKey<Self>> {
-        None
+    fn storage_config() -> ResourceStorageConfig<Self> {
+        ResourceStorageConfig::new()
     }
 
     /// Function called when a value is parsed correctly,

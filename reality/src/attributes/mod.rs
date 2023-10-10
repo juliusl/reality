@@ -14,6 +14,7 @@ pub mod prelude {
     pub use super::attribute_type::CallbackMut;
     pub use super::attribute_type::Handler;
     pub use super::attribute_type::OnParseField;
+    pub use super::attribute::Attribute;
     pub use super::parser::AttributeParser;
     pub use super::storage_target::prelude::*;
     pub use super::tag::Tagged;
@@ -80,7 +81,7 @@ mod tests {
     where
         S: StorageTarget + Send + Sync + 'static,
     {
-        storage.intialize_dispatcher::<u64>(None).await;
+        storage.intialize_dispatcher::<u64>(ResourceStorageConfig::new()).await;
     }
 
     #[allow(dead_code)]
@@ -119,7 +120,7 @@ mod tests {
             .namespace("test_namespace")
             .expect("should be able to create");
 
-        let mut disp = ns.dispatcher::<Test<String>>(None).await;
+        let mut disp = ns.dispatcher::<Test<String>>(ResourceStorageConfig::new()).await;
 
         disp.queue_dispatch_mut(|t| {
             t.author = format!("test_v2_parser");

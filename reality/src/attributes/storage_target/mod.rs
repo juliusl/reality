@@ -7,6 +7,7 @@ cfg_async_dispatcher! {
 pub mod shared;
 pub mod target;
 pub mod resource_key;
+pub mod resource_storage_config;
 
 pub mod prelude {
     use std::pin::Pin;
@@ -42,6 +43,7 @@ pub mod prelude {
     pub use super::target::StorageTarget;
     pub use super::resource_key::ResourceKey;
     pub use super::resource_key::ResourceKeyHashBuilder;
+    pub use super::resource_storage_config::ResourceStorageConfig;
 
     cfg_async_dispatcher! {
         pub use tokio::sync::RwLock;
