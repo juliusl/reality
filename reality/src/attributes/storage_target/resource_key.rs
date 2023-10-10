@@ -1,6 +1,8 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+use crate::ResourceStorageConfigFlags;
+
 /// Build a resource key,
 ///
 #[derive(Clone, Default)]
@@ -8,9 +10,7 @@ pub struct ResourceKeyHashBuilder<H: Hasher + Default> {
     hasher: H,
 }
 
-impl<H: Hasher + Default> Into<ResourceKey>
-    for ResourceKeyHashBuilder<H>
-{
+impl<H: Hasher + Default> Into<ResourceKey> for ResourceKeyHashBuilder<H> {
     fn into(self) -> ResourceKey {
         ResourceKey::with_hash_value(self.hasher.finish())
     }
@@ -43,18 +43,11 @@ impl ResourceKeyHashBuilder<DefaultHasher> {
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, PartialOrd)]
 pub struct ResourceKey {
     /// Internal data,
-    /// 
+    ///
     data: u128,
 }
 
 impl ResourceKey {
-    // /// Creates a new resource-key for a type,
-    // ///
-    // pub fn new() -> Self {
-
-    //     uuid::Uuid::from_fields(0, 0,0, &type_key.to_ne_bytes()).into()
-    // }
-
     /// Creates a new resource-key deriving w/ associated label,
     ///
     pub fn with_label(label: &'static str) -> Self {
@@ -85,6 +78,12 @@ impl ResourceKey {
     ///
     pub fn key(&self) -> u64 {
         u64::from_ne_bytes(*uuid::Uuid::from_u128(self.data).as_fields().3)
+    }
+
+    /// Returns a key from it's raw parts,
+    /// 
+    pub fn from_parts(flags: ResourceStorageConfigFlags, key: u64) -> Self {
+        uuid::Uuid::from_fields(0, 0, flags.bits(), &key.to_ne_bytes()).into()
     }
 }
 

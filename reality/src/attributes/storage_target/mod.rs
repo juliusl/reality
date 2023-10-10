@@ -44,6 +44,7 @@ pub mod prelude {
     pub use super::resource_key::ResourceKey;
     pub use super::resource_key::ResourceKeyHashBuilder;
     pub use super::resource_storage_config::ResourceStorageConfig;
+    pub use super::resource_storage_config::ResourceStorageConfigFlags;
 
     cfg_async_dispatcher! {
         pub use tokio::sync::RwLock;

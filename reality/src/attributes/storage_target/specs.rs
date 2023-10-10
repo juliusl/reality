@@ -22,8 +22,8 @@ impl StorageTarget for World {
         &'a self,
         config: ResourceStorageConfig<T>,
     ) -> Option<Self::BorrowResource<'b, T>> {
-        if let Some(resource_key) = config.variant_id() {
-            self.try_fetch_by_id::<T>(ResourceId::new_with_dynamic_id::<T>(resource_key.key()))
+        if let Some(variance) = config.variance() {
+            self.try_fetch_by_id::<T>(ResourceId::new_with_dynamic_id::<T>(variance))
         } else {
             self.try_fetch::<T>()
         }
@@ -33,8 +33,8 @@ impl StorageTarget for World {
         &'a mut self,
         config: ResourceStorageConfig<T>,
     ) -> Option<Self::BorrowMutResource<'b, T>> {
-        if let Some(resource_key) = config.variant_id() {
-            self.try_fetch_mut_by_id(ResourceId::new_with_dynamic_id::<T>(resource_key.key()))
+        if let Some(variance) = config.variance() {
+            self.try_fetch_mut_by_id(ResourceId::new_with_dynamic_id::<T>(variance))
         } else {
             self.try_fetch_mut()
         }
@@ -45,8 +45,8 @@ impl StorageTarget for World {
         resource: T, 
         config: ResourceStorageConfig<T>,
     ) {
-        if let Some(resource_key) = config.variant_id() {
-            let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_key.key());
+        if let Some(variance) = config.variance() {
+            let resource_id = ResourceId::new_with_dynamic_id::<T>(variance);
             self.insert_by_id(resource_id, resource);
         } else {
             self.insert(resource);
@@ -75,8 +75,8 @@ impl StorageTarget for World {
         &mut self, 
         config: ResourceStorageConfig<T>,
     ) -> Option<Box<T>> {
-        if let Some(resource_key) = config.variant_id() {
-            let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_key.key());
+        if let Some(variance) = config.variance() {
+            let resource_id = ResourceId::new_with_dynamic_id::<T>(variance);
             self.remove_by_id::<T>(resource_id).map(Box::new)
         } else {
             self.remove::<T>().map(Box::new)

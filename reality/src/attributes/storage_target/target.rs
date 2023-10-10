@@ -120,10 +120,10 @@ pub trait StorageTarget {
 
         let mut key = hasher.finish();
         let _key = key;
-        if let Some(resource_key) = config.variant_id() {
-            let resource_id = resource_key.key();
-            key ^= resource_id;
-            debug_assert_eq!(_key, key ^ resource_id);
+        if let Some(variance) = config.variance() {
+            debug_assert!(variance != key);
+            key ^= variance;
+            debug_assert_eq!(_key, key ^ variance);
         }
 
         key

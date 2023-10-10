@@ -45,9 +45,9 @@ impl<T: Send + Sync + 'static> ResourceStorageConfig<T> {
         }
     }
 
-    /// Returns the variant_id if this
-    ///
-    pub fn variant_id(&self) -> Option<ResourceKey> {
+    /// Returns an integer that represents the variance for the resource being stored,
+    /// 
+    pub fn variance(&self) -> Option<u64> {
         todo!()
     }
 
@@ -74,9 +74,11 @@ impl<T: Send + Sync + 'static> ResourceStorageConfig<T> {
 
 bitflags::bitflags! {
     #[derive(Clone, Copy)]
-    struct ResourceStorageConfigFlags: u16 {
+    pub struct ResourceStorageConfigFlags: u16 {
         /// Indicates the resource being stored, should be stored as a singleton.
-        ///
+        /// 
+        /// **Note** If this flag is not present it means that the keys produced must consider that variants will be present
+        /// 
         const SINGLETON = 1;
     }
 }
