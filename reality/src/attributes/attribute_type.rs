@@ -3,7 +3,6 @@ use std::marker::PhantomData;
 use std::ops::DerefMut;
 use std::str::FromStr;
 
-use crate::ResourceKey;
 use super::AttributeParser;
 use super::StorageTarget;
 
