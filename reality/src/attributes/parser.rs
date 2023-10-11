@@ -18,6 +18,10 @@ use crate::BlockObject;
 use crate::BlockObjectType;
 use crate::ResourceKey;
 
+/// Type-alias for parsed attributes,
+/// 
+pub type ParsedAttributes = Vec<ResourceKey<Attribute>>;
+
 /// Maintains attribute types and matches runmd nodes to the corresponding attribute type parser,
 ///
 pub struct AttributeParser<Storage: StorageTarget + 'static> {
@@ -41,7 +45,7 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     storage: Option<Arc<tokio::sync::RwLock<Storage>>>,
     /// Attributes parsed,
     /// 
-    pub attributes: Vec<ResourceKey<Attribute>>,
+    pub attributes: ParsedAttributes,
 }
 
 impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
