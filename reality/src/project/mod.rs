@@ -246,6 +246,7 @@ impl FromStr for Test2 {
 
 #[tokio::test]
 async fn test_project_parser() {
+    use crate::Attribute;
     let mut project = Project::new(crate::Shared::default());
 
     project.add_node_plugin("test", |_, _, parser| {
@@ -267,8 +268,10 @@ async fn test_project_parser() {
         <application/test>
         : .name Hello World 2
         : .file .test/test-1.md
-        <application/test2>
+        <application/test>
         : .name World Hello
+        <application/test2>
+        : .name World Hello3
 
         + .test
         <application/test>
@@ -299,12 +302,20 @@ async fn test_project_parser() {
     for (k, node) in _project.nodes.write().unwrap().iter_mut() {
         let node = node.read().await;
         println!("{:?}", k);
+
+        let attributes =  node.resource::<Vec<ResourceKey<Attribute>>>(None);
+
+        if let Some(attributes) = attributes {
+            for attr in attributes.iter() {
+                let test = node.resource::<Test>(Some(attr.transmute()));
+                println!("{:?}", test);
+                let test = node.resource::<Test2>(Some(attr.transmute()));
+                println!("{:?}", test);
+            }
+        }
+
         // Node(node).attributes()
         // Node(node).attributes_of::<Test>()
-        let test = node.resource::<Test>(None);
-        println!("{:?}", test);
-        let test = node.resource::<Test2>(None);
-        println!("{:?}", test);
     }
     ()
 }

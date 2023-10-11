@@ -14,6 +14,7 @@ pub mod prelude {
     pub use super::attribute_type::CallbackMut;
     pub use super::attribute_type::Handler;
     pub use super::attribute_type::OnParseField;
+    pub use super::attribute::Attribute;
     pub use super::parser::AttributeParser;
     pub use super::storage_target::prelude::*;
     pub use super::tag::Tagged;

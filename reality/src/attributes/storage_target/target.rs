@@ -110,23 +110,11 @@ pub trait StorageTarget {
     where
         Self: Sized,
     {
-        use std::hash::Hash;
-        use std::hash::Hasher;
-
-        let type_id = std::any::TypeId::of::<T>();
-        let mut hasher = std::collections::hash_map::DefaultHasher::default();
-        type_id.hash(&mut hasher);
-        std::mem::size_of::<T>().hash(&mut hasher);
-
-        let mut key = hasher.finish();
-        let _key = key;
         if let Some(resource_key) = resource_key {
-            let resource_id = resource_key.key();
-            key ^= resource_id;
-            debug_assert_eq!(_key, key ^ resource_id);
+            resource_key.key()
+        } else {
+            ResourceKey::<T>::new().key()
         }
-
-        key
     }
 
     /// Enables built-in dispatch queues,

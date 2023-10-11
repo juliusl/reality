@@ -167,6 +167,7 @@ where
         };
 
         let tag = parser.tag().cloned();
+        let key = parser.attributes.last().map(|a| a.transmute());
 
         match (parser.storage(), parsed) {
             (
@@ -178,7 +179,7 @@ where
                 },
             ) => {
                 storage.lazy_dispatch_mut(move |s| {
-                    if let Some(mut owner) = s.resource_mut::<Owner>(Owner::owner_resource_key()) {
+                    if let Some(mut owner) = s.resource_mut::<Owner>(key) {
                         owner.deref_mut().on_parse(value, tag.as_ref());
                     }
                 });

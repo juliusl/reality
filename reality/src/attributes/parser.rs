@@ -41,7 +41,7 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     storage: Option<Arc<tokio::sync::RwLock<Storage>>>,
     /// Attributes parsed,
     /// 
-    attributes: Vec<ResourceKey<Attribute>>,
+    pub attributes: Vec<ResourceKey<Attribute>>,
 }
 
 impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
@@ -84,6 +84,30 @@ impl<S: StorageTarget> std::fmt::Debug for AttributeParser<S> {
 }
 
 impl<S: StorageTarget> AttributeParser<S> {
+    /// Parses an attribute and if successful returns the resource key used,
+    /// 
+    pub fn parse_attribute<T: FromStr + Send + Sync + 'static>(&mut self, source: impl AsRef<str>) -> Option<ResourceKey<T>> {
+        let mut parsed_key = None; 
+        
+        let idx = self.attributes.len();
+        let key = ResourceKey::<Attribute>::with_hash(idx);
+
+         // Storage target must be enabled,
+         if let Some(storage) = self.storage() {
+            // Initialize attribute type,
+            if let Ok(init) = source.as_ref().parse::<T>() {
+                parsed_key = Some(key.transmute());
+                storage.lazy_put_resource(init, parsed_key.clone());
+            }
+        }
+
+        if parsed_key.is_some() {
+            self.attributes.push(key);
+        }
+
+        parsed_key
+    }
+
     /// Adds an object type to the parser,
     ///
     pub fn with_object_type<O: BlockObject<S>>(&mut self) -> &mut Self {
@@ -361,6 +385,10 @@ where
     }
 
     fn completed(mut self: Box<Self>) {
+        if let Some(storage) = self.storage() {
+            storage.lazy_put_resource(self.attributes.clone(), None);
+        }
+
         if let Some(mut storage) = self.storage_mut() {
             storage.drain_dispatch_queues();
         }
