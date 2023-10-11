@@ -4,6 +4,9 @@ use std::collections::HashMap;
 
 use crate::{AttributeParser, ResourceKey, ResourceKeyHashBuilder, StorageTarget};
 
+mod node;
+pub use node::Node;
+
 /// Block plugin fn,
 ///
 pub type BlockPlugin<S> = fn(&mut AttributeParser<S>);

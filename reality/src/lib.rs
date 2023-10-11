@@ -13,6 +13,7 @@ pub use block::BlockObjectHandler;
 
 mod project;
 pub use project::Project;
+pub use project::Node;
 
 pub mod derive {
     pub use reality_derive::AttributeType;
