@@ -12,7 +12,7 @@ pub struct Node<S: StorageTarget + Send + Sync + 'static>(pub Arc<tokio::sync::R
 impl<S: StorageTarget + Send + Sync + 'static> Node<S> {
     /// Returns a stream of attributes,
     /// 
-    pub async fn stream_attributes(&self) -> impl Stream<Item = ResourceKey<Attribute>> + '_ {
+    pub fn stream_attributes(&self) -> impl Stream<Item = ResourceKey<Attribute>> + '_ {
         stream! {
             if let Some(parsed) = self.0.read().await.resource::<ParsedAttributes>(None) {
                 for p in parsed.iter() {
