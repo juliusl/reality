@@ -7,7 +7,7 @@ use crate::{StorageTarget, ParsedAttributes, ResourceKey, Attribute};
 
 /// wrapper struct to unpack parsed resources constructed by a project,
 /// 
-pub struct Node<S: StorageTarget + Send + Sync + 'static>(Arc<tokio::sync::RwLock<S>>);
+pub struct Node<S: StorageTarget + Send + Sync + 'static>(pub Arc<tokio::sync::RwLock<S>>);
 
 impl<S: StorageTarget + Send + Sync + 'static> Node<S> {
     /// Returns a stream of attributes,
