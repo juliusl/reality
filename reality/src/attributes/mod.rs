@@ -37,7 +37,6 @@ mod tests {
     #[derive(BlockObjectType)]
     #[reality(
         rename = "application/test", 
-        resource_label = "test_resource", 
         load=on_load
     )]
     pub struct Test<T: Send + Sync + 'static> {

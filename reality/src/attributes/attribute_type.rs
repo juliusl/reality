@@ -223,6 +223,7 @@ where
 
         // Get the current tag setting,
         let tag = parser.tag().cloned();
+        let key = parser.attributes.last().map(|a| a.transmute::<Owner>());
 
         if let Some(storage) = parser.storage() {
             storage.lazy_dispatch_mut(move |s| {
@@ -230,7 +231,7 @@ where
                 let resource = { s.take_resource::<T>(None) };
 
                 if let Some(resource) = resource {
-                    if let Some(mut owner) = s.resource_mut(Owner::owner_resource_key()) {
+                    if let Some(mut owner) = s.resource_mut(key) {
                         owner.on_parse(*resource, tag.as_ref());
                     }
                 }
@@ -260,12 +261,6 @@ where
     /// Name of the field,
     ///
     fn field_name() -> &'static str;
-
-    /// Owner resource key to use when retrieving owner,
-    ///
-    fn owner_resource_key() -> Option<ResourceKey<Self>> {
-        None
-    }
 
     /// Function called when a value is parsed correctly,
     ///

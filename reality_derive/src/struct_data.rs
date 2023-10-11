@@ -43,9 +43,6 @@ pub(crate) struct StructData {
     /// Reality attribute, rename option
     /// 
     reality_rename: Option<LitStr>,
-    /// Reality attribute, resource-label,
-    /// 
-    reality_resource_label: Option<LitStr>,
     /// Reality attribute, on_load fn path,
     /// 
     reality_on_load: Option<Path>,
@@ -64,7 +61,6 @@ impl Parse for StructData {
         let name = derive_input.ident;
 
         let mut reality_rename = None;
-        let mut reality_resource_label = None;
         let mut reality_on_load = None;
         let mut reality_on_unload = None;
         let mut reality_on_completed = None;
@@ -76,12 +72,7 @@ impl Parse for StructData {
                         meta.input.parse::<Token![=]>()?;
                         reality_rename = meta.input.parse::<LitStr>().ok();
                     }
-
-                    if meta.path.is_ident("resource_label") {
-                        meta.input.parse::<Token![=]>()?;
-                        reality_resource_label = meta.input.parse::<LitStr>().ok();
-                    }
-
+                    
                     if meta.path.is_ident("load") {
                         meta.input.parse::<Token![=]>()?;
                         reality_on_load = meta.input.parse::<Path>().ok();
@@ -123,7 +114,6 @@ impl Parse for StructData {
                 generics: derive_input.generics,
                 fields,
                 reality_rename,
-                reality_resource_label,
                 reality_on_load,
                 reality_on_unload,
                 reality_on_completed,
@@ -163,12 +153,6 @@ impl StructData {
             }
         });
 
-        let resource_key = self.reality_resource_label.clone().map_or_else(|| quote!(None), |l| {
-            quote! {
-                Some(ResourceKey::with_label(#l))
-            }
-        });
-
         //  Implementation for fields parsers,
         // 
         let fields_on_parse_impl = self.fields.iter().enumerate().map(|(offset, f)| {
@@ -182,10 +166,6 @@ impl StructData {
                 impl #original_impl_generics OnParseField<#offset, #ty> for #ident #ty_generics #where_clause {
                     fn field_name() -> &'static str {
                         #field_ident
-                    }
-
-                    fn owner_resource_key() -> Option<ResourceKey<Self>> {
-                        #resource_key
                     }
                 
                     #[allow(unused_variables)]
