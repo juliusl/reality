@@ -219,8 +219,6 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
     /// Returns the type key value,
     ///
     fn type_key() -> u64 {
-        use std::hash::Hash;
-
         let mut hasher = DefaultHasher::new();
         let hasher = &mut hasher;
 
@@ -251,8 +249,6 @@ impl<T: Send + Sync, H: Hasher + Default> Hasher for ResourceKeyHashBuilder<T, H
     }
 
     fn write(&mut self, bytes: &[u8]) {
-        use std::hash::Hash;
-
         bytes.hash(&mut self.hasher);
     }
 }

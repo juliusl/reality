@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::collections::HashMap;
 
 use crate::{AttributeParser, ResourceKey, ResourceKeyHashBuilder, StorageTarget};
 
@@ -101,9 +101,9 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Clone for LoadingFile<Stora
 
 impl<Storage: StorageTarget + Send + Sync + 'static> LoadingFile<Storage> {
     /// Unload the inner project,
-    /// 
+    ///
     /// Will return an error if during loading a file something took additional strong references on the project
-    /// 
+    ///
     pub fn unload(self) -> anyhow::Result<Project<Storage>> {
         if let Ok(project) = Arc::try_unwrap(self.0) {
             Ok(project)
@@ -112,9 +112,12 @@ impl<Storage: StorageTarget + Send + Sync + 'static> LoadingFile<Storage> {
         }
     }
 
-    /// Creates a new parser for the block, 
-    /// 
-    fn create_parser_for_block(&self, block_info: &BlockInfo) -> AttributeParser<Storage::Namespace> {
+    /// Creates a new parser for the block,
+    ///
+    fn create_parser_for_block(
+        &self,
+        block_info: &BlockInfo,
+    ) -> AttributeParser<Storage::Namespace> {
         let key = ResourceKey::with_hash(BlockInfo {
             idx: 0,
             ty: block_info.ty,
@@ -137,8 +140,14 @@ impl<Storage: StorageTarget + Send + Sync + 'static> LoadingFile<Storage> {
     }
 
     /// Applies a plugin to a parser,
-    /// 
-    fn apply_plugin(&self, name: &str, input: Option<&str>, tag: Option<&str>, parser: &mut AttributeParser<Storage::Namespace>) {
+    ///
+    fn apply_plugin(
+        &self,
+        name: &str,
+        input: Option<&str>,
+        tag: Option<&str>,
+        parser: &mut AttributeParser<Storage::Namespace>,
+    ) {
         let node_plugin_key = ResourceKey::<NodePlugin<Storage::Namespace>>::with_hash(name);
         if let Some(node_plugin) = self
             .0
@@ -171,18 +180,16 @@ impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::NodeProvide
         node_info: &NodeInfo,
         block_info: &BlockInfo,
     ) -> Option<runmd::prelude::BoxedNode> {
-        let mut parser = self.create_parser_for_block(block_info);
-
-       self.apply_plugin(name, input, tag, &mut parser);
-
-        let mut key_builder = ResourceKeyHashBuilder::new_default_hasher();
-        key_builder.hash(block_info);
-        key_builder.hash(node_info);
-
-        let key = key_builder.finish();
-
         if let Ok(mut nodes) = self.0.nodes.write() {
+            let mut key_builder = ResourceKeyHashBuilder::new_default_hasher();
+            key_builder.hash(block_info);
+            key_builder.hash(node_info);
+
+            let key = key_builder.finish();
             let target = self.0.root.shared_namespace(key);
+            let mut parser = self.create_parser_for_block(block_info);
+
+            self.apply_plugin(name, input, tag, &mut parser);
             parser.set_storage(target.storage);
 
             if let Some(storage) = parser.clone_storage() {
