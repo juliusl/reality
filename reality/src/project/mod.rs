@@ -184,13 +184,13 @@ impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::NodeProvide
             let mut key_builder = ResourceKeyHashBuilder::new_default_hasher();
             key_builder.hash(block_info);
             key_builder.hash(node_info);
-
             let key = key_builder.finish();
+            
             let target = self.0.root.shared_namespace(key);
             let mut parser = self.create_parser_for_block(block_info);
+            parser.set_storage(target.storage);
 
             self.apply_plugin(name, input, tag, &mut parser);
-            parser.set_storage(target.storage);
 
             if let Some(storage) = parser.clone_storage() {
                 nodes.insert(key, storage);
