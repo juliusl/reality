@@ -56,9 +56,15 @@ impl StorageTarget for Shared {
 
                     let r = from_ref_mut(inner);
 
+                    // Making a backup of the pointer in case the cast fails
+                    let backup = r.clone();
                     let r = r.cast::<T>();
 
                     if r.is_null() {
+                        // Note: This code path should technically be impossible since the cast type is associated to the key itself
+                        // However, in case there is an edge case that exists, this defends against a possible memory leak
+                        let restoring = Arc::new(RwLock::new(unsafe { Box::from_raw(backup) }));
+                        self.resources.insert(key, restoring);
                         None
                     } else {
                         Some(unsafe { Box::from_raw(r) })
