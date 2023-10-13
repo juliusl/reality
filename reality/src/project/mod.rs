@@ -71,35 +71,41 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
     pub async fn load_file(self, file: impl AsRef<Path>) -> anyhow::Result<Self> {
         let content = tokio::fs::read_to_string(file).await?;
 
-        let loading_file: LoadingFile<Storage> = self.into();
+        self.load_content(content).await
+    }
 
-        let mut parser = runmd::prelude::Parser::new(loading_file.clone(), loading_file.clone());
+    /// Load content into the project,
+    ///
+    pub async fn load_content(self, content: impl AsRef<str>) -> anyhow::Result<Self> {
+        let loading: Loading<Storage> = self.into();
 
-        parser.parse(content).await;
+        let mut parser = runmd::prelude::Parser::new(loading.clone(), loading.clone());
+
+        parser.parse(content.as_ref()).await;
 
         drop(parser);
 
-        loading_file.unload()
+        loading.unload()
     }
 }
 
-struct LoadingFile<Storage: StorageTarget + Send + Sync + 'static>(Arc<Project<Storage>>);
+struct Loading<Storage: StorageTarget + Send + Sync + 'static>(Arc<Project<Storage>>);
 
 impl<Storage: StorageTarget + Send + Sync + 'static> From<Project<Storage>>
-    for LoadingFile<Storage>
+    for Loading<Storage>
 {
     fn from(value: Project<Storage>) -> Self {
-        LoadingFile(Arc::new(value))
+        Loading(Arc::new(value))
     }
 }
 
-impl<Storage: StorageTarget + Send + Sync + 'static> Clone for LoadingFile<Storage> {
+impl<Storage: StorageTarget + Send + Sync + 'static> Clone for Loading<Storage> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<Storage: StorageTarget + Send + Sync + 'static> LoadingFile<Storage> {
+impl<Storage: StorageTarget + Send + Sync + 'static> Loading<Storage> {
     /// Unload the inner project,
     ///
     /// Will return an error if during loading a file something took additional strong references on the project
@@ -160,7 +166,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> LoadingFile<Storage> {
 }
 
 impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::BlockProvider
-    for LoadingFile<Storage>
+    for Loading<Storage>
 {
     fn provide(&self, block_info: BlockInfo) -> Option<runmd::prelude::BoxedNode> {
         let parser = self.create_parser_for_block(&block_info);
@@ -170,7 +176,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::BlockProvid
 }
 
 impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::NodeProvider
-    for LoadingFile<Storage>
+    for Loading<Storage>
 {
     fn provide(
         &self,
@@ -185,7 +191,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::NodeProvide
             key_builder.hash(block_info);
             key_builder.hash(node_info);
             let key = key_builder.finish();
-            
+
             let target = self.0.root.shared_namespace(key);
             let mut parser = self.create_parser_for_block(block_info);
             parser.set_storage(target.storage);
