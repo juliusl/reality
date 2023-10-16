@@ -82,7 +82,7 @@ macro_rules! borrow_mut {
     };
     (async $storage:ident $(,)? $ty:ty, $key:ident, |$var:ident| => $body:block)=> {
         {
-            if let Some(mut resource) = $storage.storage.write().await.resource_mut::<$ty>(Some(ResourceKey::with_hash($key))) {
+            if let Some(mut resource) = $storage.storage.write().await.resource_mut::<$ty>($key) {
                 let mut monad = |$var: &mut $ty| $body;
 
                 monad(resource.deref_mut())
@@ -110,19 +110,19 @@ macro_rules! borrow_mut {
     };
     ($storage:ident $(,)? $ty:ty, $key:ident, |$var:ident| => $body:block)=> {
         {
-            if let Some(mut resource) = $storage.resource_mut::<$ty>(Some(ResourceKey::with_hash($key))) {
-                let mut monad = |$var: &mut $ty| $body;
+            if let Some(mut resource) = $storage.resource_mut::<$ty>($key) {
+                let monad = |$var: &mut $ty| $body;
 
                 monad(resource.deref_mut())
             }
         }
     };
-    ($storage:ident $(,)? $ty:ty, $key:literal, |$var:ident| => $body:block)=> {
+    ($storage:ident $(,)? $ty:ty, |$var:ident| => $body:block)=> {
         {
             if let Some(mut resource) = $storage.resource_mut::<$ty>(None) {
                 let mut monad = |$var: &mut $ty| $body;
 
-                monad(resource).deref_mut()
+                monad(resource.deref_mut())
             }
         }
     };

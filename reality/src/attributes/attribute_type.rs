@@ -166,7 +166,7 @@ where
         };
 
         let tag = parser.tag().cloned();
-        let key = parser.attributes.last().map(|a| a.transmute());
+        let key = parser.attributes.last().map(|a| a.transmute::<Owner>());
 
         match (parser.storage(), parsed) {
             (
@@ -178,9 +178,9 @@ where
                 },
             ) => {
                 storage.lazy_dispatch_mut(move |s| {
-                    if let Some(mut owner) = s.resource_mut::<Owner>(key) {
-                        owner.deref_mut().on_parse(value, tag.as_ref());
-                    }
+                    borrow_mut!(s, Owner, key, |owner| => {
+                        owner.on_parse(value, tag.as_ref());
+                    });
                 });
             }
             (
@@ -230,9 +230,9 @@ where
                 let resource = { s.take_resource::<T>(None) };
 
                 if let Some(resource) = resource {
-                    if let Some(mut owner) = s.resource_mut(key) {
+                    borrow_mut!(s, Owner, key, |owner| => {
                         owner.on_parse(*resource, tag.as_ref());
-                    }
+                    });
                 }
             })
         }

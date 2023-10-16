@@ -202,14 +202,13 @@ pub trait StorageTarget {
     {
         let mut tocall = vec![];
         {
-            let queue = self.resource_mut::<DispatchMutQueue<Self>>(None);
-            if let Some(queue) = queue {
+            borrow_mut!(self, DispatchMutQueue<Self>, |queue| => {
                 if let Ok(mut queue) = queue.lock() {
                     while let Some(func) = queue.pop_front() {
                         tocall.push(func);
                     }
                 }
-            }
+            });
         }
         {
             for call in tocall.drain(..) {
@@ -219,14 +218,13 @@ pub trait StorageTarget {
 
         let mut tocall = vec![];
         {
-            let queue = self.resource_mut::<DispatchQueue<Self>>(None);
-            if let Some(queue) = queue {
+            borrow_mut!(self, DispatchQueue<Self>, |queue| => {
                 if let Ok(mut queue) = queue.lock() {
                     while let Some(func) = queue.pop_front() {
                         tocall.push(func);
                     }
                 }
-            }
+            });
         }
         {
             for call in tocall.drain(..) {

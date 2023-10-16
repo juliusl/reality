@@ -61,7 +61,7 @@ macro_rules! resource {
     };
     ($parser:ident, $ty:path, $key:ident)=> {
         $parser.storage().and_then(|s| {
-            s.resource::<$ty>(Some(ResourceKey::with_hash($key)))
+            s.resource::<$ty>($key)
         })
     };
     ($parser:ident, $ty:path, $key:ident)=> {
@@ -85,7 +85,7 @@ macro_rules! resource_mut {
     };
     ($parser:ident, $ty:path, $key:ident)=> {
         $parser.storage_mut().and_then(|s| {
-            s.resource_mut::<$ty>(Some(ResourceKey::with_hash($key)))
+            s.resource_mut::<$ty>($key)
         })
     };
     ($parser:ident, $ty:path, $key:ident)=> {
