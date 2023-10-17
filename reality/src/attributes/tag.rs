@@ -12,6 +12,15 @@ pub struct Tagged<T: FromStr + Send + Sync + 'static> {
     tag: Option<String>,
 }
 
+impl<T: FromStr + Clone + Send + Sync + 'static> Clone for Tagged<T> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+            tag: self.tag.clone(),
+        }
+    }
+}
+
 impl<T: FromStr + Send + Sync + 'static> Tagged<T> {
     /// Returns the default value for this tag,
     ///
@@ -20,7 +29,7 @@ impl<T: FromStr + Send + Sync + 'static> Tagged<T> {
     }
 
     /// Returns true if this container matches the provided tagged value,
-    /// 
+    ///
     pub fn is_tag(&self, tag: impl AsRef<str>) -> bool {
         self.tag.as_ref().filter(|t| *t == tag.as_ref()).is_some()
     }
