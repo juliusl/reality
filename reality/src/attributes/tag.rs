@@ -28,6 +28,12 @@ impl<T: FromStr + Send + Sync + 'static> Tagged<T> {
         self.value.as_ref()
     }
 
+    /// Returns the value of this tag,
+    /// 
+    pub fn tag(&self) -> Option<&String> {
+        self.tag.as_ref()
+    }
+
     /// Returns true if this container matches the provided tagged value,
     ///
     pub fn is_tag(&self, tag: impl AsRef<str>) -> bool {
