@@ -8,7 +8,7 @@ use super::prelude::*;
 pub enum Tokens<'source> {
     /// Extension container,
     ///
-    #[regex("[a-zA-Z]*[/]?[a-zA-Z0-9._-]+>", on_extension)]
+    #[regex("[a-zA-Z]*[/]?[a-zA-Z0-9._-]+([(][a-zA-Z]*[/]?[a-zA-Z0-9._-]+[)])?>", on_extension)]
     Extension(Extension<'source>),
     /// Attribute container,
     ///
