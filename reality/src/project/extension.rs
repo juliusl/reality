@@ -68,7 +68,7 @@ where
             dispatcher.queue_dispatch_owned(move |value| (after)(target, value));
         }
 
-        dispatcher.dispatch_owned_queued().await;
+        dispatcher.dispatch_all().await;
 
         let mut storage = target.storage.write().await;
         if let Some(value) = storage.take_resource(self.resource_key.clone()) {
