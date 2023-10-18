@@ -119,7 +119,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
             )
             .into()
         } else if let Some(hash) = self.hashed_parts() {
-            ResourceKey::<B>::with_hash(hash)
+            ResourceKey::<B>::with_hash_value(hash)
         } else {
             ResourceKey::<B>::new()
         }

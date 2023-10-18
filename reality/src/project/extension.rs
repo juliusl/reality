@@ -124,14 +124,14 @@ where
 mod tests {
     use tracing::trace;
 
-    use crate::{Extension, Shared, StorageTarget};
+    use crate::{Extension, Shared, StorageTarget, ResourceKey};
 
     #[tokio::test]
     #[tracing_test::traced_test]
     async fn test_extension() {
         let target = Shared::default().into_thread_safe();
 
-        let mut extension = Extension::<crate::project::Test>::new(None);
+        let mut extension = Extension::<crate::project::Test>::new(Some(ResourceKey::with_hash("test")));
         extension.add_before(|_, t| {
             trace!("before called");
             t
