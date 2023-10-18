@@ -55,11 +55,13 @@ where
 
             dispatcher.queue_dispatch_owned(move |value| (before)(target, value));
         }
+        dispatcher.dispatch_all().await;
 
         {
             let target = target.clone();
             dispatcher.queue_dispatch_owned(move |value| user(target, value));
         }
+        dispatcher.dispatch_all().await;
 
         for after in self.after.iter() {
             let target = target.clone();
@@ -67,7 +69,6 @@ where
 
             dispatcher.queue_dispatch_owned(move |value| (after)(target, value));
         }
-
         dispatcher.dispatch_all().await;
 
         let mut storage = target.storage.write().await;
