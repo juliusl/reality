@@ -351,6 +351,8 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
         Self: Send + Sync + 'static,
     {
         self.handle_tasks().await;
+        self.dispatch_owned_queued().await;
+        self.dispatch_task_owned_queued().await;
         self.dispatch_mut_queued().await;
         self.dispatch_mut_task_queued().await;
         self.dispatch_queued().await;
