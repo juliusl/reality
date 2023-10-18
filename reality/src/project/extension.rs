@@ -12,8 +12,8 @@ use crate::StorageTarget;
 
 /// Type-alias for a middleware fn,
 ///
-type Middleware<T> = Arc<
-    dyn Fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
+type Middleware<C, T> = Arc<
+    dyn Fn(Arc<C>, AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
         + Sync
         + Send
         + 'static,
@@ -21,8 +21,9 @@ type Middleware<T> = Arc<
 
 /// Type-alias for a middleware task,
 ///
-type MiddlewareAsync<T> = Arc<
+type MiddlewareAsync<C, T> = Arc<
     dyn Fn(
+            Arc<C>,
             AsyncStorageTarget<Shared>,
             anyhow::Result<T>,
         ) -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
@@ -33,36 +34,41 @@ type MiddlewareAsync<T> = Arc<
 
 /// Extension is an external facing callback that can be stored/retrieved programatically,
 ///
-pub struct Extension<T>
+pub struct Extension<C, T>
 where
+    C: Send + Sync + 'static,
     T: BlockObject<Shared>,
 {
+    /// Middleware controller,
+    ///
+    controller: Arc<C>,
     /// Resource-key for retrieving the underlying type,
     ///
     resource_key: Option<ResourceKey<anyhow::Result<T>>>,
     /// List of middleware to run before user middleware,
     ///
-    before: Vec<Middleware<T>>,
+    before: Vec<Middleware<C, T>>,
     /// List of middleware tasks to run before user middleware,
     ///
-    before_tasks: Vec<MiddlewareAsync<T>>,
+    before_tasks: Vec<MiddlewareAsync<C, T>>,
     /// List of middleware to run after user middleware,
     ///
-    after: Vec<Middleware<T>>,
+    after: Vec<Middleware<C, T>>,
     /// List of middleware tasks to run after user middleware,
     ///
-    after_tasks: Vec<MiddlewareAsync<T>>,
+    after_tasks: Vec<MiddlewareAsync<C, T>>,
     /// User middleware,
     ///
-    user: Option<Middleware<T>>,
+    user: Option<Middleware<C, T>>,
     /// User middleware task,
     ///
-    user_task: Option<MiddlewareAsync<T>>,
+    user_task: Option<MiddlewareAsync<C, T>>,
 }
 
-impl<T: BlockObject<Shared>> Clone for Extension<T> {
+impl<C: Send + Sync + 'static, T: BlockObject<Shared>> Clone for Extension<C, T> {
     fn clone(&self) -> Self {
         Self {
+            controller: self.controller.clone(),
             resource_key: self.resource_key.clone(),
             before: self.before.clone(),
             before_tasks: self.before_tasks.clone(),
@@ -74,8 +80,9 @@ impl<T: BlockObject<Shared>> Clone for Extension<T> {
     }
 }
 
-impl<T> Extension<T>
+impl<C, T> Extension<C, T>
 where
+    C: Send + Sync + 'static,
     T: BlockObject<Shared>,
 {
     /// Runs the extension processing the pipeline,
@@ -91,40 +98,48 @@ where
         dispatcher.enable().await;
 
         for before in self.before.iter() {
+            let controller = self.controller.clone();
             let target = target.clone();
             let before = before.clone();
 
-            dispatcher.queue_dispatch_owned(move |value| (before)(target, value));
+            dispatcher.queue_dispatch_owned(move |value| (before)(controller, target, value));
         }
         for before_task in self.before_tasks.iter() {
+            let controller = self.controller.clone();
             let target = target.clone();
             let before_task = before_task.clone();
 
-            dispatcher.queue_dispatch_owned_task(move |value| (before_task)(target, value));
+            dispatcher
+                .queue_dispatch_owned_task(move |value| (before_task)(controller, target, value));
         }
         dispatcher.dispatch_all().await;
 
         if let Some(user) = self.user.clone() {
+            let controller = self.controller.clone();
             let target = target.clone();
-            dispatcher.queue_dispatch_owned(move |value| (user)(target, value));
+            dispatcher.queue_dispatch_owned(move |value| (user)(controller, target, value));
         }
         if let Some(user_task) = self.user_task.clone() {
+            let controller = self.controller.clone();
             let target = target.clone();
-            dispatcher.queue_dispatch_owned_task(move |value| user_task(target, value));
+            dispatcher.queue_dispatch_owned_task(move |value| user_task(controller, target, value));
         }
         dispatcher.dispatch_all().await;
 
         for after in self.after.iter() {
+            let controller = self.controller.clone();
             let target = target.clone();
             let after = after.clone();
 
-            dispatcher.queue_dispatch_owned(move |value| (after)(target, value));
+            dispatcher.queue_dispatch_owned(move |value| (after)(controller, target, value));
         }
         for after_task in self.after_tasks.iter() {
+            let controller = self.controller.clone();
             let target = target.clone();
             let after_task = after_task.clone();
 
-            dispatcher.queue_dispatch_owned_task(move |value| (after_task)(target, value));
+            dispatcher
+                .queue_dispatch_owned_task(move |value| (after_task)(controller, target, value));
         }
         dispatcher.dispatch_all().await;
 
@@ -138,8 +153,9 @@ where
 
     /// Returns a new extension,
     ///
-    pub fn new(resource_key: Option<ResourceKey<T>>) -> Extension<T> {
+    pub fn new(controller: C, resource_key: Option<ResourceKey<T>>) -> Self {
         Extension {
+            controller: Arc::new(controller),
             resource_key: resource_key.map(|r| r.transmute()),
             before: vec![],
             after: vec![],
@@ -155,7 +171,7 @@ where
     #[inline]
     pub fn set_user(
         &mut self,
-        middleware: impl Fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
+        middleware: impl Fn(Arc<C>, AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
             + Sync
             + Send
             + 'static,
@@ -169,6 +185,7 @@ where
     pub fn set_user_task(
         &mut self,
         middleware: impl Fn(
+                Arc<C>,
                 AsyncStorageTarget<Shared>,
                 anyhow::Result<T>,
             )
@@ -185,7 +202,7 @@ where
     #[inline]
     pub fn user(
         mut self,
-        middleware: impl Fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
+        middleware: impl Fn(Arc<C>, AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
             + Sync
             + Send
             + 'static,
@@ -200,6 +217,7 @@ where
     pub fn user_task(
         mut self,
         middleware: impl Fn(
+                Arc<C>,
                 AsyncStorageTarget<Shared>,
                 anyhow::Result<T>,
             )
@@ -217,7 +235,7 @@ where
     #[inline]
     pub fn add_before(
         &mut self,
-        middleware: impl Fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
+        middleware: impl Fn(Arc<C>, AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
             + Sync
             + Send
             + 'static,
@@ -230,7 +248,7 @@ where
     #[inline]
     pub fn add_after(
         &mut self,
-        middleware: impl Fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
+        middleware: impl Fn(Arc<C>, AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
             + Sync
             + Send
             + 'static,
@@ -243,7 +261,7 @@ where
     #[inline]
     pub fn before(
         mut self,
-        middleware: impl Fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
+        middleware: impl Fn(Arc<C>, AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
             + Sync
             + Send
             + 'static,
@@ -257,7 +275,7 @@ where
     #[inline]
     pub fn after(
         mut self,
-        middleware: impl Fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
+        middleware: impl Fn(Arc<C>, AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
             + Sync
             + Send
             + 'static,
@@ -278,6 +296,7 @@ where
     pub fn add_before_task(
         &mut self,
         middleware: impl Fn(
+                Arc<C>,
                 AsyncStorageTarget<Shared>,
                 anyhow::Result<T>,
             )
@@ -301,6 +320,7 @@ where
     pub fn add_after_task(
         &mut self,
         middleware: impl Fn(
+                Arc<C>,
                 AsyncStorageTarget<Shared>,
                 anyhow::Result<T>,
             )
@@ -324,6 +344,7 @@ where
     pub fn before_task(
         mut self,
         middleware: impl Fn(
+                Arc<C>,
                 AsyncStorageTarget<Shared>,
                 anyhow::Result<T>,
             )
@@ -348,6 +369,7 @@ where
     pub fn after_task(
         mut self,
         middleware: impl Fn(
+                Arc<C>,
                 AsyncStorageTarget<Shared>,
                 anyhow::Result<T>,
             )
@@ -375,12 +397,12 @@ mod tests {
         let time = tokio::time::Instant::now();
 
         let mut extension =
-            Extension::<crate::project::Test>::new(Some(ResourceKey::with_hash("test")));
-        extension.add_before(move |_, t| {
+            Extension::<(), crate::project::Test>::new((), Some(ResourceKey::with_hash("test")));
+        extension.add_before(move |_, _, t| {
             trace!("before called {:?}", time);
             t
         });
-        extension.set_user(move |_, t| {
+        extension.set_user(move |_, _, t| {
             trace!("ok called {:?}", time);
             t
         });
