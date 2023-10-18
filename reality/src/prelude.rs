@@ -9,7 +9,6 @@ pub use crate::OnParseField;
 pub use crate::Tagged;
 pub use crate::Project;
 pub use crate::Shared;
-pub use crate::Middleware;
 pub use crate::Extension;
 
 /*

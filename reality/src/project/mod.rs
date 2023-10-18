@@ -9,7 +9,6 @@ pub use node::Node;
 
 mod extension;
 pub use extension::Extension;
-pub use extension::Middleware;
 
 /// Block plugin fn,
 ///
