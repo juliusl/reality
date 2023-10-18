@@ -12,6 +12,7 @@ pub type Middleware<T> = fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> an
 
 /// Extension is an external facing callback that can be stored/retrieved programatically,
 ///
+#[derive(Clone)]
 pub struct Extension<T>
 where
     T: BlockObject<Shared>,

@@ -158,12 +158,16 @@ impl StructData {
         let fields_on_parse_impl = self.fields.iter().enumerate().map(|(offset, f)| {
             let field_ident = f.field_name_lit_str();
             let ty = f.field_ty();
+            let absolute_ty = &f.ty;
+            let name = &f.name;
 
             // Callback to use
             let callback = f.render_field_parse_callback();
 
             quote_spanned! {f.span=>
                 impl #original_impl_generics OnParseField<#offset, #ty> for #ident #ty_generics #where_clause {
+                    type ProjectedType = #absolute_ty;
+
                     fn field_name() -> &'static str {
                         #field_ident
                     }
@@ -171,6 +175,16 @@ impl StructData {
                     #[allow(unused_variables)]
                     fn on_parse(&mut self, value: #ty, _tag: Option<&String>) {
                         #callback
+                    }
+
+                    #[inline]
+                    fn get(&self) -> &Self::ProjectedType {
+                        &self.#name
+                    }
+
+                    #[inline]
+                    fn get_mut(&mut self) -> &mut Self::ProjectedType {
+                        &mut self.#name
                     }
                 }
             }
