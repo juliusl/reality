@@ -1,6 +1,7 @@
 use futures_util::stream::FuturesOrdered;
 use futures_util::Future;
 use tokio::runtime::Handle;
+use tracing::trace;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -274,6 +275,7 @@ macro_rules! dispatch_owned_async {
             }
         }
         {
+            let mut _outer = None;
             if let Some(resource) = storage
                 .deref()
                 .write()
@@ -284,8 +286,12 @@ macro_rules! dispatch_owned_async {
                 for call in tocall.drain(..) {
                     resource = call(resource).await;
                 }
+
+                _outer = Some(resource);
+            }
                 
-                storage.deref().write().await.put_resource(resource, resource_key.map(|r| r.transmute()));
+            if let Some(outer) = _outer {
+                storage.deref().write().await.put_resource(outer, resource_key.map(|r| r.transmute()));
             }
         }
     };
@@ -315,18 +321,21 @@ macro_rules! dispatch_owned {
             }
         }
         {
+            let mut _outer = None;
             if let Some(resource) = storage
                 .deref()
                 .write()
                 .await
                 .take_resource::<$resource_ty>(resource_key.map(|r| r.transmute()))
             {
-                let resource = tocall.drain(..).fold(*resource, |resource, call| {
+                _outer = Some(tocall.drain(..).fold(*resource, |resource, call| {
                     call(resource)
-                });
-                
-                storage.deref().write().await.put_resource(resource, resource_key.map(|r| r.transmute()));
-            };
+                }));
+            }
+
+            if let Some(outer) = _outer {
+                storage.deref().write().await.put_resource(outer, resource_key.map(|r| r.transmute()));
+            }
         }
     };
 }
@@ -350,12 +359,19 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
     where
         Self: Send + Sync + 'static,
     {
+        trace!("Handling dispatcher tasks");
         self.handle_tasks().await;
+        trace!("Dispatching owned queue");
         self.dispatch_owned_queued().await;
+        trace!("Dispatching owned task queue");
         self.dispatch_task_owned_queued().await;
+        trace!("Dispatching mut queue");
         self.dispatch_mut_queued().await;
+        trace!("Dispatching mut task queue");
         self.dispatch_mut_task_queued().await;
+        trace!("Dispatching queue");
         self.dispatch_queued().await;
+        trace!("Dispatching task queue");
         self.dispatch_task_queued().await;
     }
 

@@ -87,7 +87,7 @@ where
             after: vec![],
         }
     }
-    
+
     /// Adds middleware to run before returning the inner type,
     ///
     #[inline]
@@ -119,14 +119,39 @@ where
     }
 }
 
+#[allow(unused_imports)]
 mod tests {
-    use crate::Extension;
+    use tracing::trace;
 
-    #[test]
-    fn test_extension() {
+    use crate::{Extension, Shared, StorageTarget};
+
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn test_extension() {
+        let target = Shared::default().into_thread_safe();
+
         let mut extension = Extension::<crate::project::Test>::new(None);
         extension.add_before(|_, t| {
+            trace!("before called");
             t
         });
+
+        let _ = extension
+            .run(
+                target,
+                crate::project::Test {
+                    name: "hello-world".to_string(),
+                    file: "test".into(),
+                },
+                |_, s| {
+                    trace!("ok called");
+                    s
+                },
+            )
+            .await;
+
+            assert!(logs_contain("before called"));
+            assert!(logs_contain("ok called"));
+        ()
     }
 }
