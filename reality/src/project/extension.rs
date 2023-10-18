@@ -91,21 +91,21 @@ where
     /// Adds middleware to run before returning the inner type,
     ///
     #[inline]
-    pub fn add_before(&mut self, middleware: impl Into<Middleware<T>>) {
+    pub fn add_before(&mut self, middleware: Middleware<T>) {
         self.before.push(middleware.into());
     }
 
     /// Adds middleware to run after returning the inner type,
     ///
     #[inline]
-    pub fn add_after(&mut self, middleware: impl Into<Middleware<T>>) {
+    pub fn add_after(&mut self, middleware: Middleware<T>) {
         self.after.push(middleware.into());
     }
 
     /// (Chainable) Adds middleware to run before returning the inner type,
     ///
     #[inline]
-    pub fn before(mut self, middleware: impl Into<Middleware<T>>) -> Self {
+    pub fn before(mut self, middleware: Middleware<T>) -> Self {
         self.before.push(middleware.into());
         self
     }
@@ -113,8 +113,20 @@ where
     /// (Chainable) Adds middleware to run after returning the inner type,
     ///
     #[inline]
-    pub fn after(mut self, middleware: impl Into<Middleware<T>>) -> Self {
-        self.after.push(middleware.into());
+    pub fn after(mut self, middleware: Middleware<T>) -> Self {
+        self.after.push(middleware);
         self
+    }
+}
+
+mod tests {
+    use crate::Extension;
+
+    #[test]
+    fn test_extension() {
+        let mut extension = Extension::<crate::project::Test>::new(None);
+        extension.add_before(|_, t| {
+            t
+        });
     }
 }
