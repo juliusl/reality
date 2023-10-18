@@ -7,6 +7,10 @@ use crate::{AttributeParser, ResourceKey, ResourceKeyHashBuilder, StorageTarget}
 mod node;
 pub use node::Node;
 
+mod extension;
+pub use extension::Extension;
+pub use extension::Middleware;
+
 /// Block plugin fn,
 ///
 pub type BlockPlugin<S> = fn(&mut AttributeParser<S>);
@@ -16,8 +20,6 @@ pub type BlockPlugin<S> = fn(&mut AttributeParser<S>);
 pub type NodePlugin<S> = fn(Option<&str>, Option<&str>, &mut AttributeParser<S>);
 
 /// Project storing the main runmd parser,
-///
-/// TODO: When providing
 ///
 pub struct Project<Storage: StorageTarget + 'static> {
     root: Storage,

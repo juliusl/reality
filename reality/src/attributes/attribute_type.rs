@@ -257,6 +257,10 @@ pub trait OnParseField<const FIELD_OFFSET: usize, T: Send + Sync + 'static>
 where
     Self: Send + Sync + Sized + 'static,
 {
+    /// Projected type to use w/ `get`/`get_mut`
+    /// 
+    type ProjectedType: Send + Sync + 'static;
+
     /// Name of the field,
     ///
     fn field_name() -> &'static str;
@@ -264,6 +268,14 @@ where
     /// Function called when a value is parsed correctly,
     ///
     fn on_parse(&mut self, value: T, tag: Option<&String>);
+
+    /// Returns a reference to the field as the projected type,
+    /// 
+    fn get(&self) -> &Self::ProjectedType;
+
+    /// Returns a mutable reference to the field as the projected type,
+    /// 
+    fn get_mut(&mut self) -> &mut Self::ProjectedType;
 }
 
 /// Struct wrapping a handler that can be treated as a resource,

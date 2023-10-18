@@ -23,6 +23,12 @@ pub mod prelude {
         std::collections::VecDeque<Box<dyn FnOnce(&mut S) + 'static + Send + Sync>>,
     >;
 
+    /// Type-alias for a thread safe dispatch-owned queue,
+    /// 
+    pub(super) type DispatchOwnedQueue<S> = std::sync::Mutex<
+        std::collections::VecDeque<Box<dyn FnOnce(S) -> S + 'static + Send + Sync>>,
+    >;
+
     /// Type-alias for a task fn,
     /// 
     pub(super) type TaskFn<S> = Box<dyn FnOnce(&S) -> Pin<Box<dyn Future<Output = ()> + Sync + Send + 'static>> + Send + Sync + 'static>;
@@ -31,6 +37,10 @@ pub mod prelude {
     /// 
     pub(super) type MutTaskFn<S> = Box<dyn FnOnce(&mut S) -> Pin<Box<dyn Future<Output = ()> + Sync + Send + 'static>> + Send + Sync + 'static>;
 
+    /// Type-alias for an owned task fn,
+    /// 
+    pub(super) type OwnedTaskFn<S> = Box<dyn FnOnce(S) -> Pin<Box<dyn Future<Output = S> + Sync + Send + 'static>> + Send + Sync + 'static>;
+
     /// Type-alias for a thread safe dispatch task queue,
     ///
     pub(super) type DispatchTaskQueue<S> =  std::sync::Mutex<std::collections::VecDeque<TaskFn<S>>>;
@@ -38,6 +48,10 @@ pub mod prelude {
     /// Type-alias for a thread safe dispatch mut task queue,
     /// 
     pub(super) type DispatchMutTaskQueue<S> =  std::sync::Mutex<std::collections::VecDeque<MutTaskFn<S>>>;
+
+    /// Type-alias for a thread safe dispatch owned task queue,
+    /// 
+    pub(super) type DispatchOwnedTaskQueue<S> =  std::sync::Mutex<std::collections::VecDeque<OwnedTaskFn<S>>>;
 
     pub use super::target::StorageTarget;
     pub use super::resource_key::ResourceKey;

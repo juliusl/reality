@@ -37,7 +37,7 @@ mod tests {
     /// 
     #[derive(BlockObjectType)]
     #[reality(
-        rename = "application/test", 
+        rename = "application/test",
         load=on_load
     )]
     pub struct Test<T: Send + Sync + 'static> {
