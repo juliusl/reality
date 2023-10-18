@@ -19,7 +19,7 @@ where
 {
     /// Resource-key for retrieving the underlying type,
     ///
-    resource_key: ResourceKey<anyhow::Result<T>>,
+    resource_key: Option<ResourceKey<anyhow::Result<T>>>,
     /// List of middleware to run before returning inner type T,
     ///
     before: Vec<Middleware<T>>,
@@ -41,11 +41,11 @@ where
         user: Middleware<T>,
     ) -> anyhow::Result<T> {
         let mut initial = target.storage.write().await;
-        initial.put_resource(anyhow::Ok::<T>(init), Some(self.resource_key.clone()));
+        initial.put_resource(anyhow::Ok::<T>(init), self.resource_key.clone());
         drop(initial);
 
         let mut dispatcher = target
-            .dispatcher::<anyhow::Result<T>>(Some(self.resource_key.clone()))
+            .dispatcher::<anyhow::Result<T>>(self.resource_key.clone())
             .await;
         dispatcher.enable().await;
 
@@ -71,7 +71,7 @@ where
         dispatcher.dispatch_owned_queued().await;
 
         let mut storage = target.storage.write().await;
-        if let Some(value) = storage.take_resource(Some(self.resource_key.clone())) {
+        if let Some(value) = storage.take_resource(self.resource_key.clone()) {
             *value
         } else {
             Err(anyhow!("Could not process pipeline"))
@@ -80,9 +80,9 @@ where
 
     /// Returns a new extension,
     ///
-    pub fn new(resource_key: &ResourceKey<T>) -> Extension<T> {
+    pub fn new(resource_key: Option<ResourceKey<T>>) -> Extension<T> {
         Extension {
-            resource_key: resource_key.transmute(),
+            resource_key: resource_key.map(|r| r.transmute()),
             before: vec![],
             after: vec![],
         }
