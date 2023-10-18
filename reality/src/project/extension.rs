@@ -39,6 +39,12 @@ where
     /// List of middleware tasks to run after user middleware,
     /// 
     after_tasks: Vec<MiddlewareAsync<T>>,
+    /// User middleware,
+    /// 
+    user: Option<Middleware<T>>,
+    /// User middleware task,
+    /// 
+    user_task: Option<MiddlewareAsync<T>>,
 }
 
 impl<T> Extension<T>
@@ -51,7 +57,6 @@ where
         &self,
         target: AsyncStorageTarget<Shared>,
         init: T,
-        user: Middleware<T>,
     ) -> anyhow::Result<T> {
         let mut initial = target.storage.write().await;
         initial.put_resource(anyhow::Ok::<T>(init), self.resource_key.clone());
@@ -76,9 +81,13 @@ where
         }
         dispatcher.dispatch_all().await;
 
-        {
+        if let Some(user) = self.user {
             let target = target.clone();
             dispatcher.queue_dispatch_owned(move |value| user(target, value));
+        }
+        if let Some(user_task) = self.user_task {
+            let target = target.clone();
+            dispatcher.queue_dispatch_owned_task(move |value| user_task(target, value));
         }
         dispatcher.dispatch_all().await;
 
@@ -113,7 +122,39 @@ where
             after: vec![],
             before_tasks: vec![],
             after_tasks: vec![],
+            user: None,
+            user_task: None,
         }
+    }
+
+    /// Sets the user middleware,
+    /// 
+    #[inline]
+    pub fn set_user(&mut self, middleware: Middleware<T>) {
+        self.user = Some(middleware);
+    }
+
+    /// Sets the user_task middleware,
+    /// 
+    #[inline]
+    pub fn set_user_task(&mut self, middleware: MiddlewareAsync<T>) {
+        self.user_task = Some(middleware);
+    }
+
+    /// (Chainable) Sets the user middleware,
+    /// 
+    #[inline]
+    pub fn user(mut self, middleware: Middleware<T>) -> Self {
+        self.set_user(middleware);
+        self
+    }
+
+    /// (Chainable) Sets the user task middleware,
+    /// 
+    #[inline]
+    pub fn user_task(mut self, middleware: MiddlewareAsync<T>) -> Self {
+        self.set_user_task(middleware);
+        self
     }
 
     /// Adds middleware to run before returning the inner type,
@@ -134,7 +175,7 @@ where
     ///
     #[inline]
     pub fn before(mut self, middleware: Middleware<T>) -> Self {
-        self.before.push(middleware.into());
+        self.add_before(middleware.into());
         self
     }
 
@@ -142,7 +183,7 @@ where
     ///
     #[inline]
     pub fn after(mut self, middleware: Middleware<T>) -> Self {
-        self.after.push(middleware);
+        self.add_after(middleware);
         self
     }
 
@@ -182,7 +223,7 @@ where
     /// ```
     #[inline]
     pub fn before_task(mut self, middleware: MiddlewareAsync<T>) -> Self {
-        self.before_tasks.push(middleware.into());
+        self.add_before_task(middleware);
         self
     }
 
@@ -196,7 +237,7 @@ where
     /// ```
     #[inline]
     pub fn after_task(mut self, middleware: MiddlewareAsync<T>) -> Self {
-        self.after_tasks.push(middleware);
+        self.add_after_task(middleware);
         self
     }
 }
@@ -216,17 +257,12 @@ mod tests {
         let mut extension = Extension::<crate::project::Test>::new(Some(ResourceKey::with_hash("test")));
         extension.add_before(|_, t| {
             trace!("before called");
-            // let mut input = String::new();
-            // std::io::stdin().read_line(&mut input)?;
-            // println!("{}", input.trim());
             t
         });
-
-        // extension.add_before_task(|_, s| Box::pin(async {
-        //     let input = tokio::fs::read_to_string("Cargo.toml").await?;
-        //     println!("{input}");
-        //     s
-        // }));
+        extension.set_user(|_, t| {
+            trace!("ok called");
+            t
+        });
 
         let _ = extension
             .run(
@@ -234,10 +270,6 @@ mod tests {
                 crate::project::Test {
                     name: "hello-world".to_string(),
                     file: "test".into(),
-                },
-                |_, s| {
-                    trace!("ok called");
-                    s
                 },
             )
             .await;
