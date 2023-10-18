@@ -12,7 +12,7 @@ use crate::StorageTarget;
 
 /// Type-alias for a middleware fn,
 ///
-pub type Middleware<T> = Arc<
+type Middleware<T> = Arc<
     dyn Fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
         + Sync
         + Send
@@ -21,7 +21,7 @@ pub type Middleware<T> = Arc<
 
 /// Type-alias for a middleware task,
 ///
-pub type MiddlewareAsync<T> = Arc<
+type MiddlewareAsync<T> = Arc<
     dyn Fn(
             AsyncStorageTarget<Shared>,
             anyhow::Result<T>,
