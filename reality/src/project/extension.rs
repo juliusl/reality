@@ -1,4 +1,7 @@
+use std::pin::Pin;
+
 use anyhow::anyhow;
+use futures_util::Future;
 
 use crate::AsyncStorageTarget;
 use crate::BlockObject;
@@ -6,9 +9,13 @@ use crate::ResourceKey;
 use crate::Shared;
 use crate::StorageTarget;
 
-/// Type-alias for a middle-ware fn,
+/// Type-alias for a middleware fn,
 ///
 pub type Middleware<T> = fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>;
+
+/// Type-alias for a middleware task,
+/// 
+pub type MiddlewareAsync<T> = fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>;
 
 /// Extension is an external facing callback that can be stored/retrieved programatically,
 ///
@@ -20,12 +27,18 @@ where
     /// Resource-key for retrieving the underlying type,
     ///
     resource_key: Option<ResourceKey<anyhow::Result<T>>>,
-    /// List of middleware to run before returning inner type T,
+    /// List of middleware to run before user middleware,
     ///
     before: Vec<Middleware<T>>,
-    /// List of middleware to run after returning inner type T,
+    /// List of middleware tasks to run before user middleware,
+    /// 
+    before_tasks: Vec<MiddlewareAsync<T>>,
+    /// List of middleware to run after user middleware,
     ///
     after: Vec<Middleware<T>>,
+    /// List of middleware tasks to run after user middleware,
+    /// 
+    after_tasks: Vec<MiddlewareAsync<T>>,
 }
 
 impl<T> Extension<T>
@@ -55,6 +68,12 @@ where
 
             dispatcher.queue_dispatch_owned(move |value| (before)(target, value));
         }
+        for before_task in self.before_tasks.iter() {
+            let target = target.clone();
+            let before_task = before_task.clone();
+
+            dispatcher.queue_dispatch_owned_task(move |value| (before_task)(target, value));
+        }
         dispatcher.dispatch_all().await;
 
         {
@@ -68,6 +87,12 @@ where
             let after = after.clone();
 
             dispatcher.queue_dispatch_owned(move |value| (after)(target, value));
+        }
+        for after_task in self.after_tasks.iter() {
+            let target = target.clone();
+            let after_task = after_task.clone();
+
+            dispatcher.queue_dispatch_owned_task(move |value| (after_task)(target, value));
         }
         dispatcher.dispatch_all().await;
 
@@ -86,6 +111,8 @@ where
             resource_key: resource_key.map(|r| r.transmute()),
             before: vec![],
             after: vec![],
+            before_tasks: vec![],
+            after_tasks: vec![],
         }
     }
 
@@ -118,10 +145,65 @@ where
         self.after.push(middleware);
         self
     }
+
+    /// Adds middleware to run before returning the inner type,
+    ///
+    /// **Usage Example** 
+    /// ```rs norun
+    /// extension.add_before_task(|storage, s| Box::pin(async { 
+    ///     s
+    /// }));
+    /// ```
+    #[inline]
+    pub fn add_before_task(&mut self, middleware: MiddlewareAsync<T>) {
+        self.before_tasks.push(middleware.into());
+    }
+
+    /// Adds middleware to run after returning the inner type,
+    /// 
+    /// **Usage Example** 
+    /// ```rs norun
+    /// extension.add_after_task(|storage, s| Box::pin(async { 
+    ///     s
+    /// }));
+    /// ```
+    #[inline]
+    pub fn add_after_task(&mut self, middleware: MiddlewareAsync<T>) {
+        self.after_tasks.push(middleware.into());
+    }
+
+    /// (Chainable) Adds middleware to run before returning the inner type,
+    ///
+    /// **Usage Example** 
+    /// ```rs norun
+    /// extension.before_task(|storage, s| Box::pin(async { 
+    ///     s
+    /// }));
+    /// ```
+    #[inline]
+    pub fn before_task(mut self, middleware: MiddlewareAsync<T>) -> Self {
+        self.before_tasks.push(middleware.into());
+        self
+    }
+
+    /// (Chainable) Adds middleware to run after returning the inner type,
+    ///
+    /// **Usage Example** 
+    /// ```rs norun
+    /// extension.after_task(|storage, s| Box::pin(async { 
+    ///     s
+    /// }));
+    /// ```
+    #[inline]
+    pub fn after_task(mut self, middleware: MiddlewareAsync<T>) -> Self {
+        self.after_tasks.push(middleware);
+        self
+    }
 }
 
 #[allow(unused_imports)]
 mod tests {
+    use tokio::io::AsyncReadExt;
     use tracing::trace;
 
     use crate::{Extension, Shared, StorageTarget, ResourceKey};
@@ -134,8 +216,17 @@ mod tests {
         let mut extension = Extension::<crate::project::Test>::new(Some(ResourceKey::with_hash("test")));
         extension.add_before(|_, t| {
             trace!("before called");
+            // let mut input = String::new();
+            // std::io::stdin().read_line(&mut input)?;
+            // println!("{}", input.trim());
             t
         });
+
+        // extension.add_before_task(|_, s| Box::pin(async {
+        //     let input = tokio::fs::read_to_string("Cargo.toml").await?;
+        //     println!("{input}");
+        //     s
+        // }));
 
         let _ = extension
             .run(
