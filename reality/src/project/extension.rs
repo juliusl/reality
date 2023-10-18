@@ -1,4 +1,5 @@
 use std::pin::Pin;
+use std::sync::Arc;
 
 use anyhow::anyhow;
 use futures_util::Future;
@@ -11,15 +12,27 @@ use crate::StorageTarget;
 
 /// Type-alias for a middleware fn,
 ///
-pub type Middleware<T> = fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>;
+pub type Middleware<T> = Arc<
+    dyn Fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
+        + Sync
+        + Send
+        + 'static,
+>;
 
 /// Type-alias for a middleware task,
-/// 
-pub type MiddlewareAsync<T> = fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>;
+///
+pub type MiddlewareAsync<T> = Arc<
+    dyn Fn(
+            AsyncStorageTarget<Shared>,
+            anyhow::Result<T>,
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
+        + Send
+        + Sync
+        + 'static,
+>;
 
 /// Extension is an external facing callback that can be stored/retrieved programatically,
 ///
-#[derive(Clone)]
 pub struct Extension<T>
 where
     T: BlockObject<Shared>,
@@ -31,20 +44,34 @@ where
     ///
     before: Vec<Middleware<T>>,
     /// List of middleware tasks to run before user middleware,
-    /// 
+    ///
     before_tasks: Vec<MiddlewareAsync<T>>,
     /// List of middleware to run after user middleware,
     ///
     after: Vec<Middleware<T>>,
     /// List of middleware tasks to run after user middleware,
-    /// 
+    ///
     after_tasks: Vec<MiddlewareAsync<T>>,
     /// User middleware,
-    /// 
+    ///
     user: Option<Middleware<T>>,
     /// User middleware task,
-    /// 
+    ///
     user_task: Option<MiddlewareAsync<T>>,
+}
+
+impl<T: BlockObject<Shared>> Clone for Extension<T> {
+    fn clone(&self) -> Self {
+        Self {
+            resource_key: self.resource_key.clone(),
+            before: self.before.clone(),
+            before_tasks: self.before_tasks.clone(),
+            after: self.after.clone(),
+            after_tasks: self.after_tasks.clone(),
+            user: self.user.clone(),
+            user_task: self.user_task.clone(),
+        }
+    }
 }
 
 impl<T> Extension<T>
@@ -53,11 +80,7 @@ where
 {
     /// Runs the extension processing the pipeline,
     ///
-    pub async fn run(
-        &self,
-        target: AsyncStorageTarget<Shared>,
-        init: T,
-    ) -> anyhow::Result<T> {
+    pub async fn run(&self, target: AsyncStorageTarget<Shared>, init: T) -> anyhow::Result<T> {
         let mut initial = target.storage.write().await;
         initial.put_resource(anyhow::Ok::<T>(init), self.resource_key.clone());
         drop(initial);
@@ -81,11 +104,11 @@ where
         }
         dispatcher.dispatch_all().await;
 
-        if let Some(user) = self.user {
+        if let Some(user) = self.user.clone() {
             let target = target.clone();
-            dispatcher.queue_dispatch_owned(move |value| user(target, value));
+            dispatcher.queue_dispatch_owned(move |value| (user)(target, value));
         }
-        if let Some(user_task) = self.user_task {
+        if let Some(user_task) = self.user_task.clone() {
             let target = target.clone();
             dispatcher.queue_dispatch_owned_task(move |value| user_task(target, value));
         }
@@ -128,31 +151,63 @@ where
     }
 
     /// Sets the user middleware,
-    /// 
+    ///
     #[inline]
-    pub fn set_user(&mut self, middleware: Middleware<T>) {
-        self.user = Some(middleware);
+    pub fn set_user(
+        &mut self,
+        middleware: impl Fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
+            + Sync
+            + Send
+            + 'static,
+    ) {
+        self.user = Some(Arc::new(Box::new(middleware)));
     }
 
     /// Sets the user_task middleware,
-    /// 
+    ///
     #[inline]
-    pub fn set_user_task(&mut self, middleware: MiddlewareAsync<T>) {
-        self.user_task = Some(middleware);
+    pub fn set_user_task(
+        &mut self,
+        middleware: impl Fn(
+                AsyncStorageTarget<Shared>,
+                anyhow::Result<T>,
+            )
+                -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
+            + Send
+            + Sync
+            + 'static,
+    ) {
+        self.user_task = Some(Arc::new(middleware));
     }
 
     /// (Chainable) Sets the user middleware,
-    /// 
+    ///
     #[inline]
-    pub fn user(mut self, middleware: Middleware<T>) -> Self {
+    pub fn user(
+        mut self,
+        middleware: impl Fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
+            + Sync
+            + Send
+            + 'static,
+    ) -> Self {
         self.set_user(middleware);
         self
     }
 
     /// (Chainable) Sets the user task middleware,
-    /// 
+    ///
     #[inline]
-    pub fn user_task(mut self, middleware: MiddlewareAsync<T>) -> Self {
+    pub fn user_task(
+        mut self,
+        middleware: impl Fn(
+                AsyncStorageTarget<Shared>,
+                anyhow::Result<T>,
+            )
+                -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
+            + Send
+            + Sync
+            + 'static,
+    ) -> Self {
         self.set_user_task(middleware);
         self
     }
@@ -160,83 +215,147 @@ where
     /// Adds middleware to run before returning the inner type,
     ///
     #[inline]
-    pub fn add_before(&mut self, middleware: Middleware<T>) {
-        self.before.push(middleware.into());
+    pub fn add_before(
+        &mut self,
+        middleware: impl Fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
+            + Sync
+            + Send
+            + 'static,
+    ) {
+        self.before.push(Arc::new(middleware));
     }
 
     /// Adds middleware to run after returning the inner type,
     ///
     #[inline]
-    pub fn add_after(&mut self, middleware: Middleware<T>) {
-        self.after.push(middleware.into());
+    pub fn add_after(
+        &mut self,
+        middleware: impl Fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
+            + Sync
+            + Send
+            + 'static,
+    ) {
+        self.after.push(Arc::new(middleware));
     }
 
     /// (Chainable) Adds middleware to run before returning the inner type,
     ///
     #[inline]
-    pub fn before(mut self, middleware: Middleware<T>) -> Self {
-        self.add_before(middleware.into());
+    pub fn before(
+        mut self,
+        middleware: impl Fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
+            + Sync
+            + Send
+            + 'static,
+    ) -> Self {
+        self.add_before(middleware);
         self
     }
 
     /// (Chainable) Adds middleware to run after returning the inner type,
     ///
     #[inline]
-    pub fn after(mut self, middleware: Middleware<T>) -> Self {
+    pub fn after(
+        mut self,
+        middleware: impl Fn(AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
+            + Sync
+            + Send
+            + 'static,
+    ) -> Self {
         self.add_after(middleware);
         self
     }
 
     /// Adds middleware to run before returning the inner type,
     ///
-    /// **Usage Example** 
+    /// **Usage Example**
     /// ```rs norun
-    /// extension.add_before_task(|storage, s| Box::pin(async { 
+    /// extension.add_before_task(|storage, s| Box::pin(async {
     ///     s
     /// }));
     /// ```
     #[inline]
-    pub fn add_before_task(&mut self, middleware: MiddlewareAsync<T>) {
-        self.before_tasks.push(middleware.into());
+    pub fn add_before_task(
+        &mut self,
+        middleware: impl Fn(
+                AsyncStorageTarget<Shared>,
+                anyhow::Result<T>,
+            )
+                -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
+            + Send
+            + Sync
+            + 'static,
+    ) {
+        self.before_tasks.push(Arc::new(middleware));
     }
 
     /// Adds middleware to run after returning the inner type,
-    /// 
-    /// **Usage Example** 
+    ///
+    /// **Usage Example**
     /// ```rs norun
-    /// extension.add_after_task(|storage, s| Box::pin(async { 
+    /// extension.add_after_task(|storage, s| Box::pin(async {
     ///     s
     /// }));
     /// ```
     #[inline]
-    pub fn add_after_task(&mut self, middleware: MiddlewareAsync<T>) {
-        self.after_tasks.push(middleware.into());
+    pub fn add_after_task(
+        &mut self,
+        middleware: impl Fn(
+                AsyncStorageTarget<Shared>,
+                anyhow::Result<T>,
+            )
+                -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
+            + Send
+            + Sync
+            + 'static,
+    ) {
+        self.after_tasks.push(Arc::new(middleware));
     }
 
     /// (Chainable) Adds middleware to run before returning the inner type,
     ///
-    /// **Usage Example** 
+    /// **Usage Example**
     /// ```rs norun
-    /// extension.before_task(|storage, s| Box::pin(async { 
+    /// extension.before_task(|storage, s| Box::pin(async {
     ///     s
     /// }));
     /// ```
     #[inline]
-    pub fn before_task(mut self, middleware: MiddlewareAsync<T>) -> Self {
+    pub fn before_task(
+        mut self,
+        middleware: impl Fn(
+                AsyncStorageTarget<Shared>,
+                anyhow::Result<T>,
+            )
+                -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
+            + Send
+            + Sync
+            + 'static,
+    ) -> Self {
         self.add_before_task(middleware);
         self
     }
 
     /// (Chainable) Adds middleware to run after returning the inner type,
     ///
-    /// **Usage Example** 
+    /// **Usage Example**
     /// ```rs norun
-    /// extension.after_task(|storage, s| Box::pin(async { 
+    /// extension.after_task(|storage, s| Box::pin(async {
     ///     s
     /// }));
     /// ```
     #[inline]
-    pub fn after_task(mut self, middleware: MiddlewareAsync<T>) -> Self {
+    pub fn after_task(
+        mut self,
+        middleware: impl Fn(
+                AsyncStorageTarget<Shared>,
+                anyhow::Result<T>,
+            )
+                -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
+            + Send
+            + Sync
+            + 'static,
+    ) -> Self {
         self.add_after_task(middleware);
         self
     }
@@ -247,20 +366,22 @@ mod tests {
     use tokio::io::AsyncReadExt;
     use tracing::trace;
 
-    use crate::{Extension, Shared, StorageTarget, ResourceKey};
+    use crate::{Extension, ResourceKey, Shared, StorageTarget};
 
     #[tokio::test]
     #[tracing_test::traced_test]
     async fn test_extension() {
         let target = Shared::default().into_thread_safe();
+        let time = tokio::time::Instant::now();
 
-        let mut extension = Extension::<crate::project::Test>::new(Some(ResourceKey::with_hash("test")));
-        extension.add_before(|_, t| {
-            trace!("before called");
+        let mut extension =
+            Extension::<crate::project::Test>::new(Some(ResourceKey::with_hash("test")));
+        extension.add_before(move |_, t| {
+            trace!("before called {:?}", time);
             t
         });
-        extension.set_user(|_, t| {
-            trace!("ok called");
+        extension.set_user(move |_, t| {
+            trace!("ok called {:?}", time);
             t
         });
 
@@ -274,8 +395,8 @@ mod tests {
             )
             .await;
 
-            assert!(logs_contain("before called"));
-            assert!(logs_contain("ok called"));
+        assert!(logs_contain("before called"));
+        assert!(logs_contain("ok called"));
         ()
     }
 }
