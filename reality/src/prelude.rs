@@ -10,6 +10,10 @@ pub use crate::Tagged;
 pub use crate::Project;
 pub use crate::Shared;
 pub use crate::Extension;
+pub use crate::ExtensionController;
+pub use crate::ResourceKey;
+pub use crate::ResourceKeyHashBuilder;
+
 
 /*
     Macros for working w/ a storage target

@@ -10,6 +10,9 @@ pub use node::Node;
 mod extension;
 pub use extension::Extension;
 
+mod extension_controller;
+pub use extension_controller::ExtensionController;
+
 /// Block plugin fn,
 ///
 pub type BlockPlugin<S> = fn(&mut AttributeParser<S>);
