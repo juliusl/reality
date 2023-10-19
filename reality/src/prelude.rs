@@ -11,6 +11,7 @@ pub use crate::Project;
 pub use crate::Shared;
 pub use crate::Extension;
 pub use crate::ExtensionController;
+pub use crate::ExtensionPlugin;
 pub use crate::ResourceKey;
 pub use crate::ResourceKeyHashBuilder;
 

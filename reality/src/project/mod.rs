@@ -12,6 +12,7 @@ pub use extension::Extension;
 
 mod extension_controller;
 pub use extension_controller::ExtensionController;
+pub use extension_controller::ExtensionPlugin;
 
 /// Block plugin fn,
 ///
