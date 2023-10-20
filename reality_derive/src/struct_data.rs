@@ -1,3 +1,6 @@
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+
 use proc_macro2::Ident;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
@@ -7,9 +10,12 @@ use quote::ToTokens;
 use quote::quote_spanned;
 use syn::GenericParam;
 use syn::Generics;
+use syn::ImplGenerics;
 use syn::LitStr;
 use syn::Path;
 use syn::Token;
+use syn::TypeGenerics;
+use syn::WhereClause;
 use syn::parse::Parse;
 use syn::parse2;
 use syn::Data;
@@ -100,6 +106,11 @@ impl Parse for StructData {
                 .iter()
                 .filter_map(|n| parse2::<StructField>(n.to_token_stream()).ok())
                 .filter(|f| !f.ignore)
+                .enumerate()
+                .map(|(idx, mut f)| {
+                    f.offset = idx;
+                    f
+                })
                 .collect::<Vec<_>>()
         } else {
             vec![]
@@ -123,6 +134,61 @@ impl Parse for StructData {
 }
 
 impl StructData {
+
+    pub(crate) fn visit_trait(&self, impl_generics: &ImplGenerics<'_>, ty_generics: &TypeGenerics<'_>, where_clause: &Option<&WhereClause>) -> TokenStream {
+        let fields = self.fields.iter().fold(HashMap::new(), |mut acc, f| {
+            if !acc.contains_key(&f.ty) {
+                acc.insert(f.ty.clone(), vec![f.clone()]);
+            } else if let Some(list) = acc.get_mut(&f.ty) {
+                list.push(f.clone());
+            }
+
+            acc
+        });
+
+        let visit_impls = fields.iter().map(|(ty, fields)| {
+            let owner = &self.name;
+
+            let _fields = fields.iter().map(|f| {
+                let ty = f.field_ty();
+                let offset = &f.offset;
+                quote_spanned!(f.span=> 
+                    <Self as OnParseField<#offset, #ty>>::get_field(self)
+                )
+            });
+
+            let _fields_mut = fields.iter().map(|f| {
+                let ty = f.field_ty();
+                let offset = &f.offset;
+                quote_spanned!(f.span=>
+                    <Self as OnParseField<#offset, #ty>>::get_field_mut(self)
+                )
+            });
+
+            quote_spanned!(self.span=>
+                impl #impl_generics reality::prelude::Visit<#ty> for #owner #ty_generics #where_clause {
+                    fn visit<'a>(&'a self) -> Vec<reality::prelude::Field<'a, #ty>> {
+                        vec![
+                            #(#_fields),*
+                        ]
+                    }
+                }
+
+                impl #impl_generics reality::prelude::VisitMut<#ty> for #owner #ty_generics #where_clause {
+                    fn visit_mut<'a: 'b, 'b>(&'a mut self) -> Vec<reality::prelude::FieldMut<'b, #ty>> {
+                        vec![
+                            #(#_fields_mut),*
+                        ]
+                    }
+                }
+            )
+        });
+
+        quote_spanned!(self.span=> 
+            #(#visit_impls)*
+        )
+    }
+
     /// Returns token stream of generated AttributeType trait
     /// 
     pub(crate) fn attribute_type_trait(mut self) -> TokenStream {
@@ -136,6 +202,9 @@ impl StructData {
             );
 
         let (impl_generics, _, where_clause) = &self.generics.split_for_impl();
+        
+        let visit_impl = self.visit_trait(&original_impl_generics, &ty_generics, where_clause);
+        
         let trait_ident = self.reality_rename.unwrap_or(LitStr::new(ident.to_string().to_lowercase().as_str(), self.span));
         let fields = self.fields.clone();
         let fields = fields.iter().enumerate().map(|(offset, f)| {
@@ -155,11 +224,12 @@ impl StructData {
 
         //  Implementation for fields parsers,
         // 
-        let fields_on_parse_impl = self.fields.iter().enumerate().map(|(offset, f)| {
+        let fields_on_parse_impl = self.fields.iter().map(|f| {
             let field_ident = f.field_name_lit_str();
             let ty = f.field_ty();
             let absolute_ty = &f.ty;
             let name = &f.name;
+            let offset = &f.offset;
 
             // Callback to use
             let callback = f.render_field_parse_callback();
@@ -190,6 +260,7 @@ impl StructData {
             }
         });
 
+
         quote_spanned! {self.span=> 
             impl #impl_generics AttributeType<S> for #ident #ty_generics #where_clause {
                 fn ident() -> &'static str {
@@ -206,6 +277,8 @@ impl StructData {
             }
 
             #(#fields_on_parse_impl)*
+
+            #visit_impl
         }
     }
 

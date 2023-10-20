@@ -14,7 +14,10 @@ pub use crate::ExtensionController;
 pub use crate::ExtensionPlugin;
 pub use crate::ResourceKey;
 pub use crate::ResourceKeyHashBuilder;
-
+pub use crate::Visit;
+pub use crate::VisitMut;
+pub use crate::Field;
+pub use crate::FieldMut;
 
 /*
     Macros for working w/ a storage target

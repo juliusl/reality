@@ -3,11 +3,16 @@ mod attribute;
 mod parser;
 mod storage_target;
 mod tag;
+mod visit;
 
 pub mod prelude {
     pub(super) use std::convert::Infallible;
     pub(super) use std::str::FromStr;
 
+    pub use super::visit::Visit;
+    pub use super::visit::VisitMut;
+    pub use super::visit::Field;
+    pub use super::visit::FieldMut;
     pub use super::attribute_type::AttributeType;
     pub use super::attribute_type::AttributeTypeParser;
     pub use super::attribute_type::Callback;
@@ -23,7 +28,7 @@ pub mod prelude {
 pub use prelude::*;
 
 mod tests {
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, default};
 
     use super::*;
     use crate::BlockObject;
@@ -31,11 +36,12 @@ mod tests {
     
     pub mod reality {
         pub use crate::runmd;
+        pub use crate::prelude;
     }
 
     /// Tests derive macro expansion
     /// 
-    #[derive(BlockObjectType)]
+    #[derive(BlockObjectType, Default)]
     #[reality(
         rename = "application/test",
         load=on_load
@@ -99,6 +105,7 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
     pub struct Test2 {}
 
     impl<S: StorageTarget + Send + Sync + 'static> AttributeType<S> for Test2 {
@@ -125,5 +132,14 @@ mod tests {
         disp.queue_dispatch_mut(|t| {
             t.author = format!("test_v2_parser");
         });
+    }
+
+    #[test]
+    fn test_visit() {
+        let mut test = Test::<String>::default();
+
+        let fields = <Test<String> as VisitMut<BTreeMap<String, String>>>::visit_mut(&mut test);
+
+        println!("{:#?}", fields);
     }
 }

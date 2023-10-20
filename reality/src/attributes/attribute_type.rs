@@ -3,6 +3,8 @@ use std::marker::PhantomData;
 use std::ops::DerefMut;
 use std::str::FromStr;
 
+use super::visit::Field;
+use super::visit::FieldMut;
 use super::AttributeParser;
 use super::StorageTarget;
 
@@ -75,8 +77,8 @@ impl<S: StorageTarget + 'static> AttributeTypeParser<S> {
     }
 
     /// Returns an attribute parser for a parseable attribute type field,
-    /// 
-    pub fn parseable_attribute_type_field<const IDX: usize, Owner, T>() -> Self 
+    ///
+    pub fn parseable_attribute_type_field<const IDX: usize, Owner, T>() -> Self
     where
         S: Send + Sync + 'static,
         Owner: OnParseField<IDX, T> + Send + Sync + 'static,
@@ -258,7 +260,7 @@ where
     Self: Send + Sync + Sized + 'static,
 {
     /// Projected type to use w/ `get`/`get_mut`
-    /// 
+    ///
     type ProjectedType: Send + Sync + 'static;
 
     /// Name of the field,
@@ -270,12 +272,34 @@ where
     fn on_parse(&mut self, value: T, tag: Option<&String>);
 
     /// Returns a reference to the field as the projected type,
-    /// 
+    ///
     fn get(&self) -> &Self::ProjectedType;
 
     /// Returns a mutable reference to the field as the projected type,
-    /// 
+    ///
     fn get_mut(&mut self) -> &mut Self::ProjectedType;
+
+    /// Returns a field for the projected type,
+    /// 
+    fn get_field<'a>(&'a self) -> Field<'a, Self::ProjectedType> {
+        Field {
+            owner: std::any::type_name::<Self>(),
+            name: Self::field_name(),
+            offset: FIELD_OFFSET,
+            value: self.get(),
+        }
+    }
+
+    /// Returns the a mutable field for the projected type,
+    /// 
+    fn get_field_mut<'a: 'b, 'b>(&'a mut self) -> FieldMut<'b, Self::ProjectedType> {
+        FieldMut {
+            owner: std::any::type_name::<Self>(),
+            name: Self::field_name(),
+            offset: FIELD_OFFSET,
+            value: self.get_mut(),
+        }
+    }
 }
 
 /// Struct wrapping a handler that can be treated as a resource,

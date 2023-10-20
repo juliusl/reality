@@ -59,6 +59,8 @@ pub(crate) struct StructField {
     /// Location of this field,
     ///
     pub span: Span,
+
+    pub offset: usize,
 }
 
 impl StructField {
@@ -246,6 +248,7 @@ impl Parse for StructField {
             visibility,
             name,
             ty,
+            offset: 0,
         })
     }
 }
