@@ -17,7 +17,7 @@ pub struct MenuMap {
 /// In `reality` terms, all reality objects being based on FromStr means that the goal of a command is to output a text-buffer to pass
 /// to a AttributeType's OnParseField implementation.
 ///
-#[derive(BlockObjectType)]
+#[derive(Reality)]
 pub struct Menu {
     /// Identifier used when referring to this menu in config/tables/etc
     ///

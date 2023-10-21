@@ -224,21 +224,21 @@ use crate::AsyncStorageTarget;
 use crate::AttributeType;
 use crate::BlockObject;
 use crate::OnParseField;
-use reality_derive::BlockObjectType;
+use reality_derive::Reality;
 use runmd::prelude::{BlockInfo, NodeInfo};
 
 mod reality {
     pub use crate::*;
 }
 
-#[derive(Debug, BlockObjectType)]
+#[derive(Debug, Reality)]
 #[reality(rename = "application/test")]
 struct Test {
     name: String,
     file: PathBuf,
 }
 
-#[derive(Debug, BlockObjectType)]
+#[derive(Debug, Reality)]
 #[reality(rename = "application/test2")]
 struct Test2 {
     name: String,

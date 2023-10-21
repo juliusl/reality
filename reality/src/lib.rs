@@ -22,7 +22,7 @@ pub use project::ExtensionPlugin;
 
 pub mod derive {
     pub use reality_derive::AttributeType;
-    pub use reality_derive::BlockObjectType;
+    pub use reality_derive::Reality;
 }
 
 pub mod runmd {

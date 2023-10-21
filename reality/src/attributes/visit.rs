@@ -73,6 +73,8 @@ pub trait VisitMut<T> {
 pub trait SetField<T> {
     /// Sets a field on the receiver,
     /// 
+    /// Returns true if successful.
+    /// 
     fn set_field(&mut self, field: FieldOwned<T>) -> bool;
 }
 

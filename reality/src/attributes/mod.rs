@@ -86,7 +86,7 @@ mod tests {
 
     use super::*;
     use crate::BlockObject;
-    use reality_derive::BlockObjectType;
+    use reality_derive::Reality;
 
     pub mod reality {
         pub use crate::prelude;
@@ -95,7 +95,7 @@ mod tests {
 
     /// Tests derive macro expansion
     ///
-    #[derive(BlockObjectType, Debug, Default)]
+    #[derive(Reality, Debug, Default)]
     #[reality(
         rename = "application/test",
         load=on_load

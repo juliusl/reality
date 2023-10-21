@@ -1,4 +1,4 @@
-pub use crate::derive::BlockObjectType;
+pub use crate::derive::Reality;
 pub use crate::derive::AttributeType;
 pub use crate::AttributeType;
 pub use crate::StorageTarget;
