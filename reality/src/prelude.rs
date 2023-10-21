@@ -18,6 +18,8 @@ pub use crate::Visit;
 pub use crate::VisitMut;
 pub use crate::Field;
 pub use crate::FieldMut;
+pub use crate::FieldOwned;
+pub use crate::SetField;
 
 /*
     Macros for working w/ a storage target

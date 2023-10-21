@@ -134,7 +134,8 @@ impl Parse for StructData {
 }
 
 impl StructData {
-
+    /// Implements visit traits,
+    /// 
     pub(crate) fn visit_trait(&self, impl_generics: &ImplGenerics<'_>, ty_generics: &TypeGenerics<'_>, where_clause: &Option<&WhereClause>) -> TokenStream {
         let fields = self.fields.iter().fold(HashMap::new(), |mut acc, f| {
             if !acc.contains_key(&f.ty) {
@@ -165,6 +166,15 @@ impl StructData {
                 )
             });
 
+            let _set_field_cases = fields.iter().map(|f| {
+                let ty = f.field_ty();
+                let offset = &f.offset;
+                let field_name_lit = f.field_name_lit_str();
+                quote_spanned!(f.span=>
+                    (#field_name_lit, #offset) => { *<Self as OnParseField<#offset, #ty>>::get_field_mut(self).value = field.value; true }
+                )
+            });
+
             quote_spanned!(self.span=>
                 impl #impl_generics reality::prelude::Visit<#ty> for #owner #ty_generics #where_clause {
                     fn visit<'a>(&'a self) -> Vec<reality::prelude::Field<'a, #ty>> {
@@ -179,6 +189,21 @@ impl StructData {
                         vec![
                             #(#_fields_mut),*
                         ]
+                    }
+                }
+
+                impl #impl_generics reality::prelude::SetField<#ty> for #owner #ty_generics #where_clause {
+                    fn set_field(&mut self, field: reality::prelude::FieldOwned<#ty>) -> bool {
+                        if field.owner != std::any::type_name::<Self>() {
+                            return false;
+                        }
+
+                        match (field.name, field.offset) {
+                            #(#_set_field_cases),*
+                            _ => {
+                                false
+                            }
+                        }
                     }
                 }
             )

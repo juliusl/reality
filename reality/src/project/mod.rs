@@ -3,6 +3,7 @@ use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::FindField;
 use crate::{AttributeParser, ResourceKey, ResourceKeyHashBuilder, StorageTarget};
 
 mod node;
@@ -332,8 +333,9 @@ async fn test_project_parser() {
                 let test = node.resource::<Test>(Some(attr.transmute()));
                 println!("{:?}", test);
                 if let Some(test) = test {
-                    let fields = <Test as crate::Visit<PathBuf>>::visit(&test);
+                    let fields = crate::visitor::<crate::Shared, PathBuf>(test.deref());
                     println!("{:#?}", fields);
+                    println!("Find field: {:#?}", fields.find_field::<()>("file"));
                 }
                 let test = node.resource::<Test2>(Some(attr.transmute()));
                 println!("{:?}", test);

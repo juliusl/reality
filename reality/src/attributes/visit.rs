@@ -34,6 +34,24 @@ pub struct FieldMut<'a, T> {
     pub value: &'a mut T,
 }
 
+/// Field /w owned value,
+/// 
+#[derive(Debug)]
+pub struct FieldOwned<T> {
+    /// Field owner type name,
+    /// 
+    pub owner: &'static str,
+    /// Name of the field,
+    /// 
+    pub name: &'static str,
+    /// Offset of the field,
+    ///  
+    pub offset: usize,
+    /// Current value of the field,
+    /// 
+    pub value: T,
+}
+
 /// Trait for visiting fields w/ read-only access,
 /// 
 pub trait Visit<T> {
@@ -48,6 +66,14 @@ pub trait VisitMut<T> {
     /// Returns a vector of fields w/ mutable access,
     /// 
     fn visit_mut<'a: 'b, 'b>(&'a mut self) -> Vec<FieldMut<'b, T>>;
+}
+
+/// Trait for setting a field,
+/// 
+pub trait SetField<T> {
+    /// Sets a field on the receiver,
+    /// 
+    fn set_field(&mut self, field: FieldOwned<T>) -> bool;
 }
 
 mod tests {

@@ -1,5 +1,5 @@
-mod attribute_type;
 mod attribute;
+mod attribute_type;
 mod parser;
 mod storage_target;
 mod tag;
@@ -9,39 +9,93 @@ pub mod prelude {
     pub(super) use std::convert::Infallible;
     pub(super) use std::str::FromStr;
 
-    pub use super::visit::Visit;
-    pub use super::visit::VisitMut;
-    pub use super::visit::Field;
-    pub use super::visit::FieldMut;
+    pub use super::attribute::Attribute;
     pub use super::attribute_type::AttributeType;
     pub use super::attribute_type::AttributeTypeParser;
     pub use super::attribute_type::Callback;
     pub use super::attribute_type::CallbackMut;
     pub use super::attribute_type::Handler;
     pub use super::attribute_type::OnParseField;
-    pub use super::attribute::Attribute;
-    pub use super::parser::ParsedAttributes;
     pub use super::parser::AttributeParser;
+    pub use super::parser::ParsedAttributes;
     pub use super::storage_target::prelude::*;
     pub use super::tag::Tagged;
+    pub use super::visit::Field;
+    pub use super::visit::FieldMut;
+    pub use super::visit::FieldOwned;
+    pub use super::visit::SetField;
+    pub use super::visit::Visit;
+    pub use super::visit::VisitMut;
+
+    /// Returns fields for an attribute type,
+    ///
+    pub fn visitor<'a, S: StorageTarget, T>(
+        attr_ty: &'a (impl AttributeType<S> + Visit<T>),
+    ) -> Vec<Field<'a, T>> {
+        attr_ty.visitor::<T>()
+    }
+
+    /// Returns mutable fields for an attribute type,
+    ///
+    pub fn visitor_mut<'a: 'b, 'b, S: StorageTarget, T>(
+        attr_ty: &'a mut (impl AttributeType<S> + VisitMut<T>),
+    ) -> Vec<FieldMut<'b, T>> {
+        attr_ty.visitor_mut::<T>()
+    }
+
+    pub trait FindField<T> {
+        type Output;
+
+        fn find_field<Owner>(&self, name: impl AsRef<str>) -> Option<&Self::Output>;
+    }
+
+    impl<'a, T> FindField<T> for Vec<Field<'a, T>> {
+        type Output = Field<'a, T>;
+
+        fn find_field<Owner>(&self, name: impl AsRef<str>) -> Option<&Self::Output> {
+            self.iter().find(|f| {
+                f.name == name.as_ref()
+                    && if f.owner != std::any::type_name::<()>() {
+                        std::any::type_name::<Owner>() == f.owner
+                    } else {
+                        true
+                    }
+            })
+        }
+    }
+
+    impl<'a, T> FindField<T> for Vec<FieldMut<'a, T>> {
+        type Output = FieldMut<'a, T>;
+
+        fn find_field<Owner>(&self, name: impl AsRef<str>) -> Option<&Self::Output> {
+            self.iter().find(|f| {
+                f.name == name.as_ref()
+                    && if f.owner != std::any::type_name::<()>() {
+                        std::any::type_name::<Owner>() == f.owner
+                    } else {
+                        true
+                    }
+            })
+        }
+    }
 }
 pub use prelude::*;
 
 mod tests {
-    use std::{collections::BTreeMap, default};
+    use std::collections::BTreeMap;
 
     use super::*;
     use crate::BlockObject;
     use reality_derive::BlockObjectType;
-    
+
     pub mod reality {
-        pub use crate::runmd;
         pub use crate::prelude;
+        pub use crate::runmd;
     }
 
     /// Tests derive macro expansion
-    /// 
-    #[derive(BlockObjectType, Default)]
+    ///
+    #[derive(BlockObjectType, Debug, Default)]
     #[reality(
         rename = "application/test",
         load=on_load
@@ -59,15 +113,15 @@ mod tests {
         ///
         _description: Tagged<String>,
         /// Testing vec_of parse macro,
-        /// 
+        ///
         #[reality(vec_of=String)]
         _test_vec_of: Vec<String>,
         /// Testing map_of parse macro,
-        /// 
+        ///
         #[reality(map_of=String)]
         _test_map_of: BTreeMap<String, String>,
         /// Testing option_of parse macro,
-        /// 
+        ///
         #[reality(option_of=String)]
         _test_option_of: Option<String>,
         /// Test2
@@ -81,7 +135,7 @@ mod tests {
     }
 
     /// Called when loading this object,
-    /// 
+    ///
     #[allow(dead_code)]
     async fn on_load<S>(storage: AsyncStorageTarget<S>)
     where
@@ -105,7 +159,7 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     pub struct Test2 {}
 
     impl<S: StorageTarget + Send + Sync + 'static> AttributeType<S> for Test2 {
@@ -139,7 +193,14 @@ mod tests {
         let mut test = Test::<String>::default();
 
         let fields = <Test<String> as VisitMut<BTreeMap<String, String>>>::visit_mut(&mut test);
-
         println!("{:#?}", fields);
+
+        test.set_field(FieldOwned {
+            owner: std::any::type_name::<Test<String>>(),
+            name: "name",
+            offset: 0,
+            value: String::from("hello-set-field"),
+        });
+        assert_eq!("hello-set-field", test.name.as_str());
     }
 }

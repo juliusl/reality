@@ -3,6 +3,9 @@ use std::marker::PhantomData;
 use std::ops::DerefMut;
 use std::str::FromStr;
 
+use crate::Visit;
+use crate::VisitMut;
+
 use super::visit::Field;
 use super::visit::FieldMut;
 use super::AttributeParser;
@@ -23,6 +26,24 @@ pub trait AttributeType<S: StorageTarget> {
     /// attribute declaration belongs to.
     ///
     fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>);
+
+    /// Returns a visitor w/ read access to fields of T,
+    /// 
+    fn visitor<'a, T>(&'a self) -> Vec<Field<'a, T>> 
+    where
+        Self: Visit<T>
+    {
+        <Self as Visit<T>>::visit(self)
+    }
+
+    /// Returns a visitor w/ mutable access to fields of T,
+    /// 
+    fn visitor_mut<'a: 'b, 'b, T>(&'a mut self) -> Vec<FieldMut<'b, T>> 
+    where
+        Self: VisitMut<T>
+    {
+        <Self as VisitMut<T>>::visit_mut(self)
+    }
 }
 
 /// Struct for a concrete conversion of a type that implements AttributeType,

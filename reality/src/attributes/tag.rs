@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 /// Wrapper struct to include a tag w/ a parsed value,
 ///
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Tagged<T: FromStr + Send + Sync + 'static> {
     /// Untagged value,
     ///
