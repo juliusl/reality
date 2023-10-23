@@ -5,7 +5,3 @@ members = [
     "reality_azure",
     "reality_tar",
 ]
-
-[patch.crates-io]
-specs = { git = 'https://github.com/juliusl/specs.git', branch = "fix/ahash"}
-shred = { git = 'https://github.com/juliusl/shred.git', branch = "fix/ahash"}
