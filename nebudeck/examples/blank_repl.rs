@@ -1,7 +1,7 @@
-use univerux::terminal::TerminalApp;
-use univerux::terminal::Terminal;
-use univerux::ProjectLoop;
-use univerux::AppType;
+use nebudeck::terminal::TerminalApp;
+use nebudeck::terminal::Terminal;
+use nebudeck::ProjectLoop;
+use nebudeck::AppType;
 use reality::Shared;
 use reality::Project;
 

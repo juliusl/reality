@@ -1,6 +1,6 @@
-use univerux::project_loop::AppType;
-use univerux::project_loop::ProjectLoop;
-use univerux::desktop::*;
+use nebudeck::project_loop::AppType;
+use nebudeck::project_loop::ProjectLoop;
+use nebudeck::desktop::*;
 use reality::StorageTarget;
 use reality::Shared;
 use reality::Project;
