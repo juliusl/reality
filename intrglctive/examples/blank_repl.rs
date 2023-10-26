@@ -1,8 +1,7 @@
-use intrglctive::{
-    project_loop::{AppType, ProjectLoop},
-    terminal::{Terminal, TerminalApp},
-};
-use reality::{Project, Shared};
+use intrglctive::terminal::TerminalApp;
+use intrglctive::terminal::Terminal;
+use reality::Shared;
+use reality::Project;
 
 /// Minimal example for starting a new terminal repl interaction,
 /// 
@@ -15,15 +14,19 @@ fn main() {
 
 struct BlankRepl;
 
-impl AppType for BlankRepl {
-    fn create<S: reality::StorageTarget + 'static>(
-        _: intrglctive::project_loop::ProjectLoop<S>,
+impl AppType<Shared> for BlankRepl {
+    fn create(
+        _: intrglctive::ProjectLoop<Shared>,
     ) -> Self {
         BlankRepl
     }
+
+    fn initialize_storage() -> Shared {
+        Shared::default()
+    }
 }
 
-impl TerminalApp for BlankRepl {
+impl TerminalApp<Shared> for BlankRepl {
     fn parse_command(&mut self) -> clap::Command {
         // If using derive -- 
         // clap::CommandFactory::command();

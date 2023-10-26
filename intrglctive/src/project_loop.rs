@@ -1,28 +1,40 @@
-use std::path::PathBuf;
 use reality::Project;
 use reality::StorageTarget;
+use std::path::PathBuf;
 
 /// Implemented by interaction types to generalize the steps before compiling the project,
 ///
-pub trait InteractionLoop<A: AppType> {
+pub trait InteractionLoop<S, A>
+where
+    S: StorageTarget + 'static,
+    A: AppType<S>,
+{
     /// Called when the interaction loop should takeover,
     ///
-    fn take_control<S: StorageTarget>(self, project_loop: ProjectLoop<S>);
+    fn take_control(self, project_loop: ProjectLoop<S>);
 }
 
 /// Trait to act as an entrypoint for an app into a specific interaction loop implementation,
-/// 
-pub trait AppType
+///
+pub trait AppType<S>
 where
-    Self: Sized
+    Self: Sized,
+    S: StorageTarget + 'static,
 {
-    /// Create an instance of the app type from a project_loop,
+    /// Creates a new storage target,
     /// 
-    fn create<S: StorageTarget + 'static>(project_loop: ProjectLoop<S>) -> Self;
+    fn initialize_storage() -> S;
+
+    /// Create an instance of the app type from a project_loop,
+    ///
+    fn create(project_loop: ProjectLoop<S>) -> Self;
 
     /// Starts the interaction process,
-    /// 
-    fn start_interaction<S: StorageTarget + 'static>(project_loop: ProjectLoop<S>, interaction_loop: impl InteractionLoop<Self>) {
+    ///
+    fn start_interaction(
+        project_loop: ProjectLoop<S>,
+        interaction_loop: impl InteractionLoop<S, Self>,
+    ) {
         interaction_loop.take_control(project_loop)
     }
 }
@@ -60,7 +72,7 @@ pub struct ProjectLoop<S: StorageTarget + 'static> {
     pub project: Project<S>,
 }
 
-impl<S: StorageTarget> ProjectLoop<S> {
+impl<S: StorageTarget + 'static> ProjectLoop<S> {
     /// Creates a new project loop,
     ///
     pub fn new(project: Project<S>) -> Self {
@@ -83,7 +95,7 @@ impl<S: StorageTarget> ProjectLoop<S> {
     }
 
     /// Adds an in-memory buffer to the list of sources,
-    /// 
+    ///
     pub fn add_buffer(&mut self, relative: impl Into<PathBuf>, source: impl Into<String>) {
         self.source.push(Source::TextBuffer {
             source: source.into(),

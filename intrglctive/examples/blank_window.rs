@@ -21,14 +21,18 @@ fn main() -> anyhow::Result<()> {
 
 struct BlankWindow;
 
-impl AppType for BlankWindow {
-    fn create<S: StorageTarget + 'static>(_: ProjectLoop<S>) -> Self {
+impl AppType<Shared> for BlankWindow {
+    fn initialize_storage() -> Shared {
+        Shared::default()
+    }
+
+    fn create(_: ProjectLoop<Shared>) -> Self {
         BlankWindow
     }
 }
 
-impl DesktopApp<()> for BlankWindow {
-    fn configure(&self, window: winit::window::Window) -> winit::window::Window {
+impl DesktopApp<(), Shared> for BlankWindow {
+    fn configure_window(&self, window: winit::window::Window) -> winit::window::Window {
         // window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
         window.set_title("Blank Window");
         window.set_visible(true);

@@ -1,6 +1,4 @@
-use std::collections::BTreeMap;
 use std::collections::HashMap;
-
 use proc_macro2::Ident;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;

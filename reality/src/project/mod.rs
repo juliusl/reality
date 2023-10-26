@@ -1,10 +1,11 @@
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::FindField;
-use crate::{AttributeParser, ResourceKey, ResourceKeyHashBuilder, StorageTarget};
+use crate::StorageTarget;
+use crate::ResourceKeyHashBuilder;
+use crate::ResourceKey;
+use crate::AttributeParser;
 
 mod node;
 pub use node::Node;
@@ -333,9 +334,9 @@ async fn test_project_parser() {
                 let test = node.resource::<Test>(Some(attr.transmute()));
                 println!("{:?}", test);
                 if let Some(test) = test {
-                    let fields = crate::visitor::<crate::Shared, PathBuf>(test.deref());
+                    let fields = crate::visitor::<crate::Shared, PathBuf>(std::ops::Deref::deref(&test));
                     println!("{:#?}", fields);
-                    println!("Find field: {:#?}", fields.find_field::<()>("file"));
+                    println!("Find field: {:#?}", crate::FindField::find_field::<()>(&fields, "file"));
                 }
                 let test = node.resource::<Test2>(Some(attr.transmute()));
                 println!("{:?}", test);

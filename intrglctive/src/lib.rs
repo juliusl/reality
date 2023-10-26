@@ -8,7 +8,10 @@
 //! - Terminal: Applications based on terminal utilities
 //! 
 //! 
-pub mod project_loop;
+mod project_loop;
+pub use project_loop::ProjectLoop;
+pub use project_loop::InteractionLoop;
+pub use project_loop::AppType;
 
 #[cfg(feature = "desktop")]
 pub mod desktop;

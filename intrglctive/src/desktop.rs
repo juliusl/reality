@@ -42,10 +42,10 @@ impl<T: 'static> Desktop<T> {
 
     /// Starts the window event loop and creates a new Window,
     /// 
-    pub fn open<D: DesktopApp<T>>(mut self, mut app: D) {
-        if let Some(event_loop) = self.event_loop.take() {
+    pub fn open<S: StorageTarget + 'static, D: DesktopApp<T, S>>(mut self, mut app: D) {
+        if let Some(event_loop) = std::cell::OnceCell::take(&mut self.event_loop) {
             if let Ok(window) = winit::window::Window::new(&event_loop) {
-                let window = app.configure(window);
+                let window = app.configure_window(window);
                 println!("Starting window");
                 
                 let _ = event_loop.run(move |event, window_target| {
@@ -83,8 +83,8 @@ impl<T: 'static> Desktop<T> {
     }
 }
 
-impl<T: 'static, A: DesktopApp<T>> InteractionLoop<A> for Desktop<T> {
-    fn take_control<S: StorageTarget>(self, project_loop: ProjectLoop<S>) {
+impl<T: 'static, S: StorageTarget + 'static, A: DesktopApp<T, S>> InteractionLoop<S, A> for Desktop<T> {
+    fn take_control(self, project_loop: ProjectLoop<S>) {
         let app = A::create(project_loop);
 
         self.open(app);
@@ -94,10 +94,10 @@ impl<T: 'static, A: DesktopApp<T>> InteractionLoop<A> for Desktop<T> {
 /// Winit based event loop handler for desktop apps,
 /// 
 #[allow(unused_variables)]
-pub trait DesktopApp<T: 'static>: AppType {
+pub trait DesktopApp<T: 'static, S: StorageTarget + 'static>: AppType<S> {
     /// Called to configure the window,
     /// 
-    fn configure(&self, window: winit::window::Window) -> winit::window::Window {
+    fn configure_window(&self, window: winit::window::Window) -> winit::window::Window {
         window
     }
 
