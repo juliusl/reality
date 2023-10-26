@@ -1,5 +1,7 @@
 use intrglctive::terminal::TerminalApp;
 use intrglctive::terminal::Terminal;
+use intrglctive::ProjectLoop;
+use intrglctive::AppType;
 use reality::Shared;
 use reality::Project;
 
