@@ -1,7 +1,7 @@
-use intrglctive::terminal::TerminalApp;
-use intrglctive::terminal::Terminal;
-use intrglctive::ProjectLoop;
-use intrglctive::AppType;
+use univerux::terminal::TerminalApp;
+use univerux::terminal::Terminal;
+use univerux::ProjectLoop;
+use univerux::AppType;
 use reality::Shared;
 use reality::Project;
 

@@ -1,6 +1,6 @@
-use intrglctive::project_loop::AppType;
-use intrglctive::project_loop::ProjectLoop;
-use intrglctive::desktop::*;
+use univerux::project_loop::AppType;
+use univerux::project_loop::ProjectLoop;
+use univerux::desktop::*;
 use reality::StorageTarget;
 use reality::Shared;
 use reality::Project;
