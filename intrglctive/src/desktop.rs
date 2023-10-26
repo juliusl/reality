@@ -1,10 +1,16 @@
-use winit::event_loop::{self};
+use reality::StorageTarget;
+use winit::window::Window;
 use winit::window::WindowId;
 use winit::event::DeviceId;
 use winit::event::DeviceEvent;
 use winit::event::WindowEvent;
 use winit::event::StartCause;
+use winit::event_loop::EventLoopBuilder;
 use winit::event_loop::EventLoopWindowTarget;
+
+use crate::project_loop::AppType;
+use crate::project_loop::ProjectLoop;
+use crate::project_loop::InteractionLoop;
 
 /// Desktop,
 /// 
@@ -18,16 +24,19 @@ where
     /// Event loop proxy,
     ///
     pub event_loop_proxy: winit::event_loop::EventLoopProxy<T>,
+
+    // pub project_loop: Option<ProjectLoop<S>>
 }
 
 impl<T: 'static> Desktop<T> {
     /// Creates a new window,
     ///
     pub fn new() -> anyhow::Result<Desktop<T>> {
-        let event_loop = event_loop::EventLoopBuilder::with_user_event().build()?;
+        let event_loop = EventLoopBuilder::with_user_event().build()?;
         Ok(Desktop {
             event_loop_proxy: event_loop.create_proxy(),
             event_loop: event_loop.into(),
+            // project_loop: None,
         })
     }
 
@@ -36,37 +45,56 @@ impl<T: 'static> Desktop<T> {
     pub fn open<D: DesktopApp<T>>(mut self, mut app: D) {
         if let Some(event_loop) = self.event_loop.take() {
             if let Ok(window) = winit::window::Window::new(&event_loop) {
-                let _ = app.configure(window);
-
+                let window = app.configure(window);
+                println!("Starting window");
+                
                 let _ = event_loop.run(move |event, window_target| {
-                    app.before_event(window_target);
+                    app.before_event(window_target, &window);
 
                     match event {
                         winit::event::Event::NewEvents(start_cause) => app.on_new_events(start_cause),
                         winit::event::Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
                             window_target.exit();
+                        },             
+                        winit::event::Event::WindowEvent { event: WindowEvent::RedrawRequested, window_id } => {
+                            window.pre_present_notify();
+                            app.on_window_redraw(window_id, window_target, &window);
+                            app.on_window_event(window_id, WindowEvent::RedrawRequested, &window);
                         },
-                        winit::event::Event::WindowEvent { window_id, event } => app.on_window_event(window_id, event),
+                        winit::event::Event::WindowEvent { window_id, event } => app.on_window_event(window_id, event, &window),
                         winit::event::Event::DeviceEvent { device_id, event } => app.on_device_event(device_id, event),
                         winit::event::Event::UserEvent(user_event) => app.on_user_event(user_event),
                         winit::event::Event::Suspended => app.on_suspended(),
                         winit::event::Event::Resumed => app.on_resumed(),
-                        winit::event::Event::AboutToWait => app.on_about_to_wait(),
+                        winit::event::Event::AboutToWait => {
+                            app.on_about_to_wait();
+                            window.request_redraw();
+                        },
                         winit::event::Event::LoopExiting => app.on_loop_exiting(),
                         winit::event::Event::MemoryWarning => app.on_memory_warning(),
                     }
 
-                    app.after_event(window_target);
+                    app.after_event(window_target, &window);
                 });
+            } else {
+                println!("Could not open window");
             }
         }
+    }
+}
+
+impl<T: 'static, A: DesktopApp<T>> InteractionLoop<A> for Desktop<T> {
+    fn take_control<S: StorageTarget>(self, project_loop: ProjectLoop<S>) {
+        let app = A::create(project_loop);
+
+        self.open(app);
     }
 }
 
 /// Winit based event loop handler for desktop apps,
 /// 
 #[allow(unused_variables)]
-pub trait DesktopApp<T: 'static> {
+pub trait DesktopApp<T: 'static>: AppType {
     /// Called to configure the window,
     /// 
     fn configure(&self, window: winit::window::Window) -> winit::window::Window {
@@ -75,7 +103,7 @@ pub trait DesktopApp<T: 'static> {
 
     /// Called before an event in the event loop is handled,
     /// 
-    fn before_event(&mut self, window: &EventLoopWindowTarget<T>) {
+    fn before_event(&mut self, window_target: &EventLoopWindowTarget<T>, window: &Window) {
 
     }
 
@@ -87,7 +115,13 @@ pub trait DesktopApp<T: 'static> {
 
     /// Called on `winit::event::Event::WindowEvent`
     /// 
-    fn on_window_event(&mut self, window_id: WindowId, window_event: WindowEvent) {
+    fn on_window_event(&mut self, window_id: WindowId, window_event: WindowEvent, window: &Window) {
+
+    }
+
+    /// Called before `winit::event::Event::WindowEvent`
+    /// 
+    fn on_window_redraw(&mut self, window_id: WindowId, window_target: &EventLoopWindowTarget<T>, window: &Window) {
 
     }
 
@@ -135,24 +169,7 @@ pub trait DesktopApp<T: 'static> {
 
     /// Called after the event_loop event is handled,
     /// 
-    fn after_event(&mut self, window: &EventLoopWindowTarget<T>) {
+    fn after_event(&mut self, window_target: &EventLoopWindowTarget<T>, window: &Window) {
 
-    }
-}
-
-/// Graphics pipeline 
-/// 
-pub struct GraphicsPipeline {
-
-}
-
-impl<T: 'static> DesktopApp<T> for GraphicsPipeline {
-    fn on_new_events(&mut self, start_cause: StartCause) {
-        match start_cause {
-            StartCause::ResumeTimeReached { start, requested_resume } => todo!(),
-            StartCause::WaitCancelled { start, requested_resume } => todo!(),
-            StartCause::Poll => todo!(),
-            StartCause::Init => todo!(),
-        }
     }
 }
