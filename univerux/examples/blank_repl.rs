@@ -18,7 +18,7 @@ struct BlankRepl;
 
 impl AppType<Shared> for BlankRepl {
     fn create(
-        _: intrglctive::ProjectLoop<Shared>,
+        _: univerux::ProjectLoop<Shared>,
     ) -> Self {
         BlankRepl
     }
