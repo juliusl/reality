@@ -159,8 +159,10 @@ impl StructData {
             let _fields_mut = fields.iter().map(|f| {
                 let ty = f.field_ty();
                 let offset = &f.offset;
+                let name_lit = f.field_name_lit_str();
+                let name = &f.name;
                 quote_spanned!(f.span=>
-                    <Self as OnParseField<#offset, #ty>>::get_field_mut(self)
+                    FieldMut { owner: std::any::type_name::<#ty>(), name: #name_lit, offset: #offset, value: &mut self.#name }
                 )
             });
 

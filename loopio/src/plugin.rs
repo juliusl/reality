@@ -477,6 +477,11 @@ mod tests {
         : HOME .env /home/test2
         : .args --name
         : .args test3
+
+        + test .sequence start
+        :       .next 'test/operation#test_tag'
+        : spawn .next test/operation
+        : .loop true
         ```
         "#;
 
@@ -500,6 +505,10 @@ mod tests {
 
         for (address, _) in engine.iter_operations() {
             println!("{address}");
+        }
+
+        for (address, seq) in engine.iter_sequences() {
+            println!("{address} -- {:#?}", seq);
         }
 
         ()

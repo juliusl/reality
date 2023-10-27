@@ -231,7 +231,7 @@ use crate::AsyncStorageTarget;
 use crate::AttributeType;
 use crate::BlockObject;
 use crate::OnParseField;
-use reality_derive::Reality;
+use reality::prelude::*;
 use runmd::prelude::{BlockInfo, NodeInfo};
 
 mod reality {

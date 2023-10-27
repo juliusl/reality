@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
+use std::fmt::Debug;
+use std::ops::DerefMut;
 use std::sync::Arc;
 
 use reality::prelude::*;
+use serde::Deserialize;
+use serde::Serialize;
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
@@ -12,6 +16,7 @@ use crate::operation::Operation;
 use crate::plugin::Plugin;
 use crate::plugin::Thunk;
 use crate::plugin::ThunkContext;
+use crate::sequence::Sequence;
 
 pub struct EngineBuilder {
     /// Plugins to register w/ the Engine
@@ -113,6 +118,15 @@ pub struct Engine {
     /// Operations mapped w/ this engine,
     ///
     operations: BTreeMap<String, Operation>,
+    /// Sequences mapped w/ this engine
+    /// 
+    sequences: BTreeMap<String, Sequence>,
+    /// Engine handle that can be used to send packets to this engine,
+    ///
+    handle: EngineHandle,
+    /// Packet receiver,
+    ///
+    packet_rx: tokio::sync::mpsc::UnboundedReceiver<EnginePacket>,
 }
 
 impl Engine {
@@ -168,11 +182,18 @@ impl Engine {
         plugins: Vec<reality::BlockPlugin<Shared>>,
         runtime: tokio::runtime::Runtime,
     ) -> Self {
+        let (sender, rx) = tokio::sync::mpsc::unbounded_channel();
+
         Engine {
             plugins,
             runtime: Some(runtime),
             cancellation: CancellationToken::new(),
             operations: BTreeMap::new(),
+            sequences: BTreeMap::new(),
+            handle: EngineHandle {
+                sender: Arc::new(sender),
+            },
+            packet_rx: rx,
         }
     }
 
@@ -215,6 +236,26 @@ impl Engine {
             }
         });
 
+        project.add_node_plugin("sequence", move |name, tag, target| {
+            let name = name
+                .map(|n| n.to_string())
+                .unwrap_or(format!("{}", uuid::Uuid::new_v4()));
+
+            Sequence::parse(target, "");
+
+            if let Some(last) = target.attributes.last().cloned() {
+                if let Some(mut storage) = target.storage_mut() {
+                    storage.drain_dispatch_queues();
+                    if let Some(mut seq) = storage.resource_mut(Some(last.transmute::<Sequence>()))
+                    {
+                        seq.deref_mut().name = name;
+                        seq.deref_mut().tag = tag.map(|t| t.to_string());
+                    }
+                    storage.put_resource(last.transmute::<Sequence>(), None);
+                }
+            }
+        });
+
         if let Some(project) = workspace
             .compile(project)
             .await
@@ -231,6 +272,16 @@ impl Engine {
                     if let Some(previous) = self.operations.insert(operation.address(), operation) {
                         info!(address = previous.address(), "Replacing operation");
                     }
+                }
+
+                let seqkey = target
+                    .read()
+                    .await
+                    .resource::<ResourceKey<Sequence>>(None)
+                    .as_deref()
+                    .cloned();
+                if let Some(sequence) = target.read().await.resource::<Sequence>(seqkey) {
+                    self.sequences.insert(sequence.address(), sequence.bind(self.engine_handle()));
                 }
             }
         }
@@ -254,13 +305,57 @@ impl Engine {
         self.operations.iter()
     }
 
-    /// Returns a tokio runtime handle,
+    /// Returns an iterator over sequences,
     /// 
+    pub fn iter_sequences(&self) -> impl Iterator<Item = (&String, &Sequence)> {
+        self.sequences.iter()
+    }
+
+    /// Returns a tokio runtime handle,
+    ///
     pub fn handle(&self) -> tokio::runtime::Handle {
         self.runtime
             .as_ref()
             .map(|r| r.handle().clone())
             .unwrap_or(Handle::current())
+    }
+
+    /// Returns an engine handle,
+    ///
+    pub fn engine_handle(&self) -> EngineHandle {
+        self.handle.clone()
+    }
+
+    /// Starts handling engine packets,
+    ///
+    pub async fn handle_packets(mut self) -> Self {
+        while let Some(packet) = self.packet_rx.recv().await {
+            info!("Handling packet");
+            match packet.action {
+                Action::Run { address, tx } => {
+                    info!(address, "Running operation");
+                    let result = self.run(address).await;
+
+                    // TODO: Add a way to queue up failed packets?
+                    if let Some(tx) = tx {
+                        let _ = tx.send(result);
+                    }
+                }
+                Action::Compile(_) => {
+                    info!("Compiling content");
+                    // self.load_source(content).await;
+                    // self.compile().await;
+                }
+                Action::Shutdown(delay) => {
+                    info!(delay_ms = delay.as_millis(), "Shutdown requested");
+                    tokio::time::sleep(delay).await;
+                    self.cancellation.cancel();
+                    break;
+                }
+            }
+        }
+
+        self
     }
 }
 
@@ -277,5 +372,89 @@ impl Drop for Engine {
         if let Some(runtime) = self.runtime.take() {
             runtime.shutdown_background();
         }
+    }
+}
+
+/// Struct containing instructions to execute w/ an engine,
+///
+pub struct EnginePacket {
+    /// Address of the operation to execute,
+    ///
+    action: Action,
+}
+
+/// Enumeration of actions that can be requested by a packet,
+///
+#[derive(Serialize, Deserialize)]
+pub enum Action {
+    /// Runs an operation on the engine,
+    ///
+    Run {
+        address: String,
+        #[serde(skip)]
+        tx: Option<tokio::sync::oneshot::Sender<anyhow::Result<ThunkContext>>>,
+    },
+    /// Compiles the operations from a project,
+    ///
+    Compile(String),
+    /// Requests the engine to
+    ///
+    Shutdown(tokio::time::Duration),
+}
+
+/// Handle for communicating and sending work packets to an engine,
+///
+#[derive(Clone)]
+pub struct EngineHandle {
+    /// Sends engine packets to the engine,
+    ///
+    sender: Arc<tokio::sync::mpsc::UnboundedSender<EnginePacket>>,
+}
+
+impl Debug for EngineHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EngineHandle").field("sender", &self.sender).finish()
+    }
+}
+
+impl EngineHandle {
+    /// Runs an operation by sending a packet and waits for a response,
+    ///
+    pub async fn run(&self, address: impl Into<String>) -> anyhow::Result<ThunkContext> {
+        let (tx, rx) = tokio::sync::oneshot::channel::<anyhow::Result<ThunkContext>>();
+
+        let packet = EnginePacket {
+            action: Action::Run {
+                address: address.into(),
+                tx: Some(tx),
+            },
+        };
+
+        self.sender.send(packet)?;
+
+        rx.await?
+    }
+
+    /// Compiles content,
+    ///
+    pub async fn compile(&self, content: impl Into<String>) -> anyhow::Result<()> {
+        let packet = EnginePacket {
+            action: Action::Compile(content.into()),
+        };
+
+        self.sender.send(packet)?;
+
+        Ok(())
+    }
+
+    /// Sends a signal for the engine to shutdown,
+    ///
+    pub async fn shutdown(&self, delay: tokio::time::Duration) -> anyhow::Result<()> {
+        let packet = EnginePacket {
+            action: Action::Shutdown(delay),
+        };
+
+        self.sender.send(packet)?;
+        Ok(())
     }
 }
