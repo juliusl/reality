@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use reality::prelude::*;
+use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
 use anyhow::anyhow;
@@ -120,7 +121,7 @@ impl Engine {
     pub fn builder() -> EngineBuilder {
         EngineBuilder::new(tokio::runtime::Builder::new_multi_thread())
     }
-    
+
     /// Registers a plugin w/ this engine builder,
     ///
     pub fn register<P: Plugin + Send + Sync + 'static>(&mut self) {
@@ -208,22 +209,27 @@ impl Engine {
             if let Some(mut storage) = target.storage_mut() {
                 storage.put_resource(Operation::new(name, tag.map(|t| t.to_string())), None)
             }
-            
+
             for p in plugins.iter() {
                 p(target);
             }
         });
 
-        if let Some(project) = workspace.compile(project).await.ok().and_then(|mut w| w.project.take()) {
+        if let Some(project) = workspace
+            .compile(project)
+            .await
+            .ok()
+            .and_then(|mut w| w.project.take())
+        {
             let nodes = project.nodes.into_inner().unwrap();
 
             for (_, target) in nodes.iter() {
                 if let Some(operation) = target.read().await.resource::<Operation>(None) {
                     let mut operation = operation.deref().clone();
                     operation.bind(self.new_context(target.clone()));
-    
+
                     if let Some(previous) = self.operations.insert(operation.address(), operation) {
-                        info!(address=previous.address(), "Replacing operation");
+                        info!(address = previous.address(), "Replacing operation");
                     }
                 }
             }
@@ -246,6 +252,15 @@ impl Engine {
     ///
     pub fn iter_operations(&self) -> impl Iterator<Item = (&String, &Operation)> {
         self.operations.iter()
+    }
+
+    /// Returns a tokio runtime handle,
+    /// 
+    pub fn handle(&self) -> tokio::runtime::Handle {
+        self.runtime
+            .as_ref()
+            .map(|r| r.handle().clone())
+            .unwrap_or(Handle::current())
     }
 }
 

@@ -1,5 +1,4 @@
 use loopio::engine::Engine;
-use reality::StorageTarget;
 use winit::window::Window;
 use winit::window::WindowId;
 use winit::event::DeviceId;
@@ -10,6 +9,7 @@ use winit::event_loop::EventLoopBuilder;
 use winit::event_loop::EventLoopWindowTarget;
 
 use crate::Controller;
+use crate::BackgroundWork;
 use crate::controller::ControlBus;
 
 /// Desktop,
@@ -82,10 +82,12 @@ impl<T: 'static> Desktop<T> {
 }
 
 impl<T: 'static, A: DesktopApp<T>> Controller<A> for Desktop<T> {
-    fn take_control(self, engine: Engine) {
+    fn take_control(self, engine: Engine) -> BackgroundWork {
         let app = A::create(engine);
 
         self.open(app);
+
+        None
     }
 }
 

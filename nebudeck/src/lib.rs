@@ -11,6 +11,7 @@
 mod controller;
 pub use controller::Controller;
 pub use controller::ControlBus;
+pub use controller::BackgroundWork;
 
 pub mod deck;
 

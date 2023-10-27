@@ -3,6 +3,7 @@ use clap::ArgMatches;
 use tracing::error;
 use loopio::engine::Engine;
 
+use crate::BackgroundWork;
 use crate::Controller;
 use crate::controller::ControlBus;
 
@@ -12,7 +13,7 @@ use crate::controller::ControlBus;
 pub struct Terminal;
 
 impl<T: TerminalApp> Controller<T> for Terminal {
-    fn take_control(self, engine: Engine) {
+    fn take_control(self, engine: Engine) -> BackgroundWork {
         let mut app = T::create(engine);
 
         let cli = app.parse_command();
@@ -50,6 +51,8 @@ impl<T: TerminalApp> Controller<T> for Terminal {
         } else {
             app.process_command(cli);
         }
+
+        None
     }
 }
 
