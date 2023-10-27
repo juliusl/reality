@@ -1,17 +1,16 @@
-//! # Intrglctive
+//! # Nebudeck
 //! 
-//! This library is a collection of interaction loops w/ integrations into reality created types.
+//! This library is a comprehensive suite of front-end implementations.
 //! 
 //! ## Interaction Loop Types
 //! 
 //! - Desktop: Applications w/ a GUI that are accessed from a Desktop environment
 //! - Terminal: Applications based on terminal utilities
+//! - Server: Application based on an HTTP API Server
 //! 
-//! 
-mod project_loop;
-pub use project_loop::ProjectLoop;
-pub use project_loop::InteractionLoop;
-pub use project_loop::AppType;
+mod controller;
+pub use controller::Controller;
+pub use controller::ControlBus;
 
 pub mod deck;
 
@@ -19,3 +18,5 @@ pub mod deck;
 pub mod desktop;
 #[cfg(feature = "terminal")]
 pub mod terminal;
+#[cfg(feature = "server")]
+pub mod server;

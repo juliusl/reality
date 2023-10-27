@@ -1,19 +1,19 @@
 use std::io::Write;
-
 use clap::ArgMatches;
-use reality::StorageTarget;
 use tracing::error;
+use loopio::engine::Engine;
 
-use crate::project_loop::AppType;
-use crate::project_loop::InteractionLoop;
+use crate::Controller;
+use crate::controller::ControlBus;
 
 /// Pointer-struct for providing an interaction loop,
 ///
+#[derive(Default)]
 pub struct Terminal;
 
-impl<S: StorageTarget + 'static, T: TerminalApp<S>> InteractionLoop<S, T> for Terminal {
-    fn take_control(self, project_loop: crate::project_loop::ProjectLoop<S>) {
-        let mut app = T::create(project_loop);
+impl<T: TerminalApp> Controller<T> for Terminal {
+    fn take_control(self, engine: Engine) {
+        let mut app = T::create(engine);
 
         let cli = app.parse_command();
 
@@ -63,7 +63,7 @@ fn read_line() -> anyhow::Result<String> {
 
 /// Trait for interacting w/ a terminal interaction loop,
 ///
-pub trait TerminalApp<S: StorageTarget + 'static>: AppType<S> {
+pub trait TerminalApp: ControlBus {
     /// Parses args returning and returns a command,
     ///
     fn parse_command(&mut self) -> clap::Command;

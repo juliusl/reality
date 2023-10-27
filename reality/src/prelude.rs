@@ -8,6 +8,8 @@ pub use crate::AsyncStorageTarget;
 pub use crate::OnParseField;
 pub use crate::Tagged;
 pub use crate::Project;
+pub use crate::Source;
+pub use crate::Workspace;
 pub use crate::Shared;
 pub use crate::Extension;
 pub use crate::ExtensionController;

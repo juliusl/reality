@@ -17,13 +17,19 @@ mod extension_controller;
 pub use extension_controller::ExtensionController;
 pub use extension_controller::ExtensionPlugin;
 
+mod source;
+pub use source::Source;
+
+mod workspace;
+pub use workspace::Workspace;
+
 /// Block plugin fn,
 ///
-pub type BlockPlugin<S> = fn(&mut AttributeParser<S>);
+pub type BlockPlugin<S> = Arc<dyn Fn(&mut AttributeParser<S>) + Send + Sync + 'static>;
 
 /// Node plugin fn,
 ///
-pub type NodePlugin<S> = fn(Option<&str>, Option<&str>, &mut AttributeParser<S>);
+pub type NodePlugin<S> = Arc<dyn Fn(Option<&str>, Option<&str>, &mut AttributeParser<S>) + Send + Sync + 'static>;
 
 /// Project storing the main runmd parser,
 ///
@@ -52,7 +58,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
         &mut self,
         ty: Option<&str>,
         moniker: Option<&str>,
-        plugin: BlockPlugin<Storage::Namespace>,
+        plugin: impl Fn(&mut AttributeParser<Storage::Namespace>) + Send + Sync + 'static,
     ) {
         let block_info = BlockInfo {
             idx: 0,
@@ -62,16 +68,16 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
         let key = ResourceKey::with_hash(block_info);
 
         self.root
-            .put_resource::<BlockPlugin<Storage::Namespace>>(plugin, Some(key));
+            .put_resource::<BlockPlugin<Storage::Namespace>>(Arc::new(plugin), Some(key));
     }
 
     /// Adds a node plugin,
     ///
-    pub fn add_node_plugin(&mut self, name: &str, plugin: NodePlugin<Storage::Namespace>) {
+    pub fn add_node_plugin(&mut self, name: &str, plugin: impl Fn(Option<&str>, Option<&str>, &mut AttributeParser<Storage::Namespace>) + Send + Sync + 'static) {
         let key = ResourceKey::with_hash(name);
 
         self.root
-            .put_resource::<NodePlugin<Storage::Namespace>>(plugin, Some(key));
+            .put_resource::<NodePlugin<Storage::Namespace>>(Arc::new(plugin), Some(key));
     }
 
     /// Load a file into the project,

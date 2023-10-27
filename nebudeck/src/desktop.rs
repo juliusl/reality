@@ -1,3 +1,4 @@
+use loopio::engine::Engine;
 use reality::StorageTarget;
 use winit::window::Window;
 use winit::window::WindowId;
@@ -8,9 +9,8 @@ use winit::event::StartCause;
 use winit::event_loop::EventLoopBuilder;
 use winit::event_loop::EventLoopWindowTarget;
 
-use crate::project_loop::AppType;
-use crate::project_loop::ProjectLoop;
-use crate::project_loop::InteractionLoop;
+use crate::Controller;
+use crate::controller::ControlBus;
 
 /// Desktop,
 /// 
@@ -24,8 +24,6 @@ where
     /// Event loop proxy,
     ///
     pub event_loop_proxy: winit::event_loop::EventLoopProxy<T>,
-
-    // pub project_loop: Option<ProjectLoop<S>>
 }
 
 impl<T: 'static> Desktop<T> {
@@ -42,7 +40,7 @@ impl<T: 'static> Desktop<T> {
 
     /// Starts the window event loop and creates a new Window,
     /// 
-    pub fn open<S: StorageTarget + 'static, D: DesktopApp<T, S>>(mut self, mut app: D) {
+    pub fn open<D: DesktopApp<T>>(mut self, mut app: D) {
         if let Some(event_loop) = std::cell::OnceCell::take(&mut self.event_loop) {
             if let Ok(window) = winit::window::Window::new(&event_loop) {
                 let window = app.configure_window(window);
@@ -83,9 +81,9 @@ impl<T: 'static> Desktop<T> {
     }
 }
 
-impl<T: 'static, S: StorageTarget + 'static, A: DesktopApp<T, S>> InteractionLoop<S, A> for Desktop<T> {
-    fn take_control(self, project_loop: ProjectLoop<S>) {
-        let app = A::create(project_loop);
+impl<T: 'static, A: DesktopApp<T>> Controller<A> for Desktop<T> {
+    fn take_control(self, engine: Engine) {
+        let app = A::create(engine);
 
         self.open(app);
     }
@@ -94,7 +92,7 @@ impl<T: 'static, S: StorageTarget + 'static, A: DesktopApp<T, S>> InteractionLoo
 /// Winit based event loop handler for desktop apps,
 /// 
 #[allow(unused_variables)]
-pub trait DesktopApp<T: 'static, S: StorageTarget + 'static>: AppType<S> {
+pub trait DesktopApp<T: 'static>: ControlBus {
     /// Called to configure the window,
     /// 
     fn configure_window(&self, window: winit::window::Window) -> winit::window::Window {

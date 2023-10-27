@@ -19,6 +19,8 @@ pub use project::NodePlugin;
 pub use project::Extension;
 pub use project::ExtensionController;
 pub use project::ExtensionPlugin;
+pub use project::Source;
+pub use project::Workspace;
 
 pub mod derive {
     pub use reality_derive::AttributeType;

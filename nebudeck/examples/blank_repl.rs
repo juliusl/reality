@@ -1,34 +1,28 @@
+use loopio::engine::Engine;
+use nebudeck::ControlBus;
 use nebudeck::terminal::TerminalApp;
 use nebudeck::terminal::Terminal;
-use nebudeck::ProjectLoop;
-use nebudeck::AppType;
-use reality::Shared;
-use reality::Project;
-
 /// Minimal example for starting a new terminal repl interaction,
 /// 
 fn main() {
-    BlankRepl::start_interaction(
-        ProjectLoop::new(Project::new(Shared::default())), 
-        Terminal
+    BlankRepl::delegate(
+        Terminal::default(),
+        Engine::new(),
     );
 }
 
+#[derive(Default)]
 struct BlankRepl;
 
-impl AppType<Shared> for BlankRepl {
+impl ControlBus for BlankRepl {
     fn create(
-        _: univerux::ProjectLoop<Shared>,
+        _: Engine,
     ) -> Self {
         BlankRepl
     }
-
-    fn initialize_storage() -> Shared {
-        Shared::default()
-    }
 }
 
-impl TerminalApp<Shared> for BlankRepl {
+impl TerminalApp for BlankRepl {
     fn parse_command(&mut self) -> clap::Command {
         // If using derive -- 
         // clap::CommandFactory::command();
