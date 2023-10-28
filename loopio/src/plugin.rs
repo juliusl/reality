@@ -17,6 +17,8 @@ use tokio_util::sync::CancellationToken;
 
 use anyhow::anyhow;
 
+use crate::engine::EngineHandle;
+
 /// Type alias for the result of spawning a task,
 ///
 pub type SpawnResult = Option<JoinHandle<anyhow::Result<ThunkContext>>>;
@@ -82,6 +84,9 @@ pub struct ThunkContext {
     /// Attribute for this context,
     ///
     attribute: Option<ResourceKey<Attribute>>,
+    /// Engine handle,
+    /// 
+    pub engine_handle: Option<EngineHandle>,
     /// Transient storage target,
     ///
     pub transient: AsyncStorageTarget<Shared>,
@@ -96,6 +101,7 @@ impl From<AsyncStorageTarget<Shared>> for ThunkContext {
         Self {
             source: value,
             attribute: None,
+            engine_handle: None,
             transient: Shared::default().into_thread_safe_with(handle),
             cancellation: CancellationToken::new(),
         }
@@ -106,6 +112,7 @@ impl Clone for ThunkContext {
     fn clone(&self) -> Self {
         Self {
             source: self.source.clone(),
+            engine_handle: self.engine_handle.clone(),
             attribute: self.attribute.clone(),
             transient: self.transient.clone(),
             cancellation: self.cancellation.clone(),
@@ -340,6 +347,7 @@ where
 
 #[allow(unused_imports)]
 mod tests {
+    use std::clone;
     use std::collections::BTreeMap;
     use std::marker::PhantomData;
     use std::ops::Deref;
@@ -365,26 +373,13 @@ mod tests {
     #[derive(Reality, Default, Debug, Clone)]
     #[reality(rename = "test_plugin")]
     struct TestPlugin {
-        #[reality(ignore)]
+        #[reality(derive_fromstr)]
         _process: String,
         name: String,
         #[reality(map_of=String)]
         env: BTreeMap<String, String>,
         #[reality(vec_of=String)]
         args: Vec<String>,
-    }
-
-    impl std::str::FromStr for TestPlugin {
-        type Err = anyhow::Error;
-
-        fn from_str(_s: &str) -> Result<Self, Self::Err> {
-            Ok(TestPlugin {
-                _process: _s.to_string(),
-                name: String::default(),
-                env: BTreeMap::new(),
-                args: vec![],
-            })
-        }
     }
 
     #[derive(Default)]
@@ -479,9 +474,9 @@ mod tests {
         : .args test3
 
         + test .sequence start
-        :       .next 'test/operation#test_tag'
-        : spawn .next test/operation
-        : .loop true
+        : .next 'test/operation#test_tag'
+        : .next test/operation
+        : .loop false
         ```
         "#;
 
@@ -494,23 +489,22 @@ mod tests {
         let mut workspace = Workspace::new();
         workspace.add_local(".test/test_plugin.md");
 
-        // engine.load_file(".test/test_plugin.md").await;
-
         let engine = engine.compile(workspace).await;
-
-        let _ = join!(
-            engine.run("test/operation"),
-            engine.run("test/operation#test_tag")
-        );
 
         for (address, _) in engine.iter_operations() {
             println!("{address}");
         }
 
-        for (address, seq) in engine.iter_sequences() {
+        let mut sequences = engine.iter_sequences().collect::<Vec<_>>().clone();
+        let mut _seq = None;
+        if let Some((address, seq)) = sequences.pop() {
             println!("{address} -- {:#?}", seq);
+
+            _seq = Some(seq.clone()); 
+            tokio::spawn(async move { engine.handle_packets().await });
         }
 
+        _seq.unwrap().await.unwrap();
         ()
     }
 }

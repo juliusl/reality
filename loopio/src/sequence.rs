@@ -1,12 +1,16 @@
+use std::task::Poll;
 use std::collections::VecDeque;
 
+use futures_util::FutureExt;
 use reality::prelude::*;
+use tokio::task::JoinHandle;
+use tracing::{trace, error};
 
-use crate::engine::EngineHandle;
+use crate::plugin::ThunkContext;
 
 /// Struct containing steps of a sequence of operations,
 ///
-#[derive(Reality, Clone, Debug)]
+#[derive(Reality)]
 pub struct Sequence {
     /// Name of this sequence,
     ///
@@ -31,15 +35,47 @@ pub struct Sequence {
     /// If loop is enabled, instead of popping from next, a cursor will be maintained,
     ///
     _cursor: usize,
-    /// Handle to engine to execute sequence w/
+    /// ThunkContext this sequence is bounded to,
     ///
     #[reality(ignore)]
-    _engine: Option<EngineHandle>,
+    binding: Option<ThunkContext>,
+    /// Current sequence being run,
+    ///
+    #[reality(ignore)]
+    current: Option<JoinHandle<anyhow::Result<ThunkContext>>>,
+}
+
+impl Clone for Sequence {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            tag: self.tag.clone(),
+            once: self.once.clone(),
+            next: self.next.clone(),
+            _loop: self._loop.clone(),
+            _cursor: self._cursor.clone(),
+            binding: self.binding.clone(),
+            current: None,
+        }
+    }
+}
+
+impl std::fmt::Debug for Sequence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Sequence")
+            .field("name", &self.name)
+            .field("tag", &self.tag)
+            .field("once", &self.once)
+            .field("next", &self.next)
+            .field("_loop", &self._loop)
+            .field("_cursor", &self._cursor)
+            .finish()
+    }
 }
 
 impl Sequence {
     /// Returns a new empty sequence,
-    /// 
+    ///
     pub fn new(name: impl Into<String>, tag: Option<String>) -> Self {
         Self {
             name: name.into(),
@@ -48,8 +84,15 @@ impl Sequence {
             next: vec![].into(),
             _loop: false,
             _cursor: 0,
-            _engine: None,
+            binding: None,
+            current: None,
         }
+    }
+
+    /// Returns true if the sequence is currently active,
+    ///
+    pub fn is_active(&self) -> bool {
+        self.current.is_none()
     }
 
     /// Returns the address to use w/ this operation,
@@ -64,9 +107,9 @@ impl Sequence {
 
     /// Binds an engine handle to this sequence,
     ///
-    pub fn bind(&self, engine: EngineHandle) -> Self {
+    pub fn bind(&self, context: ThunkContext) -> Self {
         let mut clone = self.clone();
-        clone._engine = Some(engine);
+        clone.binding = Some(context);
         clone
     }
 
@@ -98,6 +141,75 @@ impl Sequence {
     }
 }
 
+impl std::future::Future for Sequence {
+    type Output = anyhow::Result<ThunkContext>;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Self::Output> {
+        fn address(step: Tagged<Step>) -> String {
+            match (step.value(), step.tag()) {
+                (Some(address), None) => {
+                    address.0.to_string()
+                },
+                (Some(address), Some(_)) => {
+                    address.0.to_string()
+                },
+                _ => {
+                    String::new()
+                }
+            }
+        }
+
+        match (self.binding.clone(), self.current.take()) {
+            (Some(binding), None) => {
+                match self.next() {
+                    Some(step) => {
+                        trace!("Starting sequence");
+                        self.current =
+                            Some(binding.source.runtime.unwrap().spawn(async {
+                                binding.engine_handle.unwrap().run(address(step)).await
+                            }));
+                    }
+                    None => {
+                        trace!("Done");
+                        return Poll::Ready(Err(anyhow::anyhow!("Sequence has completed")));
+                    }
+                }
+            }
+            (Some(binding), Some(mut current)) => {
+                match current.poll_unpin(cx) {
+                    Poll::Ready(Ok(result)) => match self.next() {
+                        Some(next) => {
+                            trace!("Executing next step");
+                            self.current =  Some(binding.source.runtime.unwrap().spawn(async {
+                                binding.engine_handle.unwrap().run(address(next)).await
+                            }));
+                        },
+                        None => return Poll::Ready(result),
+                    },
+                    Poll::Ready(Err(err)) => {
+                        error!("{err}");
+                        return Poll::Ready(Err(err.into()));
+                    },
+                    Poll::Pending => {
+                        trace!("continuing to poll");
+                        self.current = Some(current);
+                    },
+                }
+            }
+            _ => {
+                trace!("not bound");
+                return Poll::Ready(Err(anyhow::anyhow!("Sequence has not been bound to a thunk context")));
+            }
+        }
+
+        cx.waker().wake_by_ref();
+        std::task::Poll::Pending
+    }
+}
+
 /// A step is an operation address to execute on an engine,
 ///
 #[derive(Clone, Debug)]
@@ -122,7 +234,8 @@ impl FromStr for Sequence {
             next: vec![].into(),
             _loop: false,
             _cursor: 0,
-            _engine: None,
+            binding: None,
+            current: None,
         })
     }
 }

@@ -1,4 +1,6 @@
 use loopio::engine::Engine;
+use tracing::error;
+use tracing::info;
 use winit::window::Window;
 use winit::window::WindowId;
 use winit::event::DeviceId;
@@ -44,8 +46,10 @@ impl<T: 'static> Desktop<T> {
         if let Some(event_loop) = std::cell::OnceCell::take(&mut self.event_loop) {
             if let Ok(window) = winit::window::Window::new(&event_loop) {
                 let window = app.configure_window(window);
-                println!("Starting window");
+                info!("Starting window");
                 
+                app.before_event_loop(&window);
+
                 let _ = event_loop.run(move |event, window_target| {
                     app.before_event(window_target, &window);
 
@@ -75,7 +79,7 @@ impl<T: 'static> Desktop<T> {
                     app.after_event(window_target, &window);
                 });
             } else {
-                println!("Could not open window");
+                error!("Could not open window");
             }
         }
     }
@@ -97,8 +101,16 @@ impl<T: 'static, A: DesktopApp<T>> Controller<A> for Desktop<T> {
 pub trait DesktopApp<T: 'static>: ControlBus {
     /// Called to configure the window,
     /// 
-    fn configure_window(&self, window: winit::window::Window) -> winit::window::Window {
+    fn configure_window(&self, window: Window) -> winit::window::Window {
         window
+    }
+
+    /// Called before the event loop starts,
+    /// 
+    /// Should be a reasonable place to initialize graphics pipeline,
+    /// 
+    fn before_event_loop(&mut self, window: &Window) {
+
     }
 
     /// Called before an event in the event loop is handled,

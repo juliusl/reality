@@ -209,6 +209,7 @@ impl Engine {
                 .map(|r| r.handle().clone())
                 .expect("should have a runtime"),
         ));
+        context.engine_handle = Some(self.engine_handle());
         context.cancellation = self.cancellation.child_token();
         context
     }
@@ -281,7 +282,9 @@ impl Engine {
                     .as_deref()
                     .cloned();
                 if let Some(sequence) = target.read().await.resource::<Sequence>(seqkey) {
-                    self.sequences.insert(sequence.address(), sequence.bind(self.engine_handle()));
+                    if let Some(previous) = self.sequences.insert(sequence.address(), sequence.bind(self.new_context(target.clone()))) {
+                        info!(address = previous.address(), "Replacing sequence");
+                    }
                 }
             }
         }

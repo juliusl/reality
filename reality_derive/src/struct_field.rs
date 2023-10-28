@@ -41,6 +41,10 @@ pub(crate) struct StructField {
     /// If set, will ignore this field
     ///
     pub ignore: bool,
+    /// If set, will use this field to derive 
+    /// FromStr for this type,
+    /// 
+    pub derive_fromstr: bool,
     /// Attribute Type,
     ///
     pub attribute_type: Option<Path>,
@@ -197,6 +201,7 @@ impl Parse for StructField {
         let mut vec_of = None;
         let mut vecdeq_of = None;
         let mut option_of = None;
+        let mut derive_fromstr = false;
         let span = input.span();
 
         let visibility = input.parse::<Visibility>().ok();
@@ -296,6 +301,10 @@ impl Parse for StructField {
                         }
                     }
 
+                    if meta.path.is_ident("derive_fromstr") {
+                        derive_fromstr = true;
+                    }
+
                     Ok(())
                 })?;
             }
@@ -303,6 +312,7 @@ impl Parse for StructField {
 
         Ok(Self {
             rename,
+            derive_fromstr,
             vec_of,
             vecdeq_of,
             map_of,
