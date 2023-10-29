@@ -1,21 +1,17 @@
+use anyhow::anyhow;
+use reality::prelude::*;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::ops::DerefMut;
 use std::sync::Arc;
-
-use reality::prelude::*;
-use serde::Deserialize;
-use serde::Serialize;
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
-
-use anyhow::anyhow;
 use tracing::info;
+use tracing::trace;
 
 use crate::operation::Operation;
-use crate::plugin::Plugin;
-use crate::plugin::Thunk;
-use crate::plugin::ThunkContext;
 use crate::sequence::Sequence;
 
 pub struct EngineBuilder {
@@ -49,7 +45,7 @@ impl EngineBuilder {
     ///
     pub fn register_extension<
         C: ExtensionController<P> + Send + Sync + 'static,
-        P: Plugin + Send + Sync + 'static,
+        P: Plugin + Clone + Default + Send + Sync + 'static,
     >(
         &mut self,
     ) {
@@ -68,6 +64,12 @@ impl EngineBuilder {
     /// Consumes the builder and returns a new engine,
     ///
     pub fn build(mut self) -> Engine {
+        #[cfg(feature = "hyper-ext")]
+        self.register::<crate::ext::hyper_ext::Request>();
+
+        #[cfg(feature = "poem-ext")]
+        self.register::<crate::ext::poem_ext::EngineProxy>();
+
         let runtime = self.runtime_builder.build().unwrap();
 
         Engine::new_with(self.plugins, runtime)
@@ -119,7 +121,7 @@ pub struct Engine {
     ///
     operations: BTreeMap<String, Operation>,
     /// Sequences mapped w/ this engine
-    /// 
+    ///
     sequences: BTreeMap<String, Sequence>,
     /// Engine handle that can be used to send packets to this engine,
     ///
@@ -148,7 +150,7 @@ impl Engine {
     ///
     pub fn register_extension<
         C: ExtensionController<P> + Send + Sync + 'static,
-        P: Plugin + Send + Sync + 'static,
+        P: Plugin + Clone + Default + Send + Sync + 'static,
     >(
         &mut self,
     ) {
@@ -192,6 +194,7 @@ impl Engine {
             sequences: BTreeMap::new(),
             handle: EngineHandle {
                 sender: Arc::new(sender),
+                operations: BTreeMap::new(),
             },
             packet_rx: rx,
         }
@@ -201,7 +204,14 @@ impl Engine {
     ///
     /// **Note** Each time a thunk context is created a new output storage target is generated, however the original storage target is used.
     ///
-    pub fn new_context(&self, storage: Arc<tokio::sync::RwLock<Shared>>) -> ThunkContext {
+    pub async fn new_context(&self, storage: Arc<tokio::sync::RwLock<Shared>>) -> ThunkContext {
+        trace!("Created new context");
+        {
+            let storage = storage.read().await;
+            let handle = self.engine_handle();
+            storage.lazy_dispatch_mut(move |s| s.put_resource(handle, None));
+        }
+
         let mut context = ThunkContext::from(AsyncStorageTarget::from_parts(
             storage,
             self.runtime
@@ -209,7 +219,6 @@ impl Engine {
                 .map(|r| r.handle().clone())
                 .expect("should have a runtime"),
         ));
-        context.engine_handle = Some(self.engine_handle());
         context.cancellation = self.cancellation.child_token();
         context
     }
@@ -267,24 +276,39 @@ impl Engine {
 
             for (_, target) in nodes.iter() {
                 if let Some(operation) = target.read().await.resource::<Operation>(None) {
-                    let mut operation = operation.deref().clone();
-                    operation.bind(self.new_context(target.clone()));
+                    let mut _operation = operation.deref().clone();
+                    drop(operation);
+                    _operation.bind(self.new_context(target.clone()).await);
 
-                    if let Some(previous) = self.operations.insert(operation.address(), operation) {
+                    if let Some(previous) = self.operations.insert(_operation.address(), _operation)
+                    {
                         info!(address = previous.address(), "Replacing operation");
                     }
                 }
+                {
+                    let mut target = target.write().await;
+                    target.drain_dispatch_queues();
+                }
 
-                let seqkey = target
-                    .read()
-                    .await
-                    .resource::<ResourceKey<Sequence>>(None)
-                    .as_deref()
-                    .cloned();
-                if let Some(sequence) = target.read().await.resource::<Sequence>(seqkey) {
-                    if let Some(previous) = self.sequences.insert(sequence.address(), sequence.bind(self.new_context(target.clone()))) {
+                let seqkey_lock = target.read().await;
+                let seqkey = seqkey_lock.resource::<ResourceKey<Sequence>>(None);
+                let _seqkey = seqkey.as_deref().cloned();
+                drop(seqkey);
+                drop(seqkey_lock);
+
+                if let Some(sequence) = target.read().await.resource::<Sequence>(_seqkey) {
+                    let _seq = sequence.clone();
+                    drop(sequence);
+                    if let Some(previous) = self.sequences.insert(
+                        _seq.address(),
+                        _seq.bind(self.new_context(target.clone()).await),
+                    ) {
                         info!(address = previous.address(), "Replacing sequence");
                     }
+                }
+                {
+                    let mut target = target.write().await;
+                    target.drain_dispatch_queues();
                 }
             }
         }
@@ -309,7 +333,7 @@ impl Engine {
     }
 
     /// Returns an iterator over sequences,
-    /// 
+    ///
     pub fn iter_sequences(&self) -> impl Iterator<Item = (&String, &Sequence)> {
         self.sequences.iter()
     }
@@ -326,7 +350,9 @@ impl Engine {
     /// Returns an engine handle,
     ///
     pub fn engine_handle(&self) -> EngineHandle {
-        self.handle.clone()
+        let mut h = self.handle.clone();
+        h.operations = self.operations.clone();
+        h
     }
 
     /// Starts handling engine packets,
@@ -355,6 +381,10 @@ impl Engine {
                     self.cancellation.cancel();
                     break;
                 }
+            }
+
+            if self.cancellation.is_cancelled() {
+                break;
             }
         }
 
@@ -412,11 +442,16 @@ pub struct EngineHandle {
     /// Sends engine packets to the engine,
     ///
     sender: Arc<tokio::sync::mpsc::UnboundedSender<EnginePacket>>,
+    /// Map of operations,
+    ///
+    pub operations: BTreeMap<String, Operation>,
 }
 
 impl Debug for EngineHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EngineHandle").field("sender", &self.sender).finish()
+        f.debug_struct("EngineHandle")
+            .field("sender", &self.sender)
+            .finish()
     }
 }
 

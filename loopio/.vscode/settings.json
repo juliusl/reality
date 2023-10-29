@@ -1,3 +1,3 @@
 {
-    "rust-analyzer.cargo.features": [ "hyper-ext", "poem-ext" ]
+    "rust-analyzer.cargo.features": [ "hyper-ext", "poem-ext", "std-ext" ]
 }

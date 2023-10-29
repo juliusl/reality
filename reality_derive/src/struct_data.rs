@@ -178,17 +178,17 @@ impl StructData {
             let _fromstr_derive = fields.iter().filter(|f| f.derive_fromstr).map(|f| {
                 let name = &f.name;
 
-                quote_spanned!(f.span=>
-                impl #impl_generics std::str::FromStr for #owner #ty_generics #where_clause {
-                    type Err = anyhow::Error;
+                quote_spanned!(self.span=>
+                  impl #impl_generics std::str::FromStr for #owner #ty_generics #where_clause {
+                      type Err = anyhow::Error;
 
-                    fn from_str(s: &str) -> Result<Self, Self::Err> {
-                        let mut _s = Self::default();
-                        _s.#name = s.parse()?;
-                        Ok(_s)
+                      fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+                          let mut _s = Self::default();
+                          _s.#name = s.parse()?;
+                          Ok(_s)
+                      }
                     }
-                }
-                )
+                  )
             });
 
             quote_spanned!(self.span=>

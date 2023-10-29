@@ -63,6 +63,9 @@ pub(crate) struct StructField {
     /// Parse as an option_of Type,
     ///
     pub option_of: Option<Type>,
+    /// True if this field should be enabled as an ext,
+    /// 
+    pub ext: bool,
     /// Location of this field,
     ///
     pub span: Span,
@@ -202,6 +205,7 @@ impl Parse for StructField {
         let mut vecdeq_of = None;
         let mut option_of = None;
         let mut derive_fromstr = false;
+        let mut ext = false;
         let span = input.span();
 
         let visibility = input.parse::<Visibility>().ok();
@@ -301,6 +305,8 @@ impl Parse for StructField {
                         }
                     }
 
+                    ext = meta.path.is_ident("ext");
+
                     if meta.path.is_ident("derive_fromstr") {
                         derive_fromstr = true;
                     }
@@ -319,6 +325,7 @@ impl Parse for StructField {
             option_of,
             parse_callback: callback,
             attribute_type,
+            ext,
             span,
             ignore,
             visibility,

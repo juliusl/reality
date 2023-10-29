@@ -6,7 +6,7 @@ use reality::prelude::*;
 use tokio::task::JoinHandle;
 use tracing::{trace, error};
 
-use crate::plugin::ThunkContext;
+use crate::ext::Ext;
 
 /// Struct containing steps of a sequence of operations,
 ///
@@ -121,6 +121,11 @@ impl Sequence {
     /// that next() will then return the beginning of the next sequence.
     ///
     pub fn next(&mut self) -> Option<Tagged<Step>> {
+        if let Some(tc) = self.binding.as_mut() {
+            let mut storage = tc.source.storage.try_write().unwrap();
+            storage.drain_dispatch_queues();
+        }
+
         let once = self.once.pop_front();
         if once.is_some() {
             return once;
@@ -167,10 +172,11 @@ impl std::future::Future for Sequence {
                 match self.next() {
                     Some(step) => {
                         trace!("Starting sequence");
+                        let handle = binding.engine_handle();
                         self.current =
-                            Some(binding.source.runtime.unwrap().spawn(async {
-                                binding.engine_handle.unwrap().run(address(step)).await
-                            }));
+                        Some(binding.source.runtime.unwrap().spawn(async move {
+                            handle.unwrap().run(address(step)).await
+                        }));
                     }
                     None => {
                         trace!("Done");
@@ -183,8 +189,9 @@ impl std::future::Future for Sequence {
                     Poll::Ready(Ok(result)) => match self.next() {
                         Some(next) => {
                             trace!("Executing next step");
-                            self.current =  Some(binding.source.runtime.unwrap().spawn(async {
-                                binding.engine_handle.unwrap().run(address(next)).await
+                            let handle = binding.engine_handle();
+                            self.current =  Some(binding.source.runtime.unwrap().spawn(async move {
+                                handle.unwrap().run(address(next)).await
                             }));
                         },
                         None => return Poll::Ready(result),

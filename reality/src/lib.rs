@@ -22,6 +22,9 @@ pub use project::ExtensionPlugin;
 pub use project::Source;
 pub use project::Workspace;
 
+mod thunk;
+pub use thunk::*;
+
 pub mod derive {
     pub use reality_derive::AttributeType;
     pub use reality_derive::Reality;

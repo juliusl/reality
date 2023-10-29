@@ -35,4 +35,6 @@ pub use crate::borrow_mut;
 pub use crate::task;
 pub use crate::task_mut;
 
+pub use crate::thunk::*;
+
 pub use std::str::FromStr;

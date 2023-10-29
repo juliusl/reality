@@ -5,8 +5,7 @@ use futures_util::StreamExt;
 
 use anyhow::anyhow;
 use reality::StorageTarget;
-
-use crate::plugin::ThunkContext;
+use reality::ThunkContext;
 
 /// Struct for a top-level node,
 ///
@@ -77,10 +76,14 @@ impl Operation {
                         {
                             let mut storage = tc.transient.storage.write().await;
                             storage.drain_dispatch_queues();
+                            
+                            let mut storage = tc.source.storage.write().await;
+                            storage.drain_dispatch_queues();
                         }
 
                         tc.set_attribute(a);
                         let previous = tc.clone();
+                     
                         match tc.call().await {
                             Ok(Some(tc)) =>  Ok(tc),
                             Ok(None) => Ok(previous),

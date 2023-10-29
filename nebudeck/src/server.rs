@@ -1,8 +1,6 @@
 use hyper::HeaderMap;
 use hyper::StatusCode;
 use hyper::Version;
-use loopio::engine::Engine;
-use loopio::operation::Operation;
 use poem::get;
 use poem::http::Extensions;
 use poem::listener::Acceptor;
@@ -15,8 +13,10 @@ use poem::EndpointExt;
 use poem::Response;
 use poem::ResponseParts;
 use poem::web::LocalAddr;
-use reality::ResourceKey;
-use reality::StorageTarget;
+use loopio::engine::Engine;
+use loopio::operation::Operation;
+use loopio::prelude::ResourceKey;
+use loopio::prelude::StorageTarget;
 use tracing::info;
 
 use crate::BackgroundWork;
