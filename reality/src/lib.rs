@@ -21,6 +21,7 @@ pub use project::ExtensionController;
 pub use project::ExtensionPlugin;
 pub use project::Source;
 pub use project::Workspace;
+pub use project::Host;
 
 mod thunk;
 pub use thunk::*;

@@ -14,6 +14,12 @@ use tracing::trace;
 use crate::operation::Operation;
 use crate::sequence::Sequence;
 
+#[cfg(feature = "hyper-ext")]
+use crate::prelude::secure_client;
+
+#[cfg(feature = "hyper-ext")]
+use crate::prelude::local_client;
+
 pub struct EngineBuilder {
     /// Plugins to register w/ the Engine
     ///
@@ -54,25 +60,35 @@ impl EngineBuilder {
         });
     }
 
-    /// Registers a plugin w/ this engine builder,
-    ///
-    #[inline]
-    pub fn register_with(&mut self, plugin: fn(&mut AttributeParser<Shared>)) {
-        self.plugins.push(Arc::new(plugin));
-    }
-
     /// Consumes the builder and returns a new engine,
     ///
     pub fn build(mut self) -> Engine {
         #[cfg(feature = "hyper-ext")]
         self.register::<crate::ext::hyper_ext::Request>();
 
+        #[cfg(feature = "hyper-ext")]
+        self.register_with(|p| {
+            if let Some(s) = p.storage() {
+                s.lazy_put_resource(secure_client(), None);
+                s.lazy_put_resource(local_client(), None);
+            }
+        });
+
         #[cfg(feature = "poem-ext")]
         self.register::<crate::ext::poem_ext::EngineProxy>();
+
+        self.register::<crate::ext::std_ext::Stdio>();
+        crate::ext::std_ext::Stdio::register(&mut self);
 
         let runtime = self.runtime_builder.build().unwrap();
 
         Engine::new_with(self.plugins, runtime)
+    }
+}
+
+impl reality::prelude::Host for EngineBuilder {
+    fn register_with(&mut self, plugin: fn(&mut AttributeParser<Shared>)) {
+        self.plugins.push(Arc::new(plugin));
     }
 }
 
@@ -135,7 +151,10 @@ impl Engine {
     /// Creates a new engine builder,
     ///
     pub fn builder() -> EngineBuilder {
-        EngineBuilder::new(tokio::runtime::Builder::new_multi_thread())
+        let mut runtime = tokio::runtime::Builder::new_multi_thread();
+        runtime.enable_all();
+
+        EngineBuilder::new(runtime)
     }
 
     /// Registers a plugin w/ this engine builder,
@@ -206,11 +225,6 @@ impl Engine {
     ///
     pub async fn new_context(&self, storage: Arc<tokio::sync::RwLock<Shared>>) -> ThunkContext {
         trace!("Created new context");
-        {
-            let storage = storage.read().await;
-            let handle = self.engine_handle();
-            storage.lazy_dispatch_mut(move |s| s.put_resource(handle, None));
-        }
 
         let mut context = ThunkContext::from(AsyncStorageTarget::from_parts(
             storage,
@@ -228,7 +242,8 @@ impl Engine {
     pub async fn compile(mut self, workspace: Workspace) -> Self {
         use std::ops::Deref;
 
-        let mut project = Project::new(Shared::default());
+        let mut storage = Shared::default();
+        let mut project = Project::new(storage);
         project.add_block_plugin(None, None, |_| {});
 
         let plugins = self.plugins.clone();
@@ -310,6 +325,11 @@ impl Engine {
                     let mut target = target.write().await;
                     target.drain_dispatch_queues();
                 }
+            }
+
+            for (_, target) in nodes.iter() {
+                let mut target = target.write().await;
+                target.put_resource(self.engine_handle(), None);
             }
         }
 

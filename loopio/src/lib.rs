@@ -27,7 +27,7 @@ mod tests {
     use crate::operation::Operation;
 
     #[derive(Reality, Default, Debug, Clone)]
-    #[reality(rename = "test_plugin")]
+    #[reality(plugin, rename = "test_plugin")]
     struct TestPlugin {
         #[reality(derive_fromstr)]
         _process: String,
@@ -145,12 +145,7 @@ mod tests {
             println!("{address} -- {:#?}", seq);
 
             _seq = Some(seq.clone());
-            let handle = engine.engine_handle();
             tokio::spawn(async move { engine.handle_packets().await });
-            tokio::spawn(async move { 
-                tokio::time::sleep(Duration::from_secs(5)).await;
-                handle.shutdown(Duration::from_secs(0)).await.unwrap();
-            });
         }
 
         _seq.unwrap().await.unwrap();

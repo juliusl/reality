@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use std::ops::DerefMut;
 use std::str::FromStr;
 
+use crate::BlockObject;
 use crate::Visit;
 use crate::VisitMut;
 
@@ -107,6 +108,17 @@ impl<S: StorageTarget + 'static> AttributeTypeParser<S> {
     {
         Self::new::<ParsableAttributeTypeField<IDX, S, Owner, T>>()
     }
+
+    /// Returns an attribute parser for a parseable attribute type field,
+    ///
+    pub fn parseable_object_type_field<const IDX: usize, Owner, T>() -> Self
+    where
+        S: Send + Sync + 'static,
+        Owner: OnParseField<IDX, T> + Send + Sync + 'static,
+        T: BlockObject<S> + Send + Sync + 'static,
+    {
+        Self::new::<ParsableObjectTypeField<IDX, S, Owner, T>>()
+    }
 }
 
 impl<S: StorageTarget> Clone for AttributeTypeParser<S> {
@@ -152,6 +164,22 @@ where
     S: StorageTarget,
     Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
     T: AttributeType<S> + Send + Sync + 'static,
+{
+    _inner: PhantomData<T>,
+    _owner: PhantomData<Owner>,
+    _storage: PhantomData<S>,
+}
+
+/// Parseable AttributeType,
+///
+/// Applies the attribute type's parse fn, and then queues removal and transfer to the owning type,
+///
+#[derive(Default)]
+pub struct ParsableObjectTypeField<const FIELD_OFFSET: usize, S, Owner, T>
+where
+    S: StorageTarget + 'static,
+    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
+    T: BlockObject<S> + Send + Sync + 'static,
 {
     _inner: PhantomData<T>,
     _owner: PhantomData<Owner>,
@@ -234,6 +262,40 @@ where
     Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
     S: StorageTarget + Send + Sync + 'static,
     T: AttributeType<S> + Send + Sync + 'static,
+{
+    fn ident() -> &'static str {
+        Owner::field_name()
+    }
+
+    fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
+        // If the parse method did not initialize T, then it won't be able to found by the subsequent dispatch,
+        T::parse(parser, content);
+
+        // Get the current tag setting,
+        let tag = parser.tag().cloned();
+        let key = parser.attributes.last().map(|a| a.transmute::<Owner>());
+
+        if let Some(storage) = parser.storage() {
+            storage.lazy_dispatch_mut(move |s| {
+                // If set by parse, it must be set w/ a resource key set to None
+                let resource = { s.take_resource::<T>(None) };
+
+                if let Some(resource) = resource {
+                    borrow_mut!(s, Owner, key, |owner| => {
+                        owner.on_parse(*resource, tag.as_ref());
+                    });
+                }
+            })
+        }
+    }
+}
+
+impl<const FIELD_OFFSET: usize, Owner, S, T> AttributeType<S>
+    for ParsableObjectTypeField<FIELD_OFFSET, S, Owner, T>
+where
+    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
+    S: StorageTarget + Send + Sync + 'static,
+    T: BlockObject<S> + Send + Sync + 'static,
 {
     fn ident() -> &'static str {
         Owner::field_name()

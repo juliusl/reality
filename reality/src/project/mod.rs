@@ -23,6 +23,9 @@ pub use source::Source;
 mod workspace;
 pub use workspace::Workspace;
 
+mod host;
+pub use host::Host;
+
 /// Block plugin fn,
 ///
 pub type BlockPlugin<S> = Arc<dyn Fn(&mut AttributeParser<S>) + Send + Sync + 'static>;

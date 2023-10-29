@@ -144,7 +144,7 @@ impl StructField {
                     self.#name.insert(tag.to_string(), value.into());
                 }
             };
-        } else if let Some(_) = self.vec_of.as_ref() {
+        } else if let Some(ty) = self.vec_of.as_ref() {
             callback = handle_tagged(ty, || {
                 quote_spanned!(self.span=>
                     self.#name.push(value.into());
@@ -158,7 +158,7 @@ impl StructField {
                     self.#name.push(value.into());
                 }
             });
-        } else if let Some(_) = self.option_of.as_ref() {
+        } else if let Some(ty) = self.option_of.as_ref() {
             callback = handle_tagged(ty, || {
                 quote_spanned!(self.span=>
                     self.#name = Some(value.into());
@@ -305,7 +305,7 @@ impl Parse for StructField {
                         }
                     }
 
-                    ext = meta.path.is_ident("ext");
+                    ext = meta.path.is_ident("ext"); 
 
                     if meta.path.is_ident("derive_fromstr") {
                         derive_fromstr = true;

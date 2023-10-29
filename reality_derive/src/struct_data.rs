@@ -44,6 +44,8 @@ pub(crate) struct StructData {
     /// Parsed struct fields,
     ///
     fields: Vec<StructField>,
+
+    plugin: bool,
     /// Reality attribute, rename option
     /// 
     reality_rename: Option<LitStr>,
@@ -68,6 +70,7 @@ impl Parse for StructData {
         let mut reality_on_load = None;
         let mut reality_on_unload = None;
         let mut reality_on_completed = None;
+        let mut plugin = false;
 
         for attr in derive_input.attrs.iter() {
             if attr.path().is_ident("reality") {
@@ -90,6 +93,10 @@ impl Parse for StructData {
                     if meta.path.is_ident("completed") {
                         meta.input.parse::<Token![=]>()?;
                         reality_on_completed = meta.input.parse::<Path>().ok();
+                    }
+
+                    if meta.path.is_ident("plugin") {
+                        plugin = true;
                     }
 
                     Ok(())
@@ -126,6 +133,7 @@ impl Parse for StructData {
                 reality_on_load,
                 reality_on_unload,
                 reality_on_completed,
+                plugin,
             })
         }
     }
@@ -256,6 +264,10 @@ impl StructData {
                 quote_spanned! {f.span=>
                     parser.add_parseable_attribute_type_field::<#offset, Self, #attribute_type>();
                 }
+            } else if f.ext {
+                quote_spanned! {f.span=>
+                    parser.add_parseable_extension_type_field::<#offset, Self, #ty>();
+                }
             } else {
                 let comment = LitStr::new(format!("Parsing field `{}`", f.name.to_string()).as_str(), Span::call_site());
                 quote_spanned! {f.span=>
@@ -344,6 +356,37 @@ impl StructData {
         let on_unload = self.reality_on_unload.clone().map(|p| quote!(#p(storage).await;)).unwrap_or(quote!());
         let on_completed = self.reality_on_completed.clone().map(|p| quote!(#p(storage))).unwrap_or(quote!(None));
 
+        let plugin = if self.plugin {
+            let ext = self.fields.iter().filter(|f| f.ext).map(|f| {
+                let ty = f.field_ty();
+                quote_spanned!(f.span=>
+                    parser.with_object_type::<Thunk<#ty>>();
+                )
+            });
+            quote!(
+            impl Plugin for #name #ty_generics #where_clause  {
+                fn call(context: ThunkContext) -> CallOutput {
+                    context
+                        .spawn(|mut tc| async {
+                            <Self as CallAsync>::call(&mut tc).await?;
+                            Ok(tc)
+                        })
+                        .into()
+                }
+            }
+
+            impl #name #ty_generics #where_clause  {
+                pub fn register(mut host: &mut impl Host) {
+                  host.register_with(|parser| {
+                    #(#ext)*
+                  }); 
+                }
+            }
+            )
+        } else {
+            quote!()
+        };
+
         let object_type_trait = quote_spanned!(self.span=>
             #[reality::runmd::async_trait]
             impl #impl_generics BlockObject<Storage> for #name #ty_generics #where_clause {
@@ -358,7 +401,10 @@ impl StructData {
                 fn on_completed(storage: AsyncStorageTarget<Storage::Namespace>) -> Option<AsyncStorageTarget<Storage::Namespace>> {
                     #on_completed
                 }
-            });
+            }
+
+            #plugin
+        );
 
 
         let mut attribute_type = self.attribute_type_trait();

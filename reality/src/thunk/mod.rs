@@ -26,7 +26,36 @@ pub mod prelude {
     ///
     pub struct Thunk<P>(pub PhantomData<P>)
     where
-        P: BlockObject<Shared> + CallAsync + Send + Sync + 'static;
+        P: Plugin + Send + Sync + 'static;
+
+    impl<P> Plugin for Thunk<P>
+    where
+        P: Plugin + Send + Sync + 'static,
+    {
+        fn call(context: ThunkContext) -> CallOutput {
+            context
+                .spawn(|mut tc| async {
+                    <Self as CallAsync>::call(&mut tc).await?;
+                    Ok(tc)
+                })
+                .into()
+        }
+    }
+
+    impl<C, P> Plugin for ExtensionPlugin<C, P>
+    where
+        C: ExtensionController<P> + Send + Sync + 'static,
+        P: Plugin + Clone + Default + Send + Sync + 'static,
+    {
+        fn call(context: ThunkContext) -> CallOutput {
+            context
+                .spawn(|mut tc| async {
+                    <Self as CallAsync>::call(&mut tc).await?;
+                    Ok(tc)
+                })
+                .into()
+        }
+    }
 
     #[async_trait::async_trait]
     impl<C, P> CallAsync for ExtensionPlugin<C, P>
@@ -41,27 +70,16 @@ pub mod prelude {
                 let ext = C::setup(context.attribute.as_ref());
 
                 let initialized = context.initialized::<P>().await;
-    
+
                 let target = context.transient.clone();
-    
-                 ext.run(target, initialized).await?
+
+                ext.run(target, initialized).await?
             };
             unsafe {
                 let mut source = context.source_mut().await;
                 source.put_resource(initialized, context.attribute.map(|a| a.transmute()));
             }
             <P as CallAsync>::call(context).await
-        }
-    }
-
-    impl<T: CallAsync + BlockObject<Shared> + Send + Sync> Plugin for T {
-        fn call(context: ThunkContext) -> CallOutput {
-            context
-                .spawn(|mut tc| async {
-                    <Self as CallAsync>::call(&mut tc).await?;
-                    Ok(tc)
-                })
-                .into()
         }
     }
 

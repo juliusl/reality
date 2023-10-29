@@ -116,6 +116,12 @@ impl Context {
         self.transient.clone()
     }
 
+    /// Returns a writeable reference to transient storage,
+    /// 
+    pub async fn write_transport(&self) -> tokio::sync::RwLockWriteGuard<Shared> {
+        self.transient.storage.write().await
+    }
+
     /// Spawn a task w/ this context,
     ///
     /// Returns a join-handle if the task was created.

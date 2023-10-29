@@ -230,6 +230,21 @@ impl<S: StorageTarget> AttributeParser<S> {
         >());
     }
 
+    /// Adds an attribute type that implements FromStr,
+    ///
+    pub fn add_parseable_extension_type_field<const FIELD_OFFSET: usize, Owner, T>(&mut self)
+    where
+        S: StorageTarget + Send + Sync + 'static,
+        Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
+        T: BlockObject<S> + Send + Sync + 'static,
+    {
+        self.add_type(AttributeTypeParser::parseable_object_type_field::<
+            FIELD_OFFSET,
+            Owner,
+            T,
+        >());
+    }
+
     /// Returns attribute parser with a parseable type, registered to ident, chainable
     ///
     pub fn with_parseable_attribute_type_field_as<const FIELD_OFFSET: usize, Owner, T>(

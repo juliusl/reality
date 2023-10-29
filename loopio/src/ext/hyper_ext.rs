@@ -13,9 +13,17 @@ use reality::prelude::*;
 ///
 type SecureClient = hyper::Client<hyper_tls::HttpsConnector<HttpConnector>>;
 
+pub fn secure_client() -> SecureClient {
+   hyper::Client::builder().build(hyper_tls::HttpsConnector::new())
+}
+
 /// Type-alias for a local client,
 ///
 type LocalClient = hyper::Client<HttpConnector>;
+
+pub fn local_client() -> LocalClient {
+    hyper::Client::new()
+ }
 
 /// Extensions for working w/ a hyper client,
 ///
@@ -70,8 +78,8 @@ impl HyperExt for ThunkContext {
     }
 }
 
-#[derive(Reality, Default, Clone)]
-#[reality(rename = "utility/loopio.hyper.request")]
+#[derive(Reality, Default, Debug, Clone)]
+#[reality(plugin, rename = "utility/loopio.hyper.request")]
 pub struct Request {
     /// Uri to make request to,
     ///

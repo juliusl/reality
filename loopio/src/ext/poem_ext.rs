@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 
 use async_trait::async_trait;
 use poem::delete;
@@ -21,9 +22,9 @@ use poem::Route;
 use reality::prelude::*;
 use tracing::error;
 
+use crate::ext::*;
 use crate::operation::Operation;
 use crate::prelude::HyperExt;
-use crate::ext::*;
 
 /// Provides helper functions for accessing poem request resources,
 ///
@@ -150,7 +151,7 @@ impl PoemExt for ThunkContext {
 /// Routes requests to a specific engine operation,
 ///
 #[derive(Reality, Default)]
-#[reality(rename = "utility/loopio.poem.engine-proxy")]
+#[reality(plugin, rename = "utility/loopio.poem.engine-proxy")]
 pub struct EngineProxy {
     /// Address to host the proxy on,
     ///
@@ -188,6 +189,21 @@ pub struct EngineProxy {
     ///
     #[reality(ignore)]
     routes: BTreeMap<String, poem::RouteMethod>,
+}
+
+impl Debug for EngineProxy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EngineProxy")
+            .field("address", &self.address)
+            .field("head", &self.head)
+            .field("get", &self.get)
+            .field("post", &self.post)
+            .field("put", &self.put)
+            .field("delete", &self.delete)
+            .field("patch", &self.patch)
+            .field("route", &self.route)
+            .finish()
+    }
 }
 
 impl Clone for EngineProxy {
@@ -247,15 +263,13 @@ async fn on_proxy(
 }
 
 macro_rules! create_routes {
-    ($ctx:ident, $rcv:ident, [$($ident:tt),*]) => {
+    ($ctx:ident, $operations:ident, $rcv:ident, [$($ident:tt),*]) => {
         $(
             for (value, tag) in $rcv.$ident.iter().map(|g| (g.value(), g.tag())) {
                 match (value, tag) {
                     (Some(route), Some(op)) => {
-                        if let Some(operation) = $ctx
-                            .engine_handle()
-                            .clone()
-                            .and_then(|e| e.operations.get(op).cloned())
+                        let op = $rcv.route.get(op).cloned().unwrap_or_default();
+                        if let Some(operation) = $operations.get(&op).cloned()
                         {
                             if let Some(_route) = $rcv.routes.remove(route) {
                                 $rcv
@@ -285,8 +299,13 @@ impl CallAsync for EngineProxy {
             "Routes should only be initialized when the plugin is being run"
         );
 
+        let operations = context.engine_handle().clone();
+
+        assert!(operations.is_some());
+        let operations = operations.unwrap().operations.clone();
+
         // Build routes for proxy server
-        create_routes!(context, initialized, [head, get, post, put, patch, delete]);
+        create_routes!(context, operations, initialized, [head, get, post, put, patch, delete]);
 
         let route = initialized
             .routes
@@ -295,7 +314,9 @@ impl CallAsync for EngineProxy {
                 acc.at(route, route_method)
             });
 
-        poem::Server::new(TcpListener::bind(initialized.address))
+        let listener = TcpListener::bind(&initialized.address);
+        println!("listening on {:?}", initialized.address);
+        poem::Server::new(listener)
             .run_with_graceful_shutdown(route, context.cancellation.clone().cancelled(), None)
             .await?;
 
