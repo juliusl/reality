@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use poem::delete;
@@ -25,6 +26,24 @@ use tracing::error;
 use crate::ext::*;
 use crate::operation::Operation;
 use crate::prelude::HyperExt;
+
+pub struct PoemRequest {
+    pub path: Path<BTreeMap<String, String>>,
+    pub uri: Uri,
+    pub headers: HeaderMap,
+    pub body: Option<RequestBody>,
+}
+
+impl Clone for PoemRequest {
+    fn clone(&self) -> Self {
+        Self {
+            path: self.path.clone(),
+            uri: self.uri.clone(),
+            headers: self.headers.clone(),
+            body: None,
+        }
+    }
+}
 
 /// Provides helper functions for accessing poem request resources,
 ///
@@ -60,6 +79,8 @@ pub trait PoemExt {
     /// Replaces the header map,
     ///
     fn replace_header_map(&mut self, header_map: HeaderMap);
+
+    fn take_request(&self) -> Option<PoemRequest>;
 }
 
 impl PoemExt for ThunkContext {
@@ -139,6 +160,18 @@ impl PoemExt for ThunkContext {
 
         if let Ok(transient) = transient {
             transient.resource::<PathVars>(None).as_deref().cloned()
+        } else {
+            error!("Could not write to transient storage. Existing read-lock.");
+            None
+        }
+    }
+
+    fn take_request(&self) -> Option<PoemRequest> {
+        let transient = self.transient().storage;
+        let transient = transient.try_write();
+
+        if let Ok(mut transient) = transient {
+            transient.take_resource::<PoemRequest>(None).map(|r| *r)
         } else {
             error!("Could not write to transient storage. Existing read-lock.");
             None
@@ -232,12 +265,21 @@ async fn on_proxy(
     mut body: Body,
     operation: Data<&Operation>,
 ) -> poem::Result<poem::Response> {
-    let path_vars = PathVars::from_request(req, &mut RequestBody::new(body)).await?;
+    let mut body = RequestBody::new(body);
+    let path_vars = PathVars::from_request(req, &mut body).await?;
 
     let mut operation = operation.0.clone();
     if let Some(context) = operation.context_mut() {
         let mut storage = context.transient.storage.write().await;
-        storage.put_resource(path_vars, None);
+        storage.put_resource(
+            PoemRequest {
+                path: path_vars,
+                uri: req.uri().clone(),
+                headers: req.headers().clone(),
+                body: Some(body),
+            },
+            None,
+        );
     }
 
     let mut context = operation
@@ -305,7 +347,12 @@ impl CallAsync for EngineProxy {
         let operations = operations.unwrap().operations.clone();
 
         // Build routes for proxy server
-        create_routes!(context, operations, initialized, [head, get, post, put, patch, delete]);
+        create_routes!(
+            context,
+            operations,
+            initialized,
+            [head, get, post, put, patch, delete]
+        );
 
         let route = initialized
             .routes

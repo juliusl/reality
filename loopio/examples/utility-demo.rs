@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use loopio::{engine::Engine, prelude::StdExt};
+use loopio::{engine::Engine, prelude::{StdExt, PoemExt}};
 use reality::{Workspace, prelude::*};
 
 #[tokio::main]
@@ -13,22 +13,26 @@ async fn main() {
     <test>                  Hello World 2
 
     + .operation test_hyper
-    <utility/loopio.hyper.request> http://localhost:5678/test
+    <echo>
+    <utility/loopio>
+    <..hyper.request> http://localhost:5678/test
 
     + .operation test_poem
-    <utility/loopio.poem.engine-proxy> localhost:5678
+    <utility/loopio>
+    <..poem.engine-proxy> localhost:5678
     : test          .route test_std_io
     : test_handler  .route test_hyper
     : test          .get /test
-    : test_handler  .get /test-handler
+    : test_handler  .get /test-handler/:name
     ```
     "#;
 
     let mut workspace = Workspace::new();
-    workspace.add_buffer("test_std_io.md", utility_runmd);
+    workspace.add_buffer("test_utilities.md", utility_runmd);
 
     let mut engine = Engine::builder();
     engine.register::<Test>();
+    engine.register::<Echo>();
     let engine = engine.build();
     let engine = engine.compile(workspace).await;
     
@@ -56,3 +60,23 @@ impl CallAsync for Test {
         Ok(())
     }
 }
+
+#[derive(Reality, Default, Clone)]
+#[reality(plugin, rename = "echo")]
+struct Echo {
+    #[reality(derive_fromstr)]
+    unused: String,
+}
+
+#[async_trait]
+impl CallAsync for Echo {
+    async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
+        if let Some(req) = context.take_request() {
+            println!("{:#?}", req.path);
+            println!("{:#?}", req.uri);
+            println!("{:#?}", req.headers);
+        }
+        Ok(())
+    }
+}
+

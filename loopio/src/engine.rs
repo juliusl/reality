@@ -64,9 +64,6 @@ impl EngineBuilder {
     ///
     pub fn build(mut self) -> Engine {
         #[cfg(feature = "hyper-ext")]
-        self.register::<crate::ext::hyper_ext::Request>();
-
-        #[cfg(feature = "hyper-ext")]
         self.register_with(|p| {
             if let Some(s) = p.storage() {
                 s.lazy_put_resource(secure_client(), None);
@@ -74,11 +71,8 @@ impl EngineBuilder {
             }
         });
 
-        #[cfg(feature = "poem-ext")]
-        self.register::<crate::ext::poem_ext::EngineProxy>();
-
-        self.register::<crate::ext::std_ext::Stdio>();
-        crate::ext::std_ext::Stdio::register(&mut self);
+        // crate::ext::std_ext::Stdio::register(&mut self);
+        crate::ext::utility::Utility::register(&mut self);
 
         let runtime = self.runtime_builder.build().unwrap();
 
@@ -242,7 +236,7 @@ impl Engine {
     pub async fn compile(mut self, workspace: Workspace) -> Self {
         use std::ops::Deref;
 
-        let mut storage = Shared::default();
+        let storage = Shared::default();
         let mut project = Project::new(storage);
         project.add_block_plugin(None, None, |_| {});
 

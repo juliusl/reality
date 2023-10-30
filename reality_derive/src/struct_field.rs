@@ -66,6 +66,9 @@ pub(crate) struct StructField {
     /// True if this field should be enabled as an ext,
     /// 
     pub ext: bool,
+    /// True if this field should be enabled as a plugin collection,
+    /// 
+    pub plugin: bool,
     /// Location of this field,
     ///
     pub span: Span,
@@ -206,6 +209,7 @@ impl Parse for StructField {
         let mut option_of = None;
         let mut derive_fromstr = false;
         let mut ext = false;
+        let mut plugin = false;
         let span = input.span();
 
         let visibility = input.parse::<Visibility>().ok();
@@ -306,6 +310,7 @@ impl Parse for StructField {
                     }
 
                     ext = meta.path.is_ident("ext"); 
+                    plugin = meta.path.is_ident("plugin");
 
                     if meta.path.is_ident("derive_fromstr") {
                         derive_fromstr = true;
@@ -326,6 +331,7 @@ impl Parse for StructField {
             parse_callback: callback,
             attribute_type,
             ext,
+            plugin,
             span,
             ignore,
             visibility,

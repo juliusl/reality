@@ -46,7 +46,7 @@ impl StdExt for ThunkContext {
 
 /// Set of plugins for std.io,
 ///
-#[derive(Reality, Default)]
+#[derive(Reality, Clone, Default)]
 #[reality(plugin, rename = "utility/loopio.ext.std.io")]
 pub struct Stdio {
     /// Version to use for this ext,
