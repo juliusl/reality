@@ -1,12 +1,14 @@
 use futures_util::Future;
 use tokio_util::sync::CancellationToken;
+use tracing::debug;
+use uuid::Uuid;
 
+use crate::AsyncStorageTarget;
+use crate::Attribute;
+use crate::BlockObject;
+use crate::ResourceKey;
 use crate::Shared;
 use crate::StorageTarget;
-use crate::BlockObject;
-use crate::Attribute;
-use crate::ResourceKey;
-use crate::AsyncStorageTarget;
 
 use super::prelude::*;
 
@@ -25,6 +27,9 @@ pub struct Context {
     /// Attribute for this context,
     ///
     pub attribute: Option<ResourceKey<Attribute>>,
+    /// If the context has been branched, this will be the Uuid assigned to the variant,
+    ///
+    pub variant_id: Option<Uuid>,
 }
 
 impl From<AsyncStorageTarget<Shared>> for Context {
@@ -35,6 +40,7 @@ impl From<AsyncStorageTarget<Shared>> for Context {
             attribute: None,
             transient: Shared::default().into_thread_safe_with(handle),
             cancellation: CancellationToken::new(),
+            variant_id: None,
         }
     }
 }
@@ -46,11 +52,24 @@ impl Clone for Context {
             attribute: self.attribute.clone(),
             transient: self.transient.clone(),
             cancellation: self.cancellation.clone(),
+            variant_id: None,
         }
     }
 }
 
 impl Context {
+    /// Creates a branched thunk context,
+    ///
+    pub fn branch(&self) -> (Uuid, Self) {
+        let mut next = self.clone();
+        // Create a variant for the type created here
+        let variant_id = uuid::Uuid::new_v4();
+        if let Some(attr) = next.attribute.as_mut() {
+            *attr = attr.branch(variant_id);
+        }
+        next.variant_id = Some(variant_id);
+        (variant_id, next)
+    }
     /// Reset the transient storage,
     ///
     pub fn reset(&mut self) {
@@ -65,7 +84,7 @@ impl Context {
         let storage = _storage.clone();
         let _thunk = storage.resource::<ThunkFn>(self.attribute.map(|a| a.transmute()));
         let thunk = _thunk.as_deref().cloned();
-        if let Some(thunk) = thunk {       
+        if let Some(thunk) = thunk {
             drop(_storage);
             drop(_thunk);
             (thunk)(self.clone()).await
@@ -117,7 +136,7 @@ impl Context {
     }
 
     /// Returns a writeable reference to transient storage,
-    /// 
+    ///
     pub async fn write_transport(&self) -> tokio::sync::RwLockWriteGuard<Shared> {
         self.transient.storage.write().await
     }
@@ -153,7 +172,9 @@ impl Context {
     ///
     /// **Note**: This is the state that was evaluated at the start of the application, when the runmd was parsed.
     ///
-    pub async fn initialized<P: BlockObject<Shared> + CallAsync + Default + Clone + Sync + Send + 'static>(&self) -> P {
+    pub async fn initialized<P: BlockObject<Shared> + Default + Clone + Sync + Send + 'static>(
+        &self,
+    ) -> P {
         self.source
             .storage
             .read()
@@ -167,7 +188,7 @@ impl Context {
     ///
     pub async fn extension<
         C: Send + Sync + 'static,
-        P:  BlockObject<Shared> + CallAsync + Default + Clone + Sync + Send + 'static,
+        P: BlockObject<Shared> + Default + Clone + Sync + Send + 'static,
     >(
         &self,
     ) -> Option<crate::Extension<C, P>> {
@@ -177,5 +198,21 @@ impl Context {
             .await
             .resource::<crate::Extension<C, P>>(self.attribute.clone().map(|a| a.transmute()))
             .map(|r| r.clone())
+    }
+
+    /// Schedules garbage collection of the variant,
+    ///
+    pub(crate) fn garbage_collect(&self) {
+        match (self.attribute, self.variant_id) {
+            (Some(key), Some(_)) => {
+                if let Ok(storage) = self.source.storage.try_read() {
+                    storage.lazy_dispatch_mut(move |s| {
+                        debug!(key=key.key(), "Garbage collection");
+                        s.remove_resource_at(key);
+                    });
+                }
+            }
+            _ => {}
+        }
     }
 }

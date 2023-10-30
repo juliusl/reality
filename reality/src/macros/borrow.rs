@@ -113,7 +113,10 @@ macro_rules! borrow_mut {
             if let Some(mut resource) = $storage.resource_mut::<$ty>($key) {
                 let monad = |$var: &mut $ty| $body;
 
-                monad(resource.deref_mut())
+                monad(resource.deref_mut());
+                true
+            } else {
+                false
             }
         }
     };

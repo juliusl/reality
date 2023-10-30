@@ -2,7 +2,6 @@ use tokio::task::JoinHandle;
 
 use super::prelude::ThunkContext;
 
-
 /// Trait for implementing call w/ an async trait,
 ///
 /// **Note** This is a convenience if the additional Skip/Abort control-flow options

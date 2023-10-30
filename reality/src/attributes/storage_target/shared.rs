@@ -30,6 +30,10 @@ impl StorageTarget for Shared {
         Shared::default()
     }
 
+    fn remove_resource_at(&mut self, key: ResourceKey<crate::Attribute>) -> bool {
+        self.resources.remove(&key.key()).is_some()
+    }
+
     fn put_resource<T: Send + Sync + 'static>(
         &mut self,
         resource: T,

@@ -19,7 +19,7 @@ tracing = "0.1.36"
 tracing-test = "0.2.3"
 serde = { version = "1.0.144", features = ["derive"] }
 runmd = { path = "../runmd" }
-uuid = "1.4.1"
+uuid = { version = "1.4.1", features = ["v4"] }
 bitflags = "2.4.0"
 futures-util = "0.3.28"
 anyhow = "1.0.75"

@@ -49,6 +49,7 @@ mod tests {
         fn setup(
             resource_key: Option<&reality::ResourceKey<reality::Attribute>>,
         ) -> Extension<Self, TestPlugin> {
+            println!("Extending -- {:?}", resource_key.map(|a| a.key()));
             Self::default_setup(resource_key).before(|_, _, t| {
                 if let Ok(mut t) = t {
                     use std::io::Write;
@@ -73,7 +74,7 @@ mod tests {
     impl CallAsync for TestPlugin {
         async fn call(tc: &mut ThunkContext) -> anyhow::Result<()> {
             let _initialized = tc.initialized::<TestPlugin>().await;
-            println!("Initialized as -- {:?}", _initialized);
+            println!("Initialized as -- {:?} {:?}", _initialized, tc.attribute.map(|a| a.key()));
             Ok(())
         }
     }
@@ -148,7 +149,9 @@ mod tests {
             tokio::spawn(async move { engine.handle_packets().await });
         }
 
+        _seq.clone().unwrap().await.unwrap();
         _seq.unwrap().await.unwrap();
+
         ()
     }
 }

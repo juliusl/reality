@@ -83,6 +83,8 @@ pub trait PoemExt {
     ///
     fn replace_header_map(&mut self, header_map: HeaderMap);
 
+    /// Take request from the current storage target if one exists,
+    /// 
     fn take_request(&self) -> Option<PoemRequest>;
 }
 

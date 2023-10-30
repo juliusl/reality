@@ -145,6 +145,20 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         self.flags().contains(ResourceKeyFlags::ENABLE_CURSOR)
     }
 
+    /// Creates a branch of the current resource-key,
+    /// 
+    /// Hashes the .key() value from the current key first followed by the hash of hashable after.
+    /// 
+    /// The result is the key returned.
+    /// 
+    pub fn branch(&self, hashable: impl std::hash::Hash) -> Self {
+        let mut hash_builder = ResourceKeyHashBuilder::<T, _>::new_default_hasher();
+        hash_builder.hash(&self.key());
+        hash_builder.hash(hashable);
+
+        hash_builder.finish()
+    }
+
     /// Returns the raw label parts if they are set,
     ///
     fn label_parts(&self) -> Option<(*const u8, usize)> {

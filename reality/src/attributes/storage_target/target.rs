@@ -1,4 +1,5 @@
 use super::prelude::*;
+use crate::Attribute;
 use crate::{Callback, CallbackMut, Handler};
 use std::ops::Deref;
 use std::ops::DerefMut;
@@ -59,6 +60,10 @@ pub trait StorageTarget {
     fn put_resource_at<T: Send + Sync + 'static>(&mut self, _key: ResourceKey<T>, _resource: T) {
         // encode ident to a resource_id
         // store addr as a key,
+    }
+
+    fn remove_resource_at(&mut self, key: ResourceKey<Attribute>) -> bool {
+        false
     }
 
     /// Put a resource in storage,

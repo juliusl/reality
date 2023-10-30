@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::marker::PhantomData;
 
 use once_cell::sync::OnceCell;
@@ -7,10 +8,14 @@ use crate::Attribute;
 use crate::AttributeParser;
 use crate::AttributeType;
 use crate::BlockObject;
+use crate::CallAsync;
+use crate::CallOutput;
 use crate::Extension;
+use crate::Plugin;
 use crate::ResourceKey;
 use crate::Shared;
 use crate::StorageTarget;
+use crate::ThunkContext;
 
 /// Trait for adding a hook to insert an extension for a plugin extension,
 /// 
@@ -108,5 +113,63 @@ where
     ///
     fn on_completed(storage: AsyncStorageTarget<Shared>) -> Option<AsyncStorageTarget<Shared>> {
         <Bob as BlockObject<Shared>>::on_completed(storage)
+    }
+}
+
+#[async_trait::async_trait]
+impl<C, P> CallAsync for ExtensionPlugin<C, P>
+where
+    C: ExtensionController<P> + Send + Sync + 'static,
+    P: Plugin + Clone + Default + Send + Sync + 'static,
+{
+    /// Executed by `ThunkContext::spawn`,
+    ///
+    async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
+        use std::ops::DerefMut;
+        let ext = C::setup(context.attribute.as_ref());
+        let initialized = context.initialized::<P>().await;
+
+        // Branch context to avoid mutating the original directly
+        let (variant_id, mut context) = context.branch();
+
+        let initialized = {
+            let target = context.transient.clone();
+            ext.run(target, initialized).await?
+        };
+
+        unsafe {
+            let mut source = context.source_mut().await;
+            source.put_resource(initialized, context.attribute.map(|a| a.transmute()));
+
+            // Track variants that branched from this point
+            let controller = Some(ResourceKey::with_hash(C::ident()));
+            if !borrow_mut!(source, HashSet<uuid::Uuid>, controller, |list| => {
+                list.insert(variant_id);
+            }) {
+                let mut set = HashSet::new();
+                set.insert(variant_id);
+                source.put_resource(set, controller);
+            }
+        }
+        
+        let result = <P as CallAsync>::call(&mut context).await;
+        context.garbage_collect();
+
+        result
+    }
+}
+
+impl<C, P> Plugin for ExtensionPlugin<C, P>
+where
+    C: ExtensionController<P> + Send + Sync + 'static,
+    P: Plugin + Clone + Default + Send + Sync + 'static,
+{
+    fn call(context: ThunkContext) -> CallOutput {
+        context
+            .spawn(|mut tc| async {
+                <Self as CallAsync>::call(&mut tc).await?;
+                Ok(tc)
+            })
+            .into()
     }
 }

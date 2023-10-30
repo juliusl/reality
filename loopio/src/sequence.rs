@@ -1,10 +1,10 @@
-use std::task::Poll;
 use std::collections::VecDeque;
+use std::task::Poll;
 
 use futures_util::FutureExt;
 use reality::prelude::*;
 use tokio::task::JoinHandle;
-use tracing::{trace, error};
+use tracing::{error, trace};
 
 use crate::ext::Ext;
 
@@ -38,7 +38,7 @@ pub struct Sequence {
     /// ThunkContext this sequence is bounded to,
     ///
     #[reality(ignore)]
-    binding: Option<ThunkContext>,
+    pub binding: Option<ThunkContext>,
     /// Current sequence being run,
     ///
     #[reality(ignore)]
@@ -155,60 +155,58 @@ impl std::future::Future for Sequence {
     ) -> Poll<Self::Output> {
         fn address(step: Tagged<Step>) -> String {
             match (step.value(), step.tag()) {
-                (Some(address), None) => {
-                    address.0.to_string()
-                },
-                (Some(address), Some(_)) => {
-                    address.0.to_string()
-                },
-                _ => {
-                    String::new()
-                }
+                (Some(address), None) => address.0.to_string(),
+                (Some(address), Some(_)) => address.0.to_string(),
+                _ => String::new(),
             }
         }
 
         match (self.binding.clone(), self.current.take()) {
-            (Some(binding), None) => {
-                match self.next() {
-                    Some(step) => {
-                        trace!("Starting sequence");
-                        let handle = binding.engine_handle();
-                        self.current =
-                        Some(binding.source.runtime.unwrap().spawn(async move {
-                            handle.unwrap().run(address(step)).await
-                        }));
-                    }
-                    None => {
-                        trace!("Done");
-                        return Poll::Ready(Err(anyhow::anyhow!("Sequence has completed")));
-                    }
+            (Some(binding), None) => match self.next() {
+                Some(step) => {
+                    trace!("Starting sequence");
+                    let handle = binding.engine_handle();
+                    self.current = Some(
+                        binding
+                            .source
+                            .runtime
+                            .unwrap()
+                            .spawn(async move { handle.unwrap().run(address(step)).await }),
+                    );
                 }
-            }
-            (Some(binding), Some(mut current)) => {
-                match current.poll_unpin(cx) {
-                    Poll::Ready(Ok(result)) => match self.next() {
+                None => {
+                    trace!("Done");
+                    return Poll::Ready(Err(anyhow::anyhow!("Sequence has completed")));
+                }
+            },
+            (Some(binding), Some(mut current)) => match current.poll_unpin(cx) {
+                Poll::Ready(Ok(result)) => {
+                    match self.next() {
                         Some(next) => {
                             trace!("Executing next step");
                             let handle = binding.engine_handle();
-                            self.current =  Some(binding.source.runtime.unwrap().spawn(async move {
-                                handle.unwrap().run(address(next)).await
-                            }));
-                        },
+                            self.current =
+                                Some(binding.source.runtime.unwrap().spawn(async move {
+                                    handle.unwrap().run(address(next)).await
+                                }));
+                        }
                         None => return Poll::Ready(result),
-                    },
-                    Poll::Ready(Err(err)) => {
-                        error!("{err}");
-                        return Poll::Ready(Err(err.into()));
-                    },
-                    Poll::Pending => {
-                        trace!("continuing to poll");
-                        self.current = Some(current);
-                    },
+                    }
                 }
-            }
+                Poll::Ready(Err(err)) => {
+                    error!("{err}");
+                    return Poll::Ready(Err(err.into()));
+                }
+                Poll::Pending => {
+                    trace!("continuing to poll");
+                    self.current = Some(current);
+                }
+            },
             _ => {
                 trace!("not bound");
-                return Poll::Ready(Err(anyhow::anyhow!("Sequence has not been bound to a thunk context")));
+                return Poll::Ready(Err(anyhow::anyhow!(
+                    "Sequence has not been bound to a thunk context"
+                )));
             }
         }
 
