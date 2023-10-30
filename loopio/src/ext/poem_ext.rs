@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use poem::delete;
@@ -8,6 +7,8 @@ use poem::get;
 use poem::head;
 use poem::http::HeaderMap;
 use poem::http::*;
+use poem::listener::Acceptor;
+use poem::listener::Listener;
 use poem::listener::TcpListener;
 use poem::patch;
 use poem::post;
@@ -21,11 +22,13 @@ use poem::RequestBody;
 use poem::ResponseParts;
 use poem::Route;
 use reality::prelude::*;
+use tokio_util::either::Either;
 use tracing::error;
 
 use crate::ext::*;
 use crate::operation::Operation;
 use crate::prelude::HyperExt;
+use crate::sequence::Sequence;
 
 pub struct PoemRequest {
     pub path: Path<BTreeMap<String, String>>,
@@ -263,44 +266,72 @@ pub type PathVars = Path<BTreeMap<String, String>>;
 async fn on_proxy(
     req: &poem::Request,
     mut body: Body,
-    operation: Data<&Operation>,
+    operation: Data<&Either<Operation, Sequence>>,
 ) -> poem::Result<poem::Response> {
     let mut body = RequestBody::new(body);
     let path_vars = PathVars::from_request(req, &mut body).await?;
 
-    let mut operation = operation.0.clone();
-    if let Some(context) = operation.context_mut() {
-        let mut storage = context.transient.storage.write().await;
-        storage.put_resource(
-            PoemRequest {
-                path: path_vars,
-                uri: req.uri().clone(),
-                headers: req.headers().clone(),
-                body: Some(body),
-            },
-            None,
-        );
-    }
+    match *operation {
+        Either::Left(op) => {
+            let mut operation = op.clone();
+            if let Some(context) = operation.context_mut() {
+                let mut storage = context.transient.storage.write().await;
+                storage.put_resource(
+                    PoemRequest {
+                        path: path_vars,
+                        uri: req.uri().clone(),
+                        headers: req.headers().clone(),
+                        body: Some(body),
+                    },
+                    None,
+                );
+            }
 
-    let mut context = operation
-        .execute()
-        .await
-        .map_err(|e| poem::Error::from_string(format!("{e}"), StatusCode::INTERNAL_SERVER_ERROR))?;
+            let mut context = operation.execute().await.map_err(|e| {
+                poem::Error::from_string(format!("{e}"), StatusCode::INTERNAL_SERVER_ERROR)
+            })?;
 
-    #[cfg(feature = "hyper-ext")]
-    match context.take_response().await {
-        Some(response) => Ok(response.into()),
-        None => Ok(poem::Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .finish()),
-    }
+            #[cfg(feature = "hyper-ext")]
+            match context.take_response().await {
+                Some(response) => Ok(response.into()),
+                None => Ok(poem::Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .finish()),
+            }
 
-    #[cfg(not(feature = "hyper-ext"))]
-    match (context.take_response_parts(), context.take_body()) {
-        (Some(parts), Some(body)) => Ok(poem::Response::from_parts(parts, body)),
-        _ => Ok(poem::Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .finish()),
+            #[cfg(not(feature = "hyper-ext"))]
+            match (context.take_response_parts(), context.take_body()) {
+                (Some(parts), Some(body)) => Ok(poem::Response::from_parts(parts, body)),
+                _ => Ok(poem::Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .finish()),
+            }
+        }
+        Either::Right(_seq) => {
+            match _seq.clone().await {
+                Ok(mut context) => {
+                    #[cfg(feature = "hyper-ext")]
+                    match context.take_response().await {
+                        Some(response) => Ok(response.into()),
+                        None => Ok(poem::Response::builder()
+                            .status(StatusCode::NOT_FOUND)
+                            .finish()),
+                    }
+        
+                    #[cfg(not(feature = "hyper-ext"))]
+                    match (context.take_response_parts(), context.take_body()) {
+                        (Some(parts), Some(body)) => Ok(poem::Response::from_parts(parts, body)),
+                        _ => Ok(poem::Response::builder()
+                            .status(StatusCode::NOT_FOUND)
+                            .finish()),
+                    }
+                },
+                Err(err) => {
+                    error!("{err}");
+                    Ok(poem::Response::builder().status(StatusCode::NOT_FOUND).finish())
+                }
+            }
+        }
     }
 }
 
@@ -361,9 +392,18 @@ impl CallAsync for EngineProxy {
                 acc.at(route, route_method)
             });
 
-        let listener = TcpListener::bind(&initialized.address);
-        println!("listening on {:?}", initialized.address);
-        poem::Server::new(listener)
+        let listener = TcpListener::bind(&initialized.address)
+            .into_acceptor()
+            .await?;
+        println!(
+            "listening on {:#?}",
+            listener
+                .local_addr()
+                .iter()
+                .map(|l| l.0.to_string())
+                .collect::<Vec<_>>()
+        );
+        poem::Server::new_with_acceptor(listener)
             .run_with_graceful_shutdown(route, context.cancellation.clone().cancelled(), None)
             .await?;
 

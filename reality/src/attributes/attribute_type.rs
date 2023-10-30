@@ -3,6 +3,10 @@ use std::marker::PhantomData;
 use std::ops::DerefMut;
 use std::str::FromStr;
 
+use anyhow::anyhow;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+
 use crate::BlockObject;
 use crate::Visit;
 use crate::VisitMut;
@@ -11,6 +15,8 @@ use super::visit::Field;
 use super::visit::FieldMut;
 use super::AttributeParser;
 use super::StorageTarget;
+use super::visit::FieldPacket;
+use super::visit::FieldPacketType;
 
 /// Trait to implement a type as an AttributeType,
 ///
@@ -382,6 +388,61 @@ where
             offset: FIELD_OFFSET,
             value: self.get_mut(),
         }
+    }
+
+    /// Returns an empty packet for this field,
+    /// 
+    fn empty_packet() -> FieldPacket 
+    where
+        T: FieldPacketType
+    {
+       let mut packet = FieldPacket::new::<T>();
+       packet.field_offset = FIELD_OFFSET;
+       packet
+    }
+
+    /// Returns a new packet w/ data,
+    /// 
+    fn into_packet(data: T) -> FieldPacket 
+    where
+        T: FieldPacketType
+    {
+        let mut data = FieldPacket::new_data(data);
+        data.field_offset = FIELD_OFFSET;
+        data
+    }
+
+    /// Returns a new packet from wire_data,
+    /// 
+    fn from_wire(data: Vec<u8>) -> anyhow::Result<FieldPacket>
+    where
+        T: FieldPacketType + Serialize + DeserializeOwned
+    {
+        let mut _data = None::<T>;
+        {
+            T::from_binary(data, &mut _data)?;
+        }
+
+        if let Some(data) = _data {
+            let mut data = FieldPacket::new_data(data);
+            data.field_offset = FIELD_OFFSET;
+            Ok(data)
+        } else {
+            Err(anyhow!("Did not deserialize bincode for {}", std::any::type_name::<T>()))
+        }
+    }
+
+    /// Returns a field_packet for wire transport,
+    /// 
+    fn to_wire(data: &T) -> anyhow::Result<FieldPacket>
+    where
+        T: FieldPacketType + Serialize + DeserializeOwned
+    {
+        let bincode = bincode::serialize(data)?;
+        let mut data = FieldPacket::new::<T>();
+        data.field_offset = FIELD_OFFSET;
+        data.wire_data = Some(bincode);
+        Ok(data)
     }
 }
 

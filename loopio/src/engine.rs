@@ -71,7 +71,6 @@ impl EngineBuilder {
             }
         });
 
-        // crate::ext::std_ext::Stdio::register(&mut self);
         crate::ext::utility::Utility::register(&mut self);
 
         let runtime = self.runtime_builder.build().unwrap();
@@ -139,6 +138,9 @@ pub struct Engine {
     /// Packet receiver,
     ///
     packet_rx: tokio::sync::mpsc::UnboundedReceiver<EnginePacket>,
+    /// Workspace,
+    /// 
+    workspace: Option<Workspace>,
 }
 
 impl Engine {
@@ -210,6 +212,7 @@ impl Engine {
                 operations: BTreeMap::new(),
             },
             packet_rx: rx,
+            workspace: None,
         }
     }
 
@@ -327,6 +330,7 @@ impl Engine {
             }
         }
 
+        self.workspace = Some(workspace);
         self
     }
 
@@ -384,10 +388,12 @@ impl Engine {
                         let _ = tx.send(result);
                     }
                 }
-                Action::Compile(_) => {
+                Action::Compile { relative, content } => {
                     info!("Compiling content");
-                    // self.load_source(content).await;
-                    // self.compile().await;
+                    if let Some(mut workspace) = self.workspace.take() {
+                        workspace.add_buffer(relative, content);
+                        self = self.compile(workspace).await;
+                    }
                 }
                 Action::Shutdown(delay) => {
                     info!(delay_ms = delay.as_millis(), "Shutdown requested");
@@ -443,7 +449,10 @@ pub enum Action {
     },
     /// Compiles the operations from a project,
     ///
-    Compile(String),
+    Compile {
+        relative: String, 
+        content: String
+    },
     /// Requests the engine to
     ///
     Shutdown(tokio::time::Duration),
@@ -489,9 +498,12 @@ impl EngineHandle {
 
     /// Compiles content,
     ///
-    pub async fn compile(&self, content: impl Into<String>) -> anyhow::Result<()> {
+    pub async fn compile(&self, relative: impl Into<String>, content: impl Into<String>) -> anyhow::Result<()> {
         let packet = EnginePacket {
-            action: Action::Compile(content.into()),
+            action: Action::Compile {
+                relative: relative.into(), 
+                content: content.into()
+            },
         };
 
         self.sender.send(packet)?;

@@ -12,11 +12,11 @@ use crate::{
 
 /// Type-alias for a boxed block provider,
 ///
-type BoxedBlockProvider = Pin<Box<dyn BlockProvider + Unpin>>;
+type BoxedBlockProvider = Pin<Box<dyn BlockProvider + Send + Sync + Unpin>>;
 
 /// Type-alias for a boxed node provider,
 ///
-type BoxedNodeProvider = Pin<Box<dyn NodeProvider + Unpin>>;
+type BoxedNodeProvider = Pin<Box<dyn NodeProvider + Send + Sync + Unpin>>;
 
 /// Runmd parser,
 ///
@@ -41,8 +41,8 @@ impl Parser {
     /// Returns a new empty parser w/ block/node provider,
     ///
     pub fn new(
-        blocks: impl BlockProvider + Unpin + 'static,
-        nodes: impl NodeProvider + Unpin + 'static,
+        blocks: impl BlockProvider + Send + Sync + Unpin + 'static,
+        nodes: impl NodeProvider + Send + Sync + Unpin + 'static,
     ) -> Self {
         Self {
             block_provider: Box::pin(blocks),

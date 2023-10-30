@@ -2,6 +2,11 @@ use async_trait::async_trait;
 use loopio::{engine::Engine, prelude::{StdExt, PoemExt}};
 use reality::{Workspace, prelude::*};
 
+/// ```
+/// <edit(..poem.engine-proxy)>
+/// 
+/// ```
+/// 
 #[tokio::main]
 async fn main() {
     let utility_runmd = r#"
@@ -19,11 +24,16 @@ async fn main() {
 
     + .operation test_poem
     <utility/loopio>
-    <..poem.engine-proxy> localhost:5678
+    <..poem.engine-proxy> localhost:0
     : test          .route test_std_io
     : test_handler  .route test_hyper
     : test          .get /test
     : test_handler  .get /test-handler/:name
+
+    + .sequence start_tests
+    : .next test_std_io
+    : .next test_poem
+    : .loop false
     ```
     "#;
 
@@ -36,9 +46,13 @@ async fn main() {
     let engine = engine.build();
     let engine = engine.compile(workspace).await;
     
-    engine.run("test_std_io").await.unwrap();
-
-    engine.run("test_poem").await.unwrap();
+    let mut s = None;
+    for (seq, _seq) in engine.iter_sequences() {
+        s = Some(_seq.clone());
+        println!("{seq} {:?}", _seq);
+    }
+    tokio::spawn(async move { engine.handle_packets().await });
+    s.unwrap().await.unwrap();
     ()
 }
 
@@ -79,4 +93,3 @@ impl CallAsync for Echo {
         Ok(())
     }
 }
-
