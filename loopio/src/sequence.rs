@@ -153,6 +153,10 @@ impl std::future::Future for Sequence {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Self::Output> {
+        if self.binding.as_ref().map(|b| b.cancellation.is_cancelled()).unwrap_or_default() {
+            return Poll::Ready(Err(anyhow::anyhow!("Shutting down")));
+        }
+
         fn address(step: Tagged<Step>) -> String {
             match (step.value(), step.tag()) {
                 (Some(address), None) => address.0.to_string(),
@@ -198,7 +202,6 @@ impl std::future::Future for Sequence {
                     return Poll::Ready(Err(err.into()));
                 }
                 Poll::Pending => {
-                    trace!("continuing to poll");
                     self.current = Some(current);
                 }
             },

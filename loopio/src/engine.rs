@@ -377,15 +377,25 @@ impl Engine {
     ///
     pub async fn handle_packets(mut self) -> Self {
         while let Some(packet) = self.packet_rx.recv().await {
+            if self.cancellation.is_cancelled() {
+                break;
+            }
+
             info!("Handling packet");
             match packet.action {
                 Action::Run { address, tx } => {
                     info!(address, "Running operation");
-                    let result = self.run(address).await;
-
-                    // TODO: Add a way to queue up failed packets?
-                    if let Some(tx) = tx {
-                        let _ = tx.send(result);
+                    let op = self.operations.get(&address);
+                    if let Some(op) = op.cloned() {
+                        tokio::spawn(async move {
+                            let result = op.execute().await;
+                            // TODO: Add a way to queue up failed packets?
+                            if let Some(tx) = tx {
+                                let _ = tx.send(result);
+                            }
+                        });
+                    } else {
+                        drop(tx);
                     }
                 }
                 Action::Compile { relative, content } => {
@@ -401,10 +411,6 @@ impl Engine {
                     self.cancellation.cancel();
                     break;
                 }
-            }
-
-            if self.cancellation.is_cancelled() {
-                break;
             }
         }
 

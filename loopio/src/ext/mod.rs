@@ -8,6 +8,7 @@ pub mod hyper_ext;
 pub mod poem_ext;
 #[cfg(feature = "std-ext")]
 pub mod std_ext;
+pub mod wire_ext;
 
 /// General extensions for ThunkContext,
 ///

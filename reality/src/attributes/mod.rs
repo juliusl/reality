@@ -109,7 +109,7 @@ mod tests {
     pub struct Test<T: Send + Sync + 'static> {
         /// Name for test,
         ///
-        #[reality(parse=on_name, wire)]
+        #[reality(wire, parse=on_name)]
         name: String,
         /// Author of the test,
         ///
@@ -124,15 +124,15 @@ mod tests {
         _test_vec_of: Vec<String>,
         /// Testing map_of parse macro,
         ///
-        #[reality(map_of=String, wire)]
+        #[reality(wire, map_of=String)]
         _test_map_of: BTreeMap<String, String>,
         /// Testing option_of parse macro,
         ///
-        #[reality(option_of=String, wire)]
+        #[reality(wire, option_of=String)]
         _test_option_of: Option<String>,
         /// Test2
         ///
-        #[reality(attribute_type, wire)]
+        #[reality(wire, attribute_type)]
         _test2: Test2,
         /// Ignored,
         ///

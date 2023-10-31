@@ -349,11 +349,11 @@ macro_rules! create_routes {
                             if let Some(_route) = $rcv.routes.remove(route) {
                                 $rcv
                                     .routes
-                                    .insert(route.to_string(), _route.$ident(on_proxy.data(operation)));
+                                    .insert(route.to_string(), _route.$ident(on_proxy.data(Either::<Operation, Sequence>::Left(operation))));
                             } else {
                                 $rcv
                                     .routes
-                                    .insert(route.to_string(), $ident(on_proxy.data(operation)));
+                                    .insert(route.to_string(), $ident(on_proxy.data(Either::<Operation, Sequence>::Left(operation))));
                             }
                         }
                     }
@@ -406,7 +406,7 @@ impl CallAsync for EngineProxy {
                 .collect::<Vec<_>>()
         );
         poem::Server::new_with_acceptor(listener)
-            .run_with_graceful_shutdown(route, context.cancellation.clone().cancelled(), None)
+            .run_with_graceful_shutdown(route, context.cancellation.child_token().cancelled(), None)
             .await?;
 
         Ok(())

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use async_trait::async_trait;
 use loopio::{engine::Engine, prelude::{StdExt, PoemExt}};
 use reality::{Workspace, prelude::*};
@@ -18,9 +20,9 @@ async fn main() {
     <test>                  Hello World 2
 
     + .operation test_hyper
-    <echo>
-    <utility/loopio>
-    <..hyper.request> http://localhost:5678/test
+    <echo>                                          # Echoes an incoming request, Also schedules a shutdown
+    <utility/loopio>                                # Enable utilities
+    <..hyper.request> http://localhost:5678/test    # Send outbound request
 
     + .operation test_poem
     <utility/loopio>
@@ -52,7 +54,8 @@ async fn main() {
         println!("{seq} {:?}", _seq);
     }
     tokio::spawn(async move { engine.handle_packets().await });
-    s.unwrap().await.unwrap();
+    let r = s.unwrap().await;
+    assert!(r.is_err());
     ()
 }
 
@@ -85,11 +88,16 @@ struct Echo {
 #[async_trait]
 impl CallAsync for Echo {
     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
+        use loopio::prelude::Ext;
         if let Some(req) = context.take_request() {
             println!("{:#?}", req.path);
             println!("{:#?}", req.uri);
             println!("{:#?}", req.headers);
         }
+
+        let handle = context.engine_handle().unwrap();
+        handle.shutdown(Duration::from_secs(4)).await?;
+        
         Ok(())
     }
 }
