@@ -1,7 +1,10 @@
 [package]
 name = "reality"
+description = "Framework for resource management for code operating in a `call by name` context."
+authors = ["juliusl@microsoft.com"]
 version = "0.2.0"
 edition = "2021"
+license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
