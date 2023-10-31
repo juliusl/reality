@@ -348,7 +348,7 @@ impl StructData {
     pub(crate) fn object_type_trait(self) -> TokenStream {
         let name = self.name.clone();
         let original = self.generics.clone();
-        let (_, ty_generics, _) = original.split_for_impl();
+        let (_impl_generics, ty_generics, _) = original.split_for_impl();
         let ty_generics = ty_generics.clone();
         let mut generics = self.generics.clone();
         generics.params.push(
@@ -374,6 +374,34 @@ impl StructData {
             quote_spanned!(f.span=>
                 #ty::register(host); 
             )
+        });
+
+        let to_frame = self.fields.iter().filter(|f| f.wire).map(|f| {
+            let offset = f.offset; 
+            let ty = f.field_ty();
+            let pty = &f.ty;
+            let _name = &f.name;
+            quote_spanned!(f.span=>
+                {
+                    let mut packet = <Self as OnParseField<#offset, #ty>>::into_packet(self.#_name);
+                    packet.owner_name = std::any::type_name::<#name #ty_generics>();
+                    packet.attribute_hash = key.map(|k| k.key());
+                    packet.into_wire::<#pty>()
+                }
+            )
+        });
+
+        let from_frame = self.fields.iter().filter(|f| f.wire).rev().map(|f| {
+            let field_name = f.field_name_lit_str();
+            let ty = &f.ty;
+            quote_spanned!(f.span=>
+                if let Some(field) = frame.pop() {
+                    self.set_field(field.into_field_owned::<#name #ty_generics, #ty>()?);
+                } else {
+                    return Err(anyhow::anyhow!("Expected field packet to be {}", #field_name));
+                }
+            )
+
         });
         
         let plugin = if self.plugin {
@@ -426,6 +454,23 @@ impl StructData {
 
                 fn on_completed(storage: AsyncStorageTarget<Storage::Namespace>) -> Option<AsyncStorageTarget<Storage::Namespace>> {
                     #on_completed
+                }
+            }
+
+            impl #_impl_generics ToFrame for #name #ty_generics #where_clause {
+                fn to_frame(self, key: Option<ResourceKey<Attribute>>) -> Frame {
+                    vec![
+                        #(#to_frame),*
+                    ]
+                }
+            }
+
+            
+            impl #_impl_generics FromFrame for #name #ty_generics #where_clause {
+                fn from_frame(&mut self, mut frame: Frame) -> anyhow::Result<()> {
+                    #(#from_frame)*
+
+                    Ok(())
                 }
             }
 

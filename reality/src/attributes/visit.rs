@@ -1,9 +1,11 @@
 use std::str::FromStr;
 
 use serde::de::DeserializeOwned;
-use serde::de::Visitor;
 use serde::Deserialize;
 use serde::Serialize;
+
+use crate::Attribute;
+use crate::ResourceKey;
 
 /// Field access,
 ///
@@ -59,6 +61,26 @@ pub struct FieldOwned<T> {
     pub value: T,
 }
 
+/// Type-alias for a the frame version of an attribute type,
+///
+pub type Frame = Vec<FieldPacket>;
+
+/// Converts a type to a list of packets,
+///
+pub trait ToFrame {
+    /// Returns the current type as a Frame,
+    ///
+    fn to_frame(self, key: Option<ResourceKey<Attribute>>) -> Frame;
+}
+
+/// Converts from a Frame into some type,
+///
+pub trait FromFrame: Sized {
+    /// Configures self from a frame,
+    ///
+    fn from_frame(&mut self, frame: Frame) -> anyhow::Result<()>;
+}
+
 /// Struct for containing an object safe Field representation,
 ///
 #[derive(Serialize, Deserialize)]
@@ -67,9 +89,6 @@ pub struct FieldPacket {
     ///
     #[serde(skip)]
     pub data: Option<Box<dyn FieldPacketType>>,
-    /// Operation
-    ///
-    pub op_code: OpCode,
     /// Optional, wire data that can be used to create the field packet type,
     ///
     pub wire_data: Option<Vec<u8>>,
@@ -82,70 +101,24 @@ pub struct FieldPacket {
     /// Field offset in the owning type,
     ///
     pub field_offset: usize,
+    /// Type name of the owner of this field,
+    ///
+    pub owner_name: &'static str,
     /// Attribute hash value,
     ///
     pub attribute_hash: Option<u64>,
 }
 
-impl Default for OpCode {
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
-
-impl Serialize for OpCode {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_u32(self.bits() as u32)
-    }
-}
-
-impl<'de> Deserialize<'de> for OpCode {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_u32(OpCode::empty())
-    }
-}
-
-impl<'de> Visitor<'de> for OpCode {
-    type Value = OpCode;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        writeln!(formatter, "Expecting unsigned integer")
-    }
-
-    fn visit_u32<E>(self, v: u32) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        Ok(OpCode::from_bits_truncate(v as usize))
-    }
-}
-
-bitflags::bitflags! {
-    /// Op code bit flags,
-    ///
-    #[derive(Clone, Copy)]
-    pub struct OpCode : usize {
-        /// Read the value of a field and set data,
-        ///
-        const READ = 1;
-        /// Write the value of a from data,
-        ///
-        const WRITE = 1 << 1;
-        /// Use wire_data instead of data,
-        ///
-        const WIRE = 1 << 2;
-        /// Read the value of a field and set wire_data
-        ///
-        const READ_WIRE = OpCode::WIRE.bits() | OpCode::READ.bits();
-        /// Write the value of a field to wire_data
-        ///
-        const WRITE_WIRE = OpCode::WIRE.bits() | OpCode::WRITE.bits();
+impl std::fmt::Debug for FieldPacket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FieldPacket")
+            .field("wire_data", &self.wire_data)
+            .field("data_type_name", &self.data_type_name)
+            .field("data_type_size", &self.data_type_size)
+            .field("field_offset", &self.field_offset)
+            .field("owner_name", &self.owner_name)
+            .field("attribute_hash", &self.attribute_hash)
+            .finish()
     }
 }
 
@@ -157,11 +130,11 @@ impl FieldPacket {
         T: FieldPacketType,
     {
         Self {
-            op_code: OpCode::from_bits_truncate(0),
             wire_data: None,
             data: None,
             data_type_name: std::any::type_name::<T>(),
             data_type_size: std::mem::size_of::<T>(),
+            owner_name: "",
             field_offset: 0,
             attribute_hash: None,
         }
@@ -213,20 +186,6 @@ impl FieldPacket {
         })
     }
 
-    /// Sets the op_code to Write,
-    ///
-    pub fn write(mut self) -> Self {
-        self.op_code = OpCode::WRITE;
-        self
-    }
-
-    /// Sets the op_code to Read,
-    ///
-    pub fn read(mut self) -> Self {
-        self.op_code = OpCode::READ;
-        self
-    }
-
     /// Converts packet into wire mode,
     ///
     pub fn into_wire<T>(self) -> FieldPacket
@@ -234,13 +193,13 @@ impl FieldPacket {
         T: FieldPacketType + Sized + Serialize + DeserializeOwned,
     {
         let mut packet = FieldPacket {
-            op_code: self.op_code | OpCode::WIRE,
             data: None,
             data_type_name: std::any::type_name::<T>(),
             data_type_size: std::mem::size_of::<T>(),
             field_offset: self.field_offset,
             attribute_hash: self.attribute_hash,
             wire_data: None,
+            owner_name: self.owner_name,
         };
 
         packet.wire_data = self.into_box::<T>().and_then(|d| d.to_binary().ok());
@@ -253,6 +212,35 @@ impl FieldPacket {
         self.field_offset = field_offset;
         self.attribute_hash = attribute;
         self
+    }
+
+    /// Convert the packet into it's owned field,
+    /// 
+    pub fn into_field_owned<O, T>(mut self) -> anyhow::Result<FieldOwned<T>>
+    where
+        T: Serialize + DeserializeOwned + FieldPacketType,
+    {
+        if let Some(data) = self.wire_data.clone() {
+            let mut output = None;
+            T::from_binary(data, &mut output)?;
+
+            if let Some(data) = output {
+                self.data = Some(Box::new(data));
+            }
+        }
+
+        let name = self.data_type_name;
+        let offset = self.field_offset;
+        if let Some(value) = self.into_box::<T>() {
+            Ok(FieldOwned {
+                value: *value,
+                owner: std::any::type_name::<O>(),
+                name,
+                offset,
+            })
+        } else {
+            Err(anyhow::anyhow!("Could not convert frame into type"))
+        }
     }
 }
 
@@ -315,7 +303,7 @@ pub trait SetField<T> {
 
 impl<T> FieldPacketType for T
 where
-    T: FromStr + Serialize + DeserializeOwned + Send + Sync + 'static,
+    T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
 {
     fn from_str(str: &str, dest: &mut Option<Self>) -> anyhow::Result<()>
     where
@@ -382,10 +370,7 @@ mod tests {
         assert!(packet.is_none());
 
         let packet = crate::attributes::visit::FieldPacket::new_data(String::from("Hello World"));
-        let packet = packet
-            .write()
-            .route(0, None)
-            .into_wire::<String>();
+        let packet = packet.route(0, None).into_wire::<String>();
         println!("{:?}", packet.wire_data);
     }
 }

@@ -403,9 +403,9 @@ where
 
     /// Returns a new packet w/ data,
     /// 
-    fn into_packet(data: T) -> FieldPacket 
+    fn into_packet(data: Self::ProjectedType) -> FieldPacket 
     where
-        T: FieldPacketType
+        Self::ProjectedType: FieldPacketType
     {
         let mut data = FieldPacket::new_data(data);
         data.field_offset = FIELD_OFFSET;

@@ -26,6 +26,11 @@ pub mod prelude {
     pub use super::visit::SetField;
     pub use super::visit::Visit;
     pub use super::visit::VisitMut;
+    pub use super::visit::ToFrame;
+    pub use super::visit::FromFrame;
+    pub use super::visit::FieldPacket;
+    pub use super::visit::FieldPacketType;
+    pub use super::visit::Frame;
 
     /// Returns fields for an attribute type,
     ///
@@ -87,6 +92,7 @@ mod tests {
     use super::*;
     use crate::BlockObject;
     use reality_derive::Reality;
+    use serde::{Serialize, Deserialize};
 
     pub mod reality {
         pub use crate::prelude;
@@ -103,7 +109,7 @@ mod tests {
     pub struct Test<T: Send + Sync + 'static> {
         /// Name for test,
         ///
-        #[reality(parse=on_name)]
+        #[reality(parse=on_name, wire)]
         name: String,
         /// Author of the test,
         ///
@@ -118,15 +124,15 @@ mod tests {
         _test_vec_of: Vec<String>,
         /// Testing map_of parse macro,
         ///
-        #[reality(map_of=String)]
+        #[reality(map_of=String, wire)]
         _test_map_of: BTreeMap<String, String>,
         /// Testing option_of parse macro,
         ///
-        #[reality(option_of=String)]
+        #[reality(option_of=String, wire)]
         _test_option_of: Option<String>,
         /// Test2
         ///
-        #[reality(attribute_type)]
+        #[reality(attribute_type, wire)]
         _test2: Test2,
         /// Ignored,
         ///
@@ -159,7 +165,7 @@ mod tests {
         }
     }
 
-    #[derive(Default, Debug)]
+    #[derive(Serialize, Deserialize, Clone, Default, Debug)]
     pub struct Test2 {}
 
     impl<S: StorageTarget + Send + Sync + 'static> AttributeType<S> for Test2 {
@@ -191,16 +197,23 @@ mod tests {
     #[test]
     fn test_visit() {
         let mut test = Test::<String>::default();
-
         let fields = <Test<String> as VisitMut<BTreeMap<String, String>>>::visit_mut(&mut test);
         println!("{:#?}", fields);
-
         test.set_field(FieldOwned {
             owner: std::any::type_name::<Test<String>>(),
             name: "name",
             offset: 0,
             value: String::from("hello-set-field"),
         });
+        
         assert_eq!("hello-set-field", test.name.as_str());
+        let frames = test.to_frame(None); 
+        // .drain(..).fold(vec![], |mut acc, v| {
+        //     acc.push(v.into_wire());
+        //     acc
+        // });
+        for frame in frames {
+            println!("{:?}", frame);
+        }
     }
 }

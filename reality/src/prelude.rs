@@ -1,5 +1,6 @@
 pub use crate::derive::Reality;
 pub use crate::derive::AttributeType;
+pub use crate::Attribute;
 pub use crate::AttributeType;
 pub use crate::StorageTarget;
 pub use crate::AttributeParser;
@@ -18,6 +19,11 @@ pub use crate::ResourceKey;
 pub use crate::ResourceKeyHashBuilder;
 pub use crate::Visit;
 pub use crate::VisitMut;
+pub use crate::Frame;
+pub use crate::FromFrame;
+pub use crate::ToFrame;
+pub use crate::FieldPacket;
+pub use crate::FieldPacketType;
 pub use crate::Field;
 pub use crate::FieldMut;
 pub use crate::FieldOwned;

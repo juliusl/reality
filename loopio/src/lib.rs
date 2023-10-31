@@ -32,9 +32,9 @@ mod tests {
         #[reality(derive_fromstr)]
         _process: String,
         name: String,
-        #[reality(map_of=String)]
+        #[reality(map_of=String, wire)]
         env: BTreeMap<String, String>,
-        #[reality(vec_of=String)]
+        #[reality(vec_of=String, wire)]
         args: Vec<String>,
     }
 
@@ -75,6 +75,12 @@ mod tests {
         async fn call(tc: &mut ThunkContext) -> anyhow::Result<()> {
             let _initialized = tc.initialized::<TestPlugin>().await;
             println!("Initialized as -- {:?} {:?}", _initialized, tc.attribute.map(|a| a.key()));
+
+            if tc.variant_id.is_some() {
+                let frame = _initialized.to_frame(tc.attribute.clone());
+                println!("{:?}", frame);
+            }
+            
             Ok(())
         }
     }

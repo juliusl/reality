@@ -72,7 +72,9 @@ pub(crate) struct StructField {
     /// Location of this field,
     ///
     pub span: Span,
-
+    /// Allow field to be handled as wire-data,
+    /// 
+    pub wire: bool,
     pub offset: usize,
 }
 
@@ -210,6 +212,7 @@ impl Parse for StructField {
         let mut derive_fromstr = false;
         let mut ext = false;
         let mut plugin = false;
+        let mut wire = false;
         let span = input.span();
 
         let visibility = input.parse::<Visibility>().ok();
@@ -221,6 +224,9 @@ impl Parse for StructField {
         let ty = input.parse::<Type>()?;
 
         for attribute in attributes {
+            if attribute.path().is_ident("skip") {
+                ignore = true;
+            }
             // #[reality(ignore, rename = "SOME_NAME")]
             if attribute.path().is_ident("reality") {
                 attribute.parse_nested_meta(|meta| {
@@ -311,6 +317,7 @@ impl Parse for StructField {
 
                     ext = meta.path.is_ident("ext"); 
                     plugin = meta.path.is_ident("plugin");
+                    wire = meta.path.is_ident("wire");
 
                     if meta.path.is_ident("derive_fromstr") {
                         derive_fromstr = true;
@@ -332,6 +339,7 @@ impl Parse for StructField {
             attribute_type,
             ext,
             plugin,
+            wire,
             span,
             ignore,
             visibility,

@@ -29,7 +29,7 @@ impl<T: FromStr + Send + Sync + 'static> Tagged<T> {
     }
 
     /// Returns the value of this tag,
-    /// 
+    ///
     pub fn tag(&self) -> Option<&String> {
         self.tag.as_ref()
     }

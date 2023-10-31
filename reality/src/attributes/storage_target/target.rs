@@ -62,7 +62,7 @@ pub trait StorageTarget {
         // store addr as a key,
     }
 
-    fn remove_resource_at(&mut self, key: ResourceKey<Attribute>) -> bool {
+    fn remove_resource_at(&mut self, _key: ResourceKey<Attribute>) -> bool {
         false
     }
 
