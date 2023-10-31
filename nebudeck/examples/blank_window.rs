@@ -1,11 +1,7 @@
-use loopio::engine::Engine;
+use loopio::prelude::*;
 use nebudeck::desktop::*;
 use nebudeck::ControlBus;
-use reality::Project;
-use reality::Shared;
-use reality::StorageTarget;
 use winit::event_loop::ControlFlow;
-use winit::event_loop::EventLoopWindowTarget;
 use winit::window::Window;
 use winit::window::WindowId;
 
@@ -38,7 +34,8 @@ impl DesktopApp<()> for BlankWindow {
         window
     }
 
-    fn on_window_redraw(&mut self, _: WindowId, _: &EventLoopWindowTarget<()>, window: &Window) {
+    fn on_window_redraw(&mut self, _: WindowId, desktop: &DesktopContext<()>) {
+        let window = desktop.window;
         /// Copied from winit examples
         ///
         fn fill_window(window: &Window) {
@@ -114,7 +111,7 @@ impl DesktopApp<()> for BlankWindow {
         fill_window(window);
     }
 
-    fn after_event(&mut self, window_target: &EventLoopWindowTarget<()>, _: &Window) {
-        window_target.set_control_flow(ControlFlow::Poll);
+    fn after_event(&mut self, desktop: &DesktopContext<()>) {
+        desktop.event_loop_target.set_control_flow(ControlFlow::Poll);
     }
 }

@@ -6,7 +6,8 @@ pub use crate::ext::poem_ext::*;
 
 #[cfg(feature="std-ext")]
 pub use crate::ext::std_ext::*;
-
 pub use crate::ext::*;
+
+pub use crate::engine::Engine;
 
 pub use reality::prelude::*;

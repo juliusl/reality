@@ -14,7 +14,9 @@ use crate::Controller;
 use crate::BackgroundWork;
 use crate::controller::ControlBus;
 
-/// Desktop,
+/// This controller provides access to winit Windowing system and event loop,
+/// 
+/// This controller can be used to build a desktop app.
 /// 
 pub struct Desktop<T>
 where
@@ -51,32 +53,33 @@ impl<T: 'static> Desktop<T> {
                 app.before_event_loop(&window);
 
                 let _ = event_loop.run(move |event, window_target| {
-                    app.before_event(window_target, &window);
+                    let desktop = DesktopContext{ window: &window, event_loop_target: window_target};
+                    app.before_event(&desktop);
 
                     match event {
-                        winit::event::Event::NewEvents(start_cause) => app.on_new_events(start_cause),
+                        winit::event::Event::NewEvents(start_cause) => app.on_new_events(start_cause, &desktop),
                         winit::event::Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
                             window_target.exit();
                         },             
                         winit::event::Event::WindowEvent { event: WindowEvent::RedrawRequested, window_id } => {
                             window.pre_present_notify();
-                            app.on_window_redraw(window_id, window_target, &window);
-                            app.on_window_event(window_id, WindowEvent::RedrawRequested, &window);
+                            app.on_window_redraw(window_id, &desktop);
+                            app.on_window_event(window_id, WindowEvent::RedrawRequested, &desktop);
                         },
-                        winit::event::Event::WindowEvent { window_id, event } => app.on_window_event(window_id, event, &window),
-                        winit::event::Event::DeviceEvent { device_id, event } => app.on_device_event(device_id, event),
-                        winit::event::Event::UserEvent(user_event) => app.on_user_event(user_event),
-                        winit::event::Event::Suspended => app.on_suspended(),
-                        winit::event::Event::Resumed => app.on_resumed(),
+                        winit::event::Event::WindowEvent { window_id, event } => app.on_window_event(window_id, event, &desktop),
+                        winit::event::Event::DeviceEvent { device_id, event } => app.on_device_event(device_id, event, &desktop),
+                        winit::event::Event::UserEvent(user_event) => app.on_user_event(user_event, &desktop),
+                        winit::event::Event::Suspended => app.on_suspended(&desktop),
+                        winit::event::Event::Resumed => app.on_resumed(&desktop),
                         winit::event::Event::AboutToWait => {
-                            app.on_about_to_wait();
+                            app.on_about_to_wait(&desktop);
                             window.request_redraw();
                         },
-                        winit::event::Event::LoopExiting => app.on_loop_exiting(),
-                        winit::event::Event::MemoryWarning => app.on_memory_warning(),
+                        winit::event::Event::LoopExiting => app.on_loop_exiting(&desktop),
+                        winit::event::Event::MemoryWarning => app.on_memory_warning(&desktop),
                     }
 
-                    app.after_event(window_target, &window);
+                    app.after_event(&desktop);
                 });
             } else {
                 error!("Could not open window");
@@ -93,6 +96,17 @@ impl<T: 'static, A: DesktopApp<T>> Controller<A> for Desktop<T> {
 
         None
     }
+}
+
+/// Context during event loop w/ access to winit primitives,
+/// 
+pub struct DesktopContext<'a, UserEvent: 'static> {
+    /// Winit Window handle,
+    /// 
+    pub window: &'a Window,
+    /// Winit event loop target handle,
+    /// 
+    pub event_loop_target: &'a EventLoopWindowTarget<UserEvent>
 }
 
 /// Winit based event loop handler for desktop apps,
@@ -115,73 +129,73 @@ pub trait DesktopApp<T: 'static>: ControlBus {
 
     /// Called before an event in the event loop is handled,
     /// 
-    fn before_event(&mut self, window_target: &EventLoopWindowTarget<T>, window: &Window) {
+    fn before_event(&mut self, context: &DesktopContext<T>) {
 
     }
 
     /// Called on `winit::event::Event::NewEvents`,
     /// 
-    fn on_new_events(&mut self, start_cause: StartCause) {
+    fn on_new_events(&mut self, start_cause: StartCause, context: &DesktopContext<T>) {
         
     }
 
     /// Called on `winit::event::Event::WindowEvent`
     /// 
-    fn on_window_event(&mut self, window_id: WindowId, window_event: WindowEvent, window: &Window) {
+    fn on_window_event(&mut self, window_id: WindowId, event: WindowEvent, context: &DesktopContext<T>) {
 
     }
 
     /// Called before `winit::event::Event::WindowEvent`
     /// 
-    fn on_window_redraw(&mut self, window_id: WindowId, window_target: &EventLoopWindowTarget<T>, window: &Window) {
+    fn on_window_redraw(&mut self, window_id: WindowId, context: &DesktopContext<T>) {
 
     }
 
     /// Called on `winit::event::Event::DeviceEvent`
     /// 
-    fn on_device_event(&mut self, window_id: DeviceId, window_event: DeviceEvent) {
+    fn on_device_event(&mut self, window_id: DeviceId, window_event: DeviceEvent, context: &DesktopContext<T>) {
 
     }
 
     /// Called on `winit::event::Event::UserEvent`
     /// 
-    fn on_user_event(&mut self, user: T) {
+    fn on_user_event(&mut self, user: T, context: &DesktopContext<T>) {
 
     }
 
     /// Called on `winit::event::Event::Suspended`
     /// 
-    fn on_suspended(&mut self) {
+    fn on_suspended(&mut self, context: &DesktopContext<T>) {
 
     }
 
     /// Called on `winit::event::Event::Resumed`
     /// 
-    fn on_resumed(&mut self) {
+    fn on_resumed(&mut self, context: &DesktopContext<T>) {
 
     }
 
     /// Called on `winit::event::Event::AboutToWait`
     /// 
-    fn on_about_to_wait(&mut self) {
+    fn on_about_to_wait(&mut self, context: &DesktopContext<T>) {
 
     }
 
     /// Called on `winit::event::Event::LoopExiting`
     /// 
-    fn on_loop_exiting(&mut self) {
+    fn on_loop_exiting(&mut self, context: &DesktopContext<T>) {
 
     }
 
     /// Called on `winit::event::Event::MemoryWarning`
     /// 
-    fn on_memory_warning(&mut self) {
+    fn on_memory_warning(&mut self, context: &DesktopContext<T>) {
 
     }
 
     /// Called after the event_loop event is handled,
     /// 
-    fn after_event(&mut self, window_target: &EventLoopWindowTarget<T>, window: &Window) {
+    fn after_event(&mut self, context: &DesktopContext<T>) {
 
     }
 }
