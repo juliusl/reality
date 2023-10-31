@@ -384,7 +384,7 @@ impl StructData {
             quote_spanned!(f.span=>
                 {
                     let mut packet = <Self as OnParseField<#offset, #ty>>::into_packet(self.#_name);
-                    packet.owner_name = std::any::type_name::<#name #ty_generics>();
+                    packet.owner_name = std::any::type_name::<#name #ty_generics>().to_string();
                     packet.attribute_hash = key.map(|k| k.key());
                     packet.into_wire::<#pty>()
                 }

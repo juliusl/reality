@@ -94,7 +94,7 @@ pub struct FieldPacket {
     pub wire_data: Option<Vec<u8>>,
     /// Name of the type of data included
     ///
-    pub data_type_name: &'static str,
+    pub data_type_name: String,
     /// Size of the type of data,
     ///
     pub data_type_size: usize,
@@ -103,7 +103,7 @@ pub struct FieldPacket {
     pub field_offset: usize,
     /// Type name of the owner of this field,
     ///
-    pub owner_name: &'static str,
+    pub owner_name: String,
     /// Attribute hash value,
     ///
     pub attribute_hash: Option<u64>,
@@ -132,9 +132,9 @@ impl FieldPacket {
         Self {
             wire_data: None,
             data: None,
-            data_type_name: std::any::type_name::<T>(),
+            data_type_name: std::any::type_name::<T>().to_string(),
             data_type_size: std::mem::size_of::<T>(),
-            owner_name: "",
+            owner_name: String::new(),
             field_offset: 0,
             attribute_hash: None,
         }
@@ -194,12 +194,12 @@ impl FieldPacket {
     {
         let mut packet = FieldPacket {
             data: None,
-            data_type_name: std::any::type_name::<T>(),
+            data_type_name: std::any::type_name::<T>().to_string(),
             data_type_size: std::mem::size_of::<T>(),
             field_offset: self.field_offset,
             attribute_hash: self.attribute_hash,
             wire_data: None,
-            owner_name: self.owner_name,
+            owner_name: self.owner_name.to_string(),
         };
 
         packet.wire_data = self.into_box::<T>().and_then(|d| d.to_binary().ok());
@@ -229,13 +229,13 @@ impl FieldPacket {
             }
         }
 
-        let name = self.data_type_name;
+        
         let offset = self.field_offset;
         if let Some(value) = self.into_box::<T>() {
             Ok(FieldOwned {
                 value: *value,
                 owner: std::any::type_name::<O>(),
-                name,
+                name: std::any::type_name::<T>(),
                 offset,
             })
         } else {
