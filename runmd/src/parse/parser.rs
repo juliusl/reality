@@ -156,18 +156,15 @@ impl Parser {
         block_info: BlockInfo<'_>,
     ) {
         if let Some(last) = self.graph.last_mut() {
+            last.set_info(
+                node_info.clone(), 
+                block_info
+            );
             if let Some(ext) = node_info.line.extension.as_ref() {
-                if let Some(mut ext) = last
+                if let Some(ext) = last
                     .load_extension(ext.type_name().as_str(), ext.input.clone().map(|i| i.input_str()))
                     .await
                 {
-                    {
-                        let node = ext.deref_mut();
-                        node.set_info(
-                            node_info,
-                            block_info,
-                        );
-                    }
                     self.graph.push(ext);
                 } else {
                     panic!("Could not load extension");

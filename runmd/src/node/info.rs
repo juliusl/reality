@@ -17,3 +17,11 @@ pub struct Info<'a> {
     /// 
     pub span: Option<logos::Span>,
 }
+
+impl Info<'_> {
+    /// Returns the comment from the line if one is set,
+    /// 
+    pub fn get_comment(&self) -> Option<String> {
+        self.line.comment.map(|s| s.to_string())
+    }
+}
