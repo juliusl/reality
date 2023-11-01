@@ -20,7 +20,7 @@ pub trait Ext {
 
 impl Ext for ThunkContext {
     fn engine_handle(&self) -> Option<EngineHandle> {
-        self.source
+        self.node
             .storage
             .try_read()
             .ok()

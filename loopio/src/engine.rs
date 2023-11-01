@@ -120,6 +120,11 @@ pub struct Engine {
     /// Cancelled when the engine is dropped,
     ///
     pub cancellation: CancellationToken,
+    /// Host storage,
+    /// 
+    /// All thunk contexts produced by this engine will share this storage target.
+    /// 
+    host: AsyncStorageTarget<Shared>,
     /// Plugins to register w/ the Project
     ///
     plugins: Vec<reality::BlockPlugin<Shared>>,
@@ -202,6 +207,7 @@ impl Engine {
         let (sender, rx) = tokio::sync::mpsc::unbounded_channel();
 
         Engine {
+            host: Shared::default().into_thread_safe_with(runtime.handle().clone()),
             plugins,
             runtime: Some(runtime),
             cancellation: CancellationToken::new(),
@@ -230,6 +236,7 @@ impl Engine {
                 .map(|r| r.handle().clone())
                 .expect("should have a runtime"),
         ));
+        context.host = Some(self.host.clone());
         context.cancellation = self.cancellation.child_token();
         context
     }

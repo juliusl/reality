@@ -15,9 +15,12 @@ use super::prelude::*;
 /// Struct containing shared context between plugins,
 ///
 pub struct Context {
-    /// Source storage mapping to this context,
+    /// Host storage mapping to this context,
+    /// 
+    pub host: Option<AsyncStorageTarget<Shared>>,
+    /// Node storage mapping to this context,
     ///
-    pub source: AsyncStorageTarget<Shared>,
+    pub node: AsyncStorageTarget<Shared>,
     /// Transient storage target,
     ///
     pub transient: AsyncStorageTarget<Shared>,
@@ -36,7 +39,8 @@ impl From<AsyncStorageTarget<Shared>> for Context {
     fn from(value: AsyncStorageTarget<Shared>) -> Self {
         let handle = value.runtime.clone().expect("should have a runtime");
         Self {
-            source: value,
+            host: None,
+            node: value,
             attribute: None,
             transient: Shared::default().into_thread_safe_with(handle),
             cancellation: CancellationToken::new(),
@@ -48,7 +52,8 @@ impl From<AsyncStorageTarget<Shared>> for Context {
 impl Clone for Context {
     fn clone(&self) -> Self {
         Self {
-            source: self.source.clone(),
+            host: self.host.clone(),
+            node: self.node.clone(),
             attribute: self.attribute.clone(),
             transient: self.transient.clone(),
             cancellation: self.cancellation.clone(),
@@ -73,14 +78,14 @@ impl Context {
     /// Reset the transient storage,
     ///
     pub fn reset(&mut self) {
-        let handle = self.source.runtime.clone().expect("should have a runtime");
+        let handle = self.node.runtime.clone().expect("should have a runtime");
         self.transient = Shared::default().into_thread_safe_with(handle);
     }
 
     /// Calls the thunk fn related to this context,
     ///
     pub async fn call(&self) -> anyhow::Result<Option<Context>> {
-        let _storage = self.source.storage.read().await;
+        let _storage = self.node.storage.read().await;
         let storage = _storage.clone();
         let _thunk = storage.resource::<ThunkFn>(self.attribute.map(|a| a.transmute()));
         let thunk = _thunk.as_deref().cloned();
@@ -99,24 +104,47 @@ impl Context {
         self.attribute = Some(attribute);
     }
 
+    
     /// Get read access to source storage,
     ///
-    pub async fn source(&self) -> tokio::sync::RwLockReadGuard<Shared> {
-        self.source.storage.read().await
+    pub async fn node(&self) -> tokio::sync::RwLockReadGuard<Shared> {
+        self.node.storage.read().await
+    }
+
+    /// Get mutable access to host storage,
+    ///
+    /// **Note**: Marked unsafe because will mutate the host storage. Host storage is shared by all contexts associated to a specific host.
+    ///
+    pub async unsafe fn host_mut(&self) -> Option<tokio::sync::RwLockWriteGuard<Shared>> {
+        if let Some(host) = self.host.as_ref() {
+            Some(host.storage.write().await)
+        } else {
+            None
+        }
+    }
+
+    /// Get read access to host storage,
+    ///
+    pub async fn host(&self) -> Option<tokio::sync::RwLockReadGuard<Shared>> {
+        if let Some(host) = self.host.as_ref() {
+            Some(host.storage.read().await)
+        } else {
+            None
+        }
     }
 
     /// Get mutable access to source storage,
     ///
     /// **Note**: Marked unsafe because will mutate the source storage. Source storage is re-used on each execution.
     ///
-    pub async unsafe fn source_mut(&self) -> tokio::sync::RwLockWriteGuard<Shared> {
-        self.source.storage.write().await
+    pub async unsafe fn node_mut(&self) -> tokio::sync::RwLockWriteGuard<Shared> {
+        self.node.storage.write().await
     }
 
     /// Tries to get access to source storage,
     ///
     pub fn try_source(&self) -> Option<tokio::sync::RwLockReadGuard<Shared>> {
-        self.source.storage.try_read().ok()
+        self.node.storage.try_read().ok()
     }
 
     /// (unsafe) Tries to get mutable access to source storage,
@@ -124,7 +152,7 @@ impl Context {
     /// **Note**: Marked unsafe because will mutate the source storage. Source storage is re-used on each execution.
     ///
     pub unsafe fn try_source_mut(&mut self) -> Option<tokio::sync::RwLockWriteGuard<Shared>> {
-        self.source.storage.try_write().ok()
+        self.node.storage.try_write().ok()
     }
 
     /// Returns the transient storage target,
@@ -149,7 +177,7 @@ impl Context {
     where
         F: Future<Output = anyhow::Result<Context>> + Send + 'static,
     {
-        self.source
+        self.node
             .runtime
             .clone()
             .as_ref()
@@ -175,7 +203,7 @@ impl Context {
     pub async fn initialized<P: BlockObject<Shared> + Default + Clone + Sync + Send + 'static>(
         &self,
     ) -> P {
-        self.source
+        self.node
             .storage
             .read()
             .await
@@ -192,7 +220,7 @@ impl Context {
     >(
         &self,
     ) -> Option<crate::Extension<C, P>> {
-        self.source
+        self.node
             .storage
             .read()
             .await
@@ -205,7 +233,7 @@ impl Context {
     pub(crate) fn garbage_collect(&self) {
         match (self.attribute, self.variant_id) {
             (Some(key), Some(_)) => {
-                if let Ok(storage) = self.source.storage.try_read() {
+                if let Ok(storage) = self.node.storage.try_read() {
                     storage.lazy_dispatch_mut(move |s| {
                         debug!(key=key.key(), "Garbage collection");
                         s.remove_resource_at(key);

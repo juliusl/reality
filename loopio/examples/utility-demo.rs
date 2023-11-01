@@ -20,13 +20,14 @@ async fn main() {
     <test>                  Hello World 2
 
     + .operation test_hyper
-    <echo>                                          # Echoes an incoming request, Also schedules a shutdown
-    <utility/loopio>                                # Enable utilities
-    <..hyper.request> http://localhost:5678/test    # Send outbound request
+    <echo>                                              # Echoes an incoming request, Also schedules a shutdown
+    <utility/loopio>                                    # Enable utilities
+    <..hyper.request> http://test-engine-proxy/test     # Send outbound request
 
     + .operation test_poem
     <utility/loopio>
     <..poem.engine-proxy> localhost:0
+    : .alias http://test-engine-proxy
     : test          .route test_std_io
     : test_handler  .route test_hyper
     : test          .get /test

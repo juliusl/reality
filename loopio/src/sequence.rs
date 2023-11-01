@@ -122,7 +122,7 @@ impl Sequence {
     ///
     pub fn next(&mut self) -> Option<Tagged<Step>> {
         if let Some(tc) = self.binding.as_mut() {
-            let mut storage = tc.source.storage.try_write().unwrap();
+            let mut storage = tc.node.storage.try_write().unwrap();
             storage.drain_dispatch_queues();
         }
 
@@ -172,7 +172,7 @@ impl std::future::Future for Sequence {
                     let handle = binding.engine_handle();
                     self.current = Some(
                         binding
-                            .source
+                            .node
                             .runtime
                             .unwrap()
                             .spawn(async move { handle.unwrap().run(address(step)).await }),
@@ -190,7 +190,7 @@ impl std::future::Future for Sequence {
                             trace!("Executing next step");
                             let handle = binding.engine_handle();
                             self.current =
-                                Some(binding.source.runtime.unwrap().spawn(async move {
+                                Some(binding.node.runtime.unwrap().spawn(async move {
                                     handle.unwrap().run(address(next)).await
                                 }));
                         }

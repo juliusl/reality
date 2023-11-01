@@ -64,8 +64,11 @@ impl Operation {
     /// Executes the operation,
     /// 
     pub async fn execute(&self) -> anyhow::Result<ThunkContext> {
-        if let Some(context) = self.context.clone() {
-            let node = reality::Node(context.source.storage.clone());
+        if let Some(mut context) = self.context.clone() {
+            // Ensure transient storage is empty
+            context.reset();
+
+            let node = reality::Node(context.node.storage.clone());
 
             node
                 .stream_attributes()
@@ -77,7 +80,7 @@ impl Operation {
                             let mut storage = tc.transient.storage.write().await;
                             storage.drain_dispatch_queues();
                             
-                            let mut storage = tc.source.storage.write().await;
+                            let mut storage = tc.node.storage.write().await;
                             storage.drain_dispatch_queues();
                         }
 
@@ -95,7 +98,6 @@ impl Operation {
         } else {
             Err(anyhow!("Could not execute operation, "))
         }
-        
     }
 }
 

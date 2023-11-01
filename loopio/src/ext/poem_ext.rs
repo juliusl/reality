@@ -198,6 +198,10 @@ pub struct EngineProxy {
     ///
     #[reality(derive_fromstr)]
     address: String,
+    /// If set, maps this alias to the address of this proxy
+    /// 
+    #[reality(option_of=String)]
+    alias: Option<String>,
     /// Adds a route for a HEAD request,
     ///
     #[reality(vec_of=Tagged<String>)]
@@ -251,6 +255,7 @@ impl Clone for EngineProxy {
     fn clone(&self) -> Self {
         Self {
             address: self.address.clone(),
+            alias: self.alias.clone(),
             head: self.head.clone(),
             get: self.get.clone(),
             post: self.post.clone(),
@@ -378,7 +383,6 @@ impl CallAsync for EngineProxy {
         );
 
         let operations = context.engine_handle().clone();
-
         assert!(operations.is_some());
         let operations = operations.unwrap().operations.clone();
 
@@ -400,6 +404,33 @@ impl CallAsync for EngineProxy {
         let listener = TcpListener::bind(&initialized.address)
             .into_acceptor()
             .await?;
+
+        // If `alias` is set, register the proxy to that alias
+        if let (Some(addr), Some((Some(scheme), Some(alias)))) = (
+            listener.local_addr().first(),
+            initialized
+                .alias
+                .and_then(|a| a.parse::<Uri>().ok())
+                .map(|u| (u.scheme().cloned(), u.host().map(|h| h.to_string()))),
+        ) {
+            let port = addr.0.as_socket_addr().unwrap().port();
+            let replace_with = Uri::builder()
+                .scheme("http")
+                .authority(format!("localhost:{}", port))
+                .path_and_query("/")
+                .build();
+            let alias = Uri::builder()
+                .scheme(scheme)
+                .authority(alias)
+                .path_and_query("/")
+                .build();
+
+            println!("Adding alias: {:?} -> {:?}", alias, replace_with);
+            context
+                .register_internal_host_alias(alias?, replace_with?)
+                .await;
+        }
+
         println!(
             "listening on {:#?}",
             listener
@@ -440,8 +471,8 @@ async fn handle_remote_frame<T: FromFrame + Clone + Send + Sync + 'static>(
                 .from_frame(packets)
                 .map_err(|e| poem::Error::from_string(format!("{e}"), StatusCode::BAD_REQUEST))?;
             let (_variant, branch) = thunk_context.branch();
-            unsafe { 
-                let mut source = branch.source_mut().await;
+            unsafe {
+                let mut source = branch.node_mut().await;
                 source.put_resource(initialized, branch.attribute.map(|t| t.transmute()));
             }
             let _result = branch.call().await.unwrap();

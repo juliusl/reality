@@ -138,7 +138,7 @@ where
         };
 
         unsafe {
-            let mut source = context.source_mut().await;
+            let mut source = context.node_mut().await;
             source.put_resource(initialized, context.attribute.map(|a| a.transmute()));
 
             // Track variants that branched from this point
