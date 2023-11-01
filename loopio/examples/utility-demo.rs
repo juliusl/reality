@@ -12,9 +12,9 @@ async fn main() {
     ```runmd
     + .operation test_std_io
     <utility/loopio.ext.std.io>
-    <..println>             Hello World
-    <..read_text_file>      loopio/examples/test.txt
-    <test>                  Hello World 2
+    <..println>             Hello World                     # Prints a new line
+    <..read_text_file>      loopio/examples/test.txt        # Read a text file into transient storage
+    <test>                  Hello World 2                   # Verifies the file
 
     + .operation test_hyper
     <echo>                                                   # Echoes an incoming request, Also schedules a shutdown
@@ -56,7 +56,9 @@ async fn main() {
     let engine = engine.compile(workspace).await;
     
     let host = engine.get_host("testhost").expect("should have host");
-    tokio::spawn(async move { engine.handle_packets().await });
+    tokio::spawn(async move { 
+        engine.handle_packets().await 
+    });
    
     let result = host.start().await;
     assert!(result.is_err());
@@ -73,7 +75,11 @@ struct Test {
 #[async_trait]
 impl CallAsync for Test {
     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
+        use loopio::prelude::Ext;
         let initialized = context.initialized::<Test>().await;
+
+        let comments = context.get_comments();
+        println!("{:#?}", comments);
         
         let content = context.find_file_text("loopio/examples/test.txt").await;
         println!("{:?}", content);
@@ -98,6 +104,9 @@ impl CallAsync for Echo {
             println!("{:#?}", req.uri);
             println!("{:#?}", req.headers);
         }
+
+        let comments = context.get_comments();
+        println!("{:#?}", comments);
 
         let handle = context.engine_handle().unwrap();
          handle.shutdown(Duration::from_secs(4)).await?;

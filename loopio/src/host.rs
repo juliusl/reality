@@ -30,12 +30,6 @@ pub struct Host {
     start: Option<Tagged<String>>,
 }
 
-impl Debug for Host {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Host").field("name", &self.name).field("_tag", &self._tag).field("handle", &self.handle).field("start", &self.start).finish()
-    }
-}
-
 impl Host {
     /// Bind this host to a storage target,
     /// 
@@ -44,7 +38,7 @@ impl Host {
         self
     }
 
-    /// Start this host,
+    /// Starts this host,
     /// 
     pub async fn start(&self) -> anyhow::Result<ThunkContext> {
         if let Some(engine) = self.handle.clone() {
@@ -89,5 +83,16 @@ impl Default for Host {
             host_storage: None,
             start: None,
         }
+    }
+}
+
+impl Debug for Host {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Host")
+            .field("name", &self.name)
+            .field("_tag", &self._tag)
+            .field("handle", &self.handle)
+            .field("start", &self.start)
+            .finish()
     }
 }
