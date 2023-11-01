@@ -18,6 +18,7 @@ pub mod prelude {
     pub use super::attribute_type::OnParseField;
     pub use super::parser::AttributeParser;
     pub use super::parser::ParsedAttributes;
+    pub use super::parser::Comments;
     pub use super::storage_target::prelude::*;
     pub use super::tag::Tagged;
     pub use super::visit::Field;

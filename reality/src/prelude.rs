@@ -2,6 +2,7 @@ pub use crate::derive::Reality;
 pub use crate::derive::AttributeType;
 pub use crate::Attribute;
 pub use crate::AttributeType;
+pub use crate::Comments;
 pub use crate::StorageTarget;
 pub use crate::AttributeParser;
 pub use crate::BlockObject;

@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::sync::Arc;
+use serde::Deserialize;
+use serde::Serialize;
 use tracing::trace;
 
 use runmd::prelude::*;
@@ -21,6 +23,11 @@ use crate::ResourceKey;
 /// Type-alias for parsed attributes,
 /// 
 pub type ParsedAttributes = Vec<ResourceKey<Attribute>>;
+
+/// List of comments for an attribute,
+/// 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Comments(pub Vec<String>);
 
 /// Maintains attribute types and matches runmd nodes to the corresponding attribute type parser,
 ///
@@ -46,6 +53,9 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     /// Attributes parsed,
     /// 
     pub attributes: ParsedAttributes,
+    /// Comments to include w/ the attribute being parsed,
+    /// 
+    pub comments: Vec<String>,
 }
 
 impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
@@ -58,6 +68,7 @@ impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
             handlers: Default::default(),
             storage: Default::default(),
             attributes: vec![],
+            comments: vec![]
         }
     }
 }
@@ -72,6 +83,7 @@ impl<S: StorageTarget + 'static> Clone for AttributeParser<S> {
             handlers: self.handlers.clone(),
             storage: self.storage.clone(),
             attributes: self.attributes.clone(),
+            comments: self.comments.clone(),
         }
     }
 }
@@ -96,12 +108,14 @@ impl<S: StorageTarget> AttributeParser<S> {
         let idx = self.attributes.len();
         let key = ResourceKey::<Attribute>::with_hash(idx);
 
+        let comments = self.comments.drain(..).collect();
          // Storage target must be enabled,
          if let Some(storage) = self.storage() {
             // Initialize attribute type,
             if let Ok(init) = source.as_ref().parse::<T>() {
                 parsed_key = Some(key.transmute());
                 storage.lazy_put_resource(init, parsed_key.clone());
+                storage.lazy_put_resource(Comments(comments), parsed_key.map(|k| k.transmute()));
             }
         }
 
@@ -379,8 +393,9 @@ where
 {
     fn set_info(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {
         trace!("{:#?}", _node_info);
-
-        let _resource_key = ResourceKey::<()>::with_hash(_node_info);
+        if let Some(comment) = &_node_info.get_comment() {
+            self.comments.push(comment.to_string());
+        }
     }
 
     fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>) {
