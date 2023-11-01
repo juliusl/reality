@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use host::Host;
 use reality::prelude::*;
 use serde::Deserialize;
 use serde::Serialize;
@@ -206,17 +207,7 @@ impl Engine {
         runtime: tokio::runtime::Runtime,
     ) -> Self {
         let (sender, rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut hosts = BTreeMap::new();
-        hosts.insert(
-            "default".to_string(),
-            crate::host::Host {
-                host_storage: Some(
-                    Shared::default().into_thread_safe_with(runtime.handle().clone()),
-                ),
-                _tag: None,
-                name: "default".to_string(),
-            },
-        );
+        let hosts = BTreeMap::new();
 
         Engine {
             hosts,
@@ -228,6 +219,7 @@ impl Engine {
             handle: EngineHandle {
                 sender: Arc::new(sender),
                 operations: BTreeMap::new(),
+                sequences: BTreeMap::new(),
             },
             packet_rx: rx,
             workspace: None,
@@ -307,15 +299,17 @@ impl Engine {
                 .map(|n| n.to_string())
                 .unwrap_or(format!("{}", uuid::Uuid::new_v4()));
 
-            crate::host::Host::parse(target, name);
+            Host::parse(target, &name);
 
             if let Some(last) = target.attributes.last().cloned() {
                 if let Some(mut storage) = target.storage_mut() {
                     storage.drain_dispatch_queues();
-                    if let Some(mut seq) = storage.resource_mut(Some(last.transmute::<crate::host::Host>())) {
-                        seq.deref_mut()._tag = tag.map(|t| t.to_string());
+                    if let Some(mut host) =
+                        storage.resource_mut(Some(last.transmute::<Host>()))
+                    {
+                        host._tag = tag.map(|t| t.to_string());
                     }
-                    storage.put_resource(last.transmute::<crate::host::Host>(), None);
+                    storage.put_resource(last.transmute::<Host>(), None);
                 }
             }
         });
@@ -326,8 +320,40 @@ impl Engine {
             .ok()
             .and_then(|mut w| w.project.take())
         {
+            let handle = self.handle();
+
             let nodes = project.nodes.into_inner().unwrap();
 
+            // Extract hosts
+            for (_, target) in nodes.iter() {
+                {
+                    let mut target = target.write().await;
+                    target.drain_dispatch_queues();
+                }
+
+                let host_lock = target.read().await;
+                let hostkey = host_lock.resource::<ResourceKey<Host>>(None);
+                let _host = hostkey.as_deref().cloned();
+                drop(hostkey);
+                drop(host_lock);
+
+                if let Some(host) = target.read().await.resource::<Host>(_host) {
+                    let _host = host.clone();
+                    drop(host);
+                    if let Some(previous) = self.hosts.insert(
+                        _host.name.to_string(),
+                        _host.bind(Shared::default().into_thread_safe_with(handle.clone())),
+                    ) {
+                        info!(address = previous.name, "Replacing host");
+                    }
+                }
+                {
+                    let mut target = target.write().await;
+                    target.drain_dispatch_queues();
+                }
+            }
+
+            // Extract operations
             for (_, target) in nodes.iter() {
                 if let Some(operation) = target.read().await.resource::<Operation>(None) {
                     let mut _operation = operation.deref().clone();
@@ -364,28 +390,6 @@ impl Engine {
                     let mut target = target.write().await;
                     target.drain_dispatch_queues();
                 }
-
-                // Handle assigning hosts,
-                let host_lock = target.read().await;
-                let host = host_lock.resource::<ResourceKey<host::Host>>(None);
-                let _host = host.as_deref().cloned();
-                drop(host);
-                drop(host_lock);
-
-                if let Some(host) = target.read().await.resource::<host::Host>(_host) {
-                    let _host = host.clone();
-                    drop(host);
-                    if let Some(previous) = self.hosts.insert(
-                        _host.name.to_string(),
-                        _host.bind(Shared::default().into_thread_safe_with(self.handle())),
-                    ) {
-                        info!(address = previous.name, "Replacing host");
-                    }
-                }
-                {
-                    let mut target = target.write().await;
-                    target.drain_dispatch_queues();
-                }
             }
 
             for (_, target) in nodes.iter() {
@@ -393,6 +397,8 @@ impl Engine {
                 target.put_resource(self.engine_handle(), None);
             }
         }
+
+        println!("Got hosts {:?}", self.hosts);
 
         self.workspace = Some(workspace);
         self
@@ -434,7 +440,17 @@ impl Engine {
     pub fn engine_handle(&self) -> EngineHandle {
         let mut h = self.handle.clone();
         h.operations = self.operations.clone();
+        h.sequences = self.sequences.clone();
         h
+    }
+
+    /// Get host compiled by this engine,
+    ///
+    pub fn get_host(&self, name: impl AsRef<str>) -> Option<host::Host> {
+        self.hosts.get(name.as_ref()).cloned().map(|mut h| {
+            h.handle = Some(self.engine_handle());
+            h
+        })
     }
 
     /// Starts handling engine packets,
@@ -445,9 +461,10 @@ impl Engine {
                 break;
             }
 
-            info!("Handling packet");
+            println!("Handling packet {:?}", packet.action);
             match packet.action {
                 Action::Run { address, tx } => {
+                    println!("Running {}", address);
                     info!(address, "Running operation");
                     let op = self.operations.get(&address);
                     if let Some(mut op) = op.cloned() {
@@ -505,6 +522,7 @@ impl Drop for Engine {
 
 /// Struct containing instructions to execute w/ an engine,
 ///
+#[derive(Debug)]
 pub struct EnginePacket {
     /// Address of the operation to execute,
     ///
@@ -530,6 +548,20 @@ pub enum Action {
     Shutdown(tokio::time::Duration),
 }
 
+impl Debug for Action {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Run { address, tx } => f.debug_struct("Run").field("address", address).finish(),
+            Self::Compile { relative, content } => f
+                .debug_struct("Compile")
+                .field("relative", relative)
+                .field("content", content)
+                .finish(),
+            Self::Shutdown(arg0) => f.debug_tuple("Shutdown").field(arg0).finish(),
+        }
+    }
+}
+
 /// Handle for communicating and sending work packets to an engine,
 ///
 #[derive(Clone)]
@@ -540,6 +572,9 @@ pub struct EngineHandle {
     /// Map of operations,
     ///
     pub operations: BTreeMap<String, Operation>,
+    /// Map of sequences,
+    ///
+    pub sequences: BTreeMap<String, Sequence>,
 }
 
 impl Debug for EngineHandle {

@@ -4,43 +4,42 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use reality::prelude::*;
 
+#[async_trait::async_trait]
 pub trait StdExt {
     /// Find the text content of a file loaded in transient storage under `ResourceKey::with_hash(pathstr)`,
     ///
     /// **Plugins**:
     /// - `utility/loopio.ext.std.io.read_text_file`
     ///
-    fn find_file_text(&mut self, path: impl Into<PathBuf>) -> Option<String>;
+    async fn find_file_text(&mut self, path: impl Into<PathBuf> + Send + Sync) -> Option<String>;
 
     ///  Find the binary content of a file loaded in transient storage under `ResourceKey::with_hash(pathstr)`,
     ///
     /// **Plugins**:
     /// - `utility/loopio.ext.std.io.read_file`
     ///
-    fn find_file(&mut self, path: impl Into<PathBuf>) -> Option<Bytes>;
+    async fn find_file(&mut self, path: impl Into<PathBuf> + Send + Sync) -> Option<Bytes>;
 }
 
+#[async_trait]
 impl StdExt for ThunkContext {
-    fn find_file_text(&mut self, path: impl Into<PathBuf>) -> Option<String> {
-        self.transient
+    async fn find_file_text(&mut self, path: impl Into<PathBuf> + Send + Sync) -> Option<String> {
+        let r = self.transient
             .storage
-            .try_read()
-            .ok()
-            .and_then(|r| {
-                r.resource::<String>(path.into().to_str().map(|p| ResourceKey::with_hash(p))).as_deref().cloned()
-            })
+            .read()
+            .await;
+        let content = r.resource::<String>(path.into().to_str().map(|p| ResourceKey::with_hash(p)));
+        content.as_deref()
+            .cloned()
             .map(|s| s.to_string())
     }
 
-    fn find_file(&mut self, path: impl Into<PathBuf>) -> Option<Bytes> {
-        self.transient
-            .storage
-            .try_read()
-            .ok()
-            .and_then(|r| {
-                r.resource::<Bytes>(path.into().to_str().map(|p| ResourceKey::with_hash(p))).as_deref().cloned()
-            })
-            .map(|s| s.clone())
+    async fn find_file(&mut self, path: impl Into<PathBuf> + Send + Sync) -> Option<Bytes> {
+        let storage = self.transient.storage.read().await;
+
+        let content = storage.resource::<Bytes>(path.into().to_str().map(|p| ResourceKey::with_hash(p)));
+        content.as_deref()
+            .cloned()
     }
 }
 
@@ -91,8 +90,10 @@ impl CallAsync for ReadTextFile {
         let initialized = context.initialized::<ReadTextFile>().await;
 
         let path = initialized.path;
-
-        let result = tokio::fs::read_to_string(&path).await?;
+        // println!("reading file from {:?}", path);
+        let result = tokio::fs::read_to_string(&path).await;
+        // println!("{:?}", result);
+        let result = result?;
 
         let mut transport = context.write_transport().await;
         transport.put_resource(result, path.to_str().map(|p| ResourceKey::with_hash(p)));

@@ -1,4 +1,6 @@
+use async_trait::async_trait;
 use reality::{StorageTarget, ThunkContext};
+use tracing::error;
 
 use crate::engine::EngineHandle;
 
@@ -12,19 +14,29 @@ pub mod wire_ext;
 
 /// General extensions for ThunkContext,
 ///
+#[async_trait]
 pub trait Ext {
     /// Returns an engine handle from storage,
     ///
     fn engine_handle(&self) -> Option<EngineHandle>;
 }
 
+#[async_trait]
 impl Ext for ThunkContext {
     fn engine_handle(&self) -> Option<EngineHandle> {
-        self.node
+        let handle = self.node
             .storage
-            .try_read()
-            .ok()
-            .and_then(|s| s.resource::<EngineHandle>(None).map(|e| e.clone()))
+            .try_read();
+
+        match handle {
+            Ok(s) => {
+                s.resource::<EngineHandle>(None).map(|e| e.clone())
+            },
+            Err(err) => {
+                error!("Error getting an engine handle {err}");
+                None
+            }
+        }
     }
 }
 

@@ -4,10 +4,7 @@ use async_trait::async_trait;
 use loopio::{engine::Engine, prelude::{StdExt, PoemExt}};
 use reality::{Workspace, prelude::*};
 
-/// ```
-/// <edit(..poem.engine-proxy)>
-/// 
-/// ```
+/// Demo and test bed for utility plugins and extensions,
 /// 
 #[tokio::main]
 async fn main() {
@@ -20,8 +17,8 @@ async fn main() {
     <test>                  Hello World 2
 
     + .operation test_hyper
-    <echo>                                                  # Echoes an incoming request, Also schedules a shutdown
-    <utility/loopio>                                        # Enable utilities
+    <echo>                                                   # Echoes an incoming request, Also schedules a shutdown
+    <utility/loopio>                                         # Enable utilities
     <..hyper.request> testhost://test-engine-proxy/test      # Send outbound request
 
     + .operation test_poem
@@ -29,8 +26,10 @@ async fn main() {
     <..poem.engine-proxy> localhost:0
     : .alias testhost://test-engine-proxy
     : test          .route test_std_io
+    : test_2        .route run_println
     : test_handler  .route test_hyper
     : test          .get /test
+    : test_2        .get /test2
     : test_handler  .get /test-handler/:name
 
     + .sequence start_tests
@@ -38,8 +37,12 @@ async fn main() {
     : .next test_poem
     : .loop false
 
-    + .host testhost
+    + .sequence run_println
+    : .next test_std_io
+    : .loop false
 
+    + .host testhost
+    : .start start_tests
     ```
     "#;
 
@@ -52,14 +55,11 @@ async fn main() {
     let engine = engine.build();
     let engine = engine.compile(workspace).await;
     
-    let mut s = None;
-    for (seq, _seq) in engine.iter_sequences() {
-        s = Some(_seq.clone());
-        println!("{seq} {:?}", _seq);
-    }
+    let host = engine.get_host("testhost").expect("should have host");
     tokio::spawn(async move { engine.handle_packets().await });
-    let r = s.unwrap().await;
-    assert!(r.is_err());
+   
+    let result = host.start().await;
+    assert!(result.is_err());
     ()
 }
 
@@ -75,7 +75,7 @@ impl CallAsync for Test {
     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
         let initialized = context.initialized::<Test>().await;
         
-        let content = context.find_file_text("loopio/examples/test.txt");
+        let content = context.find_file_text("loopio/examples/test.txt").await;
         println!("{:?}", content);
         assert_eq!(initialized.expect.as_str(), content.unwrap_or_default());
         Ok(())
@@ -100,7 +100,7 @@ impl CallAsync for Echo {
         }
 
         let handle = context.engine_handle().unwrap();
-        handle.shutdown(Duration::from_secs(4)).await?;
+         handle.shutdown(Duration::from_secs(4)).await?;
         
         Ok(())
     }

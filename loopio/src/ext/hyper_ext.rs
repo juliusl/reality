@@ -182,12 +182,15 @@ impl CallAsync for Request {
     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
         let initialized = context.initialized::<Request>().await;
 
+        // println!("Starting request {:?}", initialized);
+
         let uri = context
             .internal_host_lookup(&initialized.uri)
             .await
             .unwrap_or(initialized.uri.clone());
 
-        let mut request = hyper::Request::builder().uri(uri);
+        // println!("Resolved uri {:?}", uri);
+        let mut request = hyper::Request::builder().uri(&uri);
 
         // Handle setting method on request
         if let Some(method) = Method::from_str(&initialized.method).ok() {
@@ -224,11 +227,13 @@ impl CallAsync for Request {
 
         let request = request.body(body)?;
         let response = context
-            .request(request, initialized.uri.scheme_str() == Some("https"))
+            .request(request, uri.scheme_str() == Some("https"))
             .await?;
 
-        let mut transient = context.transient.storage.write().await;
-        transient.put_resource(response, None);
+        {
+            let mut transient = context.transient.storage.write().await;
+            transient.put_resource(response, None);
+        }
 
         Ok(())
     }

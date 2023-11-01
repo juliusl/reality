@@ -53,6 +53,7 @@ impl Clone for PoemRequest {
 
 /// Provides helper functions for accessing poem request resources,
 ///
+#[async_trait]
 pub trait PoemExt {
     /// Get path vars from storage,
     ///
@@ -348,7 +349,7 @@ async fn on_proxy(
 }
 
 macro_rules! create_routes {
-    ($ctx:ident, $operations:ident, $rcv:ident, [$($ident:tt),*]) => {
+    ($ctx:ident, $operations:ident, $sequences:ident, $rcv:ident, [$($ident:tt),*]) => {
         $(
             for (value, tag) in $rcv.$ident.iter().map(|g| (g.value(), g.tag())) {
                 match (value, tag) {
@@ -364,6 +365,16 @@ macro_rules! create_routes {
                                 $rcv
                                     .routes
                                     .insert(route.to_string(), $ident(on_proxy.data(Either::<Operation, Sequence>::Left(operation))));
+                            }
+                        } else if let Some(sequence) = $sequences.get(&op).cloned() {
+                            if let Some(_route) = $rcv.routes.remove(route) {
+                                $rcv
+                                    .routes
+                                    .insert(route.to_string(), _route.$ident(on_proxy.data(Either::<Operation, Sequence>::Right(sequence))));
+                            } else {
+                                $rcv
+                                    .routes
+                                    .insert(route.to_string(), $ident(on_proxy.data(Either::<Operation, Sequence>::Right(sequence))));
                             }
                         }
                     }
@@ -384,14 +395,17 @@ impl CallAsync for EngineProxy {
             "Routes should only be initialized when the plugin is being run"
         );
 
-        let operations = context.engine_handle().clone();
-        assert!(operations.is_some());
-        let operations = operations.unwrap().operations.clone();
+        let engine_handle = context.engine_handle().clone();
+        assert!(engine_handle.is_some());
+        let engine_handle = engine_handle.unwrap();
+        let operations = engine_handle.operations.clone();
+        let sequences = engine_handle.sequences.clone();
 
         // Build routes for proxy server
         create_routes!(
             context,
             operations,
+            sequences,
             initialized,
             [head, get, post, put, patch, delete]
         );

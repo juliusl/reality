@@ -119,7 +119,7 @@ impl Context {
     /// **Note**: Marked unsafe because will mutate the host storage. Host storage is shared by all contexts associated to a specific host.
     ///
     pub async unsafe fn host_mut(&self, name: impl AsRef<str>) -> Option<tokio::sync::RwLockWriteGuard<Shared>> {
-        trace!("Looking for {} in {:?}", name.as_ref(), self.hosts.keys());
+        println!("Looking for {} in {:?}", name.as_ref(), self.hosts.keys());
         if let Some(host) = self.hosts.get(name.as_ref()) {
             Some(host.storage.write().await)
         } else {
