@@ -1,3 +1,4 @@
+pub mod host;
 pub mod engine;
 pub mod sequence;
 pub mod operation;

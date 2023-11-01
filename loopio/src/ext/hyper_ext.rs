@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::ops::Deref;
 use std::path::PathBuf;
 
 use async_trait::async_trait;
@@ -106,7 +105,7 @@ impl HyperExt for ThunkContext {
             replace.port_u16(),
         );
 
-        if let Some(mut transport) = unsafe { self.host_mut().await } {
+        if let Some(mut transport) = unsafe { self.host_mut(alias.scheme_str().unwrap_or_default()).await } {
             let key = ResourceKey::<(Option<Scheme>, Option<String>, Option<u16>)>::with_hash(key);
             transport.put_resource(value, Some(key));
         }
@@ -120,7 +119,7 @@ impl HyperExt for ThunkContext {
         let key = (resolve.scheme(), resolve.host());
         let key = ResourceKey::with_hash(key);
 
-        let transport = self.host().await;
+        let transport = self.host(resolve.scheme_str().unwrap_or_default()).await;
         let alias = transport.and_then(|t| t.resource::<(Option<Scheme>, Option<String>, Option<u16>)>(Some(key)).as_deref().cloned());
         match alias {
             Some(parts) => match parts {

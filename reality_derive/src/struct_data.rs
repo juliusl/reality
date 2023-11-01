@@ -418,7 +418,7 @@ impl StructData {
             }
 
             impl #name #ty_generics #where_clause  {
-                pub fn register(mut host: &mut impl Host) {
+                pub fn register(mut host: &mut impl RegisterWith) {
                   #(#plugins)*
                   host.register_with(|parser| {
                     #(#ext)*
@@ -429,7 +429,7 @@ impl StructData {
         } else if self.ext {
             quote!(
                 impl #name #ty_generics #where_clause  {
-                    pub fn register(mut host: &mut impl Host) {
+                    pub fn register(mut host: &mut impl RegisterWith) {
                         #(#plugins)*
                         host.register_with(|parser| {
                             #(#ext)*

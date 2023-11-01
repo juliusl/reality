@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use tracing::trace;
 
+use crate::host;
 use crate::operation::Operation;
 use crate::sequence::Sequence;
 
@@ -79,7 +80,7 @@ impl EngineBuilder {
     }
 }
 
-impl reality::prelude::Host for EngineBuilder {
+impl reality::prelude::RegisterWith for EngineBuilder {
     fn register_with(&mut self, plugin: fn(&mut AttributeParser<Shared>)) {
         self.plugins.push(Arc::new(plugin));
     }
@@ -121,10 +122,10 @@ pub struct Engine {
     ///
     pub cancellation: CancellationToken,
     /// Host storage,
-    /// 
+    ///
     /// All thunk contexts produced by this engine will share this storage target.
-    /// 
-    host: AsyncStorageTarget<Shared>,
+    ///
+    hosts: BTreeMap<String, crate::host::Host>,
     /// Plugins to register w/ the Project
     ///
     plugins: Vec<reality::BlockPlugin<Shared>>,
@@ -144,7 +145,7 @@ pub struct Engine {
     ///
     packet_rx: tokio::sync::mpsc::UnboundedReceiver<EnginePacket>,
     /// Workspace,
-    /// 
+    ///
     workspace: Option<Workspace>,
 }
 
@@ -205,9 +206,20 @@ impl Engine {
         runtime: tokio::runtime::Runtime,
     ) -> Self {
         let (sender, rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut hosts = BTreeMap::new();
+        hosts.insert(
+            "default".to_string(),
+            crate::host::Host {
+                host_storage: Some(
+                    Shared::default().into_thread_safe_with(runtime.handle().clone()),
+                ),
+                _tag: None,
+                name: "default".to_string(),
+            },
+        );
 
         Engine {
-            host: Shared::default().into_thread_safe_with(runtime.handle().clone()),
+            hosts,
             plugins,
             runtime: Some(runtime),
             cancellation: CancellationToken::new(),
@@ -236,7 +248,12 @@ impl Engine {
                 .map(|r| r.handle().clone())
                 .expect("should have a runtime"),
         ));
-        context.host = Some(self.host.clone());
+        context.hosts = self.hosts.iter().fold(BTreeMap::new(), |mut acc, h| {
+            if let Some(storage) = h.1.host_storage.clone() {
+                acc.insert(h.0.to_string(), storage);
+            }
+            acc
+        });
         context.cancellation = self.cancellation.child_token();
         context
     }
@@ -285,6 +302,24 @@ impl Engine {
             }
         });
 
+        project.add_node_plugin("host", move |name, tag, target| {
+            let name = name
+                .map(|n| n.to_string())
+                .unwrap_or(format!("{}", uuid::Uuid::new_v4()));
+
+            crate::host::Host::parse(target, name);
+
+            if let Some(last) = target.attributes.last().cloned() {
+                if let Some(mut storage) = target.storage_mut() {
+                    storage.drain_dispatch_queues();
+                    if let Some(mut seq) = storage.resource_mut(Some(last.transmute::<crate::host::Host>())) {
+                        seq.deref_mut()._tag = tag.map(|t| t.to_string());
+                    }
+                    storage.put_resource(last.transmute::<crate::host::Host>(), None);
+                }
+            }
+        });
+
         if let Some(project) = workspace
             .compile(project)
             .await
@@ -323,6 +358,28 @@ impl Engine {
                         _seq.bind(self.new_context(target.clone()).await),
                     ) {
                         info!(address = previous.address(), "Replacing sequence");
+                    }
+                }
+                {
+                    let mut target = target.write().await;
+                    target.drain_dispatch_queues();
+                }
+
+                // Handle assigning hosts,
+                let host_lock = target.read().await;
+                let host = host_lock.resource::<ResourceKey<host::Host>>(None);
+                let _host = host.as_deref().cloned();
+                drop(host);
+                drop(host_lock);
+
+                if let Some(host) = target.read().await.resource::<host::Host>(_host) {
+                    let _host = host.clone();
+                    drop(host);
+                    if let Some(previous) = self.hosts.insert(
+                        _host.name.to_string(),
+                        _host.bind(Shared::default().into_thread_safe_with(self.handle())),
+                    ) {
+                        info!(address = previous.name, "Replacing host");
                     }
                 }
                 {
@@ -393,8 +450,13 @@ impl Engine {
                 Action::Run { address, tx } => {
                     info!(address, "Running operation");
                     let op = self.operations.get(&address);
-                    if let Some(op) = op.cloned() {
+                    if let Some(mut op) = op.cloned() {
+                        // Ensures a fresh context
                         tokio::spawn(async move {
+                            if let Some(context) = op.context_mut() {
+                                context.reset();
+                            }
+
                             let result = op.execute().await;
                             // TODO: Add a way to queue up failed packets?
                             if let Some(tx) = tx {
@@ -462,10 +524,7 @@ pub enum Action {
     },
     /// Compiles the operations from a project,
     ///
-    Compile {
-        relative: String, 
-        content: String
-    },
+    Compile { relative: String, content: String },
     /// Requests the engine to
     ///
     Shutdown(tokio::time::Duration),
@@ -511,11 +570,15 @@ impl EngineHandle {
 
     /// Compiles content,
     ///
-    pub async fn compile(&self, relative: impl Into<String>, content: impl Into<String>) -> anyhow::Result<()> {
+    pub async fn compile(
+        &self,
+        relative: impl Into<String>,
+        content: impl Into<String>,
+    ) -> anyhow::Result<()> {
         let packet = EnginePacket {
             action: Action::Compile {
-                relative: relative.into(), 
-                content: content.into()
+                relative: relative.into(),
+                content: content.into(),
             },
         };
 

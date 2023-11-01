@@ -9,5 +9,6 @@ pub use crate::ext::std_ext::*;
 pub use crate::ext::*;
 
 pub use crate::engine::Engine;
+pub use crate::host::Host;
 
 pub use reality::prelude::*;

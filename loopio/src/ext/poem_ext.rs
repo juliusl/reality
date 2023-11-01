@@ -285,6 +285,8 @@ async fn on_proxy(
         Either::Left(op) => {
             let mut operation = op.clone();
             if let Some(context) = operation.context_mut() {
+                context.reset();
+                
                 let mut storage = context.transient.storage.write().await;
                 storage.put_resource(
                     PoemRequest {

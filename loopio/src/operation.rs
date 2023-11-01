@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::future::IntoFuture;
 
 use futures_util::TryStreamExt;
 use futures_util::StreamExt;
@@ -63,13 +64,10 @@ impl Operation {
 
     /// Executes the operation,
     /// 
-    pub async fn execute(&self) -> anyhow::Result<ThunkContext> {
-        if let Some(mut context) = self.context.clone() {
-            // Ensure transient storage is empty
-            context.reset();
-
+    pub async fn execute(&self) -> anyhow::Result<ThunkContext> 
+    {
+        if let Some(context) = self.context.clone() {
             let node = reality::Node(context.node.storage.clone());
-
             node
                 .stream_attributes()
                 .map(Ok)

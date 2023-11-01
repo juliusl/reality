@@ -1,6 +1,9 @@
+use std::collections::BTreeMap;
+
 use futures_util::Future;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
+use tracing::trace;
 use uuid::Uuid;
 
 use crate::AsyncStorageTarget;
@@ -15,9 +18,9 @@ use super::prelude::*;
 /// Struct containing shared context between plugins,
 ///
 pub struct Context {
-    /// Host storage mapping to this context,
+    /// Map of host storages this context can access,
     /// 
-    pub host: Option<AsyncStorageTarget<Shared>>,
+    pub hosts: BTreeMap<String, AsyncStorageTarget<Shared>>,
     /// Node storage mapping to this context,
     ///
     pub node: AsyncStorageTarget<Shared>,
@@ -39,7 +42,7 @@ impl From<AsyncStorageTarget<Shared>> for Context {
     fn from(value: AsyncStorageTarget<Shared>) -> Self {
         let handle = value.runtime.clone().expect("should have a runtime");
         Self {
-            host: None,
+            hosts: BTreeMap::new(),
             node: value,
             attribute: None,
             transient: Shared::default().into_thread_safe_with(handle),
@@ -52,7 +55,7 @@ impl From<AsyncStorageTarget<Shared>> for Context {
 impl Clone for Context {
     fn clone(&self) -> Self {
         Self {
-            host: self.host.clone(),
+            hosts: self.hosts.clone(),
             node: self.node.clone(),
             attribute: self.attribute.clone(),
             transient: self.transient.clone(),
@@ -115,8 +118,9 @@ impl Context {
     ///
     /// **Note**: Marked unsafe because will mutate the host storage. Host storage is shared by all contexts associated to a specific host.
     ///
-    pub async unsafe fn host_mut(&self) -> Option<tokio::sync::RwLockWriteGuard<Shared>> {
-        if let Some(host) = self.host.as_ref() {
+    pub async unsafe fn host_mut(&self, name: impl AsRef<str>) -> Option<tokio::sync::RwLockWriteGuard<Shared>> {
+        trace!("Looking for {} in {:?}", name.as_ref(), self.hosts.keys());
+        if let Some(host) = self.hosts.get(name.as_ref()) {
             Some(host.storage.write().await)
         } else {
             None
@@ -125,8 +129,9 @@ impl Context {
 
     /// Get read access to host storage,
     ///
-    pub async fn host(&self) -> Option<tokio::sync::RwLockReadGuard<Shared>> {
-        if let Some(host) = self.host.as_ref() {
+    pub async fn host(&self, name: impl AsRef<str>) -> Option<tokio::sync::RwLockReadGuard<Shared>> {
+        trace!("Looking for {} in {:?}", name.as_ref(), self.hosts.keys());
+        if let Some(host) = self.hosts.get(name.as_ref()) {
             Some(host.storage.read().await)
         } else {
             None

@@ -24,7 +24,7 @@ mod workspace;
 pub use workspace::Workspace;
 
 mod host;
-pub use host::Host;
+pub use host::RegisterWith;
 
 /// Block plugin fn,
 ///

@@ -28,7 +28,7 @@ pub use crate::Field;
 pub use crate::FieldMut;
 pub use crate::FieldOwned;
 pub use crate::SetField;
-pub use crate::Host;
+pub use crate::RegisterWith;
 
 /*
     Macros for working w/ a storage target
