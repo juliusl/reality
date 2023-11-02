@@ -88,9 +88,7 @@ where
     /// Runs the extension processing the pipeline,
     ///
     pub async fn run(&self, target: AsyncStorageTarget<Shared>, init: T) -> anyhow::Result<T> {
-        let mut initial = target.storage.write().await;
-        initial.put_resource(anyhow::Ok::<T>(init), self.resource_key);
-        drop(initial);
+        target.storage.write().await.put_resource(anyhow::Ok::<T>(init), self.resource_key);
 
         let mut dispatcher = target
             .dispatcher::<anyhow::Result<T>>(self.resource_key)

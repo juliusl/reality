@@ -1,11 +1,14 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use loopio::{engine::Engine, prelude::{StdExt, PoemExt}};
-use reality::{Workspace, prelude::*};
+use loopio::prelude::StdExt;
+use loopio::prelude::PoemExt;
+use loopio::engine::Engine;
+
+use reality::prelude::*;
 
 /// Demo and test bed for utility plugins and extensions,
-/// 
+///
 #[tokio::main]
 async fn main() {
     let utility_runmd = r#"
@@ -54,12 +57,10 @@ async fn main() {
     engine.register::<Echo>();
     let engine = engine.build();
     let engine = engine.compile(workspace).await;
-    
+
     let host = engine.get_host("testhost").expect("should have host");
-    tokio::spawn(async move { 
-        engine.handle_packets().await 
-    });
-   
+    tokio::spawn(async move { engine.handle_packets().await });
+
     let result = host.start().await;
     assert!(result.is_err());
     ()
@@ -78,9 +79,9 @@ impl CallAsync for Test {
         use loopio::prelude::Ext;
         let initialized = context.initialized::<Test>().await;
 
-        let comments = context.get_comments();
+        let comments = context.get_comments().await;
         println!("{:#?}", comments);
-        
+
         let content = context.find_file_text("loopio/examples/test.txt").await;
         println!("{:?}", content);
         assert_eq!(initialized.expect.as_str(), content.unwrap_or_default());
@@ -99,18 +100,18 @@ struct Echo {
 impl CallAsync for Echo {
     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
         use loopio::prelude::Ext;
-        if let Some(req) = context.take_request() {
+        if let Some(req) = context.take_request().await {
             println!("{:#?}", req.path);
             println!("{:#?}", req.uri);
             println!("{:#?}", req.headers);
         }
 
-        let comments = context.get_comments();
+        let comments = context.get_comments().await;
         println!("{:#?}", comments);
 
-        let handle = context.engine_handle().unwrap();
-         handle.shutdown(Duration::from_secs(4)).await?;
-        
+        let handle = context.engine_handle().await.unwrap();
+        handle.shutdown(Duration::from_secs(4)).await?;
+
         Ok(())
     }
 }

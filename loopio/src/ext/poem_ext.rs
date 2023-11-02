@@ -56,23 +56,23 @@ impl Clone for PoemRequest {
 pub trait PoemExt {
     /// Get path vars from storage,
     ///
-    fn get_path_vars(&mut self) -> Option<PathVars>;
+    async fn get_path_vars(&mut self) -> Option<PathVars>;
 
     /// Take the request body from storage,
     ///
-    fn take_body(&mut self) -> Option<poem::Body>;
+    async fn take_body(&mut self) -> Option<poem::Body>;
 
     /// Take headers from storage,
     ///
-    fn take_response_parts(&mut self) -> Option<ResponseParts>;
+    async fn take_response_parts(&mut self) -> Option<ResponseParts>;
 
     /// Set the status code on the response,
     ///
-    fn set_status_code(&mut self, code: StatusCode);
+    async fn set_status_code(&mut self, code: StatusCode);
 
     /// Sets a header on the response,
     ///
-    fn set_header(
+    async fn set_header(
         &mut self,
         header: impl Into<HeaderName> + Send + Sync + 'static,
         value: impl Into<HeaderValue> + Send + Sync + 'static,
@@ -80,110 +80,72 @@ pub trait PoemExt {
 
     /// Sets the body on the response,
     ///
-    fn set_response_body(&mut self, body: Body);
+    async fn set_response_body(&mut self, body: Body);
 
     /// Replaces the header map,
     ///
-    fn replace_header_map(&mut self, header_map: HeaderMap);
+    async fn replace_header_map(&mut self, header_map: HeaderMap);
 
     /// Take request from the current storage target if one exists,
     ///
-    fn take_request(&self) -> Option<PoemRequest>;
+    async fn take_request(&self) -> Option<PoemRequest>;
 }
 
+#[async_trait]
 impl PoemExt for ThunkContext {
-    fn take_response_parts(&mut self) -> Option<ResponseParts> {
-        let transient = self.transient();
-        transient
-            .storage
-            .try_write()
-            .ok()
-            .and_then(|mut s| s.take_resource::<ResponseParts>(None).map(|b| *b))
+    async fn take_response_parts(&mut self) -> Option<ResponseParts> {
+        self.transient_mut()
+            .await
+            .take_resource::<ResponseParts>(None)
+            .map(|b| *b)
     }
 
-    fn take_body(&mut self) -> Option<poem::Body> {
-        let transient = self.transient();
-        transient
-            .storage
-            .try_write()
-            .ok()
-            .and_then(|mut s| s.take_resource::<poem::Body>(None).map(|b| *b))
+    async fn take_body(&mut self) -> Option<poem::Body> {
+        self.transient_mut()
+            .await
+            .take_resource::<poem::Body>(None)
+            .map(|b| *b)
     }
 
-    fn set_status_code(&mut self, code: StatusCode) {
-        let transient = self.transient().storage;
-        let transient = transient.try_write();
+    async fn set_status_code(&mut self, code: StatusCode) {
+        let mut transient = self.transient_mut().await;
 
-        if let Ok(mut transient) = transient {
-            borrow_mut!(transient, ResponseParts, |parts| => {
-                parts.status = code;
-            });
-        } else {
-            error!("Could not write to transient storage. Existing read-lock.");
-        }
+        borrow_mut!(transient, ResponseParts, |parts| => {
+            parts.status = code;
+        });
     }
 
-    fn set_header(
+    async fn set_header(
         &mut self,
         header: impl Into<HeaderName> + Send + Sync + 'static,
         value: impl Into<HeaderValue> + Send + Sync + 'static,
     ) {
-        let transient = self.transient().storage;
-        let transient = transient.try_write();
+        let mut transient = self.transient_mut().await;
 
-        if let Ok(mut transient) = transient {
-            borrow_mut!(transient, ResponseParts, |parts| => {
-                parts.headers.insert(header.into(), value.into());
-            });
-        } else {
-            error!("Could not write to transient storage. Existing read-lock.");
-        }
+        borrow_mut!(transient, ResponseParts, |parts| => {
+            parts.headers.insert(header.into(), value.into());
+        });
     }
 
-    fn set_response_body(&mut self, body: Body) {
-        let transient = self.transient().storage;
-        let transient = transient.try_write();
-
-        if let Ok(mut transient) = transient {
-            transient.put_resource(body, Some(ResourceKey::with_hash("response")))
-        } else {
-            error!("Could not write to transient storage. Existing read-lock.");
-        }
+    async fn set_response_body(&mut self, body: Body) {
+        self.transient_mut()
+            .await
+            .put_resource(body, Some(ResourceKey::with_hash("response")))
     }
 
-    fn replace_header_map(&mut self, header_map: HeaderMap) {
-        let transient = self.transient().storage;
-        let transient = transient.try_write();
-
-        if let Ok(mut transient) = transient {
-            transient.put_resource(header_map, None)
-        } else {
-            error!("Could not write to transient storage. Existing read-lock.");
-        }
+    async fn replace_header_map(&mut self, header_map: HeaderMap) {
+        self.transient_mut().await.put_resource(header_map, None)
     }
 
-    fn get_path_vars(&mut self) -> Option<PathVars> {
-        let transient = self.transient().storage;
-        let transient = transient.try_read();
-
-        if let Ok(transient) = transient {
-            transient.resource::<PathVars>(None).as_deref().cloned()
-        } else {
-            error!("Could not write to transient storage. Existing read-lock.");
-            None
-        }
+    async fn get_path_vars(&mut self) -> Option<PathVars> {
+        self.transient().await.current_resource::<PathVars>(None)
     }
 
-    fn take_request(&self) -> Option<PoemRequest> {
-        let transient = self.transient().storage;
-        let transient = transient.try_write();
-
-        if let Ok(mut transient) = transient {
-            transient.take_resource::<PoemRequest>(None).map(|r| *r)
-        } else {
-            error!("Could not write to transient storage. Existing read-lock.");
-            None
-        }
+    async fn take_request(&self) -> Option<PoemRequest> {
+        self.transient_mut()
+            .await
+            .take_resource::<PoemRequest>(None)
+            .map(|r| *r)
     }
 }
 
@@ -199,7 +161,7 @@ pub struct EngineProxy {
     #[reality(derive_fromstr)]
     address: String,
     /// If set, maps this alias to the address of this proxy
-    /// 
+    ///
     #[reality(option_of=String)]
     alias: Option<String>,
     /// Adds a route for a HEAD request,
@@ -286,9 +248,8 @@ async fn on_proxy(
             let mut operation = op.clone();
             if let Some(context) = operation.context_mut() {
                 context.reset();
-                
-                let mut storage = context.transient.storage.write().await;
-                storage.put_resource(
+
+                context.transient_mut().await.put_resource(
                     PoemRequest {
                         path: path_vars,
                         uri: req.uri().clone(),
@@ -394,7 +355,7 @@ impl CallAsync for EngineProxy {
             "Routes should only be initialized when the plugin is being run"
         );
 
-        let engine_handle = context.engine_handle().clone();
+        let engine_handle = context.engine_handle().await;
         assert!(engine_handle.is_some());
         let engine_handle = engine_handle.unwrap();
         let operations = engine_handle.operations.clone();
@@ -472,7 +433,7 @@ impl<'a, T: FieldPacketType> FromRequest<'a> for P<T> {
 struct P<T>(pub PhantomData<T>);
 
 #[handler]
-async fn handle_remote_frame<T: FromFrame + Clone + Send + Sync + 'static>(
+async fn handle_remote_frame<T: ApplyFrame + Clone + Send + Sync + 'static>(
     initialized: Data<&T>,
     thunk_context: Data<&ThunkContext>,
     frame: poem::Body,
@@ -483,7 +444,7 @@ async fn handle_remote_frame<T: FromFrame + Clone + Send + Sync + 'static>(
         Ok(packets) => {
             let mut initialized = initialized.clone();
             initialized
-                .from_frame(packets)
+                .apply_frame(packets)
                 .map_err(|e| poem::Error::from_string(format!("{e}"), StatusCode::BAD_REQUEST))?;
             let (_variant, branch) = thunk_context.branch();
             unsafe {

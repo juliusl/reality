@@ -46,3 +46,25 @@ pub use crate::task_mut;
 pub use crate::thunk::*;
 
 pub use std::str::FromStr;
+
+/// Returns the latest value of a reference,
+/// 
+#[async_trait::async_trait]
+pub trait Latest<T>
+where
+    T: ToOwned<Owned = T> + Send + Sync + 'static, 
+{
+    /// Returns the latest value,
+    /// 
+    async fn latest(&self) -> T;
+}
+
+#[async_trait::async_trait]
+impl<T> Latest<T> for tokio::sync::RwLock<T> 
+where
+    T: ToOwned<Owned = T> + Send + Sync + 'static,  
+{
+    async fn latest(&self) -> T {
+        self.read().await.to_owned()
+    }
+}

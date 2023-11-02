@@ -6,6 +6,7 @@ use tracing::debug;
 use tracing::trace;
 use uuid::Uuid;
 
+use crate::prelude::Latest;
 use crate::AsyncStorageTarget;
 use crate::Attribute;
 use crate::BlockObject;
@@ -88,13 +89,11 @@ impl Context {
     /// Calls the thunk fn related to this context,
     ///
     pub async fn call(&self) -> anyhow::Result<Option<Context>> {
-        let _storage = self.node.storage.read().await;
-        let storage = _storage.clone();
-        let _thunk = storage.resource::<ThunkFn>(self.attribute.map(|a| a.transmute()));
-        let thunk = _thunk.as_deref().cloned();
+        let thunk = self
+            .node()
+            .await
+            .current_resource::<ThunkFn>(self.attribute.map(|a| a.transmute()));
         if let Some(thunk) = thunk {
-            drop(_storage);
-            drop(_thunk);
             (thunk)(self.clone()).await
         } else {
             Err(anyhow::anyhow!("Did not execute thunk"))
@@ -109,14 +108,14 @@ impl Context {
 
     /// Get read access to source storage,
     ///
-    pub async fn node(&self) -> tokio::sync::RwLockReadGuard<Shared> {
-        self.node.storage.read().await
+    pub async fn node(&self) -> Shared {
+        self.node.storage.latest().await
     }
 
     /// Get mutable access to host storage,
     ///
-    /// # Safety 
-    /// 
+    /// # Safety
+    ///
     /// Marked unsafe because will mutate the host storage. Host storage is shared by all contexts associated to a specific host.
     ///
     pub async unsafe fn host_mut(
@@ -133,13 +132,10 @@ impl Context {
 
     /// Get read access to host storage,
     ///
-    pub async fn host(
-        &self,
-        name: impl AsRef<str>,
-    ) -> Option<tokio::sync::RwLockReadGuard<Shared>> {
+    pub async fn host(&self, name: impl AsRef<str>) -> Option<Shared> {
         trace!("Looking for {} in {:?}", name.as_ref(), self.hosts.keys());
         if let Some(host) = self.hosts.get(name.as_ref()) {
-            Some(host.storage.read().await)
+            Some(host.storage.latest().await)
         } else {
             None
         }
@@ -153,12 +149,6 @@ impl Context {
     ///
     pub async unsafe fn node_mut(&self) -> tokio::sync::RwLockWriteGuard<Shared> {
         self.node.storage.write().await
-    }
-
-    /// Tries to get access to source storage,
-    ///
-    pub fn try_source(&self) -> Option<tokio::sync::RwLockReadGuard<Shared>> {
-        self.node.storage.try_read().ok()
     }
 
     /// (unsafe) Tries to get mutable access to source storage,
@@ -175,13 +165,13 @@ impl Context {
     ///
     /// **Note**: During an operation run dispatch queues are drained before each thunk execution.
     ///
-    pub fn transient(&self) -> AsyncStorageTarget<Shared> {
-        self.transient.clone()
+    pub async fn transient(&self) -> Shared {
+        self.transient.storage.latest().await
     }
 
     /// Returns a writeable reference to transient storage,
     ///
-    pub async fn write_transport(&self) -> tokio::sync::RwLockWriteGuard<Shared> {
+    pub async fn transient_mut(&self) -> tokio::sync::RwLockWriteGuard<Shared> {
         self.transient.storage.write().await
     }
 
@@ -219,12 +209,9 @@ impl Context {
     pub async fn initialized<P: BlockObject<Shared> + Default + Clone + Sync + Send + 'static>(
         &self,
     ) -> P {
-        self.node
-            .storage
-            .read()
+        self.node()
             .await
-            .resource::<P>(self.attribute.map(|a| a.transmute()))
-            .map(|r| r.clone())
+            .current_resource::<P>(self.attribute.map(|a| a.transmute()))
             .unwrap_or_default()
     }
 
@@ -236,12 +223,9 @@ impl Context {
     >(
         &self,
     ) -> Option<crate::Extension<C, P>> {
-        self.node
-            .storage
-            .read()
+        self.node()
             .await
-            .resource::<crate::Extension<C, P>>(self.attribute.map(|a| a.transmute()))
-            .map(|r| r.clone())
+            .current_resource::<crate::Extension<C, P>>(self.attribute.map(|a| a.transmute()))
     }
 
     /// Schedules garbage collection of the variant,

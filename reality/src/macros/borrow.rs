@@ -5,7 +5,7 @@ macro_rules! borrow {
     (async $storage:ident $(,)? $ty:ty, $key:literal, |$var:ident| => $body:block )=> {
         {
             const KEY: &'static str = $key;
-            if let Some(resource) = $storage.storage.read().await.resource::<$ty>(Some(ResourceKey::with_label(KEY))) {
+            if let Some(resource) = $storage.storage.latest().await.resource::<$ty>(Some(ResourceKey::with_label(KEY))) {
                 #[allow(unused_mut)]
                 let mut monad = |$var: &$ty| $body;
 
@@ -15,7 +15,7 @@ macro_rules! borrow {
     };
     (async $storage:ident $(,)? $ty:ty, $key:ident, |$var:ident| => $body:block )=> {
         {
-            if let Some(resource) = $storage.storage.read().await.resource::<$ty>(Some(ResourceKey::with_hash($key))) {
+            if let Some(resource) = $storage.storage.latest().await.resource::<$ty>(Some(ResourceKey::with_hash($key))) {
                 #[allow(unused_mut)]
                 let mut monad = |$var: &$ty| $body;
 
@@ -25,7 +25,7 @@ macro_rules! borrow {
     };
     (async $storage:ident $(,)? $ty:ty, |$var:ident| => $body:block )=> {
         {
-            if let Some(resource) = $storage.storage.read().await.resource::<$ty>(None) {
+            if let Some(resource) = $storage.storage.latest().await.resource::<$ty>(None) {
                 #[allow(unused_mut)]
                 let mut monad = |$var: &$ty| $body;
 

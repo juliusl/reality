@@ -66,6 +66,15 @@ pub trait StorageTarget {
         false
     }
 
+    /// Returns a copy of the current value of a resource,
+    /// 
+    fn current_resource<T: ToOwned<Owned = T> + Send + Sync + 'static>(
+        &self,
+        resource_key: Option<ResourceKey<T>>,
+    ) -> Option<T> {
+        self.resource(resource_key).map(|r| r.to_owned())
+    }
+
     /// Put a resource in storage,
     ///
     /// Will always override the existing value,
@@ -298,7 +307,7 @@ pub trait StorageTarget {
     where
         Self: Sized + 'static,
     {
-        self.resource(resource_key).map(|c| c.deref().clone())
+        self.current_resource(resource_key)
     }
 
     /// Lazily queues a mutable dispatch for a callback w/ Arg if one exists,
@@ -312,7 +321,7 @@ pub trait StorageTarget {
     where
         Self: Sized + 'static,
     {
-        self.resource(resource_key).map(|c| c.deref().clone())
+        self.current_resource(resource_key)
     }
 
     /// Lazily queues a dispatch for a callback w/ Arg,

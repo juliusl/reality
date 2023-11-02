@@ -7,8 +7,7 @@ use tokio::sync::RwLockMappedWriteGuard;
 use tokio::sync::RwLockReadGuard;
 use tokio::sync::RwLockWriteGuard;
 
-use super::prelude::*;
-use crate::StorageTarget;
+use crate::prelude::*;
 
 /// Shared thread-safe storage target using Arc and tokio::RwLock,
 ///

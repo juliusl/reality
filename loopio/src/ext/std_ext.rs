@@ -24,22 +24,15 @@ pub trait StdExt {
 #[async_trait]
 impl StdExt for ThunkContext {
     async fn find_file_text(&mut self, path: impl Into<PathBuf> + Send + Sync) -> Option<String> {
-        let r = self.transient
-            .storage
-            .read()
-            .await;
-        let content = r.resource::<String>(path.into().to_str().map(ResourceKey::with_hash));
-        content.as_deref()
-            .cloned()
-            .map(|s| s.to_string())
+        self.transient()
+            .await
+            .current_resource::<String>(path.into().to_str().map(ResourceKey::with_hash))
     }
 
     async fn find_file(&mut self, path: impl Into<PathBuf> + Send + Sync) -> Option<Bytes> {
-        let storage = self.transient.storage.read().await;
-
-        let content = storage.resource::<Bytes>(path.into().to_str().map(ResourceKey::with_hash));
-        content.as_deref()
-            .cloned()
+        self.transient()
+            .await
+            .current_resource::<Bytes>(path.into().to_str().map(ResourceKey::with_hash))
     }
 }
 
@@ -95,8 +88,10 @@ impl CallAsync for ReadTextFile {
         // println!("{:?}", result);
         let result = result?;
 
-        let mut transport = context.write_transport().await;
-        transport.put_resource(result, path.to_str().map(ResourceKey::with_hash));
+        context
+            .transient_mut()
+            .await
+            .put_resource(result, path.to_str().map(ResourceKey::with_hash));
 
         Ok(())
     }
@@ -122,8 +117,7 @@ impl CallAsync for ReadFile {
 
         let result = tokio::fs::read(&path).await?;
 
-        let mut transport = context.write_transport().await;
-        transport.put_resource(
+        context.transient_mut().await.put_resource(
             Bytes::copy_from_slice(&result),
             path.to_str().map(ResourceKey::with_hash),
         );

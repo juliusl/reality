@@ -161,7 +161,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Loading<Storage> {
         if let Some(provider) = self
             .0
             .root
-            .resource::<BlockPlugin<Storage::Namespace>>(Some(key))
+            .current_resource::<BlockPlugin<Storage::Namespace>>(Some(key))
         {
             provider(&mut parser);
         }
@@ -182,7 +182,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Loading<Storage> {
         if let Some(node_plugin) = self
             .0
             .root
-            .resource::<NodePlugin<Storage::Namespace>>(Some(node_plugin_key))
+            .current_resource::<NodePlugin<Storage::Namespace>>(Some(node_plugin_key))
         {
             node_plugin(input, tag, parser);
         }

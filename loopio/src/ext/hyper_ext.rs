@@ -87,9 +87,10 @@ impl HyperExt for ThunkContext {
     }
 
     async fn take_response(&mut self) -> Option<hyper::Response<hyper::Body>> {
-        let mut storage = self.transient.storage.write().await;
-
-        storage.take_resource::<Response<Body>>(None).map(|r| *r)
+        self.transient_mut()
+            .await
+            .take_resource::<Response<Body>>(None)
+            .map(|r| *r)
     }
 
     /// Registers an internal host alias,
@@ -105,7 +106,9 @@ impl HyperExt for ThunkContext {
             replace.port_u16(),
         );
 
-        if let Some(mut transport) = unsafe { self.host_mut(alias.scheme_str().unwrap_or_default()).await } {
+        if let Some(mut transport) =
+            unsafe { self.host_mut(alias.scheme_str().unwrap_or_default()).await }
+        {
             let key = ResourceKey::<(Option<Scheme>, Option<String>, Option<u16>)>::with_hash(key);
             transport.put_resource(value, Some(key));
         }
@@ -120,7 +123,11 @@ impl HyperExt for ThunkContext {
         let key = ResourceKey::with_hash(key);
 
         let transport = self.host(resolve.scheme_str().unwrap_or_default()).await;
-        let alias = transport.and_then(|t| t.resource::<(Option<Scheme>, Option<String>, Option<u16>)>(Some(key)).as_deref().cloned());
+        let alias = transport.and_then(|t| {
+            t.resource::<(Option<Scheme>, Option<String>, Option<u16>)>(Some(key))
+                .as_deref()
+                .cloned()
+        });
         match alias {
             Some(parts) => match parts {
                 (Some(scheme), Some(host), Some(port)) => Uri::builder()
@@ -230,10 +237,7 @@ impl CallAsync for Request {
             .request(request, uri.scheme_str() == Some("https"))
             .await?;
 
-        {
-            let mut transient = context.transient.storage.write().await;
-            transient.put_resource(response, None);
-        }
+        context.transient_mut().await.put_resource(response, None);
 
         Ok(())
     }

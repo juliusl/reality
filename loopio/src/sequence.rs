@@ -121,11 +121,6 @@ impl Sequence {
     /// that next() will then return the beginning of the next sequence.
     ///
     pub fn next_step(&mut self) -> Option<Tagged<Step>> {
-        if let Some(tc) = self.binding.as_mut() {
-            let mut storage = tc.node.storage.try_write().unwrap();
-            storage.drain_dispatch_queues();
-        }
-
         let once = self.once.pop_front();
         if once.is_some() {
             return once;
@@ -153,7 +148,12 @@ impl std::future::Future for Sequence {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Self::Output> {
-        if self.binding.as_ref().map(|b| b.cancellation.is_cancelled()).unwrap_or_default() {
+        if self
+            .binding
+            .as_ref()
+            .map(|b| b.cancellation.is_cancelled())
+            .unwrap_or_default()
+        {
             return Poll::Ready(Err(anyhow::anyhow!("Shutting down")));
         }
 
@@ -169,42 +169,46 @@ impl std::future::Future for Sequence {
             (Some(binding), None) => match self.next_step() {
                 Some(step) => {
                     trace!("Starting sequence");
-                    let handle = binding.engine_handle();
-                    self.current = Some(
-                        binding
-                            .node
-                            .runtime
-                            .unwrap()
-                            .spawn(async move { handle.unwrap().run(address(step)).await }),
-                    );
+                    let _binding = binding.clone();
+                    self.current = Some(binding.node.clone().runtime.unwrap().spawn(async move {
+                        if let Some(handle) = _binding.engine_handle().await {
+                            handle.run(address(step)).await
+                        } else {
+                            Err(anyhow::anyhow!("Engine handle is not enabled"))
+                        }
+                    }));
                 }
                 None => {
                     trace!("Done");
                     return Poll::Ready(Err(anyhow::anyhow!("Sequence has completed")));
                 }
             },
-            (Some(binding), Some(mut current)) => match current.poll_unpin(cx) {
-                Poll::Ready(Ok(result)) => {
-                    match self.next_step() {
+            (Some(binding), Some(mut current)) => {
+                match current.poll_unpin(cx) {
+                    Poll::Ready(Ok(result)) => match self.next_step() {
                         Some(next) => {
                             trace!("Executing next step");
-                            let handle = binding.engine_handle();
+                            let _binding = binding.clone();
                             self.current =
                                 Some(binding.node.runtime.unwrap().spawn(async move {
-                                    handle.unwrap().run(address(next)).await
+                                    if let Some(handle) = _binding.engine_handle().await {
+                                        handle.run(address(next)).await
+                                    } else {
+                                        Err(anyhow::anyhow!("Engine handle is not enabled"))
+                                    }
                                 }));
                         }
                         None => return Poll::Ready(result),
+                    },
+                    Poll::Ready(Err(err)) => {
+                        error!("{err}");
+                        return Poll::Ready(Err(err.into()));
+                    }
+                    Poll::Pending => {
+                        self.current = Some(current);
                     }
                 }
-                Poll::Ready(Err(err)) => {
-                    error!("{err}");
-                    return Poll::Ready(Err(err.into()));
-                }
-                Poll::Pending => {
-                    self.current = Some(current);
-                }
-            },
+            }
             _ => {
                 trace!("not bound");
                 return Poll::Ready(Err(anyhow::anyhow!(

@@ -253,8 +253,6 @@ impl Engine {
     /// Compiles operations from the parsed project,
     ///
     pub async fn compile(mut self, workspace: Workspace) -> Self {
-        use std::ops::Deref;
-
         let storage = Shared::default();
         let mut project = Project::new(storage);
         project.add_block_plugin(None, None, |_| {});
@@ -324,75 +322,55 @@ impl Engine {
 
             // Extract hosts
             for (_, target) in nodes.iter() {
-                {
-                    let mut target = target.write().await;
-                    target.drain_dispatch_queues();
-                }
+                target.write().await.drain_dispatch_queues();
 
-                let host_lock = target.read().await;
-                let hostkey = host_lock.resource::<ResourceKey<Host>>(None);
-                let _host = hostkey.as_deref().cloned();
-                drop(hostkey);
-                drop(host_lock);
-
-                if let Some(host) = target.read().await.resource::<Host>(_host) {
-                    let _host = host.clone();
-                    drop(host);
+                let storage = target.latest().await;
+                let hostkey = storage.current_resource::<ResourceKey<Host>>(None);
+                if let Some(host) = storage.current_resource::<Host>(hostkey) {
                     if let Some(previous) = self.hosts.insert(
-                        _host.name.to_string(),
-                        _host.bind(Shared::default().into_thread_safe_with(handle.clone())),
+                        host.name.to_string(),
+                        host.bind(Shared::default().into_thread_safe_with(handle.clone())),
                     ) {
                         info!(address = previous.name, "Replacing host");
                     }
                 }
-                {
-                    let mut target = target.write().await;
-                    target.drain_dispatch_queues();
-                }
+
+                target.write().await.drain_dispatch_queues();
             }
 
             // Extract operations
             for (_, target) in nodes.iter() {
-                if let Some(operation) = target.read().await.resource::<Operation>(None) {
-                    let mut _operation = operation.deref().clone();
-                    drop(operation);
-                    _operation.bind(self.new_context(target.clone()).await);
-
-                    if let Some(previous) = self.operations.insert(_operation.address(), _operation)
-                    {
+                if let Some(mut operation) =
+                    target.latest().await.current_resource::<Operation>(None)
+                {
+                    operation.bind(self.new_context(target.clone()).await);
+                    if let Some(previous) = self.operations.insert(operation.address(), operation) {
                         info!(address = previous.address(), "Replacing operation");
                     }
                 }
-                {
-                    let mut target = target.write().await;
-                    target.drain_dispatch_queues();
-                }
 
-                let seqkey_lock = target.read().await;
-                let seqkey = seqkey_lock.resource::<ResourceKey<Sequence>>(None);
-                let _seqkey = seqkey.as_deref().cloned();
-                drop(seqkey);
-                drop(seqkey_lock);
+                target.write().await.drain_dispatch_queues();
 
-                if let Some(sequence) = target.read().await.resource::<Sequence>(_seqkey) {
-                    let _seq = sequence.clone();
-                    drop(sequence);
+                let storage = target.latest().await;
+                let seqkey = storage.current_resource::<ResourceKey<Sequence>>(None);
+
+                if let Some(sequence) = storage.current_resource::<Sequence>(seqkey) {
                     if let Some(previous) = self.sequences.insert(
-                        _seq.address(),
-                        _seq.bind(self.new_context(target.clone()).await),
+                        sequence.address(),
+                        sequence.bind(self.new_context(target.clone()).await),
                     ) {
                         info!(address = previous.address(), "Replacing sequence");
                     }
                 }
-                {
-                    let mut target = target.write().await;
-                    target.drain_dispatch_queues();
-                }
+
+                target.write().await.drain_dispatch_queues();
             }
 
             for (_, target) in nodes.iter() {
-                let mut target = target.write().await;
-                target.put_resource(self.engine_handle(), None);
+                target
+                    .write()
+                    .await
+                    .put_resource(self.engine_handle(), None);
             }
         }
 
@@ -535,10 +513,10 @@ pub enum Action {
     ///
     Run {
         /// Address of the action to run,
-        /// 
+        ///
         address: String,
         /// Channel to transmit the result back to the sender,
-        /// 
+        ///
         #[serde(skip)]
         tx: Option<tokio::sync::oneshot::Sender<anyhow::Result<ThunkContext>>>,
     },
