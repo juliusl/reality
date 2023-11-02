@@ -127,7 +127,7 @@ impl Parse for StructData {
         };
 
         if let Some(lifetime) = derive_input.generics.lifetimes().find(|l| l.lifetime.ident != format_ident!("static")) {
-            Err(input.error(format!("Struct must be `'static`, therefore may not contain any fields w/ generic lifetimes. Please remove `'{}`", lifetime.lifetime.ident.to_string())))
+            Err(input.error(format!("Struct must be `'static`, therefore may not contain any fields w/ generic lifetimes. Please remove `'{}`", lifetime.lifetime.ident)))
         } else {
             Ok(Self {
                 span: input.span(),
@@ -275,7 +275,7 @@ impl StructData {
                     parser.add_parseable_extension_type_field::<#offset, Self, #ty>();
                 }
             } else {
-                let comment = LitStr::new(format!("Parsing field `{}`", f.name.to_string()).as_str(), Span::call_site());
+                let comment = LitStr::new(format!("Parsing field `{}`", f.name).as_str(), Span::call_site());
                 quote_spanned! {f.span=>
                     let _ = #comment;
                     parser.add_parseable_field::<#offset, Self, #ty>();
@@ -358,8 +358,8 @@ impl StructData {
 
         let (impl_generics, _, where_clause) = &generics.split_for_impl();
 
-        let on_load = self.reality_on_load.clone().map(|p| quote!(#p(storage).await;)).unwrap_or(quote!());
-        let on_unload = self.reality_on_unload.clone().map(|p| quote!(#p(storage).await;)).unwrap_or(quote!());
+        let on_load = self.reality_on_load.clone().map(|p| quote!(#p(storage).await;)).unwrap_or_default();
+        let on_unload = self.reality_on_unload.clone().map(|p| quote!(#p(storage).await;)).unwrap_or_default();
         let on_completed = self.reality_on_completed.clone().map(|p| quote!(#p(storage))).unwrap_or(quote!(None));
 
         let ext = self.fields.iter().filter(|f| f.ext).map(|f| {
@@ -391,7 +391,7 @@ impl StructData {
             )
         });
 
-        let from_frame = self.fields.iter().filter(|f| f.wire).rev().map(|f| {
+        let apply_frame = self.fields.iter().filter(|f| f.wire).rev().map(|f| {
             let field_name = f.field_name_lit_str();
             let ty = &f.ty;
             quote_spanned!(f.span=>
@@ -466,9 +466,9 @@ impl StructData {
             }
 
             
-            impl #_impl_generics FromFrame for #name #ty_generics #where_clause {
-                fn from_frame(&mut self, mut frame: Frame) -> anyhow::Result<()> {
-                    #(#from_frame)*
+            impl #_impl_generics ApplyFrame for #name #ty_generics #where_clause {
+                fn apply_frame(&mut self, mut frame: Frame) -> anyhow::Result<()> {
+                    #(#apply_frame)*
 
                     Ok(())
                 }

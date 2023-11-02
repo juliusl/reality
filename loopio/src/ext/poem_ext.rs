@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::io::Cursor;
 
 use async_trait::async_trait;
 use poem::delete;

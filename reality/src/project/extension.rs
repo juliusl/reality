@@ -69,7 +69,7 @@ impl<C: Send + Sync + 'static, T: BlockObject<Shared>> Clone for Extension<C, T>
     fn clone(&self) -> Self {
         Self {
             controller: self.controller.clone(),
-            resource_key: self.resource_key.clone(),
+            resource_key: self.resource_key,
             before: self.before.clone(),
             before_tasks: self.before_tasks.clone(),
             after: self.after.clone(),
@@ -89,11 +89,11 @@ where
     ///
     pub async fn run(&self, target: AsyncStorageTarget<Shared>, init: T) -> anyhow::Result<T> {
         let mut initial = target.storage.write().await;
-        initial.put_resource(anyhow::Ok::<T>(init), self.resource_key.clone());
+        initial.put_resource(anyhow::Ok::<T>(init), self.resource_key);
         drop(initial);
 
         let mut dispatcher = target
-            .dispatcher::<anyhow::Result<T>>(self.resource_key.clone())
+            .dispatcher::<anyhow::Result<T>>(self.resource_key)
             .await;
         dispatcher.enable().await;
 
@@ -144,7 +144,7 @@ where
         dispatcher.dispatch_all().await;
 
         let mut storage = target.storage.write().await;
-        if let Some(value) = storage.take_resource(self.resource_key.clone()) {
+        if let Some(value) = storage.take_resource(self.resource_key) {
             *value
         } else {
             Err(anyhow!("Could not process pipeline"))

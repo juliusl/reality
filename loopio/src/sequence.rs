@@ -52,8 +52,8 @@ impl Clone for Sequence {
             tag: self.tag.clone(),
             once: self.once.clone(),
             next: self.next.clone(),
-            _loop: self._loop.clone(),
-            _cursor: self._cursor.clone(),
+            _loop: self._loop,
+            _cursor: self._cursor,
             binding: self.binding.clone(),
             current: None,
         }
@@ -120,7 +120,7 @@ impl Sequence {
     /// If _loop is true, after None is returned it will reset the cursor, such
     /// that next() will then return the beginning of the next sequence.
     ///
-    pub fn next(&mut self) -> Option<Tagged<Step>> {
+    pub fn next_step(&mut self) -> Option<Tagged<Step>> {
         if let Some(tc) = self.binding.as_mut() {
             let mut storage = tc.node.storage.try_write().unwrap();
             storage.drain_dispatch_queues();
@@ -166,7 +166,7 @@ impl std::future::Future for Sequence {
         }
 
         match (self.binding.clone(), self.current.take()) {
-            (Some(binding), None) => match self.next() {
+            (Some(binding), None) => match self.next_step() {
                 Some(step) => {
                     trace!("Starting sequence");
                     let handle = binding.engine_handle();
@@ -185,7 +185,7 @@ impl std::future::Future for Sequence {
             },
             (Some(binding), Some(mut current)) => match current.poll_unpin(cx) {
                 Poll::Ready(Ok(result)) => {
-                    match self.next() {
+                    match self.next_step() {
                         Some(next) => {
                             trace!("Executing next step");
                             let handle = binding.engine_handle();

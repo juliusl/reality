@@ -304,9 +304,7 @@ impl Engine {
             if let Some(last) = target.attributes.last().cloned() {
                 if let Some(mut storage) = target.storage_mut() {
                     storage.drain_dispatch_queues();
-                    if let Some(mut host) =
-                        storage.resource_mut(Some(last.transmute::<Host>()))
-                    {
+                    if let Some(mut host) = storage.resource_mut(Some(last.transmute::<Host>())) {
                         host._tag = tag.map(|t| t.to_string());
                     }
                     storage.put_resource(last.transmute::<Host>(), None);
@@ -536,7 +534,11 @@ pub enum Action {
     /// Runs an operation on the engine,
     ///
     Run {
+        /// Address of the action to run,
+        /// 
         address: String,
+        /// Channel to transmit the result back to the sender,
+        /// 
         #[serde(skip)]
         tx: Option<tokio::sync::oneshot::Sender<anyhow::Result<ThunkContext>>>,
     },
@@ -551,7 +553,11 @@ pub enum Action {
 impl Debug for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Run { address, tx } => f.debug_struct("Run").field("address", address).finish(),
+            Self::Run { address, tx } => f
+                .debug_struct("Run")
+                .field("address", address)
+                .field("has_tx", &tx.is_some())
+                .finish(),
             Self::Compile { relative, content } => f
                 .debug_struct("Compile")
                 .field("relative", relative)

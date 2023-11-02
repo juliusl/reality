@@ -81,7 +81,7 @@ where
     fn parse(parser: &mut AttributeParser<Shared>, content: impl AsRef<str>) {
         Bob::parse(parser, content);
 
-        let key = parser.attributes.last().clone();
+        let key = parser.attributes.last();
         if let Some(storage) = parser.storage() {
             storage.lazy_put_resource::<Extension<C, Bob>>(
                 C::setup(key),

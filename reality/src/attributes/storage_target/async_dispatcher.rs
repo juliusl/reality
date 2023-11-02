@@ -62,7 +62,7 @@ impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
     ) -> Dispatcher<S, T> {
         use std::ops::Deref;
 
-        let dispatcher = self.dispatcher(resource_key.clone()).await;
+        let dispatcher = self.dispatcher(resource_key).await;
 
         dispatcher
             .storage
@@ -98,9 +98,9 @@ impl<Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'static> C
     fn clone(&self) -> Self {
         Self {
             storage: self.storage.clone(),
-            resource_key: self.resource_key.clone(),
+            resource_key: self.resource_key,
             tasks: FuturesOrdered::new(),
-            _u: self._u.clone(),
+            _u: self._u,
         }
     }
 }
@@ -382,7 +382,7 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
     pub async fn handle_tasks(&mut self) {
         use futures_util::StreamExt;
 
-        while let Some(_) = self.tasks.next().await {}
+        while (self.tasks.next().await).is_some() {}
     }
 
     /// Queues a dispatch fn w/ a reference to the target resource,

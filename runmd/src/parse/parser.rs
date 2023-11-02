@@ -76,7 +76,7 @@ impl Parser {
 
         // Process instructions from lexer analysis
         for (idx, mut block) in lexer.extras.blocks.drain(..).enumerate() {
-            let block_info = BlockInfo { idx, ty: block.ty.clone(), moniker: block.moniker.clone() };
+            let block_info = BlockInfo { idx, ty: block.ty, moniker: block.moniker };
 
             self.on_block(block_info.clone());
 
@@ -89,7 +89,7 @@ impl Parser {
                     }
                     Instruction::DefineProperty => self.on_define_property(line),
                     Instruction::LoadExtension | Instruction::LoadExtensionSuffix => {
-                        let node_info = NodeInfo { idx, parent_idx: self.current_node_idx.clone(), line, span };
+                        let node_info = NodeInfo { idx, parent_idx: self.current_node_idx, line, span };
                         self.on_load_extension(node_info, block_info.clone())
                             .await
                     }

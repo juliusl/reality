@@ -34,13 +34,20 @@ pub type BlockPlugin<S> = Arc<dyn Fn(&mut AttributeParser<S>) + Send + Sync + 's
 ///
 pub type NodePlugin<S> = Arc<dyn Fn(Option<&str>, Option<&str>, &mut AttributeParser<S>) + Send + Sync + 'static>;
 
+/// Type-alias for a parsed node,
+/// 
+pub type ParsedNode<Storage> = Arc<tokio::sync::RwLock<Storage>>;
+
+/// Type-alias for a table of storages created per node,
+/// 
+pub type NodeTable<Storage> = HashMap<ResourceKey<()>, ParsedNode<Storage>>;
+
 /// Project storing the main runmd parser,
 ///
 pub struct Project<Storage: StorageTarget + 'static> {
     root: Storage,
 
-    pub nodes:
-        std::sync::RwLock<HashMap<ResourceKey<()>, Arc<tokio::sync::RwLock<Storage::Namespace>>>>,
+    pub nodes: std::sync::RwLock<NodeTable<Storage::Namespace>>,
 }
 
 impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {

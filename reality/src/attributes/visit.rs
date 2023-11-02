@@ -75,10 +75,10 @@ pub trait ToFrame {
 
 /// Converts from a Frame into some type,
 ///
-pub trait FromFrame: Sized {
+pub trait ApplyFrame: Sized {
     /// Configures self from a frame,
     ///
-    fn from_frame(&mut self, frame: Frame) -> anyhow::Result<()>;
+    fn apply_frame(&mut self, frame: Frame) -> anyhow::Result<()>;
 }
 
 /// Struct for containing an object safe Field representation,
@@ -280,7 +280,7 @@ pub trait FieldPacketType: Send + Sync + 'static {
 pub trait Visit<T> {
     /// Returns a vector of fields,
     ///
-    fn visit<'a>(&'a self) -> Vec<Field<'a, T>>;
+    fn visit(&self) -> Vec<Field<'_, T>>;
 }
 
 /// Trait for visiting fields w/ mutable access,

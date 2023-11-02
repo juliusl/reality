@@ -10,9 +10,9 @@ pub struct ResourceKeyHashBuilder<T: Send + Sync + 'static, H: Hasher + Default>
     _t: PhantomData<T>,
 }
 
-impl<T: Send + Sync + 'static, H: Hasher + Default> Into<ResourceKey<T>> for ResourceKeyHashBuilder<T, H> {
-    fn into(self) -> ResourceKey<T> {
-        ResourceKey::with_hash_value(self.hasher.finish())
+impl<T: Send + Sync + 'static, H: Hasher + Default>  From<ResourceKeyHashBuilder<T, H>> for ResourceKey<T> {
+    fn from(val: ResourceKeyHashBuilder<T, H>) -> Self {
+        ResourceKey::with_hash_value(val.hasher.finish())
     }
 }
 
@@ -42,6 +42,12 @@ impl<T: Send + Sync + 'static> ResourceKeyHashBuilder<T, DefaultHasher> {
 pub struct ResourceKey<T: Send + Sync + 'static> {
     data: u128,
     _t: PhantomData<T>,
+}
+
+impl<T: Send + Sync + 'static> Default for ResourceKey<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T: Send + Sync + 'static> ResourceKey<T> {
@@ -153,7 +159,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
     /// 
     pub fn branch(&self, hashable: impl std::hash::Hash) -> Self {
         let mut hash_builder = ResourceKeyHashBuilder::<T, _>::new_default_hasher();
-        hash_builder.hash(&self.key());
+        hash_builder.hash(self.key());
         hash_builder.hash(hashable);
 
         hash_builder.finish()
@@ -176,7 +182,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
                 self.sizes() ^ std::mem::size_of::<T>()
             };
 
-            Some((key as *const u8, len as usize))
+            Some((key as *const u8, len))
         }
     }
 
@@ -294,10 +300,7 @@ impl<T: Send + Sync + 'static> Copy for ResourceKey<T> {
 
 impl<T: Send + Sync + 'static> Clone for ResourceKey<T> {
     fn clone(&self) -> Self {
-        Self {
-            data: self.data.clone(),
-            _t: self._t.clone(),
-        }
+        *self
     }
 }
 

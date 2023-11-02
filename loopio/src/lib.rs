@@ -78,7 +78,7 @@ mod tests {
             println!("Initialized as -- {:?} {:?}", _initialized, tc.attribute.map(|a| a.key()));
 
             if tc.variant_id.is_some() {
-                let frame = _initialized.to_frame(tc.attribute.clone());
+                let frame = _initialized.to_frame(tc.attribute);
                 println!("{:?}", frame);
             }
             

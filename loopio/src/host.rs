@@ -6,7 +6,7 @@ use crate::engine::EngineHandle;
 
 /// A Host contains a broadly shared storage context,
 ///
-#[derive(Reality, Clone)]
+#[derive(Reality, Default, Clone)]
 pub struct Host {
     /// Name for this host,
     ///
@@ -70,18 +70,6 @@ impl Host {
             }
         } else {
             Err(anyhow::anyhow!("Host does not have an engine handle"))
-        }
-    }
-}
-
-impl Default for Host {
-    fn default() -> Self {
-        Self {
-            name: Default::default(),
-            _tag: Default::default(),
-            handle: None,
-            host_storage: None,
-            start: None,
         }
     }
 }

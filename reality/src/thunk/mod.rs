@@ -53,7 +53,7 @@ pub mod prelude {
         fn parse(parser: &mut crate::AttributeParser<Shared>, content: impl AsRef<str>) {
             <P as AttributeType<Shared>>::parse(parser, content);
 
-            let key = parser.attributes.last().clone();
+            let key = parser.attributes.last();
             if let Some(storage) = parser.storage() {
                 storage
                     .lazy_put_resource::<ThunkFn>(<P as Plugin>::call, key.map(|k| k.transmute()));

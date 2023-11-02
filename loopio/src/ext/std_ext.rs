@@ -28,7 +28,7 @@ impl StdExt for ThunkContext {
             .storage
             .read()
             .await;
-        let content = r.resource::<String>(path.into().to_str().map(|p| ResourceKey::with_hash(p)));
+        let content = r.resource::<String>(path.into().to_str().map(ResourceKey::with_hash));
         content.as_deref()
             .cloned()
             .map(|s| s.to_string())
@@ -37,7 +37,7 @@ impl StdExt for ThunkContext {
     async fn find_file(&mut self, path: impl Into<PathBuf> + Send + Sync) -> Option<Bytes> {
         let storage = self.transient.storage.read().await;
 
-        let content = storage.resource::<Bytes>(path.into().to_str().map(|p| ResourceKey::with_hash(p)));
+        let content = storage.resource::<Bytes>(path.into().to_str().map(ResourceKey::with_hash));
         content.as_deref()
             .cloned()
     }
@@ -96,7 +96,7 @@ impl CallAsync for ReadTextFile {
         let result = result?;
 
         let mut transport = context.write_transport().await;
-        transport.put_resource(result, path.to_str().map(|p| ResourceKey::with_hash(p)));
+        transport.put_resource(result, path.to_str().map(ResourceKey::with_hash));
 
         Ok(())
     }
@@ -125,7 +125,7 @@ impl CallAsync for ReadFile {
         let mut transport = context.write_transport().await;
         transport.put_resource(
             Bytes::copy_from_slice(&result),
-            path.to_str().map(|p| ResourceKey::with_hash(p)),
+            path.to_str().map(ResourceKey::with_hash),
         );
 
         Ok(())

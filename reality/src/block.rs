@@ -113,9 +113,9 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            on_load: self.on_load.clone(),
-            on_unload: self.on_unload.clone(),
-            on_completed: self.on_completed.clone(),
+            on_load: self.on_load,
+            on_unload: self.on_unload,
+            on_completed: self.on_completed,
             namespace: self.namespace.clone(),
         }
     }

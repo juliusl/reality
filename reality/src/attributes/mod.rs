@@ -28,16 +28,16 @@ pub mod prelude {
     pub use super::visit::Visit;
     pub use super::visit::VisitMut;
     pub use super::visit::ToFrame;
-    pub use super::visit::FromFrame;
+    pub use super::visit::ApplyFrame;
     pub use super::visit::FieldPacket;
     pub use super::visit::FieldPacketType;
     pub use super::visit::Frame;
 
     /// Returns fields for an attribute type,
     ///
-    pub fn visitor<'a, S: StorageTarget, T>(
-        attr_ty: &'a (impl AttributeType<S> + Visit<T>),
-    ) -> Vec<Field<'a, T>> {
+    pub fn visitor<S: StorageTarget, T>(
+        attr_ty: &(impl AttributeType<S> + Visit<T>),
+    ) -> Vec<Field<'_, T>> {
         attr_ty.visitor::<T>()
     }
 

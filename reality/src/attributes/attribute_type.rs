@@ -36,7 +36,7 @@ pub trait AttributeType<S: StorageTarget> {
 
     /// Returns a visitor w/ read access to fields of T,
     /// 
-    fn visitor<'a, T>(&'a self) -> Vec<Field<'a, T>> 
+    fn visitor<T>(&self) -> Vec<Field<T>>
     where
         Self: Visit<T>
     {
@@ -129,7 +129,7 @@ impl<S: StorageTarget + 'static> AttributeTypeParser<S> {
 
 impl<S: StorageTarget> Clone for AttributeTypeParser<S> {
     fn clone(&self) -> Self {
-        Self(self.0.clone(), self.1.clone())
+        Self(self.0.clone(), self.1)
     }
 }
 
@@ -370,7 +370,7 @@ where
 
     /// Returns a field for the projected type,
     /// 
-    fn get_field<'a>(&'a self) -> Field<'a, Self::ProjectedType> {
+    fn get_field(&self) -> Field<Self::ProjectedType> {
         Field {
             owner: std::any::type_name::<Self>(),
             name: Self::field_name(),
@@ -483,7 +483,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            handler: self.handler.clone(),
+            handler: self.handler,
         }
     }
 }
@@ -523,7 +523,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            handler: self.handler.clone(),
+            handler: self.handler,
         }
     }
 }

@@ -19,7 +19,7 @@ use super::prelude::*;
 ///
 pub struct Context {
     /// Map of host storages this context can access,
-    /// 
+    ///
     pub hosts: BTreeMap<String, AsyncStorageTarget<Shared>>,
     /// Node storage mapping to this context,
     ///
@@ -57,7 +57,7 @@ impl Clone for Context {
         Self {
             hosts: self.hosts.clone(),
             node: self.node.clone(),
-            attribute: self.attribute.clone(),
+            attribute: self.attribute,
             transient: self.transient.clone(),
             cancellation: self.cancellation.clone(),
             variant_id: None,
@@ -107,7 +107,6 @@ impl Context {
         self.attribute = Some(attribute);
     }
 
-    
     /// Get read access to source storage,
     ///
     pub async fn node(&self) -> tokio::sync::RwLockReadGuard<Shared> {
@@ -116,9 +115,14 @@ impl Context {
 
     /// Get mutable access to host storage,
     ///
-    /// **Note**: Marked unsafe because will mutate the host storage. Host storage is shared by all contexts associated to a specific host.
+    /// # Safety 
+    /// 
+    /// Marked unsafe because will mutate the host storage. Host storage is shared by all contexts associated to a specific host.
     ///
-    pub async unsafe fn host_mut(&self, name: impl AsRef<str>) -> Option<tokio::sync::RwLockWriteGuard<Shared>> {
+    pub async unsafe fn host_mut(
+        &self,
+        name: impl AsRef<str>,
+    ) -> Option<tokio::sync::RwLockWriteGuard<Shared>> {
         println!("Looking for {} in {:?}", name.as_ref(), self.hosts.keys());
         if let Some(host) = self.hosts.get(name.as_ref()) {
             Some(host.storage.write().await)
@@ -129,7 +133,10 @@ impl Context {
 
     /// Get read access to host storage,
     ///
-    pub async fn host(&self, name: impl AsRef<str>) -> Option<tokio::sync::RwLockReadGuard<Shared>> {
+    pub async fn host(
+        &self,
+        name: impl AsRef<str>,
+    ) -> Option<tokio::sync::RwLockReadGuard<Shared>> {
         trace!("Looking for {} in {:?}", name.as_ref(), self.hosts.keys());
         if let Some(host) = self.hosts.get(name.as_ref()) {
             Some(host.storage.read().await)
@@ -140,7 +147,9 @@ impl Context {
 
     /// Get mutable access to source storage,
     ///
-    /// **Note**: Marked unsafe because will mutate the source storage. Source storage is re-used on each execution.
+    /// # Safety
+    ///
+    /// Marked unsafe because will mutate the source storage. Source storage is re-used on each execution.
     ///
     pub async unsafe fn node_mut(&self) -> tokio::sync::RwLockWriteGuard<Shared> {
         self.node.storage.write().await
@@ -154,7 +163,9 @@ impl Context {
 
     /// (unsafe) Tries to get mutable access to source storage,
     ///
-    /// **Note**: Marked unsafe because will mutate the source storage. Source storage is re-used on each execution.
+    /// # Safety
+    ///
+    /// Marked unsafe because will mutate the source storage. Source storage is re-used on each execution.
     ///
     pub unsafe fn try_source_mut(&mut self) -> Option<tokio::sync::RwLockWriteGuard<Shared>> {
         self.node.storage.try_write().ok()
@@ -212,7 +223,7 @@ impl Context {
             .storage
             .read()
             .await
-            .resource::<P>(self.attribute.clone().map(|a| a.transmute()))
+            .resource::<P>(self.attribute.map(|a| a.transmute()))
             .map(|r| r.clone())
             .unwrap_or_default()
     }
@@ -229,23 +240,22 @@ impl Context {
             .storage
             .read()
             .await
-            .resource::<crate::Extension<C, P>>(self.attribute.clone().map(|a| a.transmute()))
+            .resource::<crate::Extension<C, P>>(self.attribute.map(|a| a.transmute()))
             .map(|r| r.clone())
     }
 
     /// Schedules garbage collection of the variant,
     ///
     pub(crate) fn garbage_collect(&self) {
-        match (self.attribute, self.variant_id) {
-            (Some(key), Some(_)) => {
-                if let Ok(storage) = self.node.storage.try_read() {
-                    storage.lazy_dispatch_mut(move |s| {
-                        debug!(key=key.key(), "Garbage collection");
-                        s.remove_resource_at(key);
-                    });
-                }
-            }
-            _ => {}
+        if let (Some(key), Some(_), Ok(storage)) = (
+            self.attribute,
+            self.variant_id,
+            self.node.storage.try_read(),
+        ) {
+            storage.lazy_dispatch_mut(move |s| {
+                debug!(key = key.key(), "Garbage collection");
+                s.remove_resource_at(key);
+            });
         }
     }
 }

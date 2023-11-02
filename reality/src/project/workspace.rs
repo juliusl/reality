@@ -27,6 +27,12 @@ impl Clone for Workspace {
     }
 }
 
+impl Default for Workspace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Workspace {
     /// Creates a new project loop,
     ///

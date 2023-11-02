@@ -208,7 +208,7 @@ pub trait StorageTarget {
         let mut tocall = vec![];
         {
             borrow_mut!(self, DispatchMutQueue<Self>, |queue| => {
-                if let Ok(mut queue) = queue.lock() {
+                if let Ok(queue) = queue.get_mut() {
                     while let Some(func) = queue.pop_front() {
                         tocall.push(func);
                     }
@@ -224,7 +224,7 @@ pub trait StorageTarget {
         let mut tocall = vec![];
         {
             borrow_mut!(self, DispatchQueue<Self>, |queue| => {
-                if let Ok(mut queue) = queue.lock() {
+                if let Ok(queue) = queue.get_mut() {
                     while let Some(func) = queue.pop_front() {
                         tocall.push(func);
                     }

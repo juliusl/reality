@@ -114,7 +114,7 @@ impl<S: StorageTarget> AttributeParser<S> {
             // Initialize attribute type,
             if let Ok(init) = source.as_ref().parse::<T>() {
                 parsed_key = Some(key.transmute());
-                storage.lazy_put_resource(init, parsed_key.clone());
+                storage.lazy_put_resource(init, parsed_key);
                 storage.lazy_put_resource(Comments(comments), parsed_key.map(|k| k.transmute()));
             }
         }

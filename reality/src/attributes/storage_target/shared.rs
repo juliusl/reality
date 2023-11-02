@@ -61,7 +61,7 @@ impl StorageTarget for Shared {
                     let r = from_ref_mut(inner);
 
                     // Making a backup of the pointer in case the cast fails
-                    let backup = r.clone();
+                    let backup = r;
                     let r = r.cast::<T>();
 
                     if r.is_null() {

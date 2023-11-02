@@ -106,7 +106,8 @@ fn on_block_end(lex: &mut Lexer<Instruction>) {
 fn on_add_node(lex: &mut Lexer<Instruction>) -> Filter<()> {
     if lex.extras.is_analyzing() {
         lex.extras.set_instruction(Instruction::AddNode);
-        Filter::Emit(on_attribute(lex))
+        on_attribute(lex);
+        Filter::Emit(())
     } else {
         Filter::Skip
     }
@@ -116,7 +117,8 @@ fn on_add_node(lex: &mut Lexer<Instruction>) -> Filter<()> {
 fn on_define_property(lex: &mut Lexer<Instruction>) -> Filter<()> {
     if lex.extras.is_analyzing() {
         lex.extras.set_instruction(Instruction::DefineProperty);
-        Filter::Emit(on_attribute(lex))
+        on_attribute(lex);
+        Filter::Emit(())
     } else {
         Filter::Skip
     }
@@ -126,7 +128,8 @@ fn on_define_property(lex: &mut Lexer<Instruction>) -> Filter<()> {
 fn on_load_extension(lex: &mut Lexer<Instruction>) -> Filter<()> {
     if lex.extras.is_analyzing() {
         lex.extras.set_instruction(Instruction::LoadExtension);
-        Filter::Emit(on_extension(lex))
+        on_extension(lex);
+        Filter::Emit(())
     } else {
         Filter::Skip
     }
@@ -136,7 +139,8 @@ fn on_load_extension(lex: &mut Lexer<Instruction>) -> Filter<()> {
 fn on_load_extension_suffix(lex: &mut Lexer<Instruction>) -> Filter<()> {
     if lex.extras.is_analyzing() {
         lex.extras.set_instruction(Instruction::LoadExtensionSuffix);
-        Filter::Emit(on_extension(lex))
+        on_extension(lex);
+        Filter::Emit(())
     } else {
         Filter::Skip
     }

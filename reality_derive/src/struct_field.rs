@@ -113,8 +113,7 @@ impl StructField {
     
                 if vec!["crate:Tagged:", "reality:Tagged:", "Tagged:"]
                     .into_iter()
-                    .find(|s| idents == *s)
-                    .is_some()
+                    .any(|s| idents == *s)
                 {
                     on_tagged()
                 } else {
@@ -143,16 +142,16 @@ impl StructField {
             callback = quote_spanned! {self.span=>
                 #cb(self, value, _tag);
             };
-        } else if let Some(_) = self.map_of.as_ref() {
+        } else if self.map_of.as_ref().is_some() {
             callback = quote_spanned! {self.span=>
                 if let Some(tag) = _tag {
-                    self.#name.insert(tag.to_string(), value.into());
+                    self.#name.insert(tag.to_string(), value);
                 }
             };
         } else if let Some(ty) = self.vec_of.as_ref() {
             callback = handle_tagged(ty, || {
                 quote_spanned!(self.span=>
-                    self.#name.push(value.into());
+                    self.#name.push(value);
 
                     if let (Some(tag), Some(last)) = (_tag, self.#name.last_mut()) {
                         last.set_tag(tag);
@@ -160,13 +159,13 @@ impl StructField {
                 )
             }, || {
                 quote_spanned! {self.span=>
-                    self.#name.push(value.into());
+                    self.#name.push(value);
                 }
             });
         } else if let Some(ty) = self.option_of.as_ref() {
             callback = handle_tagged(ty, || {
                 quote_spanned!(self.span=>
-                    self.#name = Some(value.into());
+                    self.#name = Some(value);
 
                     if let (Some(tag), Some(last)) = (_tag, self.#name.as_mut()) {
                         last.set_tag(tag);
@@ -174,13 +173,13 @@ impl StructField {
                 )
             }, || {
                 quote_spanned! {self.span=>
-                    self.#name = Some(value.into());
+                    self.#name = Some(value);
                 }
             });
         } else if let Some(ty) = self.vecdeq_of.as_ref() {
            callback= handle_tagged(ty, || {
                 quote_spanned!(self.span=>
-                    self.#name.push_back(value.into());
+                    self.#name.push_back(value);
 
                     if let (Some(tag), Some(last)) = (_tag, self.#name.back_mut()) {
                         last.set_tag(tag);
@@ -188,7 +187,7 @@ impl StructField {
                 )
             }, || {
                 quote_spanned! {self.span=>
-                    self.#name.push_back(value.into());
+                    self.#name.push_back(value);
                 }
             });
         }
@@ -246,7 +245,7 @@ impl Parse for StructField {
                     }
 
                     if meta.path.is_ident("attribute_type") {
-                        if let Ok(_) = meta.input.parse::<Token![=]>() {
+                        if meta.input.parse::<Token![=]>().is_ok() {
                             attribute_type = meta.input.parse::<Path>().ok();
                         } else {
                             attribute_type = parse2::<Path>(ty.to_token_stream()).ok();
@@ -258,7 +257,7 @@ impl Parse for StructField {
                             return Err(syn::Error::new(meta.input.span(), "Can only have one of either, `parse`, `map_of`, of `list_of`"))
                         }
 
-                        if let Ok(_) = meta.input.parse::<Token![=]>() {
+                        if meta.input.parse::<Token![=]>().is_ok() {
                             map_of = meta.input.parse::<syn::Type>().ok();
                         } else {
                             return Err(syn::Error::new(
@@ -274,7 +273,7 @@ impl Parse for StructField {
                         }
 
 
-                        if let Ok(_) = meta.input.parse::<Token![=]>() {
+                        if meta.input.parse::<Token![=]>().is_ok() {
                             vec_of = meta.input.parse::<syn::Type>().ok();
                         } else {
                             return Err(syn::Error::new(
@@ -290,7 +289,7 @@ impl Parse for StructField {
                         }
 
 
-                        if let Ok(_) = meta.input.parse::<Token![=]>() {
+                        if meta.input.parse::<Token![=]>().is_ok() {
                             vecdeq_of = meta.input.parse::<syn::Type>().ok();
                         } else {
                             return Err(syn::Error::new(
@@ -305,7 +304,7 @@ impl Parse for StructField {
                             return Err(syn::Error::new(meta.input.span(), "Can only have one of either, `parse`, `option_of`, `map_of`, of `vec_of`"))
                         }
 
-                        if let Ok(_) = meta.input.parse::<Token![=]>() {
+                        if meta.input.parse::<Token![=]>().is_ok() {
                             option_of = meta.input.parse::<syn::Type>().ok();
                         } else {
                             return Err(syn::Error::new(
