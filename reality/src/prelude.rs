@@ -1,0 +1,70 @@
+pub use crate::derive::Reality;
+pub use crate::derive::AttributeType;
+pub use crate::Attribute;
+pub use crate::AttributeType;
+pub use crate::Comments;
+pub use crate::StorageTarget;
+pub use crate::AttributeParser;
+pub use crate::BlockObject;
+pub use crate::AsyncStorageTarget;
+pub use crate::OnParseField;
+pub use crate::Tagged;
+pub use crate::Project;
+pub use crate::Source;
+pub use crate::Workspace;
+pub use crate::Shared;
+pub use crate::Extension;
+pub use crate::ExtensionController;
+pub use crate::ExtensionPlugin;
+pub use crate::ResourceKey;
+pub use crate::ResourceKeyHashBuilder;
+pub use crate::Visit;
+pub use crate::VisitMut;
+pub use crate::Frame;
+pub use crate::ApplyFrame;
+pub use crate::ToFrame;
+pub use crate::FieldPacket;
+pub use crate::FieldPacketType;
+pub use crate::Field;
+pub use crate::FieldMut;
+pub use crate::FieldOwned;
+pub use crate::SetField;
+pub use crate::RegisterWith;
+
+/*
+    Macros for working w/ a storage target
+*/
+pub use crate::take;
+pub use crate::resource;
+pub use crate::resource_mut;
+pub use crate::resource_owned;
+pub use crate::borrow;
+pub use crate::borrow_mut;
+pub use crate::task;
+pub use crate::task_mut;
+
+pub use crate::thunk::*;
+
+pub use std::str::FromStr;
+
+/// Returns the latest value of a reference,
+/// 
+#[async_trait::async_trait]
+pub trait Latest<T>
+where
+    T: ToOwned<Owned = T> + Send + Sync + 'static, 
+{
+    /// Returns the latest value,
+    /// 
+    async fn latest(&self) -> T;
+}
+
+#[async_trait::async_trait]
+impl<T> Latest<T> for tokio::sync::RwLock<T> 
+where
+    T: ToOwned<Owned = T> + Send + Sync + 'static,  
+{
+    async fn latest(&self) -> T {
+        self.read().await.to_owned()
+    }
+}

@@ -1,0 +1,508 @@
+use std::collections::HashMap;
+use proc_macro2::Ident;
+use proc_macro2::Span;
+use proc_macro2::TokenStream;
+use quote::format_ident;
+use quote::quote;
+use quote::ToTokens;
+use quote::quote_spanned;
+use syn::GenericParam;
+use syn::Generics;
+use syn::ImplGenerics;
+use syn::LitStr;
+use syn::Path;
+use syn::Token;
+use syn::TypeGenerics;
+use syn::WhereClause;
+use syn::parse::Parse;
+use syn::parse2;
+use syn::Data;
+use syn::DeriveInput;
+use syn::FieldsNamed;
+
+use crate::struct_field::StructField;
+
+/// Parses a struct from derive attribute,
+/// 
+/// ``` norun
+/// #[derive(AttributeType)]
+/// #[reality(rename="")]
+/// struct Test {
+///        
+/// }
+/// ```
+pub(crate) struct StructData {
+    /// Span of the struct being derived,
+    /// 
+    span: Span,
+    /// Name of the struct,
+    ///
+    name: Ident,
+    /// Generics
+    /// 
+    generics: Generics,
+    /// Parsed struct fields,
+    ///
+    fields: Vec<StructField>,
+    plugin: bool,
+    ext: bool,
+    /// Reality attribute, rename option
+    /// 
+    reality_rename: Option<LitStr>,
+    /// Reality attribute, on_load fn path,
+    /// 
+    reality_on_load: Option<Path>,
+    /// Reality attribute, on_unload fn path,
+    /// 
+    reality_on_unload: Option<Path>,
+    /// Reality attribute, on_completed fn path,
+    /// 
+    reality_on_completed: Option<Path>,
+}
+
+impl Parse for StructData {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let derive_input = DeriveInput::parse(input)?;
+
+        let name = derive_input.ident;
+
+        let mut reality_rename = None;
+        let mut reality_on_load = None;
+        let mut reality_on_unload = None;
+        let mut reality_on_completed = None;
+        let mut plugin = false;
+        let mut ext = false;
+
+        for attr in derive_input.attrs.iter() {
+            if attr.path().is_ident("reality") {
+                attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("rename") {
+                        meta.input.parse::<Token![=]>()?;
+                        reality_rename = meta.input.parse::<LitStr>().ok();
+                    }
+                    
+                    if meta.path.is_ident("load") {
+                        meta.input.parse::<Token![=]>()?;
+                        reality_on_load = meta.input.parse::<Path>().ok();
+                    }
+
+                    if meta.path.is_ident("unload") {
+                        meta.input.parse::<Token![=]>()?;
+                        reality_on_unload = meta.input.parse::<Path>().ok();
+                    }
+
+                    if meta.path.is_ident("completed") {
+                        meta.input.parse::<Token![=]>()?;
+                        reality_on_completed = meta.input.parse::<Path>().ok();
+                    }
+
+                    if meta.path.is_ident("plugin") {
+                        plugin = true;
+                    }
+
+                    if meta.path.is_ident("ext") {
+                        ext = true;
+                    }
+
+                    Ok(())
+                })?;
+            }
+        }
+
+        let fields = if let Data::Struct(data) = &derive_input.data {
+            let named = parse2::<FieldsNamed>(data.fields.to_token_stream())?;
+            named
+                .named
+                .iter()
+                .filter_map(|n| parse2::<StructField>(n.to_token_stream()).ok())
+                .filter(|f| !f.ignore)
+                .enumerate()
+                .map(|(idx, mut f)| {
+                    f.offset = idx;
+                    f
+                })
+                .collect::<Vec<_>>()
+        } else {
+            vec![]
+        };
+
+        if let Some(lifetime) = derive_input.generics.lifetimes().find(|l| l.lifetime.ident != format_ident!("static")) {
+            Err(input.error(format!("Struct must be `'static`, therefore may not contain any fields w/ generic lifetimes. Please remove `'{}`", lifetime.lifetime.ident)))
+        } else {
+            Ok(Self {
+                span: input.span(),
+                name,
+                generics: derive_input.generics,
+                fields,
+                reality_rename,
+                reality_on_load,
+                reality_on_unload,
+                reality_on_completed,
+                plugin,
+                ext,
+            })
+        }
+    }
+}
+
+impl StructData {
+    /// Implements visit traits,
+    /// 
+    pub(crate) fn visit_trait(&self, impl_generics: &ImplGenerics<'_>, ty_generics: &TypeGenerics<'_>, where_clause: &Option<&WhereClause>) -> TokenStream {
+        let fields = self.fields.iter().fold(HashMap::new(), |mut acc, f| {
+            if !acc.contains_key(&f.ty) {
+                acc.insert(f.ty.clone(), vec![f.clone()]);
+            } else if let Some(list) = acc.get_mut(&f.ty) {
+                list.push(f.clone());
+            }
+
+            acc
+        });
+
+        let visit_impls = fields.iter().map(|(ty, fields)| {
+            let owner = &self.name;
+
+            let _fields = fields.iter().map(|f| {
+                let ty = f.field_ty();
+                let offset = &f.offset;
+                quote_spanned!(f.span=> 
+                    <Self as OnParseField<#offset, #ty>>::get_field(self)
+                )
+            });
+
+            let _fields_mut = fields.iter().map(|f| {
+                let ty = f.field_ty();
+                let offset = &f.offset;
+                let name_lit = f.field_name_lit_str();
+                let name = &f.name;
+                quote_spanned!(f.span=>
+                    FieldMut { owner: std::any::type_name::<#ty>(), name: #name_lit, offset: #offset, value: &mut self.#name }
+                )
+            });
+
+            let _set_field_cases = fields.iter().map(|f| {
+                let ty = f.field_ty();
+                let offset = &f.offset;
+                let field_name_lit = f.field_name_lit_str();
+                quote_spanned!(f.span=>
+                    (#field_name_lit, #offset) => { *<Self as OnParseField<#offset, #ty>>::get_field_mut(self).value = field.value; true }
+                )
+            });
+
+            let _fromstr_derive = fields.iter().filter(|f| f.derive_fromstr).map(|f| {
+                let name = &f.name;
+
+                quote_spanned!(self.span=>
+                  impl #impl_generics std::str::FromStr for #owner #ty_generics #where_clause {
+                      type Err = anyhow::Error;
+
+                      fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+                          let mut _s = Self::default();
+                          _s.#name = s.parse()?;
+                          Ok(_s)
+                      }
+                    }
+                  )
+            });
+
+            quote_spanned!(self.span=>
+                #(#_fromstr_derive)*
+
+                impl #impl_generics reality::prelude::Visit<#ty> for #owner #ty_generics #where_clause {
+                    fn visit<'a>(&'a self) -> Vec<reality::prelude::Field<'a, #ty>> {
+                        vec![
+                            #(#_fields),*
+                        ]
+                    }
+                }
+
+                impl #impl_generics reality::prelude::VisitMut<#ty> for #owner #ty_generics #where_clause {
+                    fn visit_mut<'a: 'b, 'b>(&'a mut self) -> Vec<reality::prelude::FieldMut<'b, #ty>> {
+                        vec![
+                            #(#_fields_mut),*
+                        ]
+                    }
+                }
+
+                impl #impl_generics reality::prelude::SetField<#ty> for #owner #ty_generics #where_clause {
+                    fn set_field(&mut self, field: reality::prelude::FieldOwned<#ty>) -> bool {
+                        if field.owner != std::any::type_name::<Self>() {
+                            return false;
+                        }
+
+                        match (field.name, field.offset) {
+                            #(#_set_field_cases),*
+                            _ => {
+                                false
+                            }
+                        }
+                    }
+                }
+            )
+        });
+
+        quote_spanned!(self.span=> 
+            #(#visit_impls)*
+        )
+    }
+
+    /// Returns token stream of generated AttributeType trait
+    /// 
+    pub(crate) fn attribute_type_trait(mut self) -> TokenStream {
+        let ident = &self.name;
+        let original = self.generics.clone();
+        let (original_impl_generics, ty_generics, _) = original.split_for_impl();
+        let ty_generics = ty_generics.clone();
+        self.generics.params.push(
+            parse2::<GenericParam>(
+                quote!(S: StorageTarget + Send + Sync + 'static)).expect("should be able to tokenize")
+            );
+
+        let (impl_generics, _, where_clause) = &self.generics.split_for_impl();
+        
+        let visit_impl = self.visit_trait(&original_impl_generics, &ty_generics, where_clause);
+        
+        let trait_ident = self.reality_rename.unwrap_or(LitStr::new(ident.to_string().to_lowercase().as_str(), self.span));
+        let fields = self.fields.clone();
+        let fields = fields.iter().enumerate().map(|(offset, f)| {
+            let ty = &f.field_ty();
+            if let Some(attribute_type) = f.attribute_type.as_ref() {
+                quote_spanned! {f.span=>
+                    parser.add_parseable_attribute_type_field::<#offset, Self, #attribute_type>();
+                }
+            } else if f.ext {
+                quote_spanned! {f.span=>
+                    parser.add_parseable_extension_type_field::<#offset, Self, #ty>();
+                }
+            } else {
+                let comment = LitStr::new(format!("Parsing field `{}`", f.name).as_str(), Span::call_site());
+                quote_spanned! {f.span=>
+                    let _ = #comment;
+                    parser.add_parseable_field::<#offset, Self, #ty>();
+                }
+            }
+        });
+
+        //  Implementation for fields parsers,
+        // 
+        let fields_on_parse_impl = self.fields.iter().map(|f| {
+            let field_ident = f.field_name_lit_str();
+            let ty = f.field_ty();
+            let absolute_ty = &f.ty;
+            let name = &f.name;
+            let offset = &f.offset;
+
+            // Callback to use
+            let callback = f.render_field_parse_callback();
+
+            quote_spanned! {f.span=>
+                impl #original_impl_generics OnParseField<#offset, #ty> for #ident #ty_generics #where_clause {
+                    type ProjectedType = #absolute_ty;
+
+                    fn field_name() -> &'static str {
+                        #field_ident
+                    }
+                
+                    #[allow(unused_variables)]
+                    fn on_parse(&mut self, value: #ty, _tag: Option<&String>) {
+                        #callback
+                    }
+
+                    #[inline]
+                    fn get(&self) -> &Self::ProjectedType {
+                        &self.#name
+                    }
+
+                    #[inline]
+                    fn get_mut(&mut self) -> &mut Self::ProjectedType {
+                        &mut self.#name
+                    }
+                }
+            }
+        });
+
+
+        quote_spanned! {self.span=> 
+            impl #impl_generics AttributeType<S> for #ident #ty_generics #where_clause {
+                fn ident() -> &'static str {
+                    #trait_ident
+                }
+
+                fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
+                    let mut enable = parser.parse_attribute::<Self>(content);
+
+                    if enable.is_some() {
+                        #(#fields)*
+                    }
+                }
+            }
+
+            #(#fields_on_parse_impl)*
+
+            #visit_impl
+        }
+    }
+
+     /// Returns token stream of generated AttributeType trait
+    /// 
+    pub(crate) fn object_type_trait(self) -> TokenStream {
+        let name = self.name.clone();
+        let original = self.generics.clone();
+        let (_impl_generics, ty_generics, _) = original.split_for_impl();
+        let ty_generics = ty_generics.clone();
+        let mut generics = self.generics.clone();
+        generics.params.push(
+            parse2::<GenericParam>(
+                quote!(Storage: StorageTarget + Send + Sync + 'static)).expect("should be able to tokenize")
+            );
+
+        let (impl_generics, _, where_clause) = &generics.split_for_impl();
+
+        let on_load = self.reality_on_load.clone().map(|p| quote!(#p(storage).await;)).unwrap_or_default();
+        let on_unload = self.reality_on_unload.clone().map(|p| quote!(#p(storage).await;)).unwrap_or_default();
+        let on_completed = self.reality_on_completed.clone().map(|p| quote!(#p(storage))).unwrap_or(quote!(None));
+
+        let ext = self.fields.iter().filter(|f| f.ext).map(|f| {
+            let ty = f.field_ty();
+            quote_spanned!(f.span=>
+                parser.with_object_type::<Thunk<#ty>>();
+            )
+        });
+
+        let plugins = self.fields.iter().filter(|f| f.plugin).map(|f| {
+            let ty = f.field_ty();
+            quote_spanned!(f.span=>
+                #ty::register(host); 
+            )
+        });
+
+        let to_frame = self.fields.iter().filter(|f| f.wire).map(|f| {
+            let offset = f.offset; 
+            let ty = f.field_ty();
+            let pty = &f.ty;
+            let _name = &f.name;
+            quote_spanned!(f.span=>
+                {
+                    let mut packet = <Self as OnParseField<#offset, #ty>>::into_packet(self.#_name);
+                    packet.owner_name = std::any::type_name::<#name #ty_generics>().to_string();
+                    packet.attribute_hash = key.map(|k| k.key());
+                    packet.into_wire::<#pty>()
+                }
+            )
+        });
+
+        let apply_frame = self.fields.iter().filter(|f| f.wire).rev().map(|f| {
+            let field_name = f.field_name_lit_str();
+            let ty = &f.ty;
+            quote_spanned!(f.span=>
+                if let Some(field) = frame.pop() {
+                    self.set_field(field.into_field_owned::<#name #ty_generics, #ty>()?);
+                } else {
+                    return Err(anyhow::anyhow!("Expected field packet to be {}", #field_name));
+                }
+            )
+
+        });
+        
+        let plugin = if self.plugin {
+            quote!(
+            impl Plugin for #name #ty_generics #where_clause  {
+                fn call(context: ThunkContext) -> CallOutput {
+                    context
+                        .spawn(|mut tc| async {
+                            <Self as CallAsync>::call(&mut tc).await?;
+                            Ok(tc)
+                        })
+                        .into()
+                }
+            }
+
+            impl #name #ty_generics #where_clause  {
+                pub fn register(mut host: &mut impl RegisterWith) {
+                  #(#plugins)*
+                  host.register_with(|parser| {
+                    #(#ext)*
+                  }); 
+                }
+            }
+            )
+        } else if self.ext {
+            quote!(
+                impl #name #ty_generics #where_clause  {
+                    pub fn register(mut host: &mut impl RegisterWith) {
+                        #(#plugins)*
+                        host.register_with(|parser| {
+                            #(#ext)*
+                        });
+                    }
+                }
+            )
+        } else {
+            quote!()
+        };
+
+        let object_type_trait = quote_spanned!(self.span=>
+            #[reality::runmd::async_trait]
+            impl #impl_generics BlockObject<Storage> for #name #ty_generics #where_clause {
+                async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>) {
+                    #on_load
+                }
+
+                async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>) {
+                    #on_unload
+                }
+
+                fn on_completed(storage: AsyncStorageTarget<Storage::Namespace>) -> Option<AsyncStorageTarget<Storage::Namespace>> {
+                    #on_completed
+                }
+            }
+
+            impl #_impl_generics ToFrame for #name #ty_generics #where_clause {
+                fn to_frame(self, key: Option<ResourceKey<Attribute>>) -> Frame {
+                    vec![
+                        #(#to_frame),*
+                    ]
+                }
+            }
+
+            
+            impl #_impl_generics ApplyFrame for #name #ty_generics #where_clause {
+                fn apply_frame(&mut self, mut frame: Frame) -> anyhow::Result<()> {
+                    #(#apply_frame)*
+
+                    Ok(())
+                }
+            }
+
+            #plugin
+        );
+
+
+        let mut attribute_type = self.attribute_type_trait();
+        attribute_type.extend(object_type_trait);
+        attribute_type
+    }
+}
+
+#[test]
+fn test_parse_struct_data() {
+    use quote::ToTokens;
+    
+    let stream = <proc_macro2::TokenStream as std::str::FromStr>::from_str(
+        r#"
+struct Test {
+    #[reality(rename = "Name")]
+    name: String,
+}
+"#,
+    )
+    .unwrap();
+
+    let mut data = syn::parse2::<StructData>(stream).unwrap();
+
+    let field = data.fields.remove(0);
+    assert_eq!(false, field.ignore);
+    assert_eq!(Some("\"Name\"".to_string()), field.rename.map(|r| r.to_token_stream().to_string()));
+    assert_eq!("name", field.name.to_string().as_str());
+    assert_eq!("String", field.ty.to_token_stream().to_string().as_str());
+}
