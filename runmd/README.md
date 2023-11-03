@@ -1,28 +1,58 @@
-# Runmd 
+# \`\`\`runmd
 
-Runmd is a language that is embedded in markdown code-blocks, to organize high-level application specific instructions in documentation. 
+## Overview
 
-This crate provides a parser and framework for handling instructions. 
+`runmd` is a Rust-based language that elevates the markdown experience by embedding executable blocks within markdown files. The language structure is composed of blocks, nodes, and instructions, forming a shallow tree with blocks serving as roots. These roots branch out into nodes, and each node can bear multiple leaves termed as "extensions."
 
-## Background
+## Key Concepts
 
-A typical runmd block looks like,
+- **Blocks**: The foundational structure of a `runmd` program, starting with a markdown code block annotated with `runmd`.
+- **Nodes**: Represent separate branches within a block and are initiated with a '+' symbol. Nodes contain instructions and can have properties and extensions.
+- **Instructions**: Each line within a node is parsed into an instruction, which is the actionable element of the language.
+- **Extensions**: Leaves of a node, defined using a media type format, which specify the output or the operational context of a node.
 
-```md 
+## Writing runmd
+
+To write a `runmd` script, one starts with a code block labeled `runmd` and proceeds to configure nodes with instructions, properties, and extensions as needed:
+
+```md
 ```runmd
-+ .example                          # This line adds a node
-: .property     Hello World         # This line defines a property on that node
-<application/example.extension>     # This line loads an extension for the previous node
-: .property     Hello Extension     # This line defines a property on the extension once it has loaded
-<..other>                           # This line loads another extension by suffix appending to the name of the previously loaded extension
-: .property     Hello another Ext   # This line defines a property on the new extension
-``` # End block of this block
++ .node_name input # comment
+: .property_name value # property comment
+<application/json> extension input # extension comment
+
 ```
 
-To integrate with the framework, a block provider and node provider are given to the parser. When an instruction to add a node or start a block is encountered, the provider is called and must return a type that implements a `Node` trait.
+**Basic Syntax:**
 
-When an instruction to load an extension or define a property is called, the parser will call the functions on the previously returned node to execute the instruction.
+- **Start a block**: ` ```runmd`
+- **Add a node**: `+ .node`
+- **Add a property**: `: .property`
+- **Add an extension**: `<extension_name>`
+- **End a block**: ` ``` `
 
-Loading an extension can happen asynchronously and must also return a type that implements the `Node` trait. 
+Special considerations include escaping '#' with double quotes and the distinction that extensions do not receive a tag value.
 
-When the entire block has completed parsing, each node will be notified and the parser will proceed to the next block.
+## Installation & Prerequisites
+
+`runmd` is primarily a backend parser and lexer for developers interested in integrating runnable markdown into their applications. To get started, clone the repository and refer to the language guide provided.
+
+## Getting Started
+
+Dive into the `tests` directory for a minimum viable implementation. This will demonstrate the syntax and functionality of `runmd`, providing a hands-on introduction to the language.
+
+## Architecture
+
+When parsing `runmd` blocks, the library emits a flat list of instructions which then drive the parser. Implementing `runmd` involves setting up block and node providers that handle the beginning of blocks and addition of new nodes, respectively. Both providers must yield a type that implements the Node trait, which includes the ExtensionLoader trait. To streamline this process, a `BoxedNode` type is utilized.
+
+## Contributing
+
+Contributions to `runmd` are highly encouraged:
+
+- **Bugs**: Report bugs by [creating an issue](https://github.com/juliusl/reality/issues).
+- **Features**: Suggest new features with a pull request or an issue.
+- **Support**: For support, create an issue or reach out via our community channels.
+
+## License
+
+MIT
