@@ -12,9 +12,11 @@ use poem::http::uri::Scheme;
 use reality::prelude::*;
 use tracing::warn;
 
+use crate::prelude::EngineProxy;
+
 /// Type-alias for a secure client,
 ///
-type SecureClient = hyper::Client<hyper_tls::HttpsConnector<HttpConnector>>;
+pub type SecureClient = hyper::Client<hyper_tls::HttpsConnector<HttpConnector>>;
 
 pub fn secure_client() -> SecureClient {
     hyper::Client::builder().build(hyper_tls::HttpsConnector::new())
@@ -22,7 +24,7 @@ pub fn secure_client() -> SecureClient {
 
 /// Type-alias for a local client,
 ///
-type LocalClient = hyper::Client<HttpConnector>;
+pub type LocalClient = hyper::Client<HttpConnector>;
 
 pub fn local_client() -> LocalClient {
     hyper::Client::new()
@@ -109,6 +111,9 @@ impl HyperExt for ThunkContext {
         if let Some(mut transport) =
             unsafe { self.host_mut(alias.scheme_str().unwrap_or_default()).await }
         {
+            let init = self.initialized::<EngineProxy>().await;
+            transport.put_resource(init, None);
+
             let key = ResourceKey::<(Option<Scheme>, Option<String>, Option<u16>)>::with_hash(key);
             transport.put_resource(value, Some(key));
         }

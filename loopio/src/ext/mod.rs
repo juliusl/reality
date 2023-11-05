@@ -1,6 +1,7 @@
 use async_trait::async_trait;
-use reality::{Comments, StorageTarget, ThunkContext};
+use reality::prelude::*;
 
+use crate::host::HostCondition;
 use crate::engine::EngineHandle;
 
 #[cfg(feature = "hyper-ext")]
@@ -22,6 +23,14 @@ pub trait Ext {
     /// Returns any comments added for this attribute,
     ///
     async fn get_comments(&self) -> Option<Comments>;
+
+    /// Notify host w/ a condition,
+    ///
+    async fn notify_host(&self, host: &str, condition: &str) -> anyhow::Result<()>;
+    
+    /// Listen for a condition from the host,
+    /// 
+    async fn listen_host(&self, host: &str, condition: &str) -> Option<HostCondition>;
 }
 
 #[async_trait]
@@ -34,6 +43,31 @@ impl Ext for ThunkContext {
         self.node()
             .await
             .current_resource(self.attribute.map(|a| a.transmute()))
+    }
+
+    async fn notify_host(&self, host: &str, condition: &str) -> anyhow::Result<()> {
+        if let Some(host) = self.host(host).await {
+            if let Some(host_condition) =
+                host.current_resource::<HostCondition>(Some(ResourceKey::with_hash(condition)))
+            {
+                host_condition.notify();
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn listen_host(&self, host: &str, condition: &str) -> Option<HostCondition> {
+        if let Some(host) = self.host(host).await {
+            if let Some(host_condition) =
+                host.current_resource::<HostCondition>(Some(ResourceKey::with_hash(condition)))
+            {
+                println!("Found condition");
+                return Some(host_condition);
+            }
+        }
+
+        None
     }
 }
 
@@ -53,15 +87,59 @@ pub mod utility {
         #[cfg(feature = "std-ext")]
         #[reality(plugin)]
         stdio: super::std_ext::Stdio,
+        /// Adds a plugin to receive a signal from a host,
+        /// 
+        #[reality(ext)]
+        receive_signal: super::ReceiveSignal,
         /// Adds an engine proxy plugin,
         ///
         #[cfg(feature = "poem-ext")]
         #[reality(ext)]
         engine_proxy: super::poem_ext::EngineProxy,
+        /// Adds an reverse_proxy_config plugin,
+        ///
+        #[cfg(feature = "poem-ext")]
+        #[reality(ext)]
+        reverse_proxy_config: super::poem_ext::ReverseProxyConfig,
+        /// Adds an reverse_proxy plugin,
+        ///
+        #[cfg(feature = "poem-ext")]
+        #[reality(ext)]
+        reverse_proxy: super::poem_ext::ReverseProxy,
         /// Adds a request plugin,
         ///
         #[cfg(feature = "hyper-ext")]
         #[reality(ext)]
         request: super::hyper_ext::Request,
     }
+}
+
+#[derive(Reality, Default, Clone)]
+#[reality(plugin, call = send_signal, rename = "utility/loopio.send-signal")]
+pub struct SendSignal {
+    #[reality(derive_fromstr)]
+    name: String,
+    host: String,
+}
+
+async fn send_signal(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    let signal = tc.initialized::<SendSignal>().await;
+    tc.notify_host(&signal.host, &signal.name).await
+}
+
+#[derive(Reality, Debug, Default, Clone)]
+#[reality(plugin, call = receive_signal, rename = "utility/loopio.receive-signal")]
+pub struct ReceiveSignal {
+    #[reality(derive_fromstr)]
+    name: String,
+    host: String,
+}
+
+async fn receive_signal(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    let signal = tc.initialized::<ReceiveSignal>().await;
+    println!("Listening for signal {:?}", signal);
+    if let Some(listener) = tc.listen_host(&signal.host, &signal.name).await {
+        listener.listen().await;
+    }
+    Ok(())
 }

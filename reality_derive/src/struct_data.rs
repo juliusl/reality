@@ -58,6 +58,8 @@ pub(crate) struct StructData {
     /// Reality attribute, on_completed fn path,
     /// 
     reality_on_completed: Option<Path>,
+
+    call: Option<Ident>,
 }
 
 impl Parse for StructData {
@@ -72,10 +74,17 @@ impl Parse for StructData {
         let mut reality_on_completed = None;
         let mut plugin = false;
         let mut ext = false;
+        let mut enum_flags = false;
+        let mut call = None;
 
         for attr in derive_input.attrs.iter() {
             if attr.path().is_ident("reality") {
                 attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("call") {
+                        meta.input.parse::<Token![=]>()?;
+                        call = meta.input.parse::<Ident>().ok();
+                    }
+
                     if meta.path.is_ident("rename") {
                         meta.input.parse::<Token![=]>()?;
                         reality_rename = meta.input.parse::<LitStr>().ok();
@@ -104,26 +113,57 @@ impl Parse for StructData {
                         ext = true;
                     }
 
+                    if meta.path.is_ident("enum_flags") {
+                        enum_flags = true;
+                    }
                     Ok(())
                 })?;
             }
         }
 
-        let fields = if let Data::Struct(data) = &derive_input.data {
-            let named = parse2::<FieldsNamed>(data.fields.to_token_stream())?;
-            named
-                .named
-                .iter()
-                .filter_map(|n| parse2::<StructField>(n.to_token_stream()).ok())
-                .filter(|f| !f.ignore)
-                .enumerate()
-                .map(|(idx, mut f)| {
-                    f.offset = idx;
-                    f
-                })
-                .collect::<Vec<_>>()
-        } else {
-            vec![]
+        let fields = match &derive_input.data {
+            Data::Struct(data) if data.semi_token.is_none() => {
+                let named = parse2::<FieldsNamed>(data.fields.to_token_stream())?;
+                named
+                    .named
+                    .iter()
+                    .filter_map(|n| parse2::<StructField>(n.to_token_stream()).ok())
+                    .filter(|f| !f.ignore)
+                    .enumerate()
+                    .map(|(idx, mut f)| {
+                        f.offset = idx;
+                        f
+                    })
+                    .collect::<Vec<_>>()
+            }
+            Data::Enum(data) => { 
+                let mut variants = vec![];
+                let fields = data.variants.clone()
+                    .into_pairs()
+                    .map(|pair| {
+                        let variant = pair.into_value();
+                        variants.push(variant.clone());
+                        variant
+                    })
+                    .flat_map(|v| {
+                        let variant_name = v.ident.clone();
+                        v.fields.iter()
+                            .filter_map(|n| parse2::<StructField>(n.to_token_stream()).ok())
+                            .map(|mut f| { 
+                                f.variant = Some((variant_name.clone(), name.clone()));
+                                f
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .enumerate()
+                    .map(|(idx, mut f)| {
+                        f.offset = idx;
+                        f
+                    })
+                    .collect();
+                    fields
+            }
+            _ => vec![],
         };
 
         if let Some(lifetime) = derive_input.generics.lifetimes().find(|l| l.lifetime.ident != format_ident!("static")) {
@@ -140,6 +180,7 @@ impl Parse for StructData {
                 reality_on_completed,
                 plugin,
                 ext,
+                call,
             })
         }
     }
@@ -170,14 +211,18 @@ impl StructData {
                 )
             });
 
-            let _fields_mut = fields.iter().map(|f| {
+            let _fields_mut = fields.iter().filter_map(|f| {
                 let ty = f.field_ty();
                 let offset = &f.offset;
                 let name_lit = f.field_name_lit_str();
                 let name = &f.name;
-                quote_spanned!(f.span=>
-                    FieldMut { owner: std::any::type_name::<#ty>(), name: #name_lit, offset: #offset, value: &mut self.#name }
-                )
+                if f.variant.is_some() {
+                    None
+                } else {
+                    Some(quote_spanned!(f.span=>
+                        FieldMut { owner: std::any::type_name::<#ty>(), name: #name_lit, offset: #offset, value: &mut self.#name }
+                    ))
+                }
             });
 
             let _set_field_cases = fields.iter().map(|f| {
@@ -188,25 +233,27 @@ impl StructData {
                     (#field_name_lit, #offset) => { *<Self as OnParseField<#offset, #ty>>::get_field_mut(self).value = field.value; true }
                 )
             });
-
-            let _fromstr_derive = fields.iter().filter(|f| f.derive_fromstr).map(|f| {
-                let name = &f.name;
-
-                quote_spanned!(self.span=>
-                  impl #impl_generics std::str::FromStr for #owner #ty_generics #where_clause {
-                      type Err = anyhow::Error;
-
-                      fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-                          let mut _s = Self::default();
-                          _s.#name = s.parse()?;
-                          Ok(_s)
-                      }
-                    }
-                  )
-            });
+ 
+            let _fromstr_derive = {
+                fields.iter().find(|f| f.derive_fromstr).map(|f| {
+                    let name = &f.name;
+    
+                    quote_spanned!(self.span=>
+                      impl #impl_generics std::str::FromStr for #owner #ty_generics #where_clause {
+                          type Err = anyhow::Error;
+    
+                          fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+                              let mut _s = Self::default();
+                              _s.#name = s.parse()?;
+                              Ok(_s)
+                          }
+                        }
+                      )
+                }).unwrap_or(quote!())
+            };
 
             quote_spanned!(self.span=>
-                #(#_fromstr_derive)*
+                #_fromstr_derive
 
                 impl #impl_generics reality::prelude::Visit<#ty> for #owner #ty_generics #where_clause {
                     fn visit<'a>(&'a self) -> Vec<reality::prelude::Field<'a, #ty>> {
@@ -289,11 +336,12 @@ impl StructData {
             let field_ident = f.field_name_lit_str();
             let ty = f.field_ty();
             let absolute_ty = &f.ty;
-            let name = &f.name;
             let offset = &f.offset;
 
             // Callback to use
             let callback = f.render_field_parse_callback();
+            let get_fn = f.render_get_fn();
+            let get_mut_fn = f.render_get_mut_fn();
 
             quote_spanned! {f.span=>
                 impl #original_impl_generics OnParseField<#offset, #ty> for #ident #ty_generics #where_clause {
@@ -310,12 +358,12 @@ impl StructData {
 
                     #[inline]
                     fn get(&self) -> &Self::ProjectedType {
-                        &self.#name
+                        #get_fn
                     }
 
                     #[inline]
                     fn get_mut(&mut self) -> &mut Self::ProjectedType {
-                        &mut self.#name
+                        #get_mut_fn
                     }
                 }
             }
@@ -365,7 +413,7 @@ impl StructData {
         let ext = self.fields.iter().filter(|f| f.ext).map(|f| {
             let ty = f.field_ty();
             quote_spanned!(f.span=>
-                parser.with_object_type::<Thunk<#ty>>();
+                _parser.with_object_type::<Thunk<#ty>>();
             )
         });
 
@@ -420,7 +468,7 @@ impl StructData {
             impl #name #ty_generics #where_clause  {
                 pub fn register(mut host: &mut impl RegisterWith) {
                   #(#plugins)*
-                  host.register_with(|parser| {
+                  host.register_with(|_parser| {
                     #(#ext)*
                   }); 
                 }
@@ -431,9 +479,34 @@ impl StructData {
                 impl #name #ty_generics #where_clause  {
                     pub fn register(mut host: &mut impl RegisterWith) {
                         #(#plugins)*
-                        host.register_with(|parser| {
+                        host.register_with(|_parser| {
                             #(#ext)*
                         });
+                    }
+                }
+            )
+        } else {
+            quote!()
+        };
+
+        let call = self.call.as_ref().map(|ref c| {
+            quote_spanned!(c.span()=>
+                #[async_trait]
+                impl CallAsync for #name {
+                    async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
+                        #c(context).await
+                    }
+                }
+            )
+        });
+
+        let unit_from_str = if self.fields.is_empty() {
+            quote_spanned!(name.span()=>
+                impl FromStr for #name {
+                    type Err = std::convert::Infallible;
+
+                    fn from_str(_: &str) -> std::result::Result<Self, Self::Err> {
+                        Ok(Self)
                     }
                 }
             )
@@ -475,6 +548,8 @@ impl StructData {
             }
 
             #plugin
+            #call
+            #unit_from_str
         );
 
 

@@ -25,7 +25,7 @@ async fn main() {
     <..hyper.request> testhost://test-engine-proxy/test      # Send outbound request
 
     + .operation test_poem                                   # Tests poem utilities
-    <utility/loopio>                                         
+    <utility/loopio>
     <..poem.engine-proxy> localhost:0                        # Runs a local server that can start operations or sequences
     : .alias testhost://test-engine-proxy
     : test          .route test_std_io
@@ -35,9 +35,17 @@ async fn main() {
     : test_2        .get /test2
     : test_handler  .get /test-handler/:name
 
+    + .operation test_poem_reverse_proxy
+    <utility/loopio>
+    <..receive-signal>              engine_proxy_started
+    : .host                         testhost
+    <..poem.reverse-proxy-config>   testhost://test-engine-proxy
+    <..poem.reverse-proxy>          localhost:3576
+    : .host                         testhost://test-engine-proxy
+
     + .sequence start_tests                                  # Sequence that starts the demo
     : .next test_std_io
-    : .next test_poem
+    : .next test_poem_reverse_proxy, test_poem
     : .loop false
 
     + .sequence run_println                                  # Sequence that can be called by the engine proxy
@@ -45,7 +53,9 @@ async fn main() {
     : .loop false
 
     + .host testhost                                         # Host configured w/ a starting sequence
-    : .start start_tests
+    : .start        start_tests
+    : .condition    engine_proxy_started
+
     ```
     "#;
 
@@ -59,6 +69,7 @@ async fn main() {
     let engine = engine.compile(workspace).await;
 
     let host = engine.get_host("testhost").expect("should have host");
+
     tokio::spawn(async move { engine.handle_packets().await });
 
     let result = host.start().await;

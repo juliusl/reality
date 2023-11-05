@@ -21,6 +21,7 @@ pub mod prelude {
     pub use super::parser::Comments;
     pub use super::storage_target::prelude::*;
     pub use super::tag::Tagged;
+    pub use super::tag::Delimitted;
     pub use super::visit::Field;
     pub use super::visit::FieldMut;
     pub use super::visit::FieldOwned;

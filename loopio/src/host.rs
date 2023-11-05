@@ -1,8 +1,61 @@
+use std::collections::BTreeSet;
 use std::fmt::Debug;
+use std::sync::Arc;
+use tokio::sync::Notify;
 
 use reality::prelude::*;
 
 use crate::engine::EngineHandle;
+
+pub struct HostCondition(String, Arc<Notify>);
+
+impl HostCondition {
+    pub fn notify(&self) {
+        let HostCondition(_, notify) = self.clone(); 
+        
+        notify.notify_waiters();
+    }
+
+    pub async fn listen(&self) {
+        let HostCondition(_, notify) = self.clone(); 
+        
+        notify.notified().await;
+    }
+}
+
+impl Ord for HostCondition {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl PartialOrd for HostCondition {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for HostCondition {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Clone for HostCondition {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1.clone())
+    }
+}
+
+impl Eq for HostCondition {}
+
+impl FromStr for HostCondition {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(HostCondition(s.to_string(), Arc::new(Notify::new())))
+    }
+}
 
 /// A Host contains a broadly shared storage context,
 ///
@@ -21,32 +74,69 @@ pub struct Host {
     #[reality(ignore)]
     pub host_storage: Option<AsyncStorageTarget<Shared>>,
     /// Engine handle,
-    /// 
+    ///
     #[reality(ignore)]
     pub handle: Option<EngineHandle>,
     /// Name of the action that "starts" this host,
-    /// 
+    ///
     #[reality(option_of=Tagged<String>)]
     start: Option<Tagged<String>>,
+    /// Background actions,
+    ///
+    #[reality(vec_of=Tagged<String>)]
+    bg: Vec<Tagged<String>>,
+    /// Map of conditions,
+    ///
+    #[reality(set_of=HostCondition)]
+    condition: BTreeSet<HostCondition>,
 }
 
 impl Host {
     /// Bind this host to a storage target,
-    /// 
+    ///
     pub fn bind(mut self, storage: AsyncStorageTarget<Shared>) -> Self {
         self.host_storage = Some(storage);
         self
     }
 
+    /// Returns true if a condition has been signaled,
+    ///
+    pub fn set_condition(&self, condition: impl AsRef<str>) -> bool {
+        if let Some(condition) = self
+            .condition
+            .iter()
+            .find(|c| c.0 == condition.as_ref())
+            .map(|c| c.1.clone())
+        {
+            condition.clone().notify_waiters();
+            true
+        } else {
+            false
+        }
+    }
+
+    async fn initialized_conditions(&self) {
+        if let Some(storage) = self.host_storage.as_ref().map(|h| h.storage.clone()) {
+            let mut storage = storage.write().await;
+
+            for condition in self.condition.iter() {
+                storage.put_resource(
+                    condition.clone(),
+                    Some(ResourceKey::with_hash(&condition.0)),
+                );
+            }
+        }
+    }
+
     /// Starts this host,
-    /// 
+    ///
     pub async fn start(&self) -> anyhow::Result<ThunkContext> {
+        self.initialized_conditions().await;
+        
         if let Some(engine) = self.handle.clone() {
             if let Some(start) = self.start.as_ref() {
                 let address = match (start.tag(), start.value()) {
-                    (None, Some(name)) => {
-                        name.to_string()
-                    }
+                    (None, Some(name)) => name.to_string(),
                     (Some(tag), Some(name)) => {
                         format!("{name}#{tag}")
                     }
@@ -54,17 +144,10 @@ impl Host {
                         unreachable!()
                     }
                 };
-    
-                if let Some(seq) = engine.sequences.get(&address) {
-                    seq.clone().await
-                } else if let Some(mut op) = engine.operations.get(&address).cloned() {
-                    if let Some(context) = op.context_mut() {
-                        context.reset();
-                    }
-                    op.execute().await
-                } else {
-                    Err(anyhow::anyhow!("Start action cannot be found"))
-                }
+
+                let _engine = engine.clone();
+                let host_start = tokio::spawn(async move { _engine.action(address).await });
+                host_start.await?
             } else {
                 Err(anyhow::anyhow!("Start action is not set"))
             }

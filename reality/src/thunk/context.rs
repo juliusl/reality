@@ -215,6 +215,45 @@ impl Context {
             .unwrap_or_default()
     }
 
+    /// Scans if a resource exists for the current context,
+    /// 
+    pub async fn scan_node_for<P: BlockObject<Shared> + Default + Clone + Sync + Send + 'static>(
+        &self,
+    ) -> Option<P> {
+        self.node()
+            .await
+            .current_resource::<P>(self.attribute.map(|a| a.transmute()))
+    }
+
+    /// Scans the entire node for resources of type P,
+    /// 
+    pub async fn scan_node<P: BlockObject<Shared> + Default + Clone + Sync + Send + 'static>(
+        &self,
+    ) -> Vec<P> {
+        use futures_util::StreamExt;
+
+        self.node().await.stream_attributes().fold(vec![], |mut acc, attr| async move {
+            let mut clone = self.clone();
+            clone.attribute = Some(attr);
+            
+            if let Some(init) = clone.scan_node_for::<P>().await {
+                acc.push(init);
+            }
+            acc
+        }).await
+    }
+
+    /// Scans the host for resources of type P,
+    /// 
+    pub async fn scan_host_for<P: BlockObject<Shared> + Default + Clone + Sync + Send + 'static>(
+        &self,
+        name: impl AsRef<str>,
+    ) -> Option<P> {
+        self.host(name.as_ref())
+            .await
+            .and_then(|h| h.current_resource::<P>(None))
+    }
+
     /// Returns any extensions that may exist for this,
     ///
     pub async fn extension<
