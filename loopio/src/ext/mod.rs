@@ -91,6 +91,11 @@ pub mod utility {
         /// 
         #[reality(ext)]
         receive_signal: super::ReceiveSignal,
+        /// Adds a process plugin,
+        /// 
+        #[cfg(feature = "std-ext")]
+        #[reality(ext)]
+        process: super::std_ext::Process,
         /// Adds an engine proxy plugin,
         ///
         #[cfg(feature = "poem-ext")]

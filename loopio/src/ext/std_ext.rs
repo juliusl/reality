@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf, process::ExitStatus};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -144,4 +144,54 @@ impl CallAsync for Println {
         println!("{}", initialized.line);
         Ok(())
     }
+}
+
+/// 
+/// 
+#[derive(Reality, Clone, Default)]
+#[reality(plugin, call = start_process, rename = "utility/loopio.ext.std.process")]
+pub struct Process {
+    #[reality(derive_fromstr)]
+    program: String,
+    #[reality(map_of=String)]
+    env: BTreeMap<String, String>,
+    #[reality(vec_of=String)]
+    arg: Vec<String>,
+}
+
+async fn start_process(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    let init = tc.initialized::<Process>().await;
+
+    let command = init.env.iter().fold(
+        std::process::Command::new(init.program),
+        |mut acc, (e, v)| {
+            acc.env(e, v);
+            acc
+        },
+    );
+
+    let mut command = init.arg.iter().fold(command, |mut acc, a| {
+        for arg in shlex::split(&a).unwrap_or_default() {
+            acc.arg(arg);
+        }
+        acc
+    });
+
+    let child = command.spawn()?;
+
+    let output = child.wait_with_output()?;
+    let _ = CommandResult {
+        output: output.stdout,
+        error: output.stderr,
+        status: output.status,
+    };
+
+
+    Ok(())
+}
+
+pub struct CommandResult {
+    output: Vec<u8>,
+    error: Vec<u8>,
+    status: ExitStatus,
 }
