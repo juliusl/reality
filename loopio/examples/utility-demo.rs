@@ -50,6 +50,10 @@ impl CallAsync for Test {
         let content = context.find_file_text("loopio/examples/test.txt").await;
         println!("{:?}", content);
         assert_eq!(initialized.expect.as_str(), content.unwrap_or_default());
+
+        if let Some(result) = context.find_command_result("ls").await {
+            println!("{}", String::from_utf8(result.output)?);
+        }
         Ok(())
     }
 }

@@ -13,6 +13,8 @@
     + .operation test_process
     <utility/loopio.ext.std.process>    ls
     : .arg -la
+    : .piped true
+    <test>
 
     + .operation test_poem                                   # Tests poem utilities
     <utility/loopio>
