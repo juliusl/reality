@@ -616,4 +616,19 @@ impl EngineHandle {
         self.sender.send(packet)?;
         Ok(())
     }
+
+    /// Runs an action on the engine,
+    /// 
+    pub async fn action(&self, address: impl AsRef<str>) -> anyhow::Result<ThunkContext> {
+        if let Some(seq) = self.sequences.get(address.as_ref()) {
+            seq.clone().await
+        } else if let Some(mut op) = self.operations.get(address.as_ref()).cloned() {
+            if let Some(context) = op.context_mut() {
+                context.reset();
+            }
+            op.execute().await
+        } else {
+            Err(anyhow::anyhow!("Start action cannot be found"))
+        }
+    }
 }

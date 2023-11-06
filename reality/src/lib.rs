@@ -29,6 +29,8 @@ pub use thunk::*;
 pub mod derive {
     pub use reality_derive::AttributeType;
     pub use reality_derive::Reality;
+    pub use reality_derive::RealityEnum;
+    pub use reality_derive::RealityTest;
 }
 
 pub mod runmd {

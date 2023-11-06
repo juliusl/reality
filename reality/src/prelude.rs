@@ -1,5 +1,7 @@
 pub use crate::derive::Reality;
 pub use crate::derive::AttributeType;
+pub use crate::derive::RealityEnum;
+pub use crate::derive::RealityTest;
 pub use crate::Attribute;
 pub use crate::AttributeType;
 pub use crate::Comments;
@@ -9,6 +11,7 @@ pub use crate::BlockObject;
 pub use crate::AsyncStorageTarget;
 pub use crate::OnParseField;
 pub use crate::Tagged;
+pub use crate::Delimitted;
 pub use crate::Project;
 pub use crate::Source;
 pub use crate::Workspace;

@@ -3,7 +3,7 @@ use std::task::Poll;
 
 use futures_util::FutureExt;
 use reality::prelude::*;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tracing::{error, trace};
 
 use crate::ext::Ext;
@@ -22,19 +22,19 @@ pub struct Sequence {
     pub tag: Option<String>,
     /// Steps that should be executed only once at the beginning,
     ///
-    #[reality(vecdeq_of=Tagged<Step>)]
-    once: VecDeque<Tagged<Step>>,
+    #[reality(vecdeq_of=Delimitted<',', Tagged<Step>>)]
+    once: VecDeque<Delimitted<',', Tagged<Step>>>,
     /// Steps that should be executed one-after the other,
     ///
-    #[reality(vecdeq_of=Tagged<Step>)]
-    next: VecDeque<Tagged<Step>>,
+    #[reality(vecdeq_of=Delimitted<',', Tagged<Step>>)]
+    next: VecDeque<Delimitted<',', Tagged<Step>>>,
     /// Indicates the sequence should loop,
     ///
     #[reality(rename = "loop")]
     _loop: bool,
     /// If loop is enabled, instead of popping from next, a cursor will be maintained,
     ///
-    _cursor: usize,
+    _cursor: isize,
     /// ThunkContext this sequence is bounded to,
     ///
     #[reality(ignore)]
@@ -89,12 +89,6 @@ impl Sequence {
         }
     }
 
-    /// Returns true if the sequence is currently active,
-    ///
-    pub fn is_active(&self) -> bool {
-        self.current.is_none()
-    }
-
     /// Returns the address to use w/ this operation,
     ///
     pub fn address(&self) -> String {
@@ -120,23 +114,25 @@ impl Sequence {
     /// If _loop is true, after None is returned it will reset the cursor, such
     /// that next() will then return the beginning of the next sequence.
     ///
-    pub fn next_step(&mut self) -> Option<Tagged<Step>> {
+    pub fn next_step(&mut self) -> Option<Delimitted<',', Tagged<Step>>> {
         let once = self.once.pop_front();
         if once.is_some() {
             return once;
         }
 
-        if self._loop {
-            let next = self.next.get(self._cursor).cloned();
-            if next.is_some() {
-                self._cursor += 1;
-                return next;
-            }
+        if self._cursor < 0 {
+            return None;
+        }
 
+        let next = self.next.get(self._cursor as usize).cloned();
+        if next.is_some() {
+            self._cursor += 1;
+            next
+        } else if self._loop {
             self._cursor = 0;
             None
         } else {
-            self.next.pop_front()
+            None
         }
     }
 }
@@ -170,45 +166,76 @@ impl std::future::Future for Sequence {
                 Some(step) => {
                     trace!("Starting sequence");
                     let _binding = binding.clone();
-                    self.current = Some(binding.node.clone().runtime.unwrap().spawn(async move {
-                        if let Some(handle) = _binding.engine_handle().await {
-                            handle.run(address(step)).await
-                        } else {
-                            Err(anyhow::anyhow!("Engine handle is not enabled"))
-                        }
-                    }));
+                    self.current =
+                        Some(binding.node.clone().runtime.unwrap().spawn(async move {
+                            let mut set = JoinSet::new();
+
+                            let _binding = _binding.clone();
+                            for _step in step {
+                                let _binding = _binding.clone();
+                                set.spawn(async move {
+                                    println!("Starting Step {:?}", _step);
+                                    if let Some(handle) = _binding.engine_handle().await {
+                                        handle.run(address(_step)).await
+                                    } else {
+                                        Err(anyhow::anyhow!("Engine handle is not enabled"))
+                                    }
+                                });
+                            }
+
+                            let mut last = Err(anyhow::anyhow!("Not started"));
+                            while let Some(result) = set.join_next().await {
+                                last = result?;
+                            }
+
+                            last
+                        }));
                 }
                 None => {
                     trace!("Done");
                     return Poll::Ready(Err(anyhow::anyhow!("Sequence has completed")));
                 }
             },
-            (Some(binding), Some(mut current)) => {
-                match current.poll_unpin(cx) {
-                    Poll::Ready(Ok(result)) => match self.next_step() {
-                        Some(next) => {
-                            trace!("Executing next step");
-                            let _binding = binding.clone();
-                            self.current =
-                                Some(binding.node.runtime.unwrap().spawn(async move {
-                                    if let Some(handle) = _binding.engine_handle().await {
-                                        handle.run(address(next)).await
-                                    } else {
-                                        Err(anyhow::anyhow!("Engine handle is not enabled"))
-                                    }
-                                }));
-                        }
-                        None => return Poll::Ready(result),
-                    },
-                    Poll::Ready(Err(err)) => {
-                        error!("{err}");
-                        return Poll::Ready(Err(err.into()));
+            (Some(binding), Some(mut current)) => match current.poll_unpin(cx) {
+                Poll::Ready(Ok(result)) => match self.next_step() {
+                    Some(next) => {
+                        trace!("Starting sequence");
+                        let _binding = binding.clone();
+                        self.current =
+                            Some(binding.node.clone().runtime.unwrap().spawn(async move {
+                                let mut set = JoinSet::new();
+
+                                let _binding = _binding.clone();
+                                for _step in next {
+                                    let _binding = _binding.clone();
+                                    set.spawn(async move {
+                                        println!("Starting Step {:?}", _step);
+                                        if let Some(handle) = _binding.engine_handle().await {
+                                            handle.run(address(_step)).await
+                                        } else {
+                                            Err(anyhow::anyhow!("Engine handle is not enabled"))
+                                        }
+                                    });
+                                }
+
+                                let mut last = Err(anyhow::anyhow!("Not started"));
+                                while let Some(result) = set.join_next().await {
+                                    last = result?;
+                                }
+
+                                last
+                            }));
                     }
-                    Poll::Pending => {
-                        self.current = Some(current);
-                    }
+                    None => return Poll::Ready(result),
+                },
+                Poll::Ready(Err(err)) => {
+                    error!("{err}");
+                    return Poll::Ready(Err(err.into()));
                 }
-            }
+                Poll::Pending => {
+                    self.current = Some(current);
+                }
+            },
             _ => {
                 trace!("not bound");
                 return Poll::Ready(Err(anyhow::anyhow!(

@@ -41,9 +41,9 @@ pub(crate) struct StructField {
     /// If set, will ignore this field
     ///
     pub ignore: bool,
-    /// If set, will use this field to derive 
+    /// If set, will use this field to derive
     /// FromStr for this type,
-    /// 
+    ///
     pub derive_fromstr: bool,
     /// Attribute Type,
     ///
@@ -55,7 +55,7 @@ pub(crate) struct StructField {
     ///
     pub vec_of: Option<Type>,
     /// Parses as a vecdeq_of Type,
-    /// 
+    ///
     pub vecdeq_of: Option<Type>,
     /// Parse as a map_of (String, Type)
     ///
@@ -63,19 +63,23 @@ pub(crate) struct StructField {
     /// Parse as an option_of Type,
     ///
     pub option_of: Option<Type>,
-    /// True if this field should be enabled as an ext,
+    /// Parse as an set_of Type,
     /// 
+    pub set_of: Option<Type>,
+    /// True if this field should be enabled as an ext,
+    ///
     pub ext: bool,
     /// True if this field should be enabled as a plugin collection,
-    /// 
+    ///
     pub plugin: bool,
     /// Location of this field,
     ///
     pub span: Span,
     /// Allow field to be handled as wire-data,
-    /// 
+    ///
     pub wire: bool,
     pub offset: usize,
+    pub variant: Option<(Ident, Ident)>,
 }
 
 impl StructField {
@@ -94,7 +98,42 @@ impl StructField {
             .or(self.vecdeq_of.as_ref())
             .or(self.map_of.as_ref())
             .or(self.option_of.as_ref())
+            .or(self.set_of.as_ref())
             .unwrap_or(&self.ty)
+    }
+
+    pub fn render_get_fn(&self) -> TokenStream {
+        let name = &self.name;
+        if let Some((variant, enum_ty)) = self.variant.as_ref() {
+            quote_spanned! {self.span=>
+                if let #enum_ty::#variant { #name, .. } = self {
+                    #name
+                } else {
+                    unreachable!()
+                }
+            }
+        } else {
+            quote_spanned!{self.span=>
+                &self.#name
+            }
+        }
+    }
+
+    pub fn render_get_mut_fn(&self) -> TokenStream {
+        let name = &self.name;
+        if let Some((variant, enum_ty)) = self.variant.as_ref() {
+            quote_spanned! {self.span=>
+                if let #enum_ty::#variant { #name, .. } = self {
+                   #name
+                } else {
+                    unreachable!()
+                }
+            }
+        } else {
+            quote_spanned!{self.span=>
+                &mut self.#name
+            }
+        }
     }
 
     /// Renders the callback to use w/ ParseField trait,
@@ -103,14 +142,18 @@ impl StructField {
         let name = &self.name;
         let ty = &self.ty;
 
-        fn handle_tagged(ty: &Type, mut on_tagged: impl FnMut() -> TokenStream, mut on_nottagged: impl FnMut() -> TokenStream) -> TokenStream {
+        fn handle_tagged(
+            ty: &Type,
+            mut on_tagged: impl FnMut() -> TokenStream,
+            mut on_nottagged: impl FnMut() -> TokenStream,
+        ) -> TokenStream {
             if let Ok(path) = parse2::<Path>(ty.to_token_stream()) {
                 let idents = path.segments.iter().fold(String::new(), |mut acc, v| {
                     acc.push_str(&v.ident.to_string());
                     acc.push(':');
                     acc
                 });
-    
+
                 if vec!["crate:Tagged:", "reality:Tagged:", "Tagged:"]
                     .into_iter()
                     .any(|s| idents == *s)
@@ -120,23 +163,154 @@ impl StructField {
                     on_nottagged()
                 }
             } else {
-                quote::quote! { }
+                quote::quote! {}
             }
         }
-        
-        let mut callback = handle_tagged(ty, || {
-            quote_spanned!(self.span=>
-                self.#name = value;
 
-                if let Some(tag) = _tag {
-                    self.#name.set_tag(tag);
-                }
-            )
-            }, || {
-            quote_spanned!(self.span=>
-                self.#name = value;
-            )
-        });
+        if let Some((variant, enum_ty)) = self.variant.as_ref() {
+            let mut callback = handle_tagged(
+                ty,
+                || {
+                    quote_spanned!(self.span=>
+                        if let #enum_ty::#variant { #name, .. } = self {
+                            *#name = value;
+
+                            if let Some(tag) = _tag {
+                                #name.set_tag(tag);
+                            }
+                        }
+                    )
+                },
+                || {
+                    quote_spanned!(self.span=>
+                        if let #enum_ty::#variant { #name, .. } = self {
+                            *#name = value;
+                        }
+                    )
+                },
+            );
+
+            if let Some(cb) = self.parse_callback.as_ref() {
+                callback = quote_spanned! {self.span=>
+                    #cb(self.#name, value, _tag);
+                };
+            } else if self.map_of.as_ref().is_some() {
+                callback = quote_spanned! {self.span=>
+                        if let #enum_ty::#variant { #name, .. } = self {
+                            if let Some(tag) = _tag {
+                                #name.insert(tag.to_string(), value);
+                            }
+                        }
+                };
+            } else if let Some(ty) = self.vec_of.as_ref() {
+                callback = handle_tagged(
+                    ty,
+                    || {
+                        quote_spanned!(self.span=>
+                            if let #enum_ty::#variant { #name, .. } = self {
+                                #name.push(value);
+
+                                if let (Some(tag), Some(last)) = (_tag, #name.last_mut()) {
+                                    last.set_tag(tag);
+                                }
+                            }
+                        )
+                    },
+                    || {
+                        quote_spanned! {self.span=>
+                            if let #enum_ty::#variant { #name, .. } = self {
+                                #name.push(value);
+                            }
+                        }
+                    },
+                );
+            } else if let Some(ty) = self.option_of.as_ref() {
+                callback = handle_tagged(
+                    ty,
+                    || {
+                        quote_spanned!(self.span=>
+                            if let #enum_ty::#variant { #name, .. } = self {
+                                *#name = Some(value);
+
+                                if let (Some(tag), Some(last)) = (_tag, #name.as_mut()) {
+                                    last.set_tag(tag);
+                                }
+                            }
+                        )
+                    },
+                    || {
+                        quote_spanned! {self.span=>
+                            if let #enum_ty::#variant { #name, .. } = self {
+                                *#name = Some(value);
+                            }
+                        }
+                    },
+                );
+            } else if let Some(ty) = self.vecdeq_of.as_ref() {
+                callback = handle_tagged(
+                    ty,
+                    || {
+                        quote_spanned!(self.span=>
+                            if let #enum_ty::#variant { #name, .. } = self {
+                                #name.push_back(value);
+    
+                                if let (Some(tag), Some(last)) = (_tag, #name.back_mut()) {
+                                    last.set_tag(tag);
+                                }
+                            }
+                        )
+                    },
+                    || {
+                        quote_spanned! {self.span=>
+                            if let #enum_ty::#variant { #name, .. } = self {
+                                #name.push_back(value);
+                            }
+                        }
+                    },
+                );
+            } else if let Some(ty) = self.set_of.as_ref() {
+                callback = handle_tagged(
+                    ty,
+                    || {
+                        quote_spanned!(self.span=>
+                            if let #enum_ty::#variant { #name, .. } = self {
+                                if let Some(tag) = _tag {
+                                    value.set_tag(tag);
+                                }
+                                #name.insert(value);
+                            }
+                        )
+                    },
+                    || {
+                        quote_spanned! {self.span=>
+                            if let #enum_ty::#variant { #name, .. } = self {
+                                #name.insert(value);
+                            }
+                        }
+                    },
+                );
+            }
+
+            return callback;
+        }
+
+        let mut callback = handle_tagged(
+            ty,
+            || {
+                quote_spanned!(self.span=>
+                    self.#name = value;
+
+                    if let Some(tag) = _tag {
+                        self.#name.set_tag(tag);
+                    }
+                )
+            },
+            || {
+                quote_spanned!(self.span=>
+                    self.#name = value;
+                )
+            },
+        );
 
         if let Some(cb) = self.parse_callback.as_ref() {
             callback = quote_spanned! {self.span=>
@@ -149,47 +323,76 @@ impl StructField {
                 }
             };
         } else if let Some(ty) = self.vec_of.as_ref() {
-            callback = handle_tagged(ty, || {
-                quote_spanned!(self.span=>
-                    self.#name.push(value);
+            callback = handle_tagged(
+                ty,
+                || {
+                    quote_spanned!(self.span=>
+                        self.#name.push(value);
 
-                    if let (Some(tag), Some(last)) = (_tag, self.#name.last_mut()) {
-                        last.set_tag(tag);
+                        if let (Some(tag), Some(last)) = (_tag, self.#name.last_mut()) {
+                            last.set_tag(tag);
+                        }
+                    )
+                },
+                || {
+                    quote_spanned! {self.span=>
+                        self.#name.push(value);
                     }
-                )
-            }, || {
-                quote_spanned! {self.span=>
-                    self.#name.push(value);
-                }
-            });
+                },
+            );
         } else if let Some(ty) = self.option_of.as_ref() {
-            callback = handle_tagged(ty, || {
-                quote_spanned!(self.span=>
-                    self.#name = Some(value);
+            callback = handle_tagged(
+                ty,
+                || {
+                    quote_spanned!(self.span=>
+                        self.#name = Some(value);
 
-                    if let (Some(tag), Some(last)) = (_tag, self.#name.as_mut()) {
-                        last.set_tag(tag);
+                        if let (Some(tag), Some(last)) = (_tag, self.#name.as_mut()) {
+                            last.set_tag(tag);
+                        }
+                    )
+                },
+                || {
+                    quote_spanned! {self.span=>
+                        self.#name = Some(value);
                     }
-                )
-            }, || {
-                quote_spanned! {self.span=>
-                    self.#name = Some(value);
-                }
-            });
+                },
+            );
         } else if let Some(ty) = self.vecdeq_of.as_ref() {
-           callback= handle_tagged(ty, || {
-                quote_spanned!(self.span=>
-                    self.#name.push_back(value);
+            callback = handle_tagged(
+                ty,
+                || {
+                    quote_spanned!(self.span=>
+                        self.#name.push_back(value);
 
-                    if let (Some(tag), Some(last)) = (_tag, self.#name.back_mut()) {
-                        last.set_tag(tag);
+                        if let (Some(tag), Some(last)) = (_tag, self.#name.back_mut()) {
+                            last.set_tag(tag);
+                        }
+                    )
+                },
+                || {
+                    quote_spanned! {self.span=>
+                        self.#name.push_back(value);
                     }
-                )
-            }, || {
-                quote_spanned! {self.span=>
-                    self.#name.push_back(value);
-                }
-            });
+                },
+            );
+        } else if let Some(ty) = self.set_of.as_ref() {
+            callback = handle_tagged(
+                ty,
+                || {
+                    quote_spanned!(self.span=>
+                        if let Some(tag) = _tag {
+                            value.set_tag(tag);
+                        }
+                        self.#name.insert(value);
+                    )
+                },
+                || {
+                    quote_spanned! {self.span=>
+                        self.#name.insert(value);
+                    }
+                },
+            );
         }
 
         callback
@@ -208,6 +411,7 @@ impl Parse for StructField {
         let mut vec_of = None;
         let mut vecdeq_of = None;
         let mut option_of = None;
+        let mut set_of = None;
         let mut derive_fromstr = false;
         let mut ext = false;
         let mut plugin = false;
@@ -300,12 +504,27 @@ impl Parse for StructField {
                     }
 
                     if meta.path.is_ident("option_of") {
-                        if callback.is_some() || map_of.is_some() || vec_of.is_some() {
+                        if callback.is_some() || map_of.is_some() || vec_of.is_some() || vecdeq_of.is_some() || set_of.is_some() {
                             return Err(syn::Error::new(meta.input.span(), "Can only have one of either, `parse`, `option_of`, `map_of`, of `vec_of`"))
                         }
 
                         if meta.input.parse::<Token![=]>().is_ok() {
                             option_of = meta.input.parse::<syn::Type>().ok();
+                        } else {
+                            return Err(syn::Error::new(
+                                meta.input.span(),
+                                "Expecting a type for the value of the Vec",
+                            ));
+                        }
+                    }
+
+                    if meta.path.is_ident("set_of") {
+                        if callback.is_some() || map_of.is_some() || vec_of.is_some() || vecdeq_of.is_some() {
+                            return Err(syn::Error::new(meta.input.span(), "Can only have one of either, `parse`, `option_of`, `map_of`, of `vec_of`"))
+                        }
+
+                        if meta.input.parse::<Token![=]>().is_ok() {
+                            set_of = meta.input.parse::<syn::Type>().ok();
                         } else {
                             return Err(syn::Error::new(
                                 meta.input.span(),
@@ -334,6 +553,7 @@ impl Parse for StructField {
             vecdeq_of,
             map_of,
             option_of,
+            set_of,
             parse_callback: callback,
             attribute_type,
             ext,
@@ -344,6 +564,7 @@ impl Parse for StructField {
             visibility,
             name,
             ty,
+            variant: None,
             offset: 0,
         })
     }

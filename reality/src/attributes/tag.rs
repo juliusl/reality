@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::str::FromStr;
 
 /// Wrapper struct to include a tag w/ a parsed value,
@@ -56,5 +58,45 @@ impl<T: FromStr + Send + Sync + 'static> FromStr for Tagged<T> {
             value: Some(value),
             tag: None,
         })
+    }
+}
+
+pub struct Delimitted<const DELIM: char, T: FromStr + Send + Sync + 'static> {
+    value: String,
+    cursor: usize,
+    _t: PhantomData<T>
+}
+
+impl<const DELIM: char, T: FromStr + Send + Sync + 'static> Clone for Delimitted<DELIM, T> {
+    fn clone(&self) -> Self {
+        Self { value: self.value.clone(), cursor: self.cursor, _t: PhantomData }
+    }
+}
+
+impl<const DELIM: char, T: FromStr + Send + Sync + 'static> Debug for Delimitted<DELIM, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Delimitted").field("value", &self.value).field("cursor", &self.cursor).finish()
+    }
+}
+
+impl<const DELIM: char, T: FromStr + Send + Sync + 'static> FromStr for Delimitted<DELIM, T> {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Delimitted { value: s.to_string(), cursor: 0, _t: PhantomData })
+    }
+}
+
+impl<const DELIM: char, T: FromStr + Send + Sync + 'static> Iterator for Delimitted<DELIM, T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut value = self
+            .value
+            .split(DELIM)
+            .rev()
+            .skip(self.cursor);
+        self.cursor += 1;
+        value.next().and_then(|v| T::from_str(v.trim()).ok())
     }
 }

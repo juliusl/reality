@@ -260,7 +260,76 @@ struct Test {
 struct Test2 {
     name: String,
     file: PathBuf,
+    #[reality(attribute_type=Test3)]
+    test3: Test3,
 }
+
+#[derive(Reality, Debug)]
+enum Test3 {
+    A {
+        a: String,
+    },
+    _B {
+        b: String,
+    }
+}
+
+impl FromStr for Test3 {
+    type Err = Infallible;
+
+    fn from_str(_s: &str) -> Result<Self, Self::Err> {
+        todo!()
+    }
+}
+
+use async_trait::async_trait;
+
+#[derive(Reality, Default, Clone, Debug)]
+#[reality(plugin, call = test_call)]
+pub struct Test4;
+
+pub async fn test_call(_: &mut ThunkContext) -> anyhow::Result<()> {
+    Ok(())
+}
+
+#[test]
+fn test() {
+    let _test = Test3::A { a: String::new() };
+
+}
+impl Test3 {
+    fn __test1(&self) -> &String {
+        struct _Test {
+            a: String 
+        }
+
+        let _test = Test3::A { a: Default::default() };
+
+        if let Test3::A { a } = self {
+            a
+        } else {
+            unreachable!()
+        }
+    }
+}
+
+// impl FromStr for Test3 {
+//     type Err = anyhow::Error;
+
+//     fn from_str(s: &str) -> Result<Self, Self::Err> {
+//         match s {
+//             "a" => {
+//                 Ok(Test3::A { a: s.to_string() })
+//             }, 
+//             "b" => {
+//                 Ok(Test3::B { b: s.to_string() })
+//             },
+//             _ => {
+//                 Err(anyhow::anyhow!("unrecognized input"))
+//             }
+//         }
+//     }
+// }
 
 impl FromStr for Test {
     type Err = Infallible;
@@ -280,6 +349,7 @@ impl FromStr for Test2 {
         Ok(Test2 {
             name: String::new(),
             file: PathBuf::from(""),
+            test3: Test3::A { a: String::new() }
         })
     }
 }
@@ -292,6 +362,7 @@ async fn test_project_parser() {
     project.add_node_plugin("test", |_, _, parser| {
         parser.with_object_type::<Test>();
         parser.with_object_type::<Test2>();
+        parser.with_object_type::<Test3>();
     });
 
     tokio::fs::create_dir_all(".test").await.unwrap();

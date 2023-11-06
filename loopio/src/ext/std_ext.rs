@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf, process::ExitStatus};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -19,6 +19,10 @@ pub trait StdExt {
     /// - `utility/loopio.ext.std.io.read_file`
     ///
     async fn find_file(&mut self, path: impl Into<PathBuf> + Send + Sync) -> Option<Bytes>;
+
+    /// Returns the command result from transient state,
+    ///
+    async fn find_command_result(&self, program: &str) -> Option<CommandResult>;
 }
 
 #[async_trait]
@@ -33,6 +37,12 @@ impl StdExt for ThunkContext {
         self.transient()
             .await
             .current_resource::<Bytes>(path.into().to_str().map(ResourceKey::with_hash))
+    }
+
+    async fn find_command_result(&self, program: &str) -> Option<CommandResult> {
+        self.transient()
+            .await
+            .current_resource(Some(ResourceKey::with_hash(program)))
     }
 }
 
@@ -144,4 +154,67 @@ impl CallAsync for Println {
         println!("{}", initialized.line);
         Ok(())
     }
+}
+
+/// Process plugin,
+///
+#[derive(Reality, Clone, Default)]
+#[reality(plugin, call = start_process, rename = "utility/loopio.ext.std.process")]
+pub struct Process {
+    #[reality(derive_fromstr)]
+    program: String,
+    #[reality(map_of=String)]
+    env: BTreeMap<String, String>,
+    #[reality(vec_of=String)]
+    arg: Vec<String>,
+    piped: bool,
+}
+
+async fn start_process(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    let init = tc.initialized::<Process>().await;
+
+    let command = init.env.iter().fold(
+        std::process::Command::new(&init.program),
+        |mut acc, (e, v)| {
+            acc.env(e, v);
+            acc
+        },
+    );
+
+    let mut command = init.arg.iter().fold(command, |mut acc, a| {
+        for arg in shlex::split(&a).unwrap_or_default() {
+            acc.arg(arg);
+        }
+        acc
+    });
+
+    if init.piped {
+        use std::process::Stdio;
+        command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .stdin(Stdio::piped());
+    }
+
+    let child = command.spawn()?;
+
+    let output = child.wait_with_output()?;
+    let c = CommandResult {
+        output: output.stdout,
+        error: output.stderr,
+        status: output.status,
+    };
+
+    tc.transient_mut()
+        .await
+        .put_resource(c, Some(ResourceKey::with_hash(init.program.as_str())));
+
+    Ok(())
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct CommandResult {
+    pub output: Vec<u8>,
+    pub error: Vec<u8>,
+    pub status: ExitStatus,
 }
