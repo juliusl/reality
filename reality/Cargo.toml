@@ -9,7 +9,7 @@ license-file = "LICENSE"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = [ "specs_storage_target", "async_dispatcher", "derive" ]
+default = [ "async_dispatcher", "derive" ]
 derive = ["reality_derive"]
 async_dispatcher = [ "tokio" ]
 specs_storage_target = [ "specs" ]
