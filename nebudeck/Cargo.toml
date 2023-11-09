@@ -2,7 +2,7 @@
 name = "nebudeck"
 description = "Comprehensive suite of tools for building applications using reality and loopio semantics."
 authors = ["juliusl@microsoft.com"]
-version = "0.1.0"
+version = "0.1.0-devel"
 edition = "2021"
 license-file = "LICENSE"
 

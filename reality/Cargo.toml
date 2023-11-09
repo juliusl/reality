@@ -2,7 +2,7 @@
 name = "reality"
 description = "Framework for resource management for code operating in a `call by name` context."
 authors = ["juliusl@microsoft.com"]
-version = "0.2.0"
+version = "0.2.0-alpha"
 edition = "2021"
 license-file = "LICENSE"
 
@@ -21,7 +21,6 @@ bytemuck = "1.12.1"
 tracing = "0.1.36"
 tracing-test = "0.2.3"
 serde = { version = "1.0.144", features = ["derive"] }
-runmd = { path = "../runmd" }
 uuid = { version = "1.4.1", features = ["v4"] }
 bitflags = "2.4.0"
 futures-util = "0.3.28"
@@ -31,6 +30,9 @@ once_cell = "1.18.0"
 async-trait = "0.1.74"
 tokio-util = "0.7.10"
 bincode = "1.3.3"
+
+[dependencies.runmd]
+path = "../runmd"
 
 [dependencies.reality_derive]
 path = "../reality_derive"
