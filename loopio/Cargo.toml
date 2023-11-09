@@ -2,7 +2,7 @@
 name = "loopio"
 description = "Runtime built on top of reality types compiled from runmd blocks."
 authors = ["juliusl@microsoft.com"]
-version = "0.1.0"
+version = "0.1.0-devel"
 edition = "2021"
 license-file = "LICENSE"
 
