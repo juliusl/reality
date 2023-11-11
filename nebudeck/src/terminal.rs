@@ -1,11 +1,13 @@
-use std::io::Write;
 use clap::ArgMatches;
+use std::io::Write;
+use std::ops::DerefMut;
 use tracing::error;
-use loopio::engine::Engine;
 
+use loopio::prelude::*;
+
+use crate::controller::ControlBus;
 use crate::BackgroundWork;
 use crate::Controller;
-use crate::controller::ControlBus;
 
 /// Pointer-struct for providing an interaction loop,
 ///
@@ -13,8 +15,9 @@ use crate::controller::ControlBus;
 pub struct Terminal;
 
 impl<T: TerminalApp> Controller<T> for Terminal {
-    fn take_control(self, engine: Engine) -> BackgroundWork {
-        let mut app = T::create(engine);
+    fn take_control(self, app: Box<T>, engine: Engine) -> BackgroundWork {
+        let mut app: Box<dyn TerminalApp> = app;
+        app.deref_mut().bind(engine.engine_handle());
 
         let cli = app.parse_command();
 
@@ -31,7 +34,12 @@ impl<T: TerminalApp> Controller<T> for Terminal {
                         match cli.clone().try_get_matches_from(args) {
                             Ok(matches) => match matches.subcommand() {
                                 Some((subcommand, matches)) => {
-                                    app.on_subcommand(subcommand, matches)
+                                    if let Some(mut _replacing) =
+                                        app.on_subcommand(subcommand, matches)
+                                    {
+                                        _replacing.bind(engine.engine_handle());
+                                        app = _replacing;
+                                    }
                                 }
                                 None => {
                                     continue;
@@ -39,7 +47,7 @@ impl<T: TerminalApp> Controller<T> for Terminal {
                             },
                             Err(err) => {
                                 eprintln!("{err}");
-                            },
+                            }
                         }
                     }
                     Err(err) => {
@@ -79,15 +87,45 @@ pub trait TerminalApp: ControlBus {
     ///
     fn format_prompt(&mut self);
 
-    /// Process a command,
-    ///
-    /// **Note**: Relevant only when REPL is disabled
-    ///
-    fn process_command(self, command: clap::Command);
-
     /// Called on a subcommand,
     ///
     /// **Note** Relevant only when REPL is enabled
     ///
-    fn on_subcommand(&mut self, name: &str, matches: &ArgMatches);
+    fn on_subcommand(&mut self, name: &str, matches: &ArgMatches) -> Option<Box<dyn TerminalApp>>;
+
+    /// Process a command,
+    ///
+    /// **Note**: Relevant only when REPL is disabled
+    ///
+    fn process_command(&mut self, command: clap::Command);
+}
+
+impl SetupTransform<crate::controller::Command> for Terminal {
+    fn ident() -> &'static str {
+        "terminal"
+    }
+
+    fn setup_transform(
+        resource_key: Option<&loopio::prelude::ResourceKey<loopio::prelude::Attribute>>,
+    ) -> loopio::prelude::Transform<Self, crate::controller::Command> {
+        Self::default_setup(resource_key).before_task(|context, terminal, cmd| {
+            Box::pin(async move {
+                if let Ok(ref cmd) = cmd {
+                    let _clap_command = cmd
+                        .arg
+                        .iter()
+                        .fold(clap::Command::new(&cmd.name), |cmd, (arg, desc)| {
+                            cmd.arg(clap::Arg::new(arg).help(desc))
+                        });
+
+                    context.transient_mut()
+                        .await
+                        .put_resource(_clap_command, None);
+                    Ok((terminal, Ok(cmd.clone())))
+                } else {
+                    Ok((terminal, cmd))
+                }
+            })
+        })
+    }
 }

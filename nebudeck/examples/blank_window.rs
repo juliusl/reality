@@ -1,6 +1,8 @@
+use loopio::engine::EngineHandle;
 use loopio::prelude::*;
 use nebudeck::desktop::*;
 use nebudeck::ControlBus;
+use nebudeck::ext::WgpuSystem;
 use winit::event_loop::ControlFlow;
 use winit::window::Window;
 use winit::window::WindowId;
@@ -10,7 +12,7 @@ use winit::window::WindowId;
 fn main() -> anyhow::Result<()> {
     let desktop = Desktop::<()>::new()?;
 
-    BlankWindow::delegate(desktop, Engine::new());
+    BlankWindow.delegate(desktop, Engine::new());
 
     Ok(())
 }
@@ -18,8 +20,8 @@ fn main() -> anyhow::Result<()> {
 struct BlankWindow;
 
 impl ControlBus for BlankWindow {
-    fn create(_: Engine) -> Self {
-        BlankWindow
+    fn bind(&mut self, _: EngineHandle) {
+        // WgpuSystem
     }
 }
 
@@ -112,6 +114,6 @@ impl DesktopApp<()> for BlankWindow {
     }
 
     fn after_event(&mut self, desktop: &DesktopContext<()>) {
-        desktop.event_loop_target.set_control_flow(ControlFlow::Poll);
+        // desktop.event_loop_target.set_control_flow(ControlFlow::Poll);
     }
 }

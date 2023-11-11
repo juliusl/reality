@@ -1,11 +1,13 @@
+use clap::Command;
 use loopio::engine::Engine;
+use loopio::engine::EngineHandle;
 use nebudeck::ControlBus;
 use nebudeck::terminal::TerminalApp;
 use nebudeck::terminal::Terminal;
 /// Minimal example for starting a new terminal repl interaction,
 /// 
 fn main() {
-    BlankRepl::delegate(
+    BlankRepl.delegate(
         Terminal::default(),
         Engine::new(),
     );
@@ -15,10 +17,7 @@ fn main() {
 struct BlankRepl;
 
 impl ControlBus for BlankRepl {
-    fn create(
-        _: Engine,
-    ) -> Self {
-        BlankRepl
+    fn bind(&mut self, _: EngineHandle) {
     }
 }
 
@@ -38,15 +37,18 @@ impl TerminalApp for BlankRepl {
         true
     }
 
-    fn on_subcommand(&mut self, name: &str, _: &clap::ArgMatches) {
+    fn on_subcommand(&mut self, name: &str, _: &clap::ArgMatches) -> Option<Box<dyn TerminalApp>> {
         match name {
             "ping" => {
                 println!("pong");
+                todo!()
             }
             "exit" => {
                 std::process::exit(0);
             }
-            _ => {}
+            _ => {
+                todo!()
+            }
         }
     }
 
@@ -54,5 +56,5 @@ impl TerminalApp for BlankRepl {
         print!("> ");
     }
 
-    fn process_command(self, _: clap::Command) {}
+    fn process_command(&mut self, _: clap::Command) {}
 }

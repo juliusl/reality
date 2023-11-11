@@ -1,4 +1,6 @@
-use loopio::engine::Engine;
+use std::collections::BTreeMap;
+
+use loopio::prelude::*;
 
 /// Type-alias for optional background work,
 ///
@@ -14,22 +16,36 @@ pub type BackgroundWork = Option<tokio::task::JoinHandle<anyhow::Result<()>>>;
 pub trait Controller<Bus: ControlBus> {
     /// Called when the controller should take control over the workspace,
     ///
-    fn take_control(self, engine: Engine) -> BackgroundWork;
+    fn take_control(self, bus: Box<Bus>, engine: Engine) -> BackgroundWork;
 }
 
 /// Trait for allowing controllers to constrain the "super-trait" of the bus delegating control to the controller,
 ///
 pub trait ControlBus {
-    /// Creates a new instance of this control bus,
+    /// Bind an engine handle to this control bus,
     ///
-    fn create(engine: Engine) -> Self;
+    fn bind(&mut self, engine: EngineHandle);
 
     /// Delegates control over this type over to a controller,
     ///
-    fn delegate(controller: impl Controller<Self>, engine: Engine) -> BackgroundWork
+    fn delegate(self, controller: impl Controller<Self>, engine: Engine) -> BackgroundWork
     where
         Self: Sized,
     {
-        controller.take_control(engine)
+        controller.take_control(Box::new(self), engine)
     }
+}
+
+/// Generic command type,
+///
+#[derive(Reality, Clone, Default)]
+pub struct Command {
+    /// Name of this command,
+    /// 
+    #[reality(derive_fromstr)]
+    pub name: String,
+    /// Name of argument and it's description,
+    ///
+    #[reality(map_of=String)]
+    pub arg: BTreeMap<String, String>,
 }
