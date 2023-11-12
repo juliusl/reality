@@ -55,10 +55,13 @@ pub struct ImguiMiddleware<T> {
     last_frame: Option<Instant>,
     /// Vector of active ui nodes,
     ///
-    pub ui_nodes: Vec<UiNode>,
+    ui_nodes: Vec<UiNode>,
+    /// Vector of active ui nodes,
     ///
-    ///
-    __internal_ui: Vec<AuxUiNode>,
+    ui_type_nodes: Vec<UiTypeNode>,
+    /// Vector of aux ui nodes,
+    /// 
+    __aux_ui: Vec<AuxUiNode>,
     /// Update attempted to start,
     ///
     __update_start: Option<Instant>,
@@ -80,18 +83,80 @@ impl<T: 'static> ImguiMiddleware<T> {
             open_demo: None,
             last_frame: None,
             ui_nodes: vec![],
+            ui_type_nodes: vec![],
             __update_start: None,
             __last_updated: None,
-            __internal_ui: vec![],
+            __aux_ui: vec![],
             __t: PhantomData,
         }
     }
 
-    /// Enables the demo window,
+    /// Enables the imgui demo window,
     ///
-    pub fn enable_demo_window(mut self) -> Self {
+    pub fn enable_imgui_demo_window(mut self) -> Self {
         self.open_demo = Some(true);
         self
+    }
+
+    /// Enables the aux widget demo window,
+    /// 
+    pub fn enable_aux_demo_window(self) -> Self {
+        /*
+        Aux tool ideas
+        - The aux tools are based on an engine handle, which basically has access to everything
+        - So some generic tooling widgets could be helpful
+        -- Tool Idea: Future monitor -- 
+            -- Visualizing futures could be helpful in general, especially w/ view status of an EngineHandle
+            -- 
+        -- Tool Idea: 
+        */
+
+        self.with_aux_node(|handle, ui| {
+            ui.window("aux-demo").build(move || {
+                for (idx, (op, __op)) in handle.operations.iter_mut().enumerate() {
+                    if !__op.is_running() {
+                        if ui.button(format!("Start {op}##{idx}")) {
+                            __op.spawn();
+                        }
+                    } else if __op.is_finished() {
+                        let result = __op.block_result();
+                        eprintln!("success: {}", result.is_ok());
+                    } else {
+                        ui.text("Running");
+                    }
+                }
+
+                // Engine Handle Controls
+                if !handle.is_running() {
+                    if ui.button("Sync") {
+                        if let Some(started) =
+                            handle.spawn(|e| tokio::spawn(async move { e.sync().await }))
+                        {
+                            handle
+                                .cache
+                                .put_resource(started, Some(ResourceKey::with_hash("sync_command")))
+                        }
+                    }
+                } else if let Some(true) = handle.is_finished() {
+                    if let Some(started) = handle
+                        .cache
+                        .take_resource::<Instant>(Some(ResourceKey::with_hash("sync_command")))
+                    {
+                        if let Ok(finished) = handle.wait_for_finish(*started) {
+                            *handle = finished;
+                        } else {
+                            // Remember to put this back
+                            handle
+                                .cache
+                                .put_resource(started, Some(ResourceKey::with_hash("sync_command")))
+                        }
+                    }
+                } else if ui.button("cancel") {
+                    handle.cancel();
+                }
+            });
+            true
+        })
     }
 
     /// Enables the demo window,
@@ -107,7 +172,7 @@ impl<T: 'static> ImguiMiddleware<T> {
         mut self,
         aux_ui: impl FnMut(&mut EngineHandle, &Ui) -> bool + Send + Sync + 'static,
     ) -> Self {
-        self.__internal_ui.push(AuxUiNode {
+        self.__aux_ui.push(AuxUiNode {
             engine_handle: None,
             show_ui: Arc::new(RwLock::new(aux_ui)),
         });
@@ -126,7 +191,6 @@ impl<T: 'static> ImguiMiddleware<T> {
                     if last_updated.elapsed().as_secs() <= 10 {
                         return;
                     }
-
                     eprintln!("Looking for any new ui nodes");
                     self.__last_updated.take();
                 }
@@ -205,6 +269,7 @@ impl<T: 'static> RenderPipelineMiddleware<T> for ImguiMiddleware<T> {
 
     fn on_load_pass<'a: 'b, 'b>(
         &'a mut self,
+        _: &mut wgpu::util::StagingBelt,
         rpass: &mut wgpu::RenderPass<'b>,
         _: &wgpu::TextureView,
         hardware: &super::wgpu_ext::HardwareContext,
@@ -280,7 +345,7 @@ impl<T: 'static> DesktopApp<T> for ImguiMiddleware<T> {
                     uinode.show(&ui);
                 }
 
-                for auxnode in self.__internal_ui.iter_mut().by_ref() {
+                for auxnode in self.__aux_ui.iter_mut() {
                     if auxnode.engine_handle.is_none() {
                         auxnode.engine_handle = Some(
                             self.engine
@@ -291,6 +356,10 @@ impl<T: 'static> DesktopApp<T> for ImguiMiddleware<T> {
                     }
 
                     auxnode.show(&ui);
+                }
+
+                for ui_type_node in self.ui_type_nodes.iter_mut() {
+                    ui_type_node.show(&ui);
                 }
 
                 platform.prepare_render(&ui, context.window);
@@ -322,6 +391,11 @@ pub trait ImguiExt {
         &self,
         show: impl for<'a, 'b> Fn(&'a mut ThunkContext, &'b Ui) -> bool + Send + Sync + 'static,
     );
+
+    async fn add_ui_type_node<G: Default + Send + Sync + 'static>(
+        &self,
+        show: impl for<'a, 'b> Fn(&'a mut Dispatcher<Shared, Attribute>, &'b Ui) -> bool + Send + Sync + 'static,
+    );
 }
 
 #[async_trait]
@@ -341,7 +415,27 @@ impl ImguiExt for ThunkContext {
                 .put_resource(ui_node, self.attribute.map(|a| a.transmute()))
         };
     }
+
+    async fn add_ui_type_node<G: Default + Send + Sync + 'static>(
+        &self,
+        show: impl for<'a, 'b> Fn(&'a mut Dispatcher<Shared, Attribute>, &'b Ui) -> bool + Send + Sync + 'static,
+    ) {
+        let ui_node = UiTypeNode {
+            show_ui: Some(Arc::new(show)),
+            dispatcher: self.initialized_dispatcher::<G>().await.transmute(),
+        };
+
+        unsafe {
+            self.node_mut()
+                .await
+                .put_resource(ui_node, self.attribute.map(|a| a.transmute()))
+        };
+    }
 }
+
+/// Type-alias for a dispatcher based UI signature,
+/// 
+pub type ShowTypeUi = Arc<dyn Fn(&mut Dispatcher<Shared, Attribute>, &Ui) -> bool + Sync + Send + 'static>;
 
 /// Type-alias for a plugin-based UI function signature,
 /// 
@@ -350,6 +444,30 @@ pub type ShowUi = Arc<dyn Fn(&mut ThunkContext, &Ui) -> bool + Sync + Send + 'st
 /// Type-alias for an engine handle based UI function signature,
 /// 
 pub type AuxUi = Arc<RwLock<dyn FnMut(&mut EngineHandle, &Ui) -> bool + Sync + Send + 'static>>;
+
+/// UI Node contains a rendering function w/ a thunk context,
+///
+#[derive(Clone)]
+pub struct UiTypeNode {
+    /// Dispatcher for this ui node,
+    ///
+    pub dispatcher: Dispatcher<Shared, Attribute>,
+    /// Function to show ui,
+    ///
+    pub show_ui: Option<ShowTypeUi>,
+}
+
+impl UiTypeNode {
+    /// Shows the ui,
+    /// 
+    pub fn show(&mut self, ui: &Ui) -> bool {
+        if let Some(show) = self.show_ui.as_ref() {
+            show(&mut self.dispatcher, ui)
+        } else {
+            false
+        }
+    }
+}
 
 /// UI Node contains a rendering function w/ a thunk context,
 ///

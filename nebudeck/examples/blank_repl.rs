@@ -1,4 +1,3 @@
-use clap::Command;
 use loopio::engine::Engine;
 use loopio::engine::EngineHandle;
 use nebudeck::ControlBus;

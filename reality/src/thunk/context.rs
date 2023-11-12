@@ -10,6 +10,7 @@ use tracing::debug;
 use tracing::trace;
 use uuid::Uuid;
 
+use crate::Dispatcher;
 use crate::prelude::Latest;
 use crate::AsyncStorageTarget;
 use crate::Attribute;
@@ -245,29 +246,40 @@ impl Context {
             .unwrap_or_default()
     }
 
+    /// Initializes and returns a dispatcher for resource T,
+    /// 
+    pub async fn initialized_dispatcher<T: Default + Sync + Send + 'static>(&self) -> Dispatcher<Shared, T> {
+        self.node.intialize_dispatcher(self.attribute.map(|a| a.transmute())).await
+    }
+
     /// If cached, returns a cached value of P,
     ///
-    pub fn cached<P: ToOwned<Owned = P> + Sync + Send + 'static>(
-        &self,
-    ) -> Option<P> {
+    pub fn cached<P: ToOwned<Owned = P> + Sync + Send + 'static>(&self) -> Option<P> {
         self.__cached
             .current_resource::<P>(self.attribute.map(|a| a.transmute()))
     }
 
+    /// If cached, returns a referenced to the cached value,
+    ///
+    pub fn cached_ref<P: Sync + Send + 'static>(
+        &self,
+    ) -> Option<<Shared as StorageTarget>::BorrowResource<'_, P>> {
+        self.__cached
+            .resource::<P>(self.attribute.map(|a| a.transmute()))
+    }
+
     /// Returns a mutable reference to a cached resource,
-    /// 
+    ///
     pub fn cached_mut<P: Sync + Send + 'static>(
         &mut self,
-    ) -> Option<<Shared as StorageTarget>::BorrowMutResource::<'_, P>> {
+    ) -> Option<<Shared as StorageTarget>::BorrowMutResource<'_, P>> {
         self.__cached
             .resource_mut::<P>(self.attribute.map(|a| a.transmute()))
     }
 
     /// Writes a resource to the cache,
-    /// 
-    pub fn write_cache<R: ToOwned<Owned = R> + Sync + Send + 'static>(
-        &mut self, resource: R
-    ) {
+    ///
+    pub fn write_cache<R: Sync + Send + 'static>(&mut self, resource: R) {
         self.__cached
             .put_resource(resource, self.attribute.map(|a| a.transmute()))
     }
@@ -309,8 +321,15 @@ impl Context {
             .await
     }
 
+    /// Scan and take resourrces of type P from node storage,
+    /// 
     pub async fn scan_take_node<P: Sync + Send + 'static>(&self) -> Vec<P> {
-        let attrs = self.node().await.stream_attributes().collect::<Vec<_>>().await;
+        let attrs = self
+            .node()
+            .await
+            .stream_attributes()
+            .collect::<Vec<_>>()
+            .await;
         let mut acc = vec![];
         for attr in attrs {
             let mut clone = self.clone();
@@ -329,10 +348,11 @@ impl Context {
     /// Scans if a resource exists for the current context,
     ///
     pub async fn scan_take_node_for<P: Sync + Send + 'static>(&self) -> Option<P> {
-        unsafe { self.node_mut()
-            .await
-            .take_resource::<P>(self.attribute.map(|a| a.transmute()))
-            .map(|p| *p)
+        unsafe {
+            self.node_mut()
+                .await
+                .take_resource::<P>(self.attribute.map(|a| a.transmute()))
+                .map(|p| *p)
         }
     }
 
@@ -389,8 +409,29 @@ impl Context {
             .await
     }
 
+    /// Apply thunks w/ middleware,
+    ///
+    pub async fn apply_thunks_with<Fut>(
+        self,
+        middle: impl Fn(Self, ResourceKey<Attribute>) -> Fut + Copy + Clone + Send + Sync + 'static,
+    ) -> anyhow::Result<Self>
+    where
+        Fut: Future<Output = anyhow::Result<Self>>,
+    {
+        let middle = middle.clone();
+        let node = crate::Node(self.node.storage.clone());
+        node.stream_attributes()
+            .map(Ok)
+            .try_fold(self, |mut acc, next| async move {
+                acc.set_attribute(next);
+
+                Self::apply((middle)(acc, next).await?, next).await
+            })
+            .await
+    }
+
     /// Applies thunk associated to attr,
-    /// 
+    ///
     pub async fn apply(mut self, attr: ResourceKey<Attribute>) -> anyhow::Result<Self> {
         // TODO: Might be a hot spot
         {
@@ -418,7 +459,7 @@ impl Context {
     }
 
     /// Resolves an attribute by path, returns a context if an attribute was found,
-    /// 
+    ///
     pub async fn navigate(&self, path: impl AsRef<str>) -> Option<Self> {
         if let Some(located) = self.node.resolve::<Attribute>(path.as_ref()).await {
             let mut navigation = self.clone();

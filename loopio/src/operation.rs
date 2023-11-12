@@ -88,7 +88,10 @@ impl Operation {
     ///
     pub async fn execute(&self) -> anyhow::Result<ThunkContext> {
         if let Some(context) = self.context.clone() {
-            context.apply_thunks().await
+            context.apply_thunks_with(|c, _next| async move {
+                eprintln!("Executing next {:?}", _next);
+                Ok(c)
+            }).await
         } else {
             Err(anyhow!("Could not execute operation, "))
         }

@@ -11,5 +11,6 @@ pub use crate::ext::*;
 pub use crate::engine::Engine;
 pub use crate::engine::EngineHandle;
 pub use crate::host::Host;
+pub use crate::spawned::*;
 
 pub use reality::prelude::*;

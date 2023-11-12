@@ -1,12 +1,12 @@
 use futures_util::stream::FuturesOrdered;
 use futures_util::Future;
-use tokio::runtime::Handle;
-use tracing::trace;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
+use tracing::trace;
 
 use super::prelude::*;
 
@@ -30,9 +30,12 @@ impl<S: StorageTarget> Clone for AsyncStorageTarget<S> {
 
 impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
     /// Creates an async storage target from its parts,
-    /// 
+    ///
     pub fn from_parts(storage: Arc<RwLock<S>>, runtime: tokio::runtime::Handle) -> Self {
-        Self { storage, runtime: Some(runtime) }
+        Self {
+            storage,
+            runtime: Some(runtime),
+        }
     }
 
     /// Returns a dispatcher for a specific resource type,
@@ -289,9 +292,13 @@ macro_rules! dispatch_owned_async {
 
                 _outer = Some(resource);
             }
-                
+
             if let Some(outer) = _outer {
-                storage.deref().write().await.put_resource(outer, resource_key.map(|r| r.transmute()));
+                storage
+                    .deref()
+                    .write()
+                    .await
+                    .put_resource(outer, resource_key.map(|r| r.transmute()));
             }
         }
     };
@@ -328,13 +335,19 @@ macro_rules! dispatch_owned {
                 .await
                 .take_resource::<$resource_ty>(resource_key.map(|r| r.transmute()))
             {
-                _outer = Some(tocall.drain(..).fold(*resource, |resource, call| {
-                    call(resource)
-                }));
+                _outer = Some(
+                    tocall
+                        .drain(..)
+                        .fold(*resource, |resource, call| call(resource)),
+                );
             }
 
             if let Some(outer) = _outer {
-                storage.deref().write().await.put_resource(outer, resource_key.map(|r| r.transmute()));
+                storage
+                    .deref()
+                    .write()
+                    .await
+                    .put_resource(outer, resource_key.map(|r| r.transmute()));
             }
         }
     };
@@ -343,6 +356,17 @@ macro_rules! dispatch_owned {
 impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'static>
     Dispatcher<Storage, T>
 {
+    /// Transmutes a dispatcher,
+    /// 
+    pub fn transmute<G: Send + Sync + 'static>(self) -> Dispatcher<Storage, G> {
+        Dispatcher::<Storage, G> {
+            storage: self.storage,
+            resource_key: self.resource_key.map(|r| r.transmute()),
+            tasks: self.tasks,
+            _u: PhantomData,
+        }
+    }
+
     /// Dispatches all queued dispatches,
     ///
     /// ## Notes on Default implementation
@@ -405,7 +429,7 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
 
     /// Queues a dispatch fn w/ a mutable reference to the target resource,
     ///
-    pub fn queue_dispatch_owned(&mut self, exec: impl FnOnce(T) -> T+ 'static + Send + Sync)
+    pub fn queue_dispatch_owned(&mut self, exec: impl FnOnce(T) -> T + 'static + Send + Sync)
     where
         Self: 'static,
     {
@@ -427,11 +451,11 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
     }
 
     /// Queues a dispatch task fn w/ a mutable reference to the target resource,
-    /// 
+    ///
     /// **Note**: There is no performance benefit over using this, since queues are synchronous when drained.
-    /// 
+    ///
     /// The only benefit is being able to use async code in the closure.
-    /// 
+    ///
     pub fn queue_dispatch_mut_task(
         &mut self,
         exec: impl FnOnce(&mut T) -> Pin<Box<dyn Future<Output = ()> + Sync + Send + 'static>>
@@ -447,9 +471,9 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
     /// Queues a dispatch task fn w/ a reference to the storage target resource,
     ///
     /// **Note**: There is no performance benefit over using this, since queues are synchronous when drained.
-    /// 
+    ///
     /// The only benefit is being able to use async code in the closure.
-    /// 
+    ///
     pub fn queue_dispatch_task(
         &mut self,
         exec: impl FnOnce(&T) -> Pin<Box<dyn Future<Output = ()> + Sync + Send + 'static>>

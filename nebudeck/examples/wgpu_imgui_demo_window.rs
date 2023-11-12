@@ -31,8 +31,7 @@ async fn main() -> anyhow::Result<()> {
     + .operation setup
     <demo.test> hello world
     ```
-    ",
-    );
+    ");
 
     // Build and compile an engine
     let mut engine = Engine::builder();
@@ -41,61 +40,10 @@ async fn main() -> anyhow::Result<()> {
 
     let engine = engine.build().compile(workspace).await;
 
-    // let _ = engine.run("setup").await?;
-
-    // if let Some(r) = r.scan_node_for::<UiNode>().await {
-    //     eprintln!("has node {:?}", r.context.attribute);
-    // }
-
     // Create the new WgpuSystem
     WgpuSystem::with(vec![ImguiMiddleware::new()
-        .enable_demo_window()
-        .with_aux_node(|handle, ui| {
-            ui.window("aux-demo").build(move || {
-                for (idx, (op, __op)) in handle.operations.iter_mut().enumerate() {
-                    if !__op.is_running() {
-                        if ui.button(format!("Start {op}##{idx}")) {
-                            __op.spawn();
-                        }
-                    } else if __op.is_finished() {
-                        let result = __op.block_result();
-                        eprintln!("success: {}", result.is_ok());
-                    } else {
-                        ui.text("Running");
-                    }
-                }
-
-                // Engine Handle Controls
-                if !handle.is_running() {
-                    if ui.button("Sync") {
-                        if let Some(started) =
-                            handle.spawn(|e| tokio::spawn(async move { e.sync().await }))
-                        {
-                            handle
-                                .cache
-                                .put_resource(started, Some(ResourceKey::with_hash("sync_command")))
-                        }
-                    }
-                } else if let Some(true) = handle.is_finished() {
-                    if let Some(started) = handle
-                        .cache
-                        .take_resource::<Instant>(Some(ResourceKey::with_hash("sync_command")))
-                    {
-                        if let Ok(finished) = handle.wait_for_finish(*started) {
-                            *handle = finished;
-                        } else {
-                            // Remember to put this back
-                            handle
-                                .cache
-                                .put_resource(started, Some(ResourceKey::with_hash("sync_command")))
-                        }
-                    }
-                } else if ui.button("cancel") {
-                    handle.cancel();
-                }
-            });
-            true
-        })
+        .enable_imgui_demo_window()
+        .enable_aux_demo_window()
         .middleware()])
     // Opens the window by passing control over to the desktop ControlBus
     .delegate(desktop, engine);
@@ -119,12 +67,15 @@ async fn test_ui(tc: &mut ThunkContext) -> anyhow::Result<()> {
         tc.write_cache(engine_handle);
     }
 
-    let node = tc.node().await;
-    if let Some(parsed_attributes) = { node.current_resource::<ParsedAttributes>(None) } {
-        println!("{:#?}", parsed_attributes);
-        drop(node);
-        tc.write_cache(parsed_attributes);
+    {
+        let node = tc.node().await;
+        if let Some(parsed_attributes) = { node.current_resource::<ParsedAttributes>(None) } {
+            println!("{:#?}", parsed_attributes);
+            drop(node);
+            tc.write_cache(parsed_attributes);
+        }
     }
+    // tc.update_status_from_instruction()?;
 
     println!("Adding ui node {:?}", tc.attribute);
     tc.add_ui_node(|__tc, ui| {

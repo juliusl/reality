@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::task::Poll;
 
 use futures_util::FutureExt;
-use reality::prelude::*;
+use reality::{prelude::*, SetIdentifiers};
 use tokio::task::{JoinHandle, JoinSet};
 use tracing::{error, trace};
 
@@ -43,6 +43,13 @@ pub struct Sequence {
     ///
     #[reality(ignore)]
     current: Option<JoinHandle<anyhow::Result<ThunkContext>>>,
+}
+
+impl SetIdentifiers for Sequence {
+    fn set_identifiers(&mut self, name: &String, tag: Option<&String>) {
+        self.name = name.to_string();
+        self.tag = tag.cloned();
+    }
 }
 
 impl Clone for Sequence {

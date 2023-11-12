@@ -5,7 +5,6 @@ use loopio::prelude::Engine;
 use loopio::prelude::EngineHandle;
 use loopio::prelude::StorageTarget;
 use loopio::prelude::ThunkContext;
-use winit_27::event_loop::EventLoopProxy;
 use std::cell::OnceCell;
 use std::ops::DerefMut;
 use std::pin::Pin;
@@ -24,11 +23,12 @@ use wgpu::RenderPipeline;
 use wgpu::Surface;
 use wgpu::SurfaceConfiguration;
 use wgpu::TextureView;
+use winit_27::event_loop::EventLoopProxy;
 
-use crate::BackgroundWork;
-use crate::Controller;
 use crate::desktop::DesktopApp;
+use crate::BackgroundWork;
 use crate::ControlBus;
+use crate::Controller;
 
 /// Adds extensions to ThunkContext for handling wgpu primitives as resources w/ during
 /// thunk execution.
@@ -286,7 +286,11 @@ impl<T: 'static> DesktopApp<T> for WgpuSystem<T> {
             .fold(window, |acc, m| m.configure_window(acc))
     }
 
-    fn before_event_loop(&mut self, window: &winit::window::Window, event_loop_proxy: EventLoopProxy<T>) {
+    fn before_event_loop(
+        &mut self,
+        window: &winit::window::Window,
+        event_loop_proxy: EventLoopProxy<T>,
+    ) {
         let hardware = self.hardware.get().expect("should exist just set");
         for middleware in self.middleware.iter_mut() {
             middleware.before_event_loop(window, event_loop_proxy.clone());
@@ -336,17 +340,28 @@ impl<T: 'static> DesktopApp<T> for WgpuSystem<T> {
     ) {
         if let Some(hardware) = self.hardware.get_mut() {
             if let Ok(frame) = hardware.surface.get_current_texture() {
-                let view = &frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
-                let staging_belt = self.staging_belt.get_mut().expect("should be enabled");
-                let mut encoder: wgpu::CommandEncoder = hardware
-                    .device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+                // -- Configure redraw settings
+                let texture_view_desc = self
+                    .middleware
+                    .iter_mut()
+                    .fold(wgpu::TextureViewDescriptor::default(), |acc, m| {
+                        m.configure_redraw_settings(acc)
+                    });
+                let view = &frame.texture.create_view(&texture_view_desc);
 
+                // Initialize render setup types
+                let staging_belt = self.staging_belt.get_mut().expect("should be enabled");
+                let mut encoder: wgpu::CommandEncoder =
+                    hardware
+                        .device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("nebudeck-on-window-redraw"),
+                        });
+
+                // -- Before clear pass
                 for middleware in self.middleware.iter_mut() {
                     middleware.on_window_redraw(window_id, &context);
-                    middleware.before_clear_pass(view, &hardware);
+                    middleware.before_clear_pass(staging_belt, view, &hardware);
                 }
 
                 {
@@ -388,13 +403,15 @@ impl<T: 'static> DesktopApp<T> for WgpuSystem<T> {
                         },
                     });
 
+                    // -- On clear pass
                     for middleware in self.middleware.iter_mut() {
-                        middleware.on_clear_pass(&mut clear_rpass, view, &hardware);
+                        middleware.on_clear_pass(staging_belt, &mut clear_rpass, view, &hardware);
                     }
                 }
 
+                // -- Before load pass
                 for middleware in self.middleware.iter_mut() {
-                    middleware.before_load_pass(view, &hardware);
+                    middleware.before_load_pass(staging_belt, view, &hardware);
                 }
 
                 {
@@ -431,9 +448,15 @@ impl<T: 'static> DesktopApp<T> for WgpuSystem<T> {
                         },
                     });
 
+                    // -- On load pass
                     for middleware in self.middleware.iter_mut() {
-                        middleware.on_load_pass(&mut load_pass, view, &hardware);
+                        middleware.on_load_pass(staging_belt, &mut load_pass, view, &hardware);
                     }
+                }
+
+                // -- Before frame present
+                for middleware in self.middleware.iter_mut() {
+                    middleware.before_frame_present(staging_belt, view, &hardware);
                 }
 
                 hardware.queue.submit(Some(encoder.finish()));
@@ -525,17 +548,33 @@ pub trait RenderPipelineMiddleware<T: 'static>: DesktopApp<T> {
         Box::pin(self)
     }
 
+    /// Configure various descriptors,
+    ///
+    fn configure_redraw_settings<'a: 'b, 'b>(
+        &'a mut self,
+        texture_view_desc: wgpu::TextureViewDescriptor<'b>,
+    ) -> wgpu::TextureViewDescriptor<'b> {
+        texture_view_desc
+    }
+
     /// Called before event loop is starting and hardware context is created,
     fn on_hardware(&mut self, hardware: &HardwareContext, window: &winit::window::Window) {}
 
     /// Called before the clear render pass is created,
     ///
-    fn before_clear_pass(&mut self, view: &TextureView, hardware: &HardwareContext) {}
+    fn before_clear_pass(
+        &mut self,
+        staging_belt: &mut StagingBelt,
+        view: &TextureView,
+        hardware: &HardwareContext,
+    ) {
+    }
 
     /// Called before the clear render pass is dropped,
     ///
     fn on_clear_pass<'a: 'b, 'b>(
         &'a mut self,
+        staging_belt: &mut StagingBelt,
         rpass: &mut RenderPass<'b>,
         view: &TextureView,
         hardware: &HardwareContext,
@@ -544,13 +583,28 @@ pub trait RenderPipelineMiddleware<T: 'static>: DesktopApp<T> {
 
     /// Called before the load render pass is created,
     ///
-    fn before_load_pass(&mut self, view: &TextureView, hardware: &HardwareContext) {}
+    fn before_load_pass(
+        &mut self,
+        staging_belt: &mut StagingBelt,
+        view: &TextureView,
+        hardware: &HardwareContext,
+    ) {
+    }
 
     /// Called before the load render pass is dropped,
     ///
     fn on_load_pass<'a: 'b, 'b>(
         &'a mut self,
+        staging_belt: &mut StagingBelt,
         rpass: &mut RenderPass<'b>,
+        view: &TextureView,
+        hardware: &HardwareContext,
+    ) {
+    }
+
+    fn before_frame_present(
+        &mut self,
+        staging_belt: &mut StagingBelt,
         view: &TextureView,
         hardware: &HardwareContext,
     ) {
@@ -568,9 +622,9 @@ impl<T: 'static> ControlBus for WgpuSystem<T> {
     where
         Self: Sized,
     {
-        self.engine.set(
-            engine.engine_handle()
-        ).expect("should only be called once");
+        self.engine
+            .set(engine.engine_handle())
+            .expect("should only be called once");
 
         controller.take_control(Box::new(self), engine)
     }

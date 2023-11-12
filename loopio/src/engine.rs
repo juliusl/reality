@@ -3,11 +3,11 @@ use async_stream::stream;
 use futures_util::Stream;
 use host::Host;
 use reality::prelude::*;
+use reality::SetIdentifiers;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::runtime::Handle;
@@ -163,6 +163,7 @@ pub struct Engine {
 impl Engine {
     /// Returns the default host for this engine,
     ///
+    #[inline]
     pub fn default_host(&self) -> Host {
         let mut default_host = Host::default();
         default_host.children = self.hosts.clone();
@@ -171,12 +172,14 @@ impl Engine {
 
     /// Returns an iterator over hosts,
     ///
+    #[inline]
     pub fn iter_hosts(&self) -> impl Iterator<Item = (&String, &Host)> {
         self.hosts.iter()
     }
 
     /// Creates a new engine builder,
     ///
+    #[inline]
     pub fn builder() -> EngineBuilder {
         let mut runtime = tokio::runtime::Builder::new_multi_thread();
         runtime.enable_all();
@@ -186,6 +189,7 @@ impl Engine {
 
     /// Registers a plugin w/ this engine,
     ///
+    #[inline]
     pub fn enable<P: Plugin + Default + Clone + ApplyFrame + ToFrame + Send + Sync + 'static>(
         &mut self,
     ) {
@@ -199,6 +203,7 @@ impl Engine {
 
     /// Registers a plugin w/ this engine builder,
     ///
+    #[inline]
     pub fn enable_transform<
         C: SetupTransform<P> + Send + Sync + 'static,
         P: Plugin + Clone + Default + Send + Sync + 'static,
@@ -221,6 +226,7 @@ impl Engine {
     ///
     /// **Note** By default creates a new multi_thread runtime w/ all features enabled
     ///
+    #[inline]
     pub fn new() -> Self {
         let mut runtime = tokio::runtime::Builder::new_multi_thread();
         runtime.enable_all();
@@ -231,6 +237,7 @@ impl Engine {
 
     /// Creates a new engine w/ runtime,
     ///
+    #[inline]
     pub fn new_with(
         plugins: Vec<reality::BlockPlugin<Shared>>,
         runtime: tokio::runtime::Runtime,
@@ -255,6 +262,30 @@ impl Engine {
             },
             packet_rx: rx,
             workspace: None,
+        }
+    }
+
+    fn add_node_plugin<T>(
+        name: Option<&str>,
+        tag: Option<&str>,
+        target: &mut AttributeParser<Shared>,
+    ) where
+        T: BlockObject<Shared> + SetIdentifiers,
+    {
+        let name = name
+            .map(|n| n.to_string())
+            .unwrap_or(format!("{}", uuid::Uuid::new_v4()));
+
+        T::parse(target, &name);
+
+        if let Some(last) = target.attributes.last().cloned() {
+            if let Some(mut storage) = target.storage_mut() {
+                storage.drain_dispatch_queues();
+                if let Some(mut seq) = storage.resource_mut(Some(last.transmute::<T>())) {
+                    T::set_identifiers(&mut seq, &name, tag.map(|t| t.to_string()).as_ref());
+                }
+                storage.put_resource(last.transmute::<T>(), None);
+            }
         }
     }
 
@@ -304,43 +335,8 @@ impl Engine {
             }
         });
 
-        project.add_node_plugin("sequence", move |name, tag, target| {
-            let name = name
-                .map(|n| n.to_string())
-                .unwrap_or(format!("{}", uuid::Uuid::new_v4()));
-
-            Sequence::parse(target, "");
-
-            if let Some(last) = target.attributes.last().cloned() {
-                if let Some(mut storage) = target.storage_mut() {
-                    storage.drain_dispatch_queues();
-                    if let Some(mut seq) = storage.resource_mut(Some(last.transmute::<Sequence>()))
-                    {
-                        seq.deref_mut().name = name;
-                        seq.deref_mut().tag = tag.map(|t| t.to_string());
-                    }
-                    storage.put_resource(last.transmute::<Sequence>(), None);
-                }
-            }
-        });
-
-        project.add_node_plugin("host", move |name, tag, target| {
-            let name = name
-                .map(|n| n.to_string())
-                .unwrap_or(format!("{}", uuid::Uuid::new_v4()));
-
-            Host::parse(target, &name);
-
-            if let Some(last) = target.attributes.last().cloned() {
-                if let Some(mut storage) = target.storage_mut() {
-                    storage.drain_dispatch_queues();
-                    if let Some(mut host) = storage.resource_mut(Some(last.transmute::<Host>())) {
-                        host._tag = tag.map(|t| t.to_string());
-                    }
-                    storage.put_resource(last.transmute::<Host>(), None);
-                }
-            }
-        });
+        project.add_node_plugin("sequence", Self::add_node_plugin::<Sequence>);
+        project.add_node_plugin("host", Self::add_node_plugin::<Host>);
 
         if let Some(project) = workspace
             .compile(project)
@@ -608,6 +604,9 @@ impl Debug for Action {
 
 /// Handle for communicating and sending work packets to an engine,
 ///
+/// An engine handle can also spawn a background task on the tokio runtime which
+/// can return an updated engine handle. (Specifically the cache)
+///
 pub struct EngineHandle {
     /// Sends engine packets to the engine,
     ///
@@ -622,7 +621,7 @@ pub struct EngineHandle {
     ///
     pub hosts: BTreeMap<String, Host>,
     /// Local cache for the handle,
-    /// 
+    ///
     pub cache: Shared,
     /// Actively running task,
     ///
@@ -783,8 +782,11 @@ impl EngineHandle {
     }
 
     /// Returns true if the spawn closure was successfully spawned,
-    /// 
-    pub fn spawn(&mut self, spawn: impl FnOnce(EngineHandle) -> JoinHandle<anyhow::Result<Self>> + 'static) -> Option<Instant> {
+    ///
+    pub fn spawn(
+        &mut self,
+        spawn: impl FnOnce(EngineHandle) -> JoinHandle<anyhow::Result<Self>> + 'static,
+    ) -> Option<Instant> {
         if self.__spawned.is_some() {
             return None;
         }
@@ -795,25 +797,25 @@ impl EngineHandle {
     }
 
     /// Returns true if an internal task is running,
-    /// 
+    ///
     pub fn is_running(&self) -> bool {
         self.__spawned.is_some()
     }
 
     /// Returns Some(true) if the internal task is still running,
-    /// 
+    ///
     pub fn is_finished(&self) -> Option<bool> {
         self.__spawned.as_ref().map(|(_, s)| s.is_finished())
     }
 
     /// Updates in place,
-    /// 
+    ///
     /// returns an error if there is not currently a running task,
-    /// 
-    /// or; if the task could not be complete successfully, 
-    /// 
+    ///
+    /// or; if the task could not be complete successfully,
+    ///
     /// or; if the task completed but returned an error.
-    /// 
+    ///
     pub fn wait_for_finish(&mut self, instant: Instant) -> anyhow::Result<EngineHandle> {
         if let Some((started, _)) = self.__spawned.as_ref() {
             if instant != *started {
@@ -829,7 +831,7 @@ impl EngineHandle {
     }
 
     /// Cancels any spawned join handles from this engine handle,
-    /// 
+    ///
     pub fn cancel(&mut self) {
         if let Some((_, spawned)) = self.__spawned.take() {
             spawned.abort();

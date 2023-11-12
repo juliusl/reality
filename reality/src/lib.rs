@@ -8,6 +8,7 @@ mod block;
 pub use block::BlockObjectType;
 pub use block::BlockObject;
 pub use block::BlockObjectHandler;
+pub use block::SetIdentifiers;
 
 mod project;
 pub use project::Project;

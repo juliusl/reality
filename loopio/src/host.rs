@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::sync::Arc;
+use reality::SetIdentifiers;
 use tokio::sync::Notify;
 
 use reality::prelude::*;
@@ -178,5 +179,12 @@ impl Debug for Host {
             .field("handle", &self.handle)
             .field("start", &self.start)
             .finish()
+    }
+}
+
+impl SetIdentifiers for Host {
+    fn set_identifiers(&mut self, name: &String, tag: Option<&String>) {
+        self.name = name.to_string();
+        self._tag = tag.cloned();
     }
 }
