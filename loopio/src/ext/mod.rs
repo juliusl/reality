@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use reality::prelude::*;
+use tracing::trace;
 
 use crate::host::HostCondition;
 use crate::engine::EngineHandle;
@@ -36,7 +37,9 @@ pub trait Ext {
 #[async_trait]
 impl Ext for ThunkContext {
     async fn engine_handle(&self) -> Option<EngineHandle> {
-        self.node().await.current_resource(None)
+        self.node()
+            .await
+            .current_resource(None)
     }
 
     async fn get_comments(&self) -> Option<Comments> {
@@ -62,7 +65,7 @@ impl Ext for ThunkContext {
             if let Some(host_condition) =
                 host.current_resource::<HostCondition>(Some(ResourceKey::with_hash(condition)))
             {
-                println!("Found condition");
+                trace!("Found condition");
                 return Some(host_condition);
             }
         }
@@ -120,7 +123,7 @@ pub mod utility {
 }
 
 #[derive(Reality, Default, Clone)]
-#[reality(plugin, call = send_signal, rename = "utility/loopio.send-signal")]
+#[reality(plugin, call = send_signal, rename = "send-signal", group = "loopio")]
 pub struct SendSignal {
     #[reality(derive_fromstr)]
     name: String,
@@ -133,7 +136,7 @@ async fn send_signal(tc: &mut ThunkContext) -> anyhow::Result<()> {
 }
 
 #[derive(Reality, Debug, Default, Clone)]
-#[reality(plugin, call = receive_signal, rename = "utility/loopio.receive-signal")]
+#[reality(plugin, call = receive_signal, rename = "receive-signal", group = "loopio")]
 pub struct ReceiveSignal {
     #[reality(derive_fromstr)]
     name: String,
@@ -142,7 +145,7 @@ pub struct ReceiveSignal {
 
 async fn receive_signal(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let signal = tc.initialized::<ReceiveSignal>().await;
-    println!("Listening for signal {:?}", signal);
+    eprintln!("Listening for signal {:?}", signal);
     if let Some(listener) = tc.listen_host(&signal.host, &signal.name).await {
         listener.listen().await;
     }

@@ -54,8 +54,8 @@ impl NodeProvider for Test {
 
 #[async_trait::async_trait]
 impl ExtensionLoader for Test {
-    async fn load_extension(&self, extension: &str, input: Option<&str>) -> Option<BoxedNode> {
-        trace!(extension, input, "load_extension");
+    async fn load_extension(&self, extension: &str, tag: Option<&str>, input: Option<&str>) -> Option<BoxedNode> {
+        trace!(extension, input, tag, "load_extension");
         Some(Box::pin(Test))
     }
 }
@@ -84,6 +84,10 @@ impl Node for Test {
 
     fn completed(self: Box<Self>) {
         trace!("completed");
+    }
+
+    fn assign_path(&mut self, path: String) {
+        trace!("assigning path {}", path)
     }
 }
 

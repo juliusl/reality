@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::ParsedAttributes;
 use crate::StorageTarget;
 use crate::ResourceKeyHashBuilder;
 use crate::ResourceKey;
@@ -11,17 +13,18 @@ mod node;
 pub use node::Node;
 
 mod extension;
-pub use extension::Extension;
+pub use extension::Transform;
 
 mod extension_controller;
-pub use extension_controller::ExtensionController;
-pub use extension_controller::ExtensionPlugin;
+pub use extension_controller::SetupTransform;
+pub use extension_controller::TransformPlugin;
 
 mod source;
 pub use source::Source;
 
 mod workspace;
 pub use workspace::Workspace;
+pub use workspace::CurrentDir;
 
 mod host;
 pub use host::RegisterWith;
@@ -249,14 +252,14 @@ mod reality {
 }
 
 #[derive(Debug, Reality)]
-#[reality(rename = "application/test")]
+#[reality(group = "reality")]
 struct Test {
     name: String,
     file: PathBuf,
 }
 
 #[derive(Debug, Reality)]
-#[reality(rename = "application/test2")]
+#[reality(group = "reality")]
 struct Test2 {
     name: String,
     file: PathBuf,
@@ -278,7 +281,7 @@ impl FromStr for Test3 {
     type Err = Infallible;
 
     fn from_str(_s: &str) -> Result<Self, Self::Err> {
-        todo!()
+        Ok(Test3::A { a: String::new() })
     }
 }
 
@@ -356,7 +359,6 @@ impl FromStr for Test2 {
 
 #[tokio::test]
 async fn test_project_parser() {
-    use crate::Attribute;
     let mut project = Project::new(crate::Shared::default());
 
     project.add_node_plugin("test", |_, _, parser| {
@@ -376,28 +378,28 @@ async fn test_project_parser() {
 
         ```runmd
         + .test
-        <application/test>
+        <app/reality.test>
         : .name Hello World 2
         : .file .test/test-1.md
-        <application/test>
+        </reality.test>
         : .name World Hello
-        <application/test2>
+        </reality.test2>
         : .name World Hello3
 
         + .test
-        <application/test>
+        <a/reality.test>
         : .name Hello World 3
         : .file .test/test-2.md
         ```
 
         ```runmd
         + .test
-        <application/test>
+        <b/reality.test>
         : .name Hello World 2
         : .file .test/test-3.md
 
         + .test
-        <application/test>
+        <c/reality.test>
         : .name Hello World 3
         : .file .test/test-4.md
         ```
@@ -414,10 +416,12 @@ async fn test_project_parser() {
         let node = node.read().await;
         println!("{:?}", k);
 
-        let attributes =  node.resource::<Vec<ResourceKey<Attribute>>>(None);
+        let attributes =  node.resource::<ParsedAttributes>(None);
 
         if let Some(attributes) = attributes {
-            for attr in attributes.iter() {
+            println!("{:#?}", attributes);
+
+            for attr in attributes.parsed() {
                 let test = node.resource::<Test>(Some(attr.transmute()));
                 println!("{:?}", test);
                 if let Some(test) = test {
@@ -430,9 +434,6 @@ async fn test_project_parser() {
 
             }
         }
-
-        // Node(node).attributes()
-        // Node(node).attributes_of::<Test>()
     }
     ()
 }

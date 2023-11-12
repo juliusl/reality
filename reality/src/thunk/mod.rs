@@ -9,8 +9,8 @@ pub mod prelude {
     pub use crate::AsyncStorageTarget;
     pub use crate::AttributeType;
     pub use crate::BlockObject;
-    pub use crate::ExtensionController;
-    pub use crate::ExtensionPlugin;
+    pub use crate::SetupTransform;
+    pub use crate::TransformPlugin;
     pub use crate::Shared;
     pub use crate::StorageTarget;
     pub use futures_util::Future;
@@ -32,24 +32,16 @@ pub mod prelude {
     where
         P: Plugin + Send + Sync + 'static,
     {
-        fn call(context: ThunkContext) -> CallOutput {
-            context
-                .spawn(|mut tc| async {
-                    <Self as CallAsync>::call(&mut tc).await?;
-                    Ok(tc)
-                })
-                .into()
-        }
     }
 
     impl<P> AttributeType<Shared> for Thunk<P>
     where
         P: Plugin + Send + Sync + 'static,
     {
-        fn ident() -> &'static str {
-            <P as AttributeType<Shared>>::ident()
+        fn symbol() -> &'static str {
+            <P as AttributeType<Shared>>::symbol()
         }
-
+        
         fn parse(parser: &mut crate::AttributeParser<Shared>, content: impl AsRef<str>) {
             <P as AttributeType<Shared>>::parse(parser, content);
 

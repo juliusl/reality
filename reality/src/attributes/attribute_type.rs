@@ -4,8 +4,10 @@ use std::ops::DerefMut;
 use std::str::FromStr;
 
 use anyhow::anyhow;
-use serde::Serialize;
+use const_format::formatcp;
+use once_cell::sync::OnceCell;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 use crate::BlockObject;
 use crate::Visit;
@@ -13,19 +15,17 @@ use crate::VisitMut;
 
 use super::visit::Field;
 use super::visit::FieldMut;
-use super::AttributeParser;
-use super::StorageTarget;
 use super::visit::FieldPacket;
 use super::visit::FieldPacketType;
+use super::AttributeParser;
+use super::StorageTarget;
 
 /// Trait to implement a type as an AttributeType,
 ///
 pub trait AttributeType<S: StorageTarget> {
-    /// Identifier of the attribute type,
-    ///
-    /// This identifier will be used by runmd to load this type
-    ///
-    fn ident() -> &'static str;
+    /// Symbol of the attribute type, this symbol will be used to represent this type in runmd,
+    /// 
+    fn symbol() -> &'static str;
 
     /// Parse content received by the runmd node into state w/ an attribute parser,
     ///
@@ -35,19 +35,19 @@ pub trait AttributeType<S: StorageTarget> {
     fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>);
 
     /// Returns a visitor w/ read access to fields of T,
-    /// 
+    ///
     fn visitor<T>(&self) -> Vec<Field<T>>
     where
-        Self: Visit<T>
+        Self: Visit<T>,
     {
         <Self as Visit<T>>::visit(self)
     }
 
     /// Returns a visitor w/ mutable access to fields of T,
-    /// 
-    fn visitor_mut<'a: 'b, 'b, T>(&'a mut self) -> Vec<FieldMut<'b, T>> 
+    ///
+    fn visitor_mut<'a: 'b, 'b, T>(&'a mut self) -> Vec<FieldMut<'b, T>>
     where
-        Self: VisitMut<T>
+        Self: VisitMut<T>,
     {
         <Self as VisitMut<T>>::visit_mut(self)
     }
@@ -71,7 +71,7 @@ impl<S: StorageTarget> AttributeTypeParser<S> {
     where
         A: AttributeType<S>,
     {
-        Self(A::ident().to_string(), A::parse)
+        Self(A::symbol().to_string(), A::parse)
     }
 
     pub fn new_with(ident: impl AsRef<str>, parse: fn(&mut AttributeParser<S>, String)) -> Self {
@@ -200,12 +200,12 @@ where
     S: StorageTarget + Send + Sync + 'static,
     T: FromStr + Send + Sync + 'static,
 {
-    fn ident() -> &'static str {
+    fn symbol() -> &'static str {
         Owner::field_name()
     }
 
     fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
-        let label = Some(<Self as AttributeType<S>>::ident());
+        let label = Some(<Self as AttributeType<S>>::symbol());
 
         let parsed = match content.as_ref().parse::<T>() {
             Ok(value) => ParsableField {
@@ -269,7 +269,7 @@ where
     S: StorageTarget + Send + Sync + 'static,
     T: AttributeType<S> + Send + Sync + 'static,
 {
-    fn ident() -> &'static str {
+    fn symbol() -> &'static str {
         Owner::field_name()
     }
 
@@ -303,7 +303,7 @@ where
     S: StorageTarget + Send + Sync + 'static,
     T: BlockObject<S> + Send + Sync + 'static,
 {
-    fn ident() -> &'static str {
+    fn symbol() -> &'static str {
         Owner::field_name()
     }
 
@@ -369,7 +369,7 @@ where
     fn get_mut(&mut self) -> &mut Self::ProjectedType;
 
     /// Returns a field for the projected type,
-    /// 
+    ///
     fn get_field(&self) -> Field<Self::ProjectedType> {
         Field {
             owner: std::any::type_name::<Self>(),
@@ -380,7 +380,7 @@ where
     }
 
     /// Returns the a mutable field for the projected type,
-    /// 
+    ///
     fn get_field_mut<'a: 'b, 'b>(&'a mut self) -> FieldMut<'b, Self::ProjectedType> {
         FieldMut {
             owner: std::any::type_name::<Self>(),
@@ -391,21 +391,21 @@ where
     }
 
     /// Returns an empty packet for this field,
-    /// 
-    fn empty_packet() -> FieldPacket 
+    ///
+    fn empty_packet() -> FieldPacket
     where
-        T: FieldPacketType
+        T: FieldPacketType,
     {
-       let mut packet = FieldPacket::new::<T>();
-       packet.field_offset = FIELD_OFFSET;
-       packet
+        let mut packet = FieldPacket::new::<T>();
+        packet.field_offset = FIELD_OFFSET;
+        packet
     }
 
     /// Returns a new packet w/ data,
-    /// 
-    fn into_packet(data: Self::ProjectedType) -> FieldPacket 
+    ///
+    fn into_packet(data: Self::ProjectedType) -> FieldPacket
     where
-        Self::ProjectedType: FieldPacketType
+        Self::ProjectedType: FieldPacketType,
     {
         let mut data = FieldPacket::new_data(data);
         data.field_offset = FIELD_OFFSET;
@@ -413,10 +413,10 @@ where
     }
 
     /// Returns a new packet from wire_data,
-    /// 
+    ///
     fn from_wire(data: Vec<u8>) -> anyhow::Result<FieldPacket>
     where
-        T: FieldPacketType + Serialize + DeserializeOwned
+        T: FieldPacketType + Serialize + DeserializeOwned,
     {
         let mut _data = None::<T>;
         {
@@ -428,15 +428,18 @@ where
             data.field_offset = FIELD_OFFSET;
             Ok(data)
         } else {
-            Err(anyhow!("Did not deserialize bincode for {}", std::any::type_name::<T>()))
+            Err(anyhow!(
+                "Did not deserialize bincode for {}",
+                std::any::type_name::<T>()
+            ))
         }
     }
 
     /// Returns a field_packet for wire transport,
-    /// 
+    ///
     fn to_wire(data: &T) -> anyhow::Result<FieldPacket>
     where
-        T: FieldPacketType + Serialize + DeserializeOwned
+        T: FieldPacketType + Serialize + DeserializeOwned,
     {
         let bincode = bincode::serialize(data)?;
         let mut data = FieldPacket::new::<T>();

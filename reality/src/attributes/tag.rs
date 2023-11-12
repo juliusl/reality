@@ -61,6 +61,10 @@ impl<T: FromStr + Send + Sync + 'static> FromStr for Tagged<T> {
     }
 }
 
+/// Type-alias for a Delimitted<',', String>,
+/// 
+pub type CommaSeperatedStrings = Delimitted<',', String>;
+
 pub struct Delimitted<const DELIM: char, T: FromStr + Send + Sync + 'static> {
     value: String,
     cursor: usize,

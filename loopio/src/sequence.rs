@@ -107,6 +107,16 @@ impl Sequence {
         clone
     }
 
+    /// Adds an operation filter to the context binding,
+    /// 
+    pub fn operation_filter(&self, filter: impl Into<String>) -> Self {
+        let mut clone = self.clone();
+        if let Some(tc) = clone.binding.as_mut() {
+            *tc = tc.filter(filter.into());
+        }
+        clone
+    }
+
     /// Returns the next operation to run,
     ///
     /// If None is returned, it signals the end of the sequence.

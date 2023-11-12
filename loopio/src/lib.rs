@@ -1,9 +1,10 @@
-pub mod host;
+pub mod action;
 pub mod engine;
-pub mod sequence;
+mod ext;
+pub mod host;
 pub mod operation;
 pub mod prelude;
-mod ext;
+pub mod sequence;
 
 #[allow(unused_imports)]
 mod tests {
@@ -28,7 +29,19 @@ mod tests {
     use crate::operation::Operation;
 
     #[derive(Reality, Default, Debug, Clone)]
-    #[reality(plugin, rename = "test_plugin")]
+    #[reality(plugin, group = "demo", rename = "test_plugin2")]
+    struct TestPlugin2 {
+        #[reality(derive_fromstr)]
+        _process: String,
+        name: String,
+        #[reality(map_of=String, wire)]
+        env: BTreeMap<String, String>,
+        #[reality(vec_of=String, wire)]
+        args: Vec<String>,
+    }
+
+    #[derive(Reality, Default, Debug, Clone)]
+    #[reality(plugin, group = "demo", rename = "test_plugin")]
     struct TestPlugin {
         #[reality(derive_fromstr)]
         _process: String,
@@ -40,34 +53,49 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct TestExtension {}
+    struct TestTransform {}
 
-    impl ExtensionController<TestPlugin> for TestExtension {
+    impl SetupTransform<TestPlugin> for TestTransform {
         fn ident() -> &'static str {
-            "test/extension"
+            "transform"
         }
 
-        fn setup(
+        fn setup_transform(
             resource_key: Option<&reality::ResourceKey<reality::Attribute>>,
-        ) -> Extension<Self, TestPlugin> {
+        ) -> Transform<Self, TestPlugin> {
             println!("Extending -- {:?}", resource_key.map(|a| a.key()));
-            Self::default_setup(resource_key).before(|_, _, t| {
-                if let Ok(mut t) = t {
-                    use std::io::Write;
-                    println!("Enter Name (current_value = {}):", t.name);
-                    print!("> ");
-                    std::io::stdout().flush()?;
-                    let mut name = String::new();
-                    std::io::stdin().read_line(&mut name)?;
-                    let name = name.trim();
-                    if !name.is_empty() {
-                        t.name = name.to_string();
-                    }
-                    Ok(t)
-                } else {
-                    t
-                }
-            })
+            Self::default_setup(resource_key)
+
+            // .before(|_, _, t| {
+            //     if let Ok(mut t) = t {
+            //         use std::io::Write;
+            //         println!("Enter Name (current_value = {}):", t.name);
+            //         print!("> ");
+            //         std::io::stdout().flush()?;
+            //         let mut name = String::new();
+            //         std::io::stdin().read_line(&mut name)?;
+            //         let name = name.trim();
+            //         if !name.is_empty() {
+            //             t.name = name.to_string();
+            //         }
+            //         Ok(t)
+            //     } else {
+            //         t
+            //     }
+            // })
+        }
+    }
+
+    impl SetupTransform<TestPlugin2> for TestTransform {
+        fn ident() -> &'static str {
+            "transform"
+        }
+
+        fn setup_transform(
+            resource_key: Option<&reality::ResourceKey<reality::Attribute>>,
+        ) -> Transform<Self, TestPlugin2> {
+            println!("Extending -- {:?}", resource_key.map(|a| a.key()));
+            Self::default_setup(resource_key)
         }
     }
 
@@ -75,13 +103,40 @@ mod tests {
     impl CallAsync for TestPlugin {
         async fn call(tc: &mut ThunkContext) -> anyhow::Result<()> {
             let _initialized = tc.initialized::<TestPlugin>().await;
-            println!("Initialized as -- {:?} {:?}", _initialized, tc.attribute.map(|a| a.key()));
+            println!(
+                "Initialized as -- {:?} {:?}",
+                _initialized,
+                tc.attribute.map(|a| a.key())
+            );
 
             if tc.variant_id.is_some() {
                 let frame = _initialized.to_frame(tc.attribute);
                 println!("{:?}", frame);
             }
-            
+
+            println!("Tag: {:?}", tc.tag().await);
+
+            Ok(())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CallAsync for TestPlugin2 {
+        async fn call(tc: &mut ThunkContext) -> anyhow::Result<()> {
+            let _initialized = tc.initialized::<TestPlugin>().await;
+            println!(
+                "Initialized as -- {:?} {:?}",
+                _initialized,
+                tc.attribute.map(|a| a.key())
+            );
+
+            if tc.variant_id.is_some() {
+                let frame = _initialized.to_frame(tc.attribute);
+                println!("{:?}", frame);
+            }
+
+            println!("Tag: {:?}", tc.tag().await);
+
             Ok(())
         }
     }
@@ -91,20 +146,15 @@ mod tests {
     async fn test_plugin_model() {
         // TODO: Test Isoloation -- 7bda126d-466c-4408-b5b7-9683eea90b65
         let mut builder = Engine::builder();
-        builder.register::<TestPlugin>();
-        builder.register_extension::<TestExtension, TestPlugin>();
+        builder.enable::<TestPlugin>();
+        builder.enable_transform::<TestTransform, TestPlugin>();
+        builder.enable_transform::<TestTransform, TestPlugin2>();
 
         let engine = builder.build();
         let runmd = r#"
         ```runmd
         + .operation test/operation
-        <test/extension(test_plugin)> cargo
-        : .name hello-world-2
-        : RUST_LOG .env lifec=debug
-        : HOME .env /home/test
-        : .args --name
-        : .args test
-        <test_plugin> cargo
+        <test/(transform demo.test_plugin)> cargo
         : .name hello-world-3
         : RUST_LOG .env lifec=trace
         : HOME .env /home/test2
@@ -112,13 +162,13 @@ mod tests {
         : .args test3
 
         + test_tag .operation test/operation
-        <test_plugin> cargo
+        <a/demo.test_plugin> cargo
         : .name hello-world-2-tagged
         : RUST_LOG .env lifec=debug
         : HOME .env /home/test
         : .args --name
         : .args test
-        <test_plugin> cargo
+        <b/demo.test_plugin> cargo
         : .name hello-world-3-tagged
         : RUST_LOG .env lifec=trace
         : HOME .env /home/test2
@@ -153,12 +203,20 @@ mod tests {
             println!("{address} -- {:#?}", seq);
 
             _seq = Some(seq.clone());
-            tokio::spawn(async move { engine.handle_packets().await });
+            tokio::spawn(async move { engine.handle_packets(|_, packet| Some(packet)).await });
         }
 
         _seq.clone().unwrap().await.unwrap();
         _seq.unwrap().await.unwrap();
 
         ()
+    }
+
+    #[test]
+    fn test_ext() {
+        let t = TransformPlugin::<TestTransform, TestPlugin>::symbol();
+        println!("{}", t);
+        let t = TransformPlugin::<TestTransform, TestPlugin2>::symbol();
+        println!("{}", t);
     }
 }

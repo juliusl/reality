@@ -1,17 +1,17 @@
 use std::fmt::Debug;
 
-use futures_util::StreamExt;
-use futures_util::TryStreamExt;
+use futures_util::Future;
+use futures_util::FutureExt;
 
 use anyhow::anyhow;
 
-use reality::StorageTarget;
 use reality::ThunkContext;
-use tracing::debug;
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
+use tracing::warn;
 
 /// Struct for a top-level node,
 ///
-#[derive(Clone)]
 pub struct Operation {
     /// Name of this operation,
     ///
@@ -22,6 +22,26 @@ pub struct Operation {
     /// Thunk context of the operation,
     ///
     context: Option<ThunkContext>,
+    /// Running operation,
+    ///
+    spawned: Option<(CancellationToken, JoinHandle<anyhow::Result<ThunkContext>>)>,
+}
+
+pub struct Spawned {
+    pub started: tokio::time::Instant,
+    pub cancel: CancellationToken,
+    pub task: JoinHandle<anyhow::Result<ThunkContext>>,
+}
+
+impl Clone for Operation {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            tag: self.tag.clone(),
+            context: self.context.clone(),
+            spawned: None,
+        }
+    }
 }
 
 impl Operation {
@@ -32,6 +52,7 @@ impl Operation {
             name: name.into(),
             tag,
             context: None,
+            spawned: None,
         }
     }
 
@@ -67,30 +88,124 @@ impl Operation {
     ///
     pub async fn execute(&self) -> anyhow::Result<ThunkContext> {
         if let Some(context) = self.context.clone() {
-            let node = reality::Node(context.node.storage.clone());
-            node.stream_attributes()
-                .map(Ok)
-                .try_fold(context, |mut tc, a| async move {
-                    {
-                        tc.transient_mut().await.drain_dispatch_queues();
-                        unsafe {
-                            debug!("Applying changes to node storage");
-                            tc.node_mut().await.drain_dispatch_queues();
-                        }
-                    }
-
-                    tc.set_attribute(a);
-                    let previous = tc.clone();
-
-                    match tc.call().await {
-                        Ok(Some(tc)) => Ok(tc),
-                        Ok(None) => Ok(previous),
-                        Err(err) => Err(err),
-                    }
-                })
-                .await
+            context.apply_thunks().await
         } else {
             Err(anyhow!("Could not execute operation, "))
+        }
+    }
+
+    /// Executes plugins that match the filter,
+    /// 
+    pub async fn filter_execute(&self, filter: impl Into<String>) -> anyhow::Result<ThunkContext> {
+        if let Some(context) = self.context.as_ref().map(|c| c.filter(filter)) {
+            context.apply_thunks().await
+        } else {
+            Err(anyhow!("Could not execute operation, "))
+        }
+    }
+
+    /// Spawns the underlying operation, storing a handle anc cancellation token in the current struct,
+    ///
+    pub fn spawn(&mut self) {
+        if self.spawned.is_some() {
+            warn!("Existing spawned task exists");
+        }
+
+        if let Some(cancelled) = self.context.as_ref().map(|c| c.cancellation.clone()) {
+            let spawned = self.clone();
+            self.spawned = Some((
+                cancelled,
+                tokio::spawn(async move { spawned.execute().await }),
+            ));
+        }
+    }
+
+    /// Returns true if the underlying spawned operation has completed,
+    ///
+    pub fn is_finished(&self) -> bool {
+        self.spawned
+            .as_ref()
+            .map(|(_, j)| j.is_finished())
+            .unwrap_or_default()
+    }
+
+    /// Returns true if the underlying operation is active,
+    /// 
+    pub fn is_running(&self) -> bool {
+        self.spawned.is_some()
+    }
+
+    /// Waits for the underlying spawned task to complete,
+    ///
+    pub async fn wait_result(&mut self) -> anyhow::Result<ThunkContext> {
+        if let Some((_, task)) = self.spawned.take() {
+            task.await?
+        } else {
+            Err(anyhow::anyhow!("Task is not spawned"))
+        }
+    }
+
+    /// Blocks until the task returns a result,
+    /// 
+    pub fn block_result(&mut self) -> anyhow::Result<ThunkContext> {
+        if let Some((_, task)) = self.spawned.take() {
+            futures::executor::block_on(task)?
+        } else {
+            Err(anyhow::anyhow!("Task is not spawned"))
+        }
+    }
+
+    /// Cancels the running task,
+    ///
+    pub async fn cancel(&mut self) -> anyhow::Result<ThunkContext> {
+        if let Some((cancel, task)) = self.spawned.take() {
+            cancel.cancel();
+            task.await?
+        } else {
+            Err(anyhow::anyhow!("Task is not spawned"))
+        }
+    }
+
+    /// Navigates a path to a thunk context,
+    /// 
+    pub async fn navigate(&self, path: impl AsRef<str>) -> anyhow::Result<ThunkContext> {
+        if let Some(tc) = self.context.as_ref() {
+            if let Some(tc) = tc.navigate(path.as_ref()).await {
+                let tc = tc.call().await?;
+                if let Some(tc) = tc {
+                    return Ok(tc);
+                }
+            }
+        }
+
+        Err(anyhow!("Could not find path: {}", path.as_ref()))
+    }
+}
+
+impl Future for Operation {
+    type Output = anyhow::Result<ThunkContext>;
+
+    fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+        if let Some((cancelled, mut spawned)) = self.as_mut().spawned.take() {
+            if cancelled.is_cancelled() {
+                return std::task::Poll::Ready(Err(anyhow::anyhow!("Operation has been cancelled")))
+            }
+
+            match spawned.poll_unpin(cx) {
+                std::task::Poll::Ready(Ok(result)) => std::task::Poll::Ready(result),
+                std::task::Poll::Pending => {
+                    self.spawned = Some((cancelled, spawned));
+                    cx.waker().wake_by_ref();
+                    std::task::Poll::Pending
+                },
+                std::task::Poll::Ready(Err(err)) => {
+                    std::task::Poll::Ready(Err(err.into()))
+                }
+            }
+        } else {
+            self.spawn();
+            cx.waker().wake_by_ref();
+            std::task::Poll::Pending
         }
     }
 }

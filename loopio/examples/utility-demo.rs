@@ -17,14 +17,16 @@ async fn main() {
     workspace.add_buffer("test_utilities.md", utility_runmd);
 
     let mut engine = Engine::builder();
-    engine.register::<Test>();
-    engine.register::<Echo>();
+    engine.enable::<Test>();
+    engine.enable::<Echo>();
     let engine = engine.build();
     let engine = engine.compile(workspace).await;
 
     let host = engine.get_host("testhost").expect("should have host");
 
-    tokio::spawn(async move { engine.handle_packets().await });
+    engine.spawn(|_, packet| {
+        Some(packet)
+    });
 
     let result = host.start().await;
     assert!(result.is_err());
@@ -32,7 +34,7 @@ async fn main() {
 }
 
 #[derive(Reality, Default, Clone)]
-#[reality(plugin, rename = "test")]
+#[reality(plugin, rename = "test", group = "user")]
 struct Test {
     #[reality(derive_fromstr)]
     expect: String,
@@ -54,12 +56,13 @@ impl CallAsync for Test {
         if let Some(result) = context.find_command_result("ls").await {
             println!("{}", String::from_utf8(result.output)?);
         }
+        
         Ok(())
     }
 }
 
 #[derive(Reality, Default, Clone)]
-#[reality(plugin, rename = "echo")]
+#[reality(plugin, group = "user")]
 struct Echo {
     #[reality(derive_fromstr)]
     unused: String,
@@ -83,4 +86,10 @@ impl CallAsync for Echo {
 
         Ok(())
     }
+}
+
+#[test]
+fn test_symbols() {
+    println!("{}", <Test as AttributeType<Shared>>::symbol());
+    println!("{}", <loopio::prelude::Process as AttributeType<Shared>>::symbol())
 }

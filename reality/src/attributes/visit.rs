@@ -109,6 +109,20 @@ pub struct FieldPacket {
     pub attribute_hash: Option<u64>,
 }
 
+impl Clone for FieldPacket {
+    fn clone(&self) -> Self {
+        Self {
+            data: None,
+            wire_data: self.wire_data.clone(),
+            data_type_name: self.data_type_name.clone(),
+            data_type_size: self.data_type_size.clone(),
+            field_offset: self.field_offset.clone(),
+            owner_name: self.owner_name.clone(),
+            attribute_hash: self.attribute_hash.clone(),
+        }
+    }
+}
+
 impl std::fmt::Debug for FieldPacket {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FieldPacket")
@@ -215,7 +229,7 @@ impl FieldPacket {
     }
 
     /// Convert the packet into it's owned field,
-    /// 
+    ///
     pub fn into_field_owned<O, T>(mut self) -> anyhow::Result<FieldOwned<T>>
     where
         T: Serialize + DeserializeOwned + FieldPacketType,
@@ -229,7 +243,6 @@ impl FieldPacket {
             }
         }
 
-        
         let offset = self.field_offset;
         if let Some(value) = self.into_box::<T>() {
             Ok(FieldOwned {
@@ -326,6 +339,8 @@ mod tests {
             pub use crate::prelude::*;
         }
     }
+
+    use async_trait::async_trait;
 
     #[derive(Reality, Default)]
     struct Test {

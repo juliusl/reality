@@ -33,7 +33,7 @@ where
     /// 
     pub fn new<B: BlockObject<Storage>>() -> Self {
         Self {
-            ident: <B as AttributeType<Storage>>::ident(),
+            ident: <B as AttributeType<Storage>>::symbol(),
             attribute_type: B::attribute_type(),
             handler: B::handler(),
         }

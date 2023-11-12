@@ -12,6 +12,7 @@ use winit::event_loop::EventLoopBuilder;
 use winit::event_loop::EventLoopWindowTarget;
 use winit::window::Window;
 use winit::window::WindowId;
+use winit_27::event_loop::EventLoopProxy;
 
 pub mod winit {
     #[cfg(feature = "desktop-imgui")]
@@ -64,7 +65,7 @@ impl<T: 'static> Desktop<T> {
                 let window = app.configure_window(window);
                 info!("Starting window");
 
-                app.before_event_loop(&window);
+                app.before_event_loop(&window, self.event_loop_proxy.clone());
 
                 #[cfg(feature = "desktop-imgui")]
                 let _ = event_loop.run(move |event, window_target, _| {
@@ -91,6 +92,7 @@ impl<T: 'static> Desktop<T> {
             event_loop_target: window_target,
         };
 
+        // **Note** MacOS will send events w/ invalid values, this is to ensure that these events cannot reach the pipeline
         if let Event::WindowEvent { event, .. } = &event {
             match event {
                 WindowEvent::Resized(size) => {
@@ -211,7 +213,7 @@ pub trait DesktopApp<T: 'static>: ControlBus {
     ///
     /// Should be a reasonable place to initialize graphics pipeline,
     ///
-    fn before_event_loop(&mut self, window: &Window) {}
+    fn before_event_loop(&mut self, window: &Window, event_proxy: EventLoopProxy<T>) {}
 
     /// Called before an event in the event loop is handled,
     ///

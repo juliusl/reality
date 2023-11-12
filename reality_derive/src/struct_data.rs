@@ -58,7 +58,11 @@ pub(crate) struct StructData {
     /// Reality attribute, on_completed fn path,
     /// 
     reality_on_completed: Option<Path>,
-
+    /// Group name,
+    /// 
+    group: Option<LitStr>,
+    /// CallAsync fn,
+    /// 
     call: Option<Ident>,
 }
 
@@ -72,6 +76,7 @@ impl Parse for StructData {
         let mut reality_on_load = None;
         let mut reality_on_unload = None;
         let mut reality_on_completed = None;
+        let mut group = None;
         let mut plugin = false;
         let mut ext = false;
         let mut enum_flags = false;
@@ -88,6 +93,11 @@ impl Parse for StructData {
                     if meta.path.is_ident("rename") {
                         meta.input.parse::<Token![=]>()?;
                         reality_rename = meta.input.parse::<LitStr>().ok();
+                    }
+
+                    if meta.path.is_ident("group") {
+                        meta.input.parse::<Token![=]>()?;
+                        group = meta.input.parse::<LitStr>().ok();
                     }
                     
                     if meta.path.is_ident("load") {
@@ -172,6 +182,7 @@ impl Parse for StructData {
             Ok(Self {
                 span: input.span(),
                 name,
+                group,
                 generics: derive_input.generics,
                 fields,
                 reality_rename,
@@ -255,24 +266,24 @@ impl StructData {
             quote_spanned!(self.span=>
                 #_fromstr_derive
 
-                impl #impl_generics reality::prelude::Visit<#ty> for #owner #ty_generics #where_clause {
-                    fn visit<'a>(&'a self) -> Vec<reality::prelude::Field<'a, #ty>> {
+                impl #impl_generics Visit<#ty> for #owner #ty_generics #where_clause {
+                    fn visit<'a>(&'a self) -> Vec<Field<'a, #ty>> {
                         vec![
                             #(#_fields),*
                         ]
                     }
                 }
 
-                impl #impl_generics reality::prelude::VisitMut<#ty> for #owner #ty_generics #where_clause {
-                    fn visit_mut<'a: 'b, 'b>(&'a mut self) -> Vec<reality::prelude::FieldMut<'b, #ty>> {
+                impl #impl_generics VisitMut<#ty> for #owner #ty_generics #where_clause {
+                    fn visit_mut<'a: 'b, 'b>(&'a mut self) -> Vec<FieldMut<'b, #ty>> {
                         vec![
                             #(#_fields_mut),*
                         ]
                     }
                 }
 
-                impl #impl_generics reality::prelude::SetField<#ty> for #owner #ty_generics #where_clause {
-                    fn set_field(&mut self, field: reality::prelude::FieldOwned<#ty>) -> bool {
+                impl #impl_generics SetField<#ty> for #owner #ty_generics #where_clause {
+                    fn set_field(&mut self, field: FieldOwned<#ty>) -> bool {
                         if field.owner != std::any::type_name::<Self>() {
                             return false;
                         }
@@ -309,7 +320,7 @@ impl StructData {
         
         let visit_impl = self.visit_trait(&original_impl_generics, &ty_generics, where_clause);
         
-        let trait_ident = self.reality_rename.unwrap_or(LitStr::new(ident.to_string().to_lowercase().as_str(), self.span));
+        let symbol = self.attr_symbol(ident);
         let fields = self.fields.clone();
         let fields = fields.iter().enumerate().map(|(offset, f)| {
             let ty = &f.field_ty();
@@ -372,8 +383,8 @@ impl StructData {
 
         quote_spanned! {self.span=> 
             impl #impl_generics AttributeType<S> for #ident #ty_generics #where_clause {
-                fn ident() -> &'static str {
-                    #trait_ident
+                fn symbol() -> &'static str {
+                    #symbol
                 }
 
                 fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
@@ -389,6 +400,19 @@ impl StructData {
 
             #visit_impl
         }
+    }
+
+    /// Get the attribute ty symbol,
+    /// 
+    fn attr_symbol(&self, ident: &Ident) -> TokenStream {
+        let group = self.group.as_ref().map(|g| quote_spanned!(self.span=> #g)).unwrap_or(quote_spanned!(self.span=> std::env!("CARGO_PKG_NAME")));
+        let name = self.reality_rename.clone().unwrap_or(
+            LitStr::new(ident.to_string().to_lowercase().as_str(), self.span)
+        );
+        
+        quote_spanned!(self.span=>
+            concat!(#group, '.', #name)
+        )
     }
 
      /// Returns token stream of generated AttributeType trait
@@ -454,16 +478,7 @@ impl StructData {
         
         let plugin = if self.plugin {
             quote!(
-            impl Plugin for #name #ty_generics #where_clause  {
-                fn call(context: ThunkContext) -> CallOutput {
-                    context
-                        .spawn(|mut tc| async {
-                            <Self as CallAsync>::call(&mut tc).await?;
-                            Ok(tc)
-                        })
-                        .into()
-                }
-            }
+            impl Plugin for #name #ty_generics #where_clause  {}
 
             impl #name #ty_generics #where_clause  {
                 pub fn register(mut host: &mut impl RegisterWith) {
@@ -515,7 +530,7 @@ impl StructData {
         };
 
         let object_type_trait = quote_spanned!(self.span=>
-            #[reality::runmd::async_trait]
+            #[async_trait]
             impl #impl_generics BlockObject<Storage> for #name #ty_generics #where_clause {
                 async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>) {
                     #on_load

@@ -13,6 +13,10 @@ pub type BoxedNode = std::pin::Pin<Box<dyn Node + Unpin + Send + Sync>>;
 /// Trait for types that consume instructions from a runmd block,
 /// 
 pub trait Node : crate::prelude::ExtensionLoader + std::fmt::Debug  {
+    /// Assigns a path to this node,
+    /// 
+    fn assign_path(&mut self, path: String);
+
     /// Sets the block info for this node,
     /// 
     /// Block info details the location within the block this node belongs,

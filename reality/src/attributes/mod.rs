@@ -19,9 +19,11 @@ pub mod prelude {
     pub use super::parser::AttributeParser;
     pub use super::parser::ParsedAttributes;
     pub use super::parser::Comments;
+    pub use super::parser::Tag;
     pub use super::storage_target::prelude::*;
     pub use super::tag::Tagged;
     pub use super::tag::Delimitted;
+    pub use super::tag::CommaSeperatedStrings;
     pub use super::visit::Field;
     pub use super::visit::FieldMut;
     pub use super::visit::FieldOwned;
@@ -62,7 +64,7 @@ pub mod prelude {
         fn find_field<Owner>(&self, name: impl AsRef<str>) -> Option<&Self::Output> {
             self.iter().find(|f| {
                 f.name == name.as_ref()
-                    && if f.owner != std::any::type_name::<()>() {
+                    && if std::any::type_name::<Owner>() != std::any::type_name::<()>() {
                         std::any::type_name::<Owner>() == f.owner
                     } else {
                         true
@@ -101,11 +103,13 @@ mod tests {
         pub use crate::runmd;
     }
 
+    use async_trait::async_trait;
+
     /// Tests derive macro expansion
     ///
     #[derive(Reality, Debug, Default)]
     #[reality(
-        rename = "application/test",
+        rename = "test",
         load=on_load
     )]
     pub struct Test<T: Send + Sync + 'static> {
@@ -171,7 +175,7 @@ mod tests {
     pub struct Test2 {}
 
     impl<S: StorageTarget + Send + Sync + 'static> AttributeType<S> for Test2 {
-        fn ident() -> &'static str {
+        fn symbol() -> &'static str {
             "test2"
         }
 
@@ -184,6 +188,8 @@ mod tests {
     #[tokio::test]
     async fn test_v2_parser() {
         let mut parser = AttributeParser::<crate::Shared>::default();
+
+        parser.set_storage(std::sync::Arc::new(RwLock::new(Shared::default())));
 
         let ns = parser
             .namespace("test_namespace")
@@ -209,11 +215,8 @@ mod tests {
         });
         
         assert_eq!("hello-set-field", test.name.as_str());
-        let frames = test.to_frame(None); 
-        // .drain(..).fold(vec![], |mut acc, v| {
-        //     acc.push(v.into_wire());
-        //     acc
-        // });
+        let frames = test.to_frame(None);
+     
         for frame in frames {
             println!("{:?}", frame);
         }

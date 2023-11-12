@@ -1,19 +1,26 @@
 use anyhow::anyhow;
+use async_stream::stream;
+use futures_util::Stream;
 use host::Host;
 use reality::prelude::*;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::ops::Deref;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use tokio::runtime::Handle;
+use tokio::task::JoinHandle;
+use tokio_util::either::Either;
 use tokio_util::sync::CancellationToken;
+use tracing::error;
 use tracing::info;
 use tracing::trace;
 
 use crate::host;
 use crate::operation::Operation;
+use crate::prelude::wire_ext::WireBus;
 use crate::sequence::Sequence;
 
 #[cfg(feature = "hyper-ext")]
@@ -43,22 +50,25 @@ impl EngineBuilder {
 
     /// Registers a plugin w/ this engine builder,
     ///
-    pub fn register<P: Plugin + Send + Sync + 'static>(&mut self) {
+    pub fn enable<P: Plugin + Default + Clone + ApplyFrame + ToFrame + Send + Sync + 'static>(
+        &mut self,
+    ) {
         self.register_with(|parser| {
             parser.with_object_type::<Thunk<P>>();
+            parser.with_object_type::<Thunk<TransformPlugin<WireBus, P>>>();
         });
     }
 
     /// Registers a plugin w/ this engine builder,
     ///
-    pub fn register_extension<
-        C: ExtensionController<P> + Send + Sync + 'static,
+    pub fn enable_transform<
+        C: SetupTransform<P> + Send + Sync + 'static,
         P: Plugin + Clone + Default + Send + Sync + 'static,
     >(
         &mut self,
     ) {
         self.register_with(|parser| {
-            parser.with_object_type::<Thunk<ExtensionPlugin<C, P>>>();
+            parser.with_object_type::<Thunk<TransformPlugin<C, P>>>();
         });
     }
 
@@ -151,6 +161,20 @@ pub struct Engine {
 }
 
 impl Engine {
+    /// Returns the default host for this engine,
+    ///
+    pub fn default_host(&self) -> Host {
+        let mut default_host = Host::default();
+        default_host.children = self.hosts.clone();
+        default_host
+    }
+
+    /// Returns an iterator over hosts,
+    ///
+    pub fn iter_hosts(&self) -> impl Iterator<Item = (&String, &Host)> {
+        self.hosts.iter()
+    }
+
     /// Creates a new engine builder,
     ///
     pub fn builder() -> EngineBuilder {
@@ -160,24 +184,29 @@ impl Engine {
         EngineBuilder::new(runtime)
     }
 
-    /// Registers a plugin w/ this engine builder,
+    /// Registers a plugin w/ this engine,
     ///
-    pub fn register<P: Plugin + Send + Sync + 'static>(&mut self) {
+    pub fn enable<P: Plugin + Default + Clone + ApplyFrame + ToFrame + Send + Sync + 'static>(
+        &mut self,
+    ) {
         self.register_with(|parser| {
             parser.with_object_type::<Thunk<P>>();
+
+            #[cfg(feature = "wire-ext")]
+            parser.with_object_type::<Thunk<TransformPlugin<WireBus, P>>>();
         });
     }
 
     /// Registers a plugin w/ this engine builder,
     ///
-    pub fn register_extension<
-        C: ExtensionController<P> + Send + Sync + 'static,
+    pub fn enable_transform<
+        C: SetupTransform<P> + Send + Sync + 'static,
         P: Plugin + Clone + Default + Send + Sync + 'static,
     >(
         &mut self,
     ) {
         self.register_with(|parser| {
-            parser.with_object_type::<Thunk<ExtensionPlugin<C, P>>>();
+            parser.with_object_type::<Thunk<TransformPlugin<C, P>>>();
         });
     }
 
@@ -220,6 +249,7 @@ impl Engine {
                 sender: Arc::new(sender),
                 operations: BTreeMap::new(),
                 sequences: BTreeMap::new(),
+                hosts: BTreeMap::new(),
             },
             packet_rx: rx,
             workspace: None,
@@ -417,6 +447,7 @@ impl Engine {
         let mut h = self.handle.clone();
         h.operations = self.operations.clone();
         h.sequences = self.sequences.clone();
+        h.hosts = self.hosts.clone();
         h
     }
 
@@ -429,54 +460,70 @@ impl Engine {
         })
     }
 
+    /// Takes ownership of the engine and starts listening for packets,
+    ///
+    pub fn spawn(
+        self,
+        middleware: impl Fn(&mut Engine, EnginePacket) -> Option<EnginePacket> + Send + Sync + 'static,
+    ) -> JoinHandle<anyhow::Result<Self>> {
+        tokio::spawn(self.handle_packets(middleware))
+    }
+
     /// Starts handling engine packets,
     ///
-    pub async fn handle_packets(mut self) -> Self {
+    pub async fn handle_packets(
+        mut self,
+        middleware: impl Fn(&mut Engine, EnginePacket) -> Option<EnginePacket>,
+    ) -> anyhow::Result<Self> {
         while let Some(packet) = self.packet_rx.recv().await {
             if self.cancellation.is_cancelled() {
                 break;
             }
 
-            println!("Handling packet {:?}", packet.action);
-            match packet.action {
-                Action::Run { address, tx } => {
-                    println!("Running {}", address);
-                    info!(address, "Running operation");
-                    let op = self.operations.get(&address);
-                    if let Some(mut op) = op.cloned() {
-                        // Ensures a fresh context
-                        tokio::spawn(async move {
-                            if let Some(context) = op.context_mut() {
-                                context.reset();
-                            }
-
-                            let result = op.execute().await;
-                            // TODO: Add a way to queue up failed packets?
-                            if let Some(tx) = tx {
-                                let _ = tx.send(result);
-                            }
-                        });
-                    } else {
-                        drop(tx);
+            if let Some(packet) = middleware(&mut self, packet) {
+                println!("Handling packet {:?}", packet.action);
+                match packet.action {
+                    Action::Run { address, tx } => {
+                        println!("Running {}", address);
+                        info!(address, "Running operation");
+                        let action = self
+                            .operations
+                            .get(&address)
+                            .map(|o| Either::Left(o.clone()))
+                            .or(self
+                                .sequences
+                                .get(&address)
+                                .map(|s| Either::Right(s.clone())));
+                        if let (Some(tx), Some(action)) = (tx, action) {
+                            tx.send(action).map_err(|_| anyhow!("Channel is closed"))?;
+                        }
                     }
-                }
-                Action::Compile { relative, content } => {
-                    info!("Compiling content");
-                    if let Some(mut workspace) = self.workspace.take() {
-                        workspace.add_buffer(relative, content);
-                        self = self.compile(workspace).await;
+                    Action::Compile { relative, content } => {
+                        info!("Compiling content");
+                        if let Some(mut workspace) = self.workspace.take() {
+                            workspace.add_buffer(relative, content);
+                            self = self.compile(workspace).await;
+                        }
                     }
-                }
-                Action::Shutdown(delay) => {
-                    info!(delay_ms = delay.as_millis(), "Shutdown requested");
-                    tokio::time::sleep(delay).await;
-                    self.cancellation.cancel();
-                    break;
+                    Action::Sync { mut tx } => {
+                        info!("Syncing engine handle");
+                        if let Some(tx) = tx.take() {
+                            if let Err(_) = tx.send(self.engine_handle()) {
+                                error!("Could not send updated handle");
+                            }
+                        }
+                    }
+                    Action::Shutdown(delay) => {
+                        info!(delay_ms = delay.as_millis(), "Shutdown requested");
+                        tokio::time::sleep(delay).await;
+                        self.cancellation.cancel();
+                        break;
+                    }
                 }
             }
         }
 
-        self
+        Ok(self)
     }
 }
 
@@ -498,7 +545,7 @@ impl Drop for Engine {
 
 /// Struct containing instructions to execute w/ an engine,
 ///
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct EnginePacket {
     /// Address of the operation to execute,
     ///
@@ -518,7 +565,13 @@ pub enum Action {
         /// Channel to transmit the result back to the sender,
         ///
         #[serde(skip)]
-        tx: Option<tokio::sync::oneshot::Sender<anyhow::Result<ThunkContext>>>,
+        tx: Option<tokio::sync::oneshot::Sender<Either<Operation, Sequence>>>,
+    },
+    /// Gets an updated engine handle,
+    ///
+    Sync {
+        #[serde(skip)]
+        tx: Option<tokio::sync::oneshot::Sender<EngineHandle>>,
     },
     /// Compiles the operations from a project,
     ///
@@ -541,6 +594,10 @@ impl Debug for Action {
                 .field("relative", relative)
                 .field("content", content)
                 .finish(),
+            Self::Sync { tx } => f
+                .debug_struct("Sync")
+                .field("has_tx", &tx.is_some())
+                .finish(),
             Self::Shutdown(arg0) => f.debug_tuple("Shutdown").field(arg0).finish(),
         }
     }
@@ -559,6 +616,9 @@ pub struct EngineHandle {
     /// Map of sequences,
     ///
     pub sequences: BTreeMap<String, Sequence>,
+    /// Map of hosts,
+    ///
+    pub hosts: BTreeMap<String, Host>,
 }
 
 impl Debug for EngineHandle {
@@ -573,7 +633,8 @@ impl EngineHandle {
     /// Runs an operation by sending a packet and waits for a response,
     ///
     pub async fn run(&self, address: impl Into<String>) -> anyhow::Result<ThunkContext> {
-        let (tx, rx) = tokio::sync::oneshot::channel::<anyhow::Result<ThunkContext>>();
+        let (tx, rx) =
+            tokio::sync::oneshot::channel::<tokio_util::either::Either<Operation, Sequence>>();
 
         let packet = EnginePacket {
             action: Action::Run {
@@ -584,7 +645,7 @@ impl EngineHandle {
 
         self.sender.send(packet)?;
 
-        rx.await?
+        rx.await?.await
     }
 
     /// Compiles content,
@@ -617,18 +678,64 @@ impl EngineHandle {
         Ok(())
     }
 
-    /// Runs an action on the engine,
-    /// 
-    pub async fn action(&self, address: impl AsRef<str>) -> anyhow::Result<ThunkContext> {
-        if let Some(seq) = self.sequences.get(address.as_ref()) {
-            seq.clone().await
-        } else if let Some(mut op) = self.operations.get(address.as_ref()).cloned() {
-            if let Some(context) = op.context_mut() {
-                context.reset();
+    /// Scans node storage for resource T,
+    ///
+    pub fn scan_nodes<T>(&self) -> impl Stream<Item = T> + '_
+    where
+        T: ToOwned<Owned = T> + Send + Sync + 'static,
+    {
+        stream! {
+            for (_, op) in self.operations.iter() {
+                if let Some(tc) = op.context() {
+                    let node = tc.node().await;
+                    if let Some(r) = node.current_resource::<T>(tc.attribute.map(|a| a.transmute())) {
+                        yield r;
+                    }
+                }
             }
-            op.execute().await
-        } else {
-            Err(anyhow::anyhow!("Start action cannot be found"))
         }
+    }
+
+    /// Scans host storage for resource T,
+    ///
+    pub fn scan_host<T>(&self, host: &'static str) -> impl Stream<Item = T> + '_
+    where
+        T: ToOwned<Owned = T> + Send + Sync + 'static,
+    {
+        stream! {
+            for (_, op) in self.operations.iter() {
+                if let Some(tc) = op.context() {
+                    if let Some(host) = tc.host(host).await {
+                        if let Some(r) = host.current_resource::<T>(tc.attribute.map(|a| a.transmute())) {
+                            yield r;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Navigates to an address,
+    ///
+    pub async fn navigate(
+        &self,
+        operation: impl AsRef<str>,
+        path: impl AsRef<str>,
+    ) -> anyhow::Result<ThunkContext> {
+        if let Some(op) = self.operations.get(operation.as_ref()) {
+            return op.navigate(path.as_ref().trim_start_matches('/')).await;
+        }
+
+        Err(anyhow::anyhow!(
+            "Could not find address: {} {}",
+            operation.as_ref(),
+            path.as_ref()
+        ))
+    }
+
+    /// Returns an index,
+    /// 
+    pub fn index(&self) {
+
     }
 }

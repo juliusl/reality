@@ -9,16 +9,18 @@ pub use crate::StorageTarget;
 pub use crate::AttributeParser;
 pub use crate::BlockObject;
 pub use crate::AsyncStorageTarget;
+pub use crate::Dispatcher;
 pub use crate::OnParseField;
 pub use crate::Tagged;
 pub use crate::Delimitted;
 pub use crate::Project;
 pub use crate::Source;
 pub use crate::Workspace;
+pub use crate::CurrentDir;
 pub use crate::Shared;
-pub use crate::Extension;
-pub use crate::ExtensionController;
-pub use crate::ExtensionPlugin;
+pub use crate::Transform;
+pub use crate::SetupTransform;
+pub use crate::TransformPlugin;
 pub use crate::ResourceKey;
 pub use crate::ResourceKeyHashBuilder;
 pub use crate::Visit;
@@ -49,6 +51,8 @@ pub use crate::task_mut;
 pub use crate::thunk::*;
 
 pub use std::str::FromStr;
+
+pub use async_trait::async_trait;
 
 /// Returns the latest value of a reference,
 /// 

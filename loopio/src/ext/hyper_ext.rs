@@ -168,7 +168,7 @@ impl HyperExt for ThunkContext {
 }
 
 #[derive(Reality, Default, Debug, Clone)]
-#[reality(plugin, rename = "utility/loopio.hyper.request")]
+#[reality(plugin, group="loopio.hyper")]
 pub struct Request {
     /// Uri to make request to,
     ///

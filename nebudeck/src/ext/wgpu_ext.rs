@@ -4,6 +4,7 @@ use futures::executor::block_on;
 use loopio::prelude::EngineHandle;
 use loopio::prelude::StorageTarget;
 use loopio::prelude::ThunkContext;
+use winit_27::event_loop::EventLoopProxy;
 use std::cell::OnceCell;
 use std::ops::DerefMut;
 use std::pin::Pin;
@@ -22,8 +23,6 @@ use wgpu::RenderPipeline;
 use wgpu::Surface;
 use wgpu::SurfaceConfiguration;
 use wgpu::TextureView;
-use wgpu_17::Backend;
-use wgpu_17::Backends;
 
 use crate::desktop::DesktopApp;
 use crate::ControlBus;
@@ -224,7 +223,7 @@ impl HardwareContext {
         };
         let instance = wgpu::Instance::new(instance_desc);
 
-        for adapter in instance.enumerate_adapters(Backends::PRIMARY) {
+        for adapter in instance.enumerate_adapters(wgpu::Backends::PRIMARY) {
             eprintln!("Available: {:?}", adapter);
         }
 
@@ -284,10 +283,10 @@ impl<T: 'static> DesktopApp<T> for WgpuSystem<T> {
             .fold(window, |acc, m| m.configure_window(acc))
     }
 
-    fn before_event_loop(&mut self, window: &winit::window::Window) {
+    fn before_event_loop(&mut self, window: &winit::window::Window, event_loop_proxy: EventLoopProxy<T>) {
         let hardware = self.hardware.get().expect("should exist just set");
         for middleware in self.middleware.iter_mut() {
-            middleware.before_event_loop(window);
+            middleware.before_event_loop(window, event_loop_proxy.clone());
             middleware.on_hardware(hardware, window);
         }
     }

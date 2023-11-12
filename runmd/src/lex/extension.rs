@@ -8,6 +8,7 @@ use super::prelude::*;
 /// 
 #[derive(Hash, Default, Debug, Clone)]
 pub struct Extension<'a> {
+    pub(super) tag: Option<&'a str>,
     /// Name of this extension,
     ///
     pub(super) name: &'a str,
@@ -27,6 +28,24 @@ impl Extension<'_> {
             format!("{}.{}", self.name, suffix)
         } else {
             self.name.to_string()
+        }
+    }
+
+    /// Value of the tag value of this extension,
+    /// 
+    pub fn tag(&self) -> Option<&str> {
+        self.tag
+    }
+
+    /// Path representing this extension,
+    /// 
+    /// **Note** A path is available only if a tag is set. 
+    /// 
+    pub fn path(&self) -> Option<String> {
+        if let Some(tag) = self.tag() {
+            Some(format!("{tag}/{}", self.type_name()))
+        } else {
+            None
         }
     }
 }

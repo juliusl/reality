@@ -4,7 +4,7 @@
 /// 
 /// # Examples
 /// 
-/// ```
+/// ```rs norun
 /// if let Some(resource) = resource_owned!(parser, u64, "test") {
 /// ...
 /// }

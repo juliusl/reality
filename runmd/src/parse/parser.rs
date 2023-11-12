@@ -129,7 +129,7 @@ impl Parser {
             let node = self.node_provider.provide(
                 attr.name,
                 node_info.line.tag.as_ref().map(|t| t.0),
-                attr.input.clone().map(|i| i.input_str()),
+                attr.input.clone().map(|i| i.input_str()).as_ref().map(|s| s.as_str()),
                 &node_info,
                 &block_info
             );
@@ -161,11 +161,18 @@ impl Parser {
                 block_info
             );
             if let Some(ext) = node_info.line.extension.as_ref() {
-                if let Some(ext) = last
-                    .load_extension(ext.type_name().as_str(), ext.input.clone().map(|i| i.input_str()))
+                if let Some(mut _ext) = last
+                    .load_extension(
+                        ext.type_name().as_str(), 
+                        ext.tag(), 
+                        ext.input.clone().map(|i| i.input_str()).as_ref().map(|s| s.as_str())
+                    )
                     .await
                 {
-                    self.graph.push(ext);
+                    if let Some(path) = ext.path() {
+                        _ext.assign_path(path);
+                    }
+                    self.graph.push(_ext);
                 } else {
                     panic!("Could not load extension");
                 }
@@ -183,7 +190,7 @@ impl Parser {
                 last.define_property(
                     attr.name,
                     line.tag.map(|t| t.0),
-                    attr.input.take().map(|i| i.input_str()),
+                    attr.input.take().map(|i| i.input_str()).as_ref().map(|s| s.as_str()),
                 )
             } else {
                 panic!("Line is missing attribute parameters to define property")

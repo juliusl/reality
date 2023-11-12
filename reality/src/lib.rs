@@ -14,12 +14,13 @@ pub use project::Project;
 pub use project::Node;
 pub use project::BlockPlugin;
 pub use project::NodePlugin;
-pub use project::Extension;
-pub use project::ExtensionController;
-pub use project::ExtensionPlugin;
+pub use project::Transform;
+pub use project::SetupTransform;
+pub use project::TransformPlugin;
 pub use project::Source;
 pub use project::Workspace;
 pub use project::RegisterWith;
+pub use project::CurrentDir;
 
 mod thunk;
 pub use thunk::*;

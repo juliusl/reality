@@ -1,14 +1,16 @@
 use std::cell::OnceCell;
-use std::sync::OnceLock;
+use std::collections::BTreeMap;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use imgui::Ui;
 use imgui_wgpu::RendererConfig;
 use imgui_winit_support::WinitPlatform;
-use loopio::prelude::*;
-use loopio::prelude::{Plugin, SetupTransform};
 use tracing::error;
 use winit::window::Window;
+
+use loopio::prelude::*;
+use winit_27::event_loop::EventLoopProxy;
 
 use crate::desktop::DesktopApp;
 use crate::ControlBus;
@@ -29,14 +31,31 @@ pub mod wgpu {
 }
 
 /// Wgpu system middleware that enables imgui plugins,
-/// 
+///
 pub struct ImguiMiddleware<T> {
+    /// Handle to the compiled engine,
+    ///
     engine: OnceCell<EngineHandle>,
+    /// Imgui context,
+    ///
     context: OnceCell<imgui::Context>,
+    /// Winit platform support,
+    ///
     platform: OnceCell<imgui_winit_support::WinitPlatform>,
+    /// Wgpu renderer support,
+    ///
     renderer: OnceCell<imgui_wgpu::Renderer>,
+    /// If Some, enables the demo window,
+    ///
     open_demo: Option<bool>,
+    /// The last frame time this middleware processed,
+    ///
     last_frame: Option<Instant>,
+    /// Vector of active ui nodes,
+    /// 
+    pub ui_nodes: Vec<UiNode>,
+    /// Unused,
+    ///
     _t: PhantomData<T>,
 }
 
@@ -49,14 +68,22 @@ impl<T: 'static> ImguiMiddleware<T> {
             renderer: OnceCell::new(),
             open_demo: None,
             last_frame: None,
+            ui_nodes: vec![],
             _t: PhantomData,
         }
     }
 
     /// Enables the demo window,
-    /// 
+    ///
     pub fn enable_demo_window(mut self) -> Self {
         self.open_demo = Some(true);
+        self
+    }
+
+     /// Enables the demo window,
+    ///
+    pub fn with_ui_node(mut self, ui_node: UiNode) -> Self {
+        self.ui_nodes.push(ui_node);
         self
     }
 }
@@ -69,15 +96,14 @@ impl<T: 'static> Default for ImguiMiddleware<T> {
 
 impl<T: 'static> RenderPipelineMiddleware<T> for ImguiMiddleware<T> {
     fn on_hardware(&mut self, hardware: &super::wgpu_ext::HardwareContext, window: &Window) {
-        if let Some(imgui_context) = self.context.get_mut() {
-
-            if let Some(platform) = self.platform.get_mut() {
-                platform.attach_window(
-                    imgui_context.io_mut(),
-                    &window,
-                    imgui_winit_support::HiDpiMode::Default,
-                );
-            }
+        if let (Some(imgui_context), Some(platform)) =
+            (self.context.get_mut(), self.platform.get_mut())
+        {
+            platform.attach_window(
+                imgui_context.io_mut(),
+                &window,
+                imgui_winit_support::HiDpiMode::Default,
+            );
 
             imgui_context.set_ini_filename(Some("imgui.conf".into()));
 
@@ -113,7 +139,7 @@ impl<T: 'static> RenderPipelineMiddleware<T> for ImguiMiddleware<T> {
 }
 
 impl<T: 'static> DesktopApp<T> for ImguiMiddleware<T> {
-    fn before_event_loop(&mut self, _: &winit::window::Window) {
+    fn before_event_loop(&mut self, _: &winit::window::Window, _: EventLoopProxy<T>) {
         self.context
             .set(imgui::Context::create())
             .expect("should only be called once");
@@ -156,11 +182,13 @@ impl<T: 'static> DesktopApp<T> for ImguiMiddleware<T> {
             if let Ok(_) = platform.prepare_frame(io, context.window) {
                 let ui = im_context.new_frame();
 
-                if let Some(open_demo_window) =  self.open_demo.as_mut() {
+                if let Some(open_demo_window) = self.open_demo.as_mut() {
                     ui.show_demo_window(open_demo_window);
                 }
 
-                // TODO: Scan for user renderers,
+                for uinode in self.ui_nodes.iter_mut() {
+                    uinode.show(&ui);
+                }
 
                 platform.prepare_render(&ui, context.window);
             }
@@ -174,9 +202,24 @@ impl<T: 'static> ControlBus for ImguiMiddleware<T> {
     }
 }
 
-pub trait ImguiExt {}
+#[async_trait]
+pub trait ImguiExt {
+    async fn add_ui_node(&self, show: impl for<'a, 'b> Fn(&'a mut ThunkContext, &'b Ui) -> bool + Send + Sync + 'static);
+}
 
-pub type ShowUi = Box<dyn Fn(&mut ThunkContext, &Ui) -> bool + Sync + Send + 'static>;
+#[async_trait]
+impl ImguiExt for ThunkContext {
+    async fn add_ui_node(&self, show: impl for<'a, 'b> Fn(&'a mut ThunkContext, &'b Ui) -> bool + Send + Sync + 'static) {
+        let ui_node = UiNode {
+            show_ui: Some(Arc::new(show)),
+            context: self.clone()
+        };
+
+        unsafe { self.node_mut().await.put_resource(ui_node, self.attribute.map(|a| a.transmute())) };
+    }
+}
+
+pub type ShowUi = Arc<dyn Fn(&mut ThunkContext, &Ui) -> bool + Sync + Send + 'static>;
 
 static UI_HOST: std::sync::OnceLock<(
     tokio::sync::mpsc::Sender<ShowUi>,
@@ -221,8 +264,8 @@ where
     fn setup_transform(resource_key: Option<&ResourceKey<Attribute>>) -> Transform<Self, T> {
         Self::default_setup(resource_key).before_task(|c, imgui, target| {
             Box::pin(async {
-                if let Ok(mut target) = target {
-                    let opened = Box::new(T::open);
+                if let Ok(target) = target {
+                    let opened = Arc::new(T::open);
                     imgui.ui_dispatcher.send(opened).await?;
                     // target.on_show(imgui.ui, None);
                     // Ok((imgui, target))
@@ -233,5 +276,27 @@ where
                 Ok((imgui, target))
             })
         })
+    }
+}
+
+/// UI Node contains a rendering function w/ a thunk context,
+/// 
+#[derive(Clone)]
+pub struct UiNode {
+    /// Dispatcher for this ui node,
+    ///
+    pub context: ThunkContext,
+    /// Function to show ui,
+    ///
+    pub show_ui: Option<ShowUi>,
+}
+
+impl UiNode {
+    /// Shows the ui attached to a node,
+    /// 
+    pub fn show(&mut self, ui: &Ui) {
+        if let Some(show) = self.show_ui.as_ref() {
+            show(&mut self.context, ui);
+        }
     }
 }

@@ -7,6 +7,19 @@ use crate::Shared;
 
 use super::Source;
 
+/// Pointer struct for creating a workspace based on the current directory,
+/// 
+pub struct CurrentDir;
+
+impl CurrentDir {
+    /// Creates a new workspace from the current directory,
+    /// 
+    pub fn workspace(self) -> Workspace {
+
+        Workspace::new()
+    }
+}
+
 /// Struct containing a workspace of sources,
 ///
 pub struct Workspace {

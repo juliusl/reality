@@ -1,6 +1,10 @@
 use std::collections::BTreeMap;
 
+use async_stream::stream;
+use futures_util::stream::BoxStream;
 use futures_util::Future;
+use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use tracing::trace;
@@ -10,14 +14,17 @@ use crate::prelude::Latest;
 use crate::AsyncStorageTarget;
 use crate::Attribute;
 use crate::BlockObject;
+use crate::Node;
 use crate::ResourceKey;
 use crate::Shared;
 use crate::StorageTarget;
+use crate::Tag;
 
 use super::prelude::*;
 
 /// Struct containing shared context between plugins,
 ///
+#[derive(Clone)]
 pub struct Context {
     /// Map of host storages this context can access,
     ///
@@ -37,6 +44,29 @@ pub struct Context {
     /// If the context has been branched, this will be the Uuid assigned to the variant,
     ///
     pub variant_id: Option<Uuid>,
+    /// If set, will filter attributes based on thier identifier,
+    ///
+    pub filter: Option<String>,
+    /// If set, will allow a thunk to audit it's usage,
+    ///
+    pub audit: Option<ThunkAudit>,
+    /// Cache,
+    ///
+    __cached: Shared,
+}
+
+/// Struct containing audited config information on the thunk,
+///
+#[derive(Clone)]
+pub struct ThunkAudit {
+    /// True if the thunk writes to node storage,
+    ///
+    /// **Consideration** This means that a write lock on shared storage will be taken during thunk execution.
+    ///
+    pub writes_to_node: bool,
+    /// True if the thunk writes to transient storage,
+    ///
+    pub writes_to_transient: bool,
 }
 
 impl From<AsyncStorageTarget<Shared>> for Context {
@@ -49,19 +79,9 @@ impl From<AsyncStorageTarget<Shared>> for Context {
             transient: Shared::default().into_thread_safe_with(handle),
             cancellation: CancellationToken::new(),
             variant_id: None,
-        }
-    }
-}
-
-impl Clone for Context {
-    fn clone(&self) -> Self {
-        Self {
-            hosts: self.hosts.clone(),
-            node: self.node.clone(),
-            attribute: self.attribute,
-            transient: self.transient.clone(),
-            cancellation: self.cancellation.clone(),
-            variant_id: None,
+            filter: None,
+            audit: None,
+            __cached: Shared::default(),
         }
     }
 }
@@ -70,6 +90,7 @@ impl Context {
     /// Creates a branched thunk context,
     ///
     pub fn branch(&self) -> (Uuid, Self) {
+        println!("branching");
         let mut next = self.clone();
         // Create a variant for the type created here
         let variant_id = uuid::Uuid::new_v4();
@@ -79,25 +100,34 @@ impl Context {
         next.variant_id = Some(variant_id);
         (variant_id, next)
     }
+
+    /// Returns the tag value if one was set for this context,
+    ///
+    pub async fn tag(&self) -> Option<Tag> {
+        self.node()
+            .await
+            .current_resource(self.attribute.map(|a| a.transmute()))
+    }
+
+    /// Creates a context w/ a filter set,
+    ///
+    pub fn filter(&self, filter: impl Into<String>) -> Self {
+        let mut with_filter = self.clone();
+        with_filter.filter = Some(filter.into());
+        with_filter
+    }
+
+    /// Resets the filter,
+    ///
+    pub fn reset_filter(&mut self) {
+        self.filter.take();
+    }
+
     /// Reset the transient storage,
     ///
     pub fn reset(&mut self) {
         let handle = self.node.runtime.clone().expect("should have a runtime");
         self.transient = Shared::default().into_thread_safe_with(handle);
-    }
-
-    /// Calls the thunk fn related to this context,
-    ///
-    pub async fn call(&self) -> anyhow::Result<Option<Context>> {
-        let thunk = self
-            .node()
-            .await
-            .current_resource::<ThunkFn>(self.attribute.map(|a| a.transmute()));
-        if let Some(thunk) = thunk {
-            (thunk)(self.clone()).await
-        } else {
-            Err(anyhow::anyhow!("Did not execute thunk"))
-        }
     }
 
     /// Sets the attribute for this context,
@@ -215,37 +245,92 @@ impl Context {
             .unwrap_or_default()
     }
 
-    /// Scans if a resource exists for the current context,
-    /// 
-    pub async fn scan_node_for<P: BlockObject<Shared> + Default + Clone + Sync + Send + 'static>(
+    /// If cached, returns a cached value of P,
+    ///
+    pub fn cached<P: ToOwned<Owned = P> + Sync + Send + 'static>(
         &self,
     ) -> Option<P> {
+        self.__cached
+            .current_resource::<P>(self.attribute.map(|a| a.transmute()))
+    }
+
+    /// Returns a mutable reference to a cached resource,
+    /// 
+    pub fn cached_mut<P: Sync + Send + 'static>(
+        &mut self,
+    ) -> Option<<Shared as StorageTarget>::BorrowMutResource::<'_, P>> {
+        self.__cached
+            .resource_mut::<P>(self.attribute.map(|a| a.transmute()))
+    }
+
+    /// Writes a resource to the cache,
+    /// 
+    pub fn write_cache<R: ToOwned<Owned = R> + Sync + Send + 'static>(
+        &mut self, resource: R
+    ) {
+        self.__cached
+            .put_resource(resource, self.attribute.map(|a| a.transmute()))
+    }
+
+    /// Caches P,
+    ///
+    pub async fn cache<P: BlockObject<Shared> + Default + Clone + Sync + Send + 'static>(
+        &mut self,
+    ) {
+        let next = self.initialized().await;
+
+        self.__cached
+            .put_resource::<P>(next, self.attribute.map(|a| a.transmute()))
+    }
+
+    /// Scans if a resource exists for the current context,
+    ///
+    pub async fn scan_node_for<P: ToOwned<Owned = P> + Sync + Send + 'static>(&self) -> Option<P> {
         self.node()
             .await
             .current_resource::<P>(self.attribute.map(|a| a.transmute()))
     }
 
     /// Scans the entire node for resources of type P,
-    /// 
-    pub async fn scan_node<P: BlockObject<Shared> + Default + Clone + Sync + Send + 'static>(
-        &self,
-    ) -> Vec<P> {
-        use futures_util::StreamExt;
+    ///
+    pub async fn scan_node<P: Clone + Sync + Send + 'static>(&self) -> Vec<P> {
+        self.node()
+            .await
+            .stream_attributes()
+            .fold(vec![], |mut acc, attr| async move {
+                let mut clone = self.clone();
+                clone.attribute = Some(attr);
 
-        self.node().await.stream_attributes().fold(vec![], |mut acc, attr| async move {
-            let mut clone = self.clone();
-            clone.attribute = Some(attr);
-            
-            if let Some(init) = clone.scan_node_for::<P>().await {
-                acc.push(init);
+                if let Some(init) = clone.scan_node_for::<P>().await {
+                    acc.push(init);
+                }
+                acc
+            })
+            .await
+    }
+
+    /// Scans the entire node for resources of type P,
+    ///
+    pub fn iter_node<P: ToOwned<Owned = P> + Sync + Send + 'static>(&self) -> BoxStream<'_, P> {
+        let node = self.node.storage.clone();
+
+        stream! {
+            let node = node.clone();
+            let attrs = Node(self.node.storage.clone())
+                .stream_attributes()
+                .fold(vec![], |mut acc, m| async move { acc.push(m); acc }).await;
+
+            for attr in attrs {
+                if let Some(init) = node.read().await.current_resource::<P>(Some(attr.transmute())) {
+                    yield init;
+                }
             }
-            acc
-        }).await
+        }.boxed()
     }
 
     /// Scans the host for resources of type P,
-    /// 
-    pub async fn scan_host_for<P: BlockObject<Shared> + Default + Clone + Sync + Send + 'static>(
+    ///
+    pub async fn scan_host_for<P: Clone + Sync + Send + 'static>(
         &self,
         name: impl AsRef<str>,
     ) -> Option<P> {
@@ -257,14 +342,64 @@ impl Context {
     /// Returns any extensions that may exist for this,
     ///
     pub async fn extension<
-        C: Send + Sync + 'static,
+        C: Clone + Send + Sync + 'static,
         P: BlockObject<Shared> + Default + Clone + Sync + Send + 'static,
     >(
         &self,
-    ) -> Option<crate::Extension<C, P>> {
+    ) -> Option<crate::Transform<C, P>> {
         self.node()
             .await
-            .current_resource::<crate::Extension<C, P>>(self.attribute.map(|a| a.transmute()))
+            .current_resource::<crate::Transform<C, P>>(self.attribute.map(|a| a.transmute()))
+    }
+
+    /// Apply all thunks in attribute order,
+    ///
+    pub async fn apply_thunks(self) -> anyhow::Result<Self> {
+        let node = crate::Node(self.node.storage.clone());
+        node.stream_attributes()
+            .map(Ok)
+            .try_fold(self, Self::apply)
+            .await
+    }
+
+    /// Applies thunk associated to attr,
+    /// 
+    pub async fn apply(mut self, attr: ResourceKey<Attribute>) -> anyhow::Result<Self> {
+        // TODO: Might be a hot spot
+        {
+            debug!("Applying changes to transient storage");
+            self.transient_mut().await.drain_dispatch_queues();
+            unsafe {
+                debug!("Applying changes to node storage");
+                self.node_mut().await.drain_dispatch_queues();
+            }
+
+            for (host_name, host) in self.hosts.iter_mut() {
+                debug!(host_name, "Applying changes to host storage");
+                host.storage.write().await.drain_dispatch_queues();
+            }
+        }
+
+        self.set_attribute(attr);
+        let previous = self.clone();
+
+        match self.call().await {
+            Ok(Some(tc)) => Ok(tc),
+            Ok(None) => Ok(previous),
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Resolves an attribute by path, returns a context if an attribute was found,
+    /// 
+    pub async fn navigate(&self, path: impl AsRef<str>) -> Option<Self> {
+        if let Some(located) = self.node.resolve::<Attribute>(path.as_ref()).await {
+            let mut navigation = self.clone();
+            navigation.set_attribute(located);
+            Some(navigation)
+        } else {
+            None
+        }
     }
 
     /// Schedules garbage collection of the variant,
@@ -279,6 +414,20 @@ impl Context {
                 debug!(key = key.key(), "Garbage collection");
                 s.remove_resource_at(key);
             });
+        }
+    }
+
+    /// Calls the thunk fn related to this context,
+    ///
+    pub async fn call(&self) -> anyhow::Result<Option<Context>> {
+        let thunk = self
+            .node()
+            .await
+            .current_resource::<ThunkFn>(self.attribute.map(|a| a.transmute()));
+        if let Some(thunk) = thunk {
+            (thunk)(self.clone()).await
+        } else {
+            Err(anyhow::anyhow!("Did not execute thunk"))
         }
     }
 }

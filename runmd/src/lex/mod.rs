@@ -28,29 +28,35 @@ pub mod prelude {
 
 /// Extension functions for working with the Lexer,
 /// 
-pub trait LexerExtensions {
+pub trait LexerExtensions<'a> {
     /// Bump the lexer to the next terminator,
     /// 
-    fn bump_terminator(&mut self, pat: &[char]);
+    fn bump_terminator(&mut self, pat: &[char]) -> Option<&'a str>;
         
     /// Bump the lexer to the next line,
     /// 
-    fn bump_line(&mut self);
+    fn bump_line(&mut self) -> Option<&'a str>;
 }
 
-impl<'a, T> LexerExtensions for logos::Lexer<'a, T> 
+impl<'a, T> LexerExtensions<'a> for logos::Lexer<'a, T> 
 where
     T: logos::Logos<'a, Source = str>
 {
-    fn bump_line(&mut self) {
+    fn bump_line(&mut self) -> Option<&'a str> {
         if let Some(next) = self.remainder().lines().next() {
             self.bump(next.len() + 1);
+            Some(next)
+        } else {
+            None
         }
     }
 
-    fn bump_terminator(&mut self, pat: &[char]) {
+    fn bump_terminator(&mut self, pat: &[char]) -> Option<&'a str> {
         if let Some(next) = self.remainder().split_terminator(pat).next() {
             self.bump(next.len() + 1);
+            Some(next)
+        } else {
+            None
         }
     }
 }

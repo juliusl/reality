@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -7,15 +8,23 @@ use reality::prelude::*;
 
 use crate::engine::EngineHandle;
 
+/// A condition specified on the host,
+/// 
 pub struct HostCondition(String, Arc<Notify>);
 
 impl HostCondition {
+    /// Notify observers of this condition,
+    /// 
     pub fn notify(&self) {
         let HostCondition(_, notify) = self.clone(); 
         
         notify.notify_waiters();
     }
 
+    /// Observe this condition, 
+    /// 
+    /// returns when the condition has completed
+    /// 
     pub async fn listen(&self) {
         let HostCondition(_, notify) = self.clone(); 
         
@@ -77,14 +86,16 @@ pub struct Host {
     ///
     #[reality(ignore)]
     pub handle: Option<EngineHandle>,
+    /// Vector of child hosts,
+    /// 
+    /// Only used by the default host,
+    /// 
+    #[reality(ignore)]
+    pub(crate) children: BTreeMap<String, Host>,
     /// Name of the action that "starts" this host,
     ///
     #[reality(option_of=Tagged<String>)]
     start: Option<Tagged<String>>,
-    /// Background actions,
-    ///
-    #[reality(vec_of=Tagged<String>)]
-    bg: Vec<Tagged<String>>,
     /// Map of conditions,
     ///
     #[reality(set_of=HostCondition)]
@@ -100,6 +111,8 @@ impl Host {
     }
 
     /// Returns true if a condition has been signaled,
+    /// 
+    /// Returns false if this condition is not registered w/ this host.
     ///
     pub fn set_condition(&self, condition: impl AsRef<str>) -> bool {
         if let Some(condition) = self
@@ -112,19 +125,6 @@ impl Host {
             true
         } else {
             false
-        }
-    }
-
-    async fn initialized_conditions(&self) {
-        if let Some(storage) = self.host_storage.as_ref().map(|h| h.storage.clone()) {
-            let mut storage = storage.write().await;
-
-            for condition in self.condition.iter() {
-                storage.put_resource(
-                    condition.clone(),
-                    Some(ResourceKey::with_hash(&condition.0)),
-                );
-            }
         }
     }
 
@@ -145,14 +145,27 @@ impl Host {
                     }
                 };
 
-                let _engine = engine.clone();
-                let host_start = tokio::spawn(async move { _engine.action(address).await });
-                host_start.await?
+                engine.run(address).await
             } else {
                 Err(anyhow::anyhow!("Start action is not set"))
             }
         } else {
             Err(anyhow::anyhow!("Host does not have an engine handle"))
+        }
+    }
+
+    /// Initialize conditions on the host,
+    /// 
+    async fn initialized_conditions(&self) {
+        if let Some(storage) = self.host_storage.as_ref().map(|h| h.storage.clone()) {
+            let mut storage = storage.write().await;
+
+            for condition in self.condition.iter() {
+                storage.put_resource(
+                    condition.clone(),
+                    Some(ResourceKey::with_hash(&condition.0)),
+                );
+            }
         }
     }
 }

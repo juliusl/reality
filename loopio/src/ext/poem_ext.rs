@@ -18,13 +18,16 @@ use poem::put;
 use poem::web::Data;
 use poem::web::Path;
 use poem::Body;
+use poem::Endpoint;
 use poem::EndpointExt;
 use poem::FromRequest;
+use poem::IntoEndpoint;
 use poem::RequestBody;
 use poem::Response;
 use poem::ResponseParts;
 use poem::Route;
 use reality::prelude::*;
+use reality::CommaSeperatedStrings;
 use tokio_util::either::Either;
 use tracing::error;
 
@@ -172,7 +175,7 @@ impl PoemExt for ThunkContext {
 /// Routes requests to a specific engine operation,
 ///
 #[derive(Reality, Default)]
-#[reality(plugin, call = start_engine_proxy, rename = "utility/loopio.poem.engine-proxy")]
+#[reality(plugin, call = start_engine_proxy, rename = "engine-proxy", group = "loopio.poem")]
 pub struct EngineProxy {
     /// Address to host the proxy on,
     ///
@@ -462,10 +465,9 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
             .register_internal_host_alias(alias?, replace_with?)
             .await;
 
-        context.notify_host(
-            scheme.as_str(), 
-            "engine_proxy_started"
-        ).await?;
+        context
+            .notify_host(scheme.as_str(), "engine_proxy_started")
+            .await?;
     }
 
     println!(
@@ -524,7 +526,7 @@ async fn handle_remote_frame<T: ApplyFrame + Clone + Send + Sync + 'static>(
 /// Reverse proxy config,
 ///
 #[derive(Reality, Clone, Default)]
-#[reality(plugin, call = configure_reverse_proxy, rename = "utility/loopio.poem.reverse-proxy-config")]
+#[reality(plugin, call = configure_reverse_proxy, rename = "reverse-proxy-config", group = "loopio.poem")]
 pub struct ReverseProxyConfig {
     /// Alias this config is for,
     ///
@@ -532,31 +534,83 @@ pub struct ReverseProxyConfig {
     alias: Uri,
     /// Allow headers,
     ///
-    #[reality(rename = "allow-headers")]
-    allow_headers: String,
+    #[reality(rename = "allow-headers", option_of=CommaSeperatedStrings)]
+    allow_headers: Option<CommaSeperatedStrings>,
     /// Deny headers,
     ///
-    #[reality(rename = "deny-headers")]
-    deny_headers: String,
+    #[reality(rename = "deny-headers", option_of=CommaSeperatedStrings)]
+    deny_headers: Option<CommaSeperatedStrings>,
     /// Hosts to allow,
     ///
-    #[reality(rename = "allow-hosts")]
-    allow_hosts: String,
+    #[reality(rename = "allow-hosts", option_of=CommaSeperatedStrings)]
+    allow_hosts: Option<CommaSeperatedStrings>,
+}
+
+impl ReverseProxyConfig {
+    /// Configure an endpoint w/ reverse proxy settings,
+    /// 
+    pub fn decorate(&self, endpoint: impl IntoEndpoint + Endpoint) -> impl IntoEndpoint + Endpoint {
+        let allow_headers = self.allow_headers.clone();
+        let deny_headers = self.deny_headers.clone();
+        let allow_hosts = self.allow_hosts.clone();
+        endpoint.before(move |mut req| {
+            let mut result = Ok(());
+            let host = req.header("host").unwrap_or_default().to_string();
+
+            if let Some(deny_headers) = &deny_headers {
+                for h in deny_headers.clone() {
+                    req.headers_mut().remove(h);
+                }
+            }
+
+            if let Some(allow_headers) = &allow_headers {
+                let mut headers = HeaderMap::new();
+
+                for h in allow_headers.clone() {
+                    if let Some(v) = req.header(&h) {
+                        if let (Ok(header), Ok(value)) =
+                            (HeaderName::from_str(&h), HeaderValue::from_str(v))
+                        {
+                            headers.insert(header, value);
+                        }
+                    }
+                }
+                *req.headers_mut() = headers;
+                if let Ok(host) = HeaderValue::from_str(&host) {
+                    req.headers_mut().insert("host", host);
+                }
+            }
+
+            if let Some(allow_hosts) = &allow_hosts {
+                if !allow_hosts.clone().fold(false, |allow, h| {
+                    allow | (host == h)
+                }) {
+                    result = Err(
+                        poem::Error::from_string("Host is not allowed", StatusCode::FORBIDDEN));
+                }
+            }
+
+            async {
+                result?;
+                 Ok(req) 
+            }
+        })
+    }
 }
 
 /// Reverse proxy plugin,
 ///
 #[derive(Reality, Default)]
-#[reality(plugin, call = start_reverse_proxy, rename = "utility/loopio.poem.reverse-proxy")]
+#[reality(plugin, call = start_reverse_proxy, rename = "reverse-proxy", group = "loopio.poem")]
 pub struct ReverseProxy {
     /// Address to host the proxy on,
     ///
     #[reality(derive_fromstr)]
     address: String,
-    /// Hosts to start the proxy w/,
+    /// Forward request to this host,
     ///
     #[reality(vec_of=Uri)]
-    host: Vec<Uri>,
+    forward: Vec<Uri>,
 }
 
 async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
@@ -564,23 +618,17 @@ async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
     let mut routes = BTreeMap::new();
 
-    for host in init.host.iter() {
+    for host in init.forward.iter() {
         let mut transient = tc.transient_mut().await;
-        let resource = transient.take_resource::<EngineProxy>(Some(ResourceKey::with_hash(host.to_string())));
-        println!(
-            "Processing reverse proxy config for {}",
-            host,
-        );
+        let resource =
+            transient.take_resource::<EngineProxy>(Some(ResourceKey::with_hash(host.to_string())));
+        eprintln!("Processing reverse proxy config for {}", host,);
         if let Some(resource) = resource {
             for (address, route_method) in (*resource).routes {
-                println!("Forwarding route {}", address);
+                eprintln!("Forwarding route {}", address);
                 routes.insert(address, route_method);
             }
         }
-        // for (address, route_method) in resource.iter() {
-        //     println!("Forwarding route {}", address);
-        //     routes.insert(address.clone(), route_method.clone());
-        // }
     }
 
     let mut route = Route::new();
@@ -589,7 +637,7 @@ async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
     }
 
     let listener = TcpListener::bind(&init.address);
-    println!("Listening to {}", init.address);
+    eprintln!("Listening to {}", init.address);
 
     poem::Server::new(listener)
         .run_with_graceful_shutdown(route, tc.cancellation.child_token().cancelled(), None)
@@ -602,7 +650,7 @@ impl Clone for ReverseProxy {
     fn clone(&self) -> Self {
         Self {
             address: self.address.clone(),
-            host: self.host.clone(),
+            forward: self.forward.clone(),
         }
     }
 }
@@ -675,13 +723,10 @@ async fn configure_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
         if let Some(mut engine_proxy) = tc.scan_host_for::<EngineProxy>(host).await {
             println!("Configuring reverse proxy for {}", init.alias);
-            // TODO
-            // 1)  apply allow/deny headers
-            // 2)  apply allow/deny hosts
-            // 3)
+            let config = || init.clone().decorate(on_forward_request);
             create_routes!(
                 move || {
-                    on_forward_request
+                    config()
                         .data(client.clone())
                         .data(internal_host.clone())
                 },

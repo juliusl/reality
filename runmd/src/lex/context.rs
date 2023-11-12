@@ -70,7 +70,7 @@ impl<'a> Context<'a> {
     }
 
     /// Sets the type parameter on the current block being analyzed,
-    /// 
+    ///
     #[inline]
     pub fn set_block_ty(&mut self, ty: &'a str) {
         if let Some(block) = self.analyzing.as_mut() {
@@ -79,7 +79,7 @@ impl<'a> Context<'a> {
     }
 
     /// Sets the moniker parameter on the current block being analyzed,
-    /// 
+    ///
     #[inline]
     pub fn set_block_moniker(&mut self, moniker: &'a str) {
         if let Some(block) = self.analyzing.as_mut() {
@@ -100,8 +100,11 @@ impl<'a> Context<'a> {
     /// Adds a line to the current block,
     ///
     pub fn add_line(&mut self, mut line: Line<'a>) {
-        if (self.is_instruction_load_extension() || self.is_instruction_load_extension_suffix()) && line.extension.is_some() {
-            self.set_extension(line.extension.clone().unwrap());
+        if (self.is_instruction_load_extension() || self.is_instruction_load_extension_suffix())
+            && line.extension.is_some()
+        {
+            let next = line.extension.clone().unwrap();
+            self.set_extension(next);
         } else if self.is_instruction_add_node() {
             self.extension.take();
         }
@@ -110,6 +113,28 @@ impl<'a> Context<'a> {
             line.extension = self.extension.clone();
             line.instruction = self.instruction.take().unwrap_or_default();
             block.lines.push(line);
+        }
+    }
+
+    /// Append input to the last line if applicable,
+    /// 
+    pub fn append_input(&mut self, input: &'a str) {
+        if let Some(line) = self.analyzing.as_mut().and_then(|b| b.lines.last_mut()) {
+            if let Some(_input) = line
+                .attr
+                .as_mut()
+                .and_then(|a| a.input.as_mut())
+                .or(line.extension.as_mut().and_then(|e| e.input.as_mut()))
+            {
+                match _input {
+                    Input::EscapedText(t) | Input::Text(t) => {
+                        *_input = Input::Lines(vec![t, input])
+                    }
+                    Input::Lines(lines) => {
+                        lines.push(input);
+                    }
+                }
+            }
         }
     }
 

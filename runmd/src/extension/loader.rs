@@ -6,5 +6,5 @@ use crate::prelude::*;
 pub trait Loader {
     /// Loads an extension, if successful returns a boxed Node which represents the extension,
     /// 
-    async fn load_extension(&self, extension: &str, input: Option<&str>) -> Option<BoxedNode>;
+    async fn load_extension(&self, extension: &str, tag: Option<&str>, input: Option<&str>) -> Option<BoxedNode>;
 }

@@ -1,8 +1,8 @@
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::sync::Arc;
-use serde::Deserialize;
-use serde::Serialize;
 use tracing::trace;
 
 use runmd::prelude::*;
@@ -21,13 +21,68 @@ use crate::BlockObjectType;
 use crate::ResourceKey;
 
 /// Type-alias for parsed attributes,
-/// 
-pub type ParsedAttributes = Vec<ResourceKey<Attribute>>;
+///
+#[derive(Debug, Default, Clone)]
+pub struct ParsedAttributes { 
+    attributes: Vec<ResourceKey<Attribute>>,
+    paths: BTreeMap<String, ResourceKey<Attribute>>
+}
+
+impl ParsedAttributes {
+    /// Returns the number of attributes that have been parsed,
+    /// 
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.attributes.len()
+    }
+
+    /// Push a new parsed attribute,
+    /// 
+    #[inline]
+    pub fn push(&mut self, attr: ResourceKey<Attribute>) {
+        self.attributes.push(attr);
+    }
+
+    /// Returns the last attrbute key parsed,
+    /// 
+    #[inline]
+    pub fn last(&self) -> Option<&ResourceKey<Attribute>> {
+        self.attributes.last()
+    }
+
+    /// Bind a path to the last attribute,
+    /// 
+    #[inline]
+    pub fn bind_last_to_path(&mut self, path: String) {
+        if let Some(last) = self.attributes.last() {
+            self.paths.insert(path, *last);
+        }
+    }
+
+    /// Returns an iterator over parsed attributes,
+    /// 
+    #[inline]
+    pub fn parsed(&self) -> impl Iterator<Item = ResourceKey<Attribute>> + '_ {
+        self.attributes.iter().cloned()
+    }
+
+    /// Resolve a path,
+    /// 
+    #[inline]
+    pub fn resolve_path(&self, path: impl AsRef<str>) -> Option<&ResourceKey<Attribute>> {
+        self.paths.get(path.as_ref())
+    }
+}
 
 /// List of comments for an attribute,
-/// 
+///
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Comments(pub Vec<String>);
+
+/// Struct containing a tag value,
+/// 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Tag(String);
 
 /// Maintains attribute types and matches runmd nodes to the corresponding attribute type parser,
 ///
@@ -51,10 +106,10 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     ///
     storage: Option<Arc<tokio::sync::RwLock<Storage>>>,
     /// Attributes parsed,
-    /// 
+    ///
     pub attributes: ParsedAttributes,
     /// Comments to include w/ the attribute being parsed,
-    /// 
+    ///
     pub comments: Vec<String>,
 }
 
@@ -67,8 +122,8 @@ impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
             attribute_types: Default::default(),
             handlers: Default::default(),
             storage: Default::default(),
-            attributes: vec![],
-            comments: vec![]
+            attributes: ParsedAttributes::default(),
+            comments: vec![],
         }
     }
 }
@@ -95,27 +150,37 @@ impl<S: StorageTarget> std::fmt::Debug for AttributeParser<S> {
             .field("symbol", &self.name)
             .field("attribute_table", &self.attribute_types)
             .field("storage", &self.storage.is_some())
+            .field("attributes", &self.attributes)
             .finish()
     }
 }
 
 impl<S: StorageTarget> AttributeParser<S> {
     /// Parses an attribute and if successful returns the resource key used,
-    /// 
-    pub fn parse_attribute<T: FromStr + Send + Sync + 'static>(&mut self, source: impl AsRef<str>) -> Option<ResourceKey<T>> {
-        let mut parsed_key = None; 
-        
+    ///
+    pub fn parse_attribute<T: FromStr + Send + Sync + 'static>(
+        &mut self,
+        source: impl AsRef<str>,
+    ) -> Option<ResourceKey<T>> {
+        let mut parsed_key = None;
+
         let idx = self.attributes.len();
         let key = ResourceKey::<Attribute>::with_hash(idx);
 
         let comments = self.comments.drain(..).collect();
-         // Storage target must be enabled,
-         if let Some(storage) = self.storage() {
+        // Storage target must be enabled,
+        if let Some(storage) = self.storage() {
             // Initialize attribute type,
             if let Ok(init) = source.as_ref().parse::<T>() {
                 parsed_key = Some(key.transmute());
                 storage.lazy_put_resource(init, parsed_key);
                 storage.lazy_put_resource(Comments(comments), parsed_key.map(|k| k.transmute()));
+                if let Some(tag) = self.tag() {
+                    storage.lazy_put_resource(
+                        Tag(tag.to_string()), 
+                        parsed_key.map(|k| k.transmute())
+                    );
+                }
             }
         }
 
@@ -391,6 +456,10 @@ impl<S> Node for super::AttributeParser<S>
 where
     S: StorageTarget + StorageTarget + Send + Sync + Unpin + 'static,
 {
+    fn assign_path(&mut self, path: String) {
+        self.attributes.bind_last_to_path(path);
+    }
+
     fn set_info(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {
         trace!("{:#?}", _node_info);
         if let Some(comment) = &_node_info.get_comment() {
@@ -439,7 +508,7 @@ where
     S: StorageTarget + Send + Sync + Unpin + 'static,
     <S as StorageTarget>::Namespace: Send + Sync + 'static,
 {
-    async fn load_extension(&self, extension: &str, input: Option<&str>) -> Option<BoxedNode> {
+    async fn load_extension(&self, extension: &str, tag: Option<&str>, input: Option<&str>) -> Option<BoxedNode> {
         let mut parser = self.clone();
 
         // If there was a handler on the stack, call it's unload fn
@@ -454,6 +523,10 @@ where
 
         // Clear any pre-existing attribute types
         parser.attribute_types.clear();
+
+        if let Some(tag) = tag {
+            parser.set_tag(tag);
+        }
 
         // If an block object-type exists, then begin to load
         if let (
