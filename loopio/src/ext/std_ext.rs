@@ -190,7 +190,7 @@ async fn start_process(tc: &mut ThunkContext) -> anyhow::Result<()> {
     );
 
     let mut command = init.arg.iter().fold(command, |mut acc, a| {
-        for arg in shlex::split(&a).unwrap_or_default() {
+        for arg in shlex::split(a).unwrap_or_default() {
             acc.arg(arg);
         }
         acc

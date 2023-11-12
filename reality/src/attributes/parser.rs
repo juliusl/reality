@@ -27,52 +27,57 @@ use crate::ResourceKey;
 #[derive(Debug, Default, Clone)]
 pub struct ParsedAttributes {
     /// Parsed attributes,
-    /// 
+    ///
     pub attributes: Vec<ResourceKey<Attribute>>,
     /// Paths to attributes,
-    /// 
+    ///
     pub paths: BTreeMap<String, ResourceKey<Attribute>>,
     /// Properties defined by parsed attributes,
-    /// 
-    pub properties: Properties
+    ///
+    pub properties: Properties,
 }
 
 /// Defined properties,
-/// 
+///
 #[derive(Debug, Default, Clone)]
 pub struct Properties {
     /// Map of defined properties,
-    /// 
+    ///
     pub defined: HashMap<ResourceKey<Attribute>, Vec<ResourceKey<Property>>>,
     /// Comments defined for each property,
-    /// 
-    pub comments: HashMap<ResourceKey<Property>, Comments>
+    ///
+    pub comments: HashMap<ResourceKey<Property>, Comments>,
 }
 
 impl ParsedAttributes {
     /// Returns the number of attributes that have been parsed,
-    /// 
+    ///
     #[inline]
     pub fn len(&self) -> usize {
         self.attributes.len()
     }
 
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Push a new parsed attribute,
-    /// 
+    ///
     #[inline]
     pub fn push(&mut self, attr: ResourceKey<Attribute>) {
         self.attributes.push(attr);
     }
 
     /// Returns the last attrbute key parsed,
-    /// 
+    ///
     #[inline]
     pub fn last(&self) -> Option<&ResourceKey<Attribute>> {
         self.attributes.last()
     }
 
     /// Bind a path to the last attribute,
-    /// 
+    ///
     #[inline]
     pub fn bind_last_to_path(&mut self, path: String) {
         if let Some(last) = self.attributes.last() {
@@ -81,43 +86,41 @@ impl ParsedAttributes {
     }
 
     /// Returns an iterator over parsed attributes,
-    /// 
+    ///
     #[inline]
     pub fn parsed(&self) -> impl Iterator<Item = ResourceKey<Attribute>> + '_ {
         self.attributes.iter().cloned()
     }
 
     /// Resolve a path,
-    /// 
+    ///
     #[inline]
     pub fn resolve_path(&self, path: impl AsRef<str>) -> Option<&ResourceKey<Attribute>> {
         self.paths.get(path.as_ref())
     }
 
     /// Defines a property by attr,
-    /// 
+    ///
     #[inline]
     pub fn define_property(&mut self, attr: ResourceKey<Attribute>, prop: ResourceKey<Property>) {
-        if !self.properties.defined.contains_key(&attr) {
-            self.properties.defined.insert(attr, vec![]);
-        }
-
-        if let Some(defined) = self.properties.defined.get_mut(&attr) {
-            defined.push(prop);
-        }
+        let defined = self.properties.defined.entry(attr).or_default();
+        defined.push(prop);
     }
 
     /// Adds a comment for a property,
-    /// 
+    ///
     #[inline]
-    pub fn add_property_comment(&mut self, prop: ResourceKey<Property>, comment: impl Into<String>) {
-        if !self.properties.comments.contains_key(&prop) {
-            self.properties.comments.insert(prop, Comments(vec![]));
-        }
-
-        if let Some(comments) = self.properties.comments.get_mut(&prop) {
-            comments.0.push(comment.into());
-        }
+    pub fn add_property_comment(
+        &mut self,
+        prop: ResourceKey<Property>,
+        comment: impl Into<String>,
+    ) {
+        let comments = self
+            .properties
+            .comments
+            .entry(prop)
+            .or_insert_with(|| Comments(vec![]));
+        comments.0.push(comment.into());
     }
 }
 
@@ -127,7 +130,7 @@ impl ParsedAttributes {
 pub struct Comments(pub Vec<String>);
 
 /// Struct containing a tag value,
-/// 
+///
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Tag(String);
 
@@ -223,10 +226,8 @@ impl<S: StorageTarget> AttributeParser<S> {
                 storage.lazy_put_resource(init, parsed_key);
                 storage.lazy_put_resource(Comments(comments), parsed_key.map(|k| k.transmute()));
                 if let Some(tag) = self.tag() {
-                    storage.lazy_put_resource(
-                        Tag(tag.to_string()), 
-                        parsed_key.map(|k| k.transmute())
-                    );
+                    storage
+                        .lazy_put_resource(Tag(tag.to_string()), parsed_key.map(|k| k.transmute()));
                 }
             }
         }
@@ -555,7 +556,12 @@ where
     S: StorageTarget + Send + Sync + Unpin + 'static,
     <S as StorageTarget>::Namespace: Send + Sync + 'static,
 {
-    async fn load_extension(&self, extension: &str, tag: Option<&str>, input: Option<&str>) -> Option<BoxedNode> {
+    async fn load_extension(
+        &self,
+        extension: &str,
+        tag: Option<&str>,
+        input: Option<&str>,
+    ) -> Option<BoxedNode> {
         let mut parser = self.clone();
 
         // If there was a handler on the stack, call it's unload fn

@@ -507,7 +507,7 @@ impl Engine {
                     Action::Sync { mut tx } => {
                         info!("Syncing engine handle");
                         if let Some(tx) = tx.take() {
-                            if let Err(_) = tx.send(self.engine_handle()) {
+                            if tx.send(self.engine_handle()).is_err() {
                                 error!("Could not send updated handle");
                             }
                         }
@@ -824,7 +824,7 @@ impl EngineHandle {
         }
 
         if let Some((_, spawned)) = self.__spawned.take() {
-            futures::executor::block_on(async { spawned.await })?
+            futures::executor::block_on(spawned)?
         } else {
             Err(anyhow!("No running task"))
         }

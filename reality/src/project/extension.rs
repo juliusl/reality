@@ -73,6 +73,8 @@ macro_rules! impl_middleware_ty {
     }
 }
 
+pub type IntermediateTransform<C, T> = anyhow::Result<(C, anyhow::Result<T>)>;
+
 /// Extension is an external facing callback that can be stored/retrieved programatically,
 ///
 pub struct Transform<C, T>
@@ -85,7 +87,7 @@ where
     controller: Option<C>,
     /// Resource-key for retrieving the underlying type,
     ///
-    resource_key: Option<ResourceKey<anyhow::Result<(C, anyhow::Result<T>)>>>,
+    resource_key: Option<ResourceKey<IntermediateTransform<C, T>>>,
     /// List of middleware to run before user middleware,
     ///
     before: Vec<Middleware<C, T>>,

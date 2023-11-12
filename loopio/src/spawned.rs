@@ -91,6 +91,12 @@ pub struct InstructionStatus {
     pub progress: Option<f64>,
 }
 
+impl Default for InstructionStatus {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InstructionStatus {
     /// Starts a new instruction status,
     ///

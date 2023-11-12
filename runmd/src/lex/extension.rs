@@ -42,10 +42,6 @@ impl Extension<'_> {
     /// **Note** A path is available only if a tag is set. 
     /// 
     pub fn path(&self) -> Option<String> {
-        if let Some(tag) = self.tag() {
-            Some(format!("{tag}/{}", self.type_name()))
-        } else {
-            None
-        }
+        self.tag().map(|tag| format!("{tag}/{}", self.type_name()))
     }
 }

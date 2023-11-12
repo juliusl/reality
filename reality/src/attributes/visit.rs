@@ -115,10 +115,10 @@ impl Clone for FieldPacket {
             data: None,
             wire_data: self.wire_data.clone(),
             data_type_name: self.data_type_name.clone(),
-            data_type_size: self.data_type_size.clone(),
-            field_offset: self.field_offset.clone(),
+            data_type_size: self.data_type_size,
+            field_offset: self.field_offset,
             owner_name: self.owner_name.clone(),
-            attribute_hash: self.attribute_hash.clone(),
+            attribute_hash: self.attribute_hash,
         }
     }
 }

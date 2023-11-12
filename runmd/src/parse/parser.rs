@@ -129,7 +129,7 @@ impl Parser {
             let node = self.node_provider.provide(
                 attr.name,
                 node_info.line.tag.as_ref().map(|t| t.0),
-                attr.input.clone().map(|i| i.input_str()).as_ref().map(|s| s.as_str()),
+                attr.input.clone().map(|i| i.input_str()).as_deref(),
                 &node_info,
                 &block_info
             );
@@ -165,7 +165,7 @@ impl Parser {
                     .load_extension(
                         ext.type_name().as_str(), 
                         ext.tag(), 
-                        ext.input.clone().map(|i| i.input_str()).as_ref().map(|s| s.as_str())
+                        ext.input.clone().map(|i| i.input_str()).as_deref()
                     )
                     .await
                 {
@@ -190,7 +190,7 @@ impl Parser {
                 last.define_property(
                     attr.name,
                     line.tag.map(|t| t.0),
-                    attr.input.take().map(|i| i.input_str()).as_ref().map(|s| s.as_str()),
+                    attr.input.take().map(|i| i.input_str()).as_deref(),
                 )
             } else {
                 panic!("Line is missing attribute parameters to define property")

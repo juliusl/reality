@@ -183,7 +183,7 @@ impl Debug for Host {
 }
 
 impl SetIdentifiers for Host {
-    fn set_identifiers(&mut self, name: &String, tag: Option<&String>) {
+    fn set_identifiers(&mut self, name: &str, tag: Option<&String>) {
         self.name = name.to_string();
         self._tag = tag.cloned();
     }

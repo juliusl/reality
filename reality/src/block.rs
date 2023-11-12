@@ -51,7 +51,7 @@ impl<Storage: StorageTarget + 'static> Clone for BlockObjectType<Storage> {
 }
 
 pub trait SetIdentifiers {
-    fn set_identifiers(&mut self, name: &String, tag: Option<&String>);
+    fn set_identifiers(&mut self, name: &str, tag: Option<&String>);
 }
 
 /// Object type that lives inside of a runmd block,

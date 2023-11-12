@@ -418,7 +418,6 @@ impl Context {
     where
         Fut: Future<Output = anyhow::Result<Self>>,
     {
-        let middle = middle.clone();
         let node = crate::Node(self.node.storage.clone());
         node.stream_attributes()
             .map(Ok)
