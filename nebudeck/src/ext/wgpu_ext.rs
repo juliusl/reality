@@ -1,6 +1,7 @@
 use super::prelude::*;
 
 use futures::executor::block_on;
+use loopio::prelude::Engine;
 use loopio::prelude::EngineHandle;
 use loopio::prelude::StorageTarget;
 use loopio::prelude::ThunkContext;
@@ -24,6 +25,8 @@ use wgpu::Surface;
 use wgpu::SurfaceConfiguration;
 use wgpu::TextureView;
 
+use crate::BackgroundWork;
+use crate::Controller;
 use crate::desktop::DesktopApp;
 use crate::ControlBus;
 
@@ -556,13 +559,20 @@ pub trait RenderPipelineMiddleware<T: 'static>: DesktopApp<T> {
 
 impl<T: 'static> ControlBus for WgpuSystem<T> {
     fn bind(&mut self, engine: EngineHandle) {
-        self.engine
-            .set(engine.clone())
-            .expect("should not be initialized");
-
         for middleware in self.middleware.iter_mut() {
             middleware.bind(engine.clone());
         }
+    }
+
+    fn delegate(self, controller: impl Controller<Self>, engine: Engine) -> BackgroundWork
+    where
+        Self: Sized,
+    {
+        self.engine.set(
+            engine.engine_handle()
+        ).expect("should only be called once");
+
+        controller.take_control(Box::new(self), engine)
     }
 }
 

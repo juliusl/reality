@@ -1,6 +1,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use tracing::trace;
@@ -8,6 +9,7 @@ use tracing::trace;
 use runmd::prelude::*;
 
 use super::attribute::Attribute;
+use super::attribute::Property;
 use super::attribute_type::OnParseField;
 use super::attribute_type::ParsableAttributeTypeField;
 use super::attribute_type::ParsableField;
@@ -23,9 +25,28 @@ use crate::ResourceKey;
 /// Type-alias for parsed attributes,
 ///
 #[derive(Debug, Default, Clone)]
-pub struct ParsedAttributes { 
-    attributes: Vec<ResourceKey<Attribute>>,
-    paths: BTreeMap<String, ResourceKey<Attribute>>
+pub struct ParsedAttributes {
+    /// Parsed attributes,
+    /// 
+    pub attributes: Vec<ResourceKey<Attribute>>,
+    /// Paths to attributes,
+    /// 
+    pub paths: BTreeMap<String, ResourceKey<Attribute>>,
+    /// Properties defined by parsed attributes,
+    /// 
+    pub properties: Properties
+}
+
+/// Defined properties,
+/// 
+#[derive(Debug, Default, Clone)]
+pub struct Properties {
+    /// Map of defined properties,
+    /// 
+    pub defined: HashMap<ResourceKey<Attribute>, Vec<ResourceKey<Property>>>,
+    /// Comments defined for each property,
+    /// 
+    pub comments: HashMap<ResourceKey<Property>, Comments>
 }
 
 impl ParsedAttributes {
@@ -71,6 +92,32 @@ impl ParsedAttributes {
     #[inline]
     pub fn resolve_path(&self, path: impl AsRef<str>) -> Option<&ResourceKey<Attribute>> {
         self.paths.get(path.as_ref())
+    }
+
+    /// Defines a property by attr,
+    /// 
+    #[inline]
+    pub fn define_property(&mut self, attr: ResourceKey<Attribute>, prop: ResourceKey<Property>) {
+        if !self.properties.defined.contains_key(&attr) {
+            self.properties.defined.insert(attr, vec![]);
+        }
+
+        if let Some(defined) = self.properties.defined.get_mut(&attr) {
+            defined.push(prop);
+        }
+    }
+
+    /// Adds a comment for a property,
+    /// 
+    #[inline]
+    pub fn add_property_comment(&mut self, prop: ResourceKey<Property>, comment: impl Into<String>) {
+        if !self.properties.comments.contains_key(&prop) {
+            self.properties.comments.insert(prop, Comments(vec![]));
+        }
+
+        if let Some(comments) = self.properties.comments.get_mut(&prop) {
+            comments.0.push(comment.into());
+        }
     }
 }
 

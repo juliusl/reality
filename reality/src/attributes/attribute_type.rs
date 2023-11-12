@@ -4,15 +4,15 @@ use std::ops::DerefMut;
 use std::str::FromStr;
 
 use anyhow::anyhow;
-use const_format::formatcp;
-use once_cell::sync::OnceCell;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::BlockObject;
+use crate::ResourceKey;
 use crate::Visit;
 use crate::VisitMut;
 
+use super::attribute::Property;
 use super::visit::Field;
 use super::visit::FieldMut;
 use super::visit::FieldPacket;
@@ -225,19 +225,19 @@ where
         let tag = parser.tag().cloned();
         let key = parser.attributes.last().map(|a| a.transmute::<Owner>());
 
-        match (parser.storage(), parsed) {
+        let mut properties = vec![];
+        match (parser.storage_mut(), parsed) {
             (
-                Some(storage),
+                Some(mut storage),
                 ParsableField {
                     value: Some(value),
                     error: None,
                     ..
                 },
             ) => {
-                storage.lazy_dispatch_mut(move |s| {
-                    borrow_mut!(s, Owner, key, |owner| => {
-                        owner.on_parse(value, tag.as_ref());
-                    });
+                borrow_mut!(storage, Owner, key, |owner| => {
+                    let property = owner.on_parse(value, tag.as_ref());
+                    properties.push(property);
                 });
             }
             (
@@ -258,6 +258,12 @@ where
                 }
             }
             _ => {}
+        }
+
+        if let Some(key) = key {
+            for prop in properties.drain(..) {
+               parser.attributes.define_property(key.transmute(), prop);
+            }
         }
     }
 }
@@ -281,17 +287,23 @@ where
         let tag = parser.tag().cloned();
         let key = parser.attributes.last().map(|a| a.transmute::<Owner>());
 
-        if let Some(storage) = parser.storage() {
-            storage.lazy_dispatch_mut(move |s| {
-                // If set by parse, it must be set w/ a resource key set to None
-                let resource = { s.take_resource::<T>(None) };
+        let mut properties = vec![];
+        if let Some(mut storage) = parser.storage_mut() {
+             // If set by parse, it must be set w/ a resource key set to None
+             let resource = { storage.take_resource::<T>(None) };
 
-                if let Some(resource) = resource {
-                    borrow_mut!(s, Owner, key, |owner| => {
-                        owner.on_parse(*resource, tag.as_ref());
-                    });
-                }
-            })
+             if let Some(resource) = resource {
+                 borrow_mut!(storage, Owner, key, |owner| => {
+                     let prop = owner.on_parse(*resource, tag.as_ref());
+                     properties.push(prop);
+                 });
+             }
+        }
+
+        if let Some(key) = key {
+            for prop in properties.drain(..) {
+               parser.attributes.define_property(key.transmute(), prop);
+            }
         }
     }
 }
@@ -315,17 +327,23 @@ where
         let tag = parser.tag().cloned();
         let key = parser.attributes.last().map(|a| a.transmute::<Owner>());
 
-        if let Some(storage) = parser.storage() {
-            storage.lazy_dispatch_mut(move |s| {
-                // If set by parse, it must be set w/ a resource key set to None
-                let resource = { s.take_resource::<T>(None) };
+        let mut properties = vec![];
+        if let Some(mut storage) = parser.storage_mut() {
+             // If set by parse, it must be set w/ a resource key set to None
+             let resource = { storage.take_resource::<T>(None) };
 
-                if let Some(resource) = resource {
-                    borrow_mut!(s, Owner, key, |owner| => {
-                        owner.on_parse(*resource, tag.as_ref());
-                    });
-                }
-            })
+             if let Some(resource) = resource {
+                 borrow_mut!(storage, Owner, key, |owner| => {
+                     let prop = owner.on_parse(*resource, tag.as_ref());
+                     properties.push(prop);
+                 });
+             }
+        }
+        
+        if let Some(key) = key {
+            for prop in properties.drain(..) {
+               parser.attributes.define_property(key.transmute(), prop);
+            }
         }
     }
 }
@@ -358,7 +376,7 @@ where
 
     /// Function called when a value is parsed correctly,
     ///
-    fn on_parse(&mut self, value: T, tag: Option<&String>);
+    fn on_parse(&mut self, value: T, tag: Option<&String>) -> ResourceKey<Property>;
 
     /// Returns a reference to the field as the projected type,
     ///

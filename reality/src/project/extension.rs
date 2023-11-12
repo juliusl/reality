@@ -1,7 +1,5 @@
-use std::cell::RefCell;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::sync::OnceCell;
 
 use anyhow::anyhow;
 use futures_util::Future;
@@ -143,8 +141,6 @@ where
                 .dispatcher::<anyhow::Result<(C, anyhow::Result<T>)>>(self.resource_key)
                 .await;
             dispatcher.enable().await;
-
-            let controller = &self.controller;
 
             for before in self.before.iter() {
                 let target = target.clone();

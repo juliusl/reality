@@ -7,9 +7,9 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::ops::Deref;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 use tokio_util::either::Either;
@@ -250,6 +250,8 @@ impl Engine {
                 operations: BTreeMap::new(),
                 sequences: BTreeMap::new(),
                 hosts: BTreeMap::new(),
+                cache: Shared::default(),
+                __spawned: None,
             },
             packet_rx: rx,
             workspace: None,
@@ -466,6 +468,7 @@ impl Engine {
         self,
         middleware: impl Fn(&mut Engine, EnginePacket) -> Option<EnginePacket> + Send + Sync + 'static,
     ) -> JoinHandle<anyhow::Result<Self>> {
+        eprintln!("Starting engine packet listener");
         tokio::spawn(self.handle_packets(middleware))
     }
 
@@ -605,7 +608,6 @@ impl Debug for Action {
 
 /// Handle for communicating and sending work packets to an engine,
 ///
-#[derive(Clone)]
 pub struct EngineHandle {
     /// Sends engine packets to the engine,
     ///
@@ -619,6 +621,25 @@ pub struct EngineHandle {
     /// Map of hosts,
     ///
     pub hosts: BTreeMap<String, Host>,
+    /// Local cache for the handle,
+    /// 
+    pub cache: Shared,
+    /// Actively running task,
+    ///
+    __spawned: Option<(Instant, JoinHandle<anyhow::Result<Self>>)>,
+}
+
+impl Clone for EngineHandle {
+    fn clone(&self) -> Self {
+        Self {
+            sender: self.sender.clone(),
+            operations: self.operations.clone(),
+            sequences: self.sequences.clone(),
+            hosts: self.hosts.clone(),
+            cache: self.cache.clone(),
+            __spawned: None,
+        }
+    }
 }
 
 impl Debug for EngineHandle {
@@ -678,8 +699,37 @@ impl EngineHandle {
         Ok(())
     }
 
+    /// Synchronize the state of this handle,
+    ///
+    pub async fn sync(&self) -> anyhow::Result<EngineHandle> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        let packet = EnginePacket {
+            action: Action::Sync { tx: Some(tx) },
+        };
+
+        self.sender.send(packet)?;
+
+        Ok(rx.await?)
+    }
+
     /// Scans node storage for resource T,
     ///
+    pub fn scan_take_nodes<T>(&self) -> impl Stream<Item = T> + '_
+    where
+        T: Send + Sync + 'static,
+    {
+        stream! {
+            for (_, op) in self.operations.iter() {
+                if let Some(tc) = op.context() {
+                    for resource in tc.scan_take_node::<T>().await {
+                        yield resource;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn scan_nodes<T>(&self) -> impl Stream<Item = T> + '_
     where
         T: ToOwned<Owned = T> + Send + Sync + 'static,
@@ -687,9 +737,8 @@ impl EngineHandle {
         stream! {
             for (_, op) in self.operations.iter() {
                 if let Some(tc) = op.context() {
-                    let node = tc.node().await;
-                    if let Some(r) = node.current_resource::<T>(tc.attribute.map(|a| a.transmute())) {
-                        yield r;
+                    for resource in tc.scan_node::<T>().await {
+                        yield resource;
                     }
                 }
             }
@@ -733,9 +782,57 @@ impl EngineHandle {
         ))
     }
 
-    /// Returns an index,
+    /// Returns true if the spawn closure was successfully spawned,
     /// 
-    pub fn index(&self) {
+    pub fn spawn(&mut self, spawn: impl FnOnce(EngineHandle) -> JoinHandle<anyhow::Result<Self>> + 'static) -> Option<Instant> {
+        if self.__spawned.is_some() {
+            return None;
+        }
 
+        let start = Instant::now();
+        self.__spawned = Some((start, spawn(self.clone())));
+        Some(start)
+    }
+
+    /// Returns true if an internal task is running,
+    /// 
+    pub fn is_running(&self) -> bool {
+        self.__spawned.is_some()
+    }
+
+    /// Returns Some(true) if the internal task is still running,
+    /// 
+    pub fn is_finished(&self) -> Option<bool> {
+        self.__spawned.as_ref().map(|(_, s)| s.is_finished())
+    }
+
+    /// Updates in place,
+    /// 
+    /// returns an error if there is not currently a running task,
+    /// 
+    /// or; if the task could not be complete successfully, 
+    /// 
+    /// or; if the task completed but returned an error.
+    /// 
+    pub fn wait_for_finish(&mut self, instant: Instant) -> anyhow::Result<EngineHandle> {
+        if let Some((started, _)) = self.__spawned.as_ref() {
+            if instant != *started {
+                return Err(anyhow!(""));
+            }
+        }
+
+        if let Some((_, spawned)) = self.__spawned.take() {
+            futures::executor::block_on(async { spawned.await })?
+        } else {
+            Err(anyhow!("No running task"))
+        }
+    }
+
+    /// Cancels any spawned join handles from this engine handle,
+    /// 
+    pub fn cancel(&mut self) {
+        if let Some((_, spawned)) = self.__spawned.take() {
+            spawned.abort();
+        }
     }
 }

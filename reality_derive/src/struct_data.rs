@@ -363,8 +363,17 @@ impl StructData {
                     }
                 
                     #[allow(unused_variables)]
-                    fn on_parse(&mut self, value: #ty, _tag: Option<&String>) {
+                    fn on_parse(&mut self, value: #ty, _tag: Option<&String>) -> ResourceKey<Property> {
+                        let mut hasher = ResourceKeyHashBuilder::new_default_hasher();
+                        hasher.hash(_tag);
+                        hasher.hash(#offset);
+                        hasher.hash(#field_ident);
+                        hasher.hash(std::any::type_name::<#ty>());
+                        hasher.hash(std::any::type_name::<Self>());
+
                         #callback
+
+                        hasher.finish()
                     }
 
                     #[inline]

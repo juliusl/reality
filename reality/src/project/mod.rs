@@ -1,9 +1,7 @@
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::ParsedAttributes;
 use crate::StorageTarget;
 use crate::ResourceKeyHashBuilder;
 use crate::ResourceKey;

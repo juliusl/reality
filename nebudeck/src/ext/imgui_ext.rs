@@ -1,11 +1,13 @@
 use std::cell::OnceCell;
-use std::collections::BTreeMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Instant;
 
+use futures::pin_mut;
+use futures::StreamExt;
 use imgui::Ui;
 use imgui_wgpu::RendererConfig;
 use imgui_winit_support::WinitPlatform;
+use tokio::sync::RwLock;
 use tracing::error;
 use winit::window::Window;
 
@@ -52,11 +54,20 @@ pub struct ImguiMiddleware<T> {
     ///
     last_frame: Option<Instant>,
     /// Vector of active ui nodes,
-    /// 
+    ///
     pub ui_nodes: Vec<UiNode>,
+    ///
+    ///
+    __internal_ui: Vec<AuxUiNode>,
+    /// Update attempted to start,
+    ///
+    __update_start: Option<Instant>,
+    /// When this was last updated,
+    ///
+    __last_updated: Option<Instant>,
     /// Unused,
     ///
-    _t: PhantomData<T>,
+    __t: PhantomData<T>,
 }
 
 impl<T: 'static> ImguiMiddleware<T> {
@@ -69,7 +80,10 @@ impl<T: 'static> ImguiMiddleware<T> {
             open_demo: None,
             last_frame: None,
             ui_nodes: vec![],
-            _t: PhantomData,
+            __update_start: None,
+            __last_updated: None,
+            __internal_ui: vec![],
+            __t: PhantomData,
         }
     }
 
@@ -80,11 +94,78 @@ impl<T: 'static> ImguiMiddleware<T> {
         self
     }
 
-     /// Enables the demo window,
+    /// Enables the demo window,
     ///
     pub fn with_ui_node(mut self, ui_node: UiNode) -> Self {
         self.ui_nodes.push(ui_node);
         self
+    }
+
+    /// Adds an auxilary node,
+    ///
+    pub fn with_aux_node(
+        mut self,
+        aux_ui: impl FnMut(&mut EngineHandle, &Ui) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        self.__internal_ui.push(AuxUiNode {
+            engine_handle: None,
+            show_ui: Arc::new(RwLock::new(aux_ui)),
+        });
+        self
+    }
+
+    /// Update any ui nodes,
+    /// 
+    /// TODO: Make this called more lazily
+    /// 
+    pub fn update(&mut self) {
+        if let Some(engine) = self.engine.get_mut() {
+            if !engine.is_running() {
+                if let Some(last_updated) = self.__last_updated.as_ref() {
+                    // TODO: Can remove when it's on demand
+                    if last_updated.elapsed().as_secs() <= 10 {
+                        return;
+                    }
+
+                    eprintln!("Looking for any new ui nodes");
+                    self.__last_updated.take();
+                }
+
+                if let Some(started) = engine.spawn(|mut e| {
+                    tokio::spawn(async move {
+                        let nodes = {
+                            let nodes = e.scan_take_nodes::<UiNode>();
+                            pin_mut!(nodes);
+
+                            nodes.collect::<Vec<_>>().await
+                        };
+
+                        if !nodes.is_empty() {
+                            println!("Adding to cache");
+                            let e = &mut e;
+                            e.cache.put_resource(nodes, None);
+                        }
+
+                        println!("Finishing engine task");
+                        Ok(e)
+                    })
+                }) {
+                    self.__update_start = Some(started);
+                }
+            } else if let Some(true) = engine.is_finished() {
+                if let Some(_wait_for_finish) = self.__update_start.take() {
+                    eprintln!("Waiting for finish");
+                    if let Ok(mut r) = engine.wait_for_finish(_wait_for_finish) {
+                        eprintln!("Received update");
+                        if let Some(nodes) = r.cache.take_resource::<Vec<UiNode>>(None) {
+                            eprintln!("Adding new ui nodes");
+                            self.ui_nodes.extend(*nodes);
+                        }
+                        self.__last_updated = Some(Instant::now());
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -168,6 +249,13 @@ impl<T: 'static> DesktopApp<T> for ImguiMiddleware<T> {
 
             self.last_frame = Some(now);
         }
+
+        // TOOD: This could be placed on a better handler to reduce overhead
+        self.update();
+    }
+
+    fn on_user_event(&mut self, _user: &T, _context: &crate::desktop::DesktopContext<T>) {
+        self.update();
     }
 
     fn on_window_redraw(
@@ -186,8 +274,23 @@ impl<T: 'static> DesktopApp<T> for ImguiMiddleware<T> {
                     ui.show_demo_window(open_demo_window);
                 }
 
+                // TODO: Handle the output of show.
+
                 for uinode in self.ui_nodes.iter_mut() {
                     uinode.show(&ui);
+                }
+
+                for auxnode in self.__internal_ui.iter_mut().by_ref() {
+                    if auxnode.engine_handle.is_none() {
+                        auxnode.engine_handle = Some(
+                            self.engine
+                                .get()
+                                .cloned()
+                                .expect("should have an engine handle by this point"),
+                        );
+                    }
+
+                    auxnode.show(&ui);
                 }
 
                 platform.prepare_render(&ui, context.window);
@@ -198,89 +301,58 @@ impl<T: 'static> DesktopApp<T> for ImguiMiddleware<T> {
 
 impl<T: 'static> ControlBus for ImguiMiddleware<T> {
     fn bind(&mut self, engine: EngineHandle) {
+        {
+            let stream = engine.scan_take_nodes::<UiNode>();
+            pin_mut!(stream);
+
+            let mut stream = futures::executor::block_on_stream(stream);
+
+            while let Some(node) = stream.next() {
+                self.ui_nodes.push(node);
+            }
+        }
+
         self.engine.set(engine).expect("should only be called once");
     }
 }
 
 #[async_trait]
 pub trait ImguiExt {
-    async fn add_ui_node(&self, show: impl for<'a, 'b> Fn(&'a mut ThunkContext, &'b Ui) -> bool + Send + Sync + 'static);
+    async fn add_ui_node(
+        &self,
+        show: impl for<'a, 'b> Fn(&'a mut ThunkContext, &'b Ui) -> bool + Send + Sync + 'static,
+    );
 }
 
 #[async_trait]
 impl ImguiExt for ThunkContext {
-    async fn add_ui_node(&self, show: impl for<'a, 'b> Fn(&'a mut ThunkContext, &'b Ui) -> bool + Send + Sync + 'static) {
+    async fn add_ui_node(
+        &self,
+        show: impl for<'a, 'b> Fn(&'a mut ThunkContext, &'b Ui) -> bool + Send + Sync + 'static,
+    ) {
         let ui_node = UiNode {
             show_ui: Some(Arc::new(show)),
-            context: self.clone()
+            context: self.clone(),
         };
 
-        unsafe { self.node_mut().await.put_resource(ui_node, self.attribute.map(|a| a.transmute())) };
+        unsafe {
+            self.node_mut()
+                .await
+                .put_resource(ui_node, self.attribute.map(|a| a.transmute()))
+        };
     }
 }
 
+/// Type-alias for a plugin-based UI function signature,
+/// 
 pub type ShowUi = Arc<dyn Fn(&mut ThunkContext, &Ui) -> bool + Sync + Send + 'static>;
 
-static UI_HOST: std::sync::OnceLock<(
-    tokio::sync::mpsc::Sender<ShowUi>,
-    tokio::sync::mpsc::Receiver<ShowUi>,
-)> = OnceLock::new();
-
-pub struct ImguiSystem {
-    ui_dispatcher: tokio::sync::mpsc::Sender<ShowUi>,
-}
-
-impl Default for ImguiSystem {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ImguiSystem {
-    pub fn new() -> Self {
-        let ui = UI_HOST
-            .get_or_init(|| tokio::sync::mpsc::channel(1000))
-            .0
-            .clone();
-        Self { ui_dispatcher: ui }
-    }
-}
-
-pub trait ImguiTarget
-where
-    Self: Plugin + Clone + Default,
-{
-    fn open(context: &mut ThunkContext, ui: &imgui::Ui) -> bool;
-}
-
-impl<T> SetupTransform<T> for ImguiSystem
-where
-    T: Plugin + ImguiTarget,
-{
-    fn ident() -> &'static str {
-        "imgui"
-    }
-
-    fn setup_transform(resource_key: Option<&ResourceKey<Attribute>>) -> Transform<Self, T> {
-        Self::default_setup(resource_key).before_task(|c, imgui, target| {
-            Box::pin(async {
-                if let Ok(target) = target {
-                    let opened = Arc::new(T::open);
-                    imgui.ui_dispatcher.send(opened).await?;
-                    // target.on_show(imgui.ui, None);
-                    // Ok((imgui, target))
-                    todo!()
-                } else {
-                }
-
-                Ok((imgui, target))
-            })
-        })
-    }
-}
+/// Type-alias for an engine handle based UI function signature,
+/// 
+pub type AuxUi = Arc<RwLock<dyn FnMut(&mut EngineHandle, &Ui) -> bool + Sync + Send + 'static>>;
 
 /// UI Node contains a rendering function w/ a thunk context,
-/// 
+///
 #[derive(Clone)]
 pub struct UiNode {
     /// Dispatcher for this ui node,
@@ -291,12 +363,54 @@ pub struct UiNode {
     pub show_ui: Option<ShowUi>,
 }
 
+/// Auxilary UI node, containing a rendering function w/ engine handle,
+/// 
+pub struct AuxUiNode {
+    /// Engine handle,
+    ///
+    pub engine_handle: Option<EngineHandle>,
+    /// Function to show ui,
+    ///
+    pub show_ui: AuxUi,
+}
+
 impl UiNode {
     /// Shows the ui attached to a node,
-    /// 
-    pub fn show(&mut self, ui: &Ui) {
+    ///
+    pub fn show(&mut self, ui: &Ui) -> bool {
         if let Some(show) = self.show_ui.as_ref() {
-            show(&mut self.context, ui);
+            show(&mut self.context, ui)
+        } else {
+            false
+        }
+    }
+}
+
+impl AuxUiNode {
+    /// Shows the ui attached to a node,
+    ///
+    pub fn show(&mut self, ui: &Ui) -> bool{
+        if let (Some(handle), Ok(mut show)) =
+            (self.engine_handle.as_mut(), self.show_ui.try_write())
+        {
+            show(handle, ui)
+        } else {
+            false
+        }
+    }
+
+    /// Show the UI w/ a different engine handle,
+    /// 
+    /// **Note** When created an aux ui node receives it's own engine handle. This allows
+    /// passing a handle directly, such as the middleware's handle.
+    /// 
+    pub fn show_with(&mut self, engine_handle: &mut EngineHandle, ui: &Ui) -> bool {
+        if let Ok(mut show) =
+            self.show_ui.try_write()
+        {
+            show(engine_handle, ui)
+        } else {
+            false
         }
     }
 }

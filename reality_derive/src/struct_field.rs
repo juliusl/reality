@@ -208,6 +208,7 @@ impl StructField {
                     || {
                         quote_spanned!(self.span=>
                             if let #enum_ty::#variant { #name, .. } = self {
+                                hasher.hash(#name.len());
                                 #name.push(value);
 
                                 if let (Some(tag), Some(last)) = (_tag, #name.last_mut()) {
@@ -219,6 +220,7 @@ impl StructField {
                     || {
                         quote_spanned! {self.span=>
                             if let #enum_ty::#variant { #name, .. } = self {
+                                hasher.hash(#name.len());
                                 #name.push(value);
                             }
                         }
@@ -252,6 +254,7 @@ impl StructField {
                     || {
                         quote_spanned!(self.span=>
                             if let #enum_ty::#variant { #name, .. } = self {
+                                hasher.hash(#name.len());
                                 #name.push_back(value);
     
                                 if let (Some(tag), Some(last)) = (_tag, #name.back_mut()) {
@@ -263,6 +266,7 @@ impl StructField {
                     || {
                         quote_spanned! {self.span=>
                             if let #enum_ty::#variant { #name, .. } = self {
+                                hasher.hash(#name.len());
                                 #name.push_back(value);
                             }
                         }
@@ -277,6 +281,7 @@ impl StructField {
                                 if let Some(tag) = _tag {
                                     value.set_tag(tag);
                                 }
+                                hasher.hash(#name.len());
                                 #name.insert(value);
                             }
                         )
@@ -284,6 +289,7 @@ impl StructField {
                     || {
                         quote_spanned! {self.span=>
                             if let #enum_ty::#variant { #name, .. } = self {
+                                hasher.hash(#name.len());
                                 #name.insert(value);
                             }
                         }
@@ -327,6 +333,7 @@ impl StructField {
                 ty,
                 || {
                     quote_spanned!(self.span=>
+                        hasher.hash(self.#name.len());
                         self.#name.push(value);
 
                         if let (Some(tag), Some(last)) = (_tag, self.#name.last_mut()) {
@@ -336,6 +343,7 @@ impl StructField {
                 },
                 || {
                     quote_spanned! {self.span=>
+                        hasher.hash(self.#name.len());
                         self.#name.push(value);
                     }
                 },
@@ -363,6 +371,7 @@ impl StructField {
                 ty,
                 || {
                     quote_spanned!(self.span=>
+                        hasher.hash(self.#name.len());
                         self.#name.push_back(value);
 
                         if let (Some(tag), Some(last)) = (_tag, self.#name.back_mut()) {
@@ -372,6 +381,7 @@ impl StructField {
                 },
                 || {
                     quote_spanned! {self.span=>
+                        hasher.hash(self.#name.len());
                         self.#name.push_back(value);
                     }
                 },
@@ -384,11 +394,13 @@ impl StructField {
                         if let Some(tag) = _tag {
                             value.set_tag(tag);
                         }
+                        hasher.hash(self.#name.len());
                         self.#name.insert(value);
                     )
                 },
                 || {
                     quote_spanned! {self.span=>
+                        hasher.hash(self.#name.len());
                         self.#name.insert(value);
                     }
                 },

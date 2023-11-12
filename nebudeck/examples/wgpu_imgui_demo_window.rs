@@ -1,8 +1,9 @@
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 use loopio::prelude::*;
 use nebudeck::desktop::*;
-use nebudeck::ext::imgui_ext::{ImguiExt, ImguiMiddleware, UiNode};
+use nebudeck::ext::imgui_ext::ImguiExt;
+use nebudeck::ext::imgui_ext::ImguiMiddleware;
 use nebudeck::ext::WgpuSystem;
 use nebudeck::ext::*;
 use nebudeck::ControlBus;
@@ -14,7 +15,7 @@ use nebudeck::ControlBus;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // First create a controller, in this case the Desktop controller is required
-    let desktop = Desktop::<()>::new()?;
+    let desktop = Desktop::<()>::new()?.enable_engine_packet_listener();
 
     // Next, create a workspace
     let mut workspace = CurrentDir.workspace();
@@ -25,6 +26,7 @@ async fn main() -> anyhow::Result<()> {
     ```runmd
     + .operation test
     <demo.test2> hello world 2
+    : .test_value Test value
 
     + .operation setup
     <demo.test> hello world
@@ -39,17 +41,61 @@ async fn main() -> anyhow::Result<()> {
 
     let engine = engine.build().compile(workspace).await;
 
-    let context = engine.run("setup").await?;
-    let node = {
-        let node = context.node().await;
-        node.current_resource::<UiNode>(context.attribute.map(|a| a.transmute()))
-    }
-    .unwrap();
+    // let _ = engine.run("setup").await?;
+
+    // if let Some(r) = r.scan_node_for::<UiNode>().await {
+    //     eprintln!("has node {:?}", r.context.attribute);
+    // }
 
     // Create the new WgpuSystem
     WgpuSystem::with(vec![ImguiMiddleware::new()
         .enable_demo_window()
-        .with_ui_node(node)
+        .with_aux_node(|handle, ui| {
+            ui.window("aux-demo").build(move || {
+                for (idx, (op, __op)) in handle.operations.iter_mut().enumerate() {
+                    if !__op.is_running() {
+                        if ui.button(format!("Start {op}##{idx}")) {
+                            __op.spawn();
+                        }
+                    } else if __op.is_finished() {
+                        let result = __op.block_result();
+                        eprintln!("success: {}", result.is_ok());
+                    } else {
+                        ui.text("Running");
+                    }
+                }
+
+                // Engine Handle Controls
+                if !handle.is_running() {
+                    if ui.button("Sync") {
+                        if let Some(started) =
+                            handle.spawn(|e| tokio::spawn(async move { e.sync().await }))
+                        {
+                            handle
+                                .cache
+                                .put_resource(started, Some(ResourceKey::with_hash("sync_command")))
+                        }
+                    }
+                } else if let Some(true) = handle.is_finished() {
+                    if let Some(started) = handle
+                        .cache
+                        .take_resource::<Instant>(Some(ResourceKey::with_hash("sync_command")))
+                    {
+                        if let Ok(finished) = handle.wait_for_finish(*started) {
+                            *handle = finished;
+                        } else {
+                            // Remember to put this back
+                            handle
+                                .cache
+                                .put_resource(started, Some(ResourceKey::with_hash("sync_command")))
+                        }
+                    }
+                } else if ui.button("cancel") {
+                    handle.cancel();
+                }
+            });
+            true
+        })
         .middleware()])
     // Opens the window by passing control over to the desktop ControlBus
     .delegate(desktop, engine);
@@ -69,10 +115,18 @@ async fn test_ui(tc: &mut ThunkContext) -> anyhow::Result<()> {
     tc.cache::<Test>().await;
 
     if let Some(engine_handle) = tc.engine_handle().await {
+        engine_handle.sync().await?;
         tc.write_cache(engine_handle);
     }
 
-    println!("Adding ui node");
+    let node = tc.node().await;
+    if let Some(parsed_attributes) = { node.current_resource::<ParsedAttributes>(None) } {
+        println!("{:#?}", parsed_attributes);
+        drop(node);
+        tc.write_cache(parsed_attributes);
+    }
+
+    println!("Adding ui node {:?}", tc.attribute);
     tc.add_ui_node(|__tc, ui| {
         ui.window("test").build(|| {
             ui.text(format!("{:?}", Instant::now()));
@@ -85,7 +139,7 @@ async fn test_ui(tc: &mut ThunkContext) -> anyhow::Result<()> {
                     ui.popup("test_popup", || {
                         ui.text("finished");
                     });
-                    
+
                     for (idx, (op, __op)) in eh.operations.iter_mut().enumerate() {
                         ui.text(op);
                         if !__op.is_running() {
@@ -101,6 +155,23 @@ async fn test_ui(tc: &mut ThunkContext) -> anyhow::Result<()> {
                             }
                         }
                     }
+                }
+
+                if let Some(parsed) = __tc.cached::<ParsedAttributes>() {
+                    ui.label_text(
+                        "Number of parsed attributes",
+                        parsed.attributes.len().to_string(),
+                    );
+
+                    let defined_properties = parsed
+                        .properties
+                        .defined
+                        .iter()
+                        .fold(0, |acc, d| acc + d.1.len());
+                    ui.label_text(
+                        "Number of properties defined",
+                        defined_properties.to_string(),
+                    );
                 }
             } else {
                 ui.text("Not found");
@@ -118,6 +189,7 @@ async fn test_ui(tc: &mut ThunkContext) -> anyhow::Result<()> {
 struct Test2 {
     #[reality(derive_fromstr)]
     name: String,
+    test_value: String,
 }
 
 async fn test_2(tc: &mut ThunkContext) -> anyhow::Result<()> {

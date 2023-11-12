@@ -138,8 +138,8 @@ impl Context {
 
     /// Get read access to source storage,
     ///
-    pub async fn node(&self) -> Shared {
-        self.node.storage.latest().await
+    pub async fn node(&self) -> tokio::sync::RwLockReadGuard<Shared> {
+        self.node.storage.read().await
     }
 
     /// Get mutable access to host storage,
@@ -293,7 +293,7 @@ impl Context {
 
     /// Scans the entire node for resources of type P,
     ///
-    pub async fn scan_node<P: Clone + Sync + Send + 'static>(&self) -> Vec<P> {
+    pub async fn scan_node<P: ToOwned<Owned = P> + Sync + Send + 'static>(&self) -> Vec<P> {
         self.node()
             .await
             .stream_attributes()
@@ -307,6 +307,33 @@ impl Context {
                 acc
             })
             .await
+    }
+
+    pub async fn scan_take_node<P: Sync + Send + 'static>(&self) -> Vec<P> {
+        let attrs = self.node().await.stream_attributes().collect::<Vec<_>>().await;
+        let mut acc = vec![];
+        for attr in attrs {
+            let mut clone = self.clone();
+            clone.attribute = Some(attr);
+
+            println!("Scanning to take {:?}", &clone.attribute);
+            if let Some(init) = clone.scan_take_node_for::<P>().await {
+                acc.push(init);
+            }
+            println!("Finished scanning to take {:?}", acc.len());
+        }
+
+        acc
+    }
+
+    /// Scans if a resource exists for the current context,
+    ///
+    pub async fn scan_take_node_for<P: Sync + Send + 'static>(&self) -> Option<P> {
+        unsafe { self.node_mut()
+            .await
+            .take_resource::<P>(self.attribute.map(|a| a.transmute()))
+            .map(|p| *p)
+        }
     }
 
     /// Scans the entire node for resources of type P,

@@ -10,6 +10,7 @@ pub mod prelude {
     pub(super) use std::str::FromStr;
 
     pub use super::attribute::Attribute;
+    pub use super::attribute::Property;
     pub use super::attribute_type::AttributeType;
     pub use super::attribute_type::AttributeTypeParser;
     pub use super::attribute_type::Callback;
@@ -20,6 +21,7 @@ pub mod prelude {
     pub use super::parser::ParsedAttributes;
     pub use super::parser::Comments;
     pub use super::parser::Tag;
+    pub use super::parser::Properties;
     pub use super::storage_target::prelude::*;
     pub use super::tag::Tagged;
     pub use super::tag::Delimitted;

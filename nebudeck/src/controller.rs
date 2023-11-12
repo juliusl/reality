@@ -6,8 +6,7 @@ use loopio::prelude::*;
 ///
 /// If `Some`, this indicates that the controller has started work in the **background**.
 ///
-/// If `None`, this indicates that the controller was operating in the **foreground** and no additional work
-/// is being done.
+/// If `None`, this indicates that the controller was operating in the **foreground** and has exited.
 ///
 pub type BackgroundWork = Option<tokio::task::JoinHandle<anyhow::Result<()>>>;
 
@@ -48,4 +47,8 @@ pub struct Command {
     ///
     #[reality(map_of=String)]
     pub arg: BTreeMap<String, String>,
+}
+
+pub trait Instruction {
+    
 }

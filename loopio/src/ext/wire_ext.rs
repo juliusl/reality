@@ -1,7 +1,7 @@
-use std::{ops::Deref, sync::Arc};
+use std::sync::Arc;
 
 use reality::prelude::*;
-use tracing::{debug, trace};
+use tracing::trace;
 
 /// Trait for adding a wire protocol for a Reality type,
 ///

@@ -39,6 +39,10 @@ where
     /// Event loop proxy,
     ///
     pub event_loop_proxy: winit::event_loop::EventLoopProxy<T>,
+    /// If true, will enable the engine packet listener delegated
+    /// to this controller.
+    /// 
+    pub enable_engine_packet_listener: bool,
 }
 
 impl<T: 'static> Desktop<T> {
@@ -53,8 +57,19 @@ impl<T: 'static> Desktop<T> {
         Ok(Desktop {
             event_loop_proxy: event_loop.create_proxy(),
             event_loop: event_loop.into(),
+            enable_engine_packet_listener: false,
             // project_loop: None,
         })
+    }
+
+    /// Enables the engine packet listener,
+    /// 
+    /// The engine packet listener is required for engine packets to be received and handled
+    /// by the engine.
+    /// 
+    pub fn enable_engine_packet_listener(mut self) -> Self {
+        self.enable_engine_packet_listener = true;
+        self
     }
 
     /// Starts the window event loop and creates a new Window,
@@ -181,6 +196,13 @@ impl<T: 'static> Desktop<T> {
 impl<T: 'static, A: DesktopApp<T> + 'static> Controller<A> for Desktop<T> {
     fn take_control(self, mut app: Box<A>, engine: Engine) -> BackgroundWork {
         app.bind(engine.engine_handle());
+
+        // Starts engine packet listener
+        if self.enable_engine_packet_listener {
+            let _ = engine.spawn(|_, op| {
+                Some(op)
+            });
+        }
 
         self.open(*app);
 

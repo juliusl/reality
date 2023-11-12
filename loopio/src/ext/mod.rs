@@ -37,9 +37,17 @@ pub trait Ext {
 #[async_trait]
 impl Ext for ThunkContext {
     async fn engine_handle(&self) -> Option<EngineHandle> {
-        self.node()
+        if let Some(handle) = self.node()
             .await
-            .current_resource(None)
+            .current_resource::<EngineHandle>(None) {
+            if let Ok(handle) = handle.sync().await {
+                Some(handle)
+            } else {
+                Some(handle)
+            }
+        } else {
+            None
+        }
     }
 
     async fn get_comments(&self) -> Option<Comments> {
