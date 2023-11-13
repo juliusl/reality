@@ -188,6 +188,12 @@ fn text_edit(
 
                     if value.deref() != &val {
                         ui.text("Value has changed");
+                        ui.same_line();
+                        let token = ui.push_id(key.key().to_string());
+                        if ui.button("Save change") {
+                            eprintln!("TODO: Actually change the value");
+                        }
+                        token.end();
                     }
                 }
             } else {
