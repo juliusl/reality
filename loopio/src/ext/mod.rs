@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use reality::prelude::*;
+use serde::{Deserialize, Serialize};
 use tracing::trace;
 
 use crate::host::HostCondition;
@@ -153,7 +154,7 @@ async fn send_signal(tc: &mut ThunkContext) -> anyhow::Result<()> {
     tc.notify_host(&signal.host, &signal.name).await
 }
 
-#[derive(Reality, Debug, Default, Clone)]
+#[derive(Reality, Serialize, Deserialize, Debug, Default, Clone)]
 #[reality(plugin, call = receive_signal, rename = "receive-signal", group = "loopio")]
 pub struct ReceiveSignal {
     #[reality(derive_fromstr)]

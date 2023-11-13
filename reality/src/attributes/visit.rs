@@ -3,6 +3,7 @@ use std::str::FromStr;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
+use tracing::error;
 
 use crate::Attribute;
 use crate::ResourceKey;
@@ -49,10 +50,10 @@ pub struct FieldMut<'a, T> {
 pub struct FieldOwned<T> {
     /// Field owner type name,
     ///
-    pub owner: &'static str,
+    pub owner: String,
     /// Name of the field,
     ///
-    pub name: &'static str,
+    pub name: String,
     /// Offset of the field,
     ///  
     pub offset: usize,
@@ -71,14 +72,6 @@ pub trait ToFrame {
     /// Returns the current type as a Frame,
     ///
     fn to_frame(&self, key: Option<ResourceKey<Attribute>>) -> Frame;
-}
-
-/// Converts from a Frame into some type,
-///
-pub trait ApplyFrame {
-    /// Configures self from a frame,
-    ///
-    fn apply_frame(&mut self, frame: Frame) -> anyhow::Result<()>;
 }
 
 /// Struct for containing an object safe Field representation,
@@ -102,7 +95,7 @@ pub struct FieldPacket {
     ///
     pub field_offset: usize,
     /// Name of the field,
-    /// 
+    ///
     pub field_name: String,
     /// Type name of the owner of this field,
     ///
@@ -127,7 +120,7 @@ impl Clone for FieldPacket {
             field_name: self.field_name.clone(),
             owner_name: self.owner_name.clone(),
             attribute_hash: self.attribute_hash,
-            op: self.op.clone(),
+            op: self.op,
         }
     }
 }
@@ -188,7 +181,7 @@ impl FieldPacket {
     ///
     pub fn into_box<T>(self) -> Option<Box<T>>
     where
-        T: Send + Sync + 'static,
+        T: DeserializeOwned + Send + Sync + 'static,
     {
         if self.data_type_name != std::any::type_name::<T>()
             || self.data_type_size != std::mem::size_of::<T>()
@@ -200,9 +193,23 @@ impl FieldPacket {
         fn from_ref_mut<T: ?Sized>(r: &mut T) -> *mut T {
             r
         }
+
+        if self.data.is_none() {
+            if let Some(wire) = self.wire_data {
+                return if let Ok(decoded) = bincode::deserialize(&wire) {
+                    Some(Box::new(decoded))
+                } else {
+                    error!("Could not deserialize encoded value");
+                    None
+                };
+            } else {
+                error!("Field packet is completely empty");
+                return None;
+            }
+        }
+
         self.data.and_then(|t| {
             let t = Box::leak(t);
-
             let t = from_ref_mut(t);
             let t = t.cast::<T>();
             if !t.is_null() {
@@ -243,31 +250,14 @@ impl FieldPacket {
         self
     }
 
-    /// Convert the packet into it's owned field,
+    /// Convert the packet into an owned field,
     ///
-    pub fn into_field_owned<O, T>(mut self) -> anyhow::Result<FieldOwned<T>>
-    where
-        T: Serialize + DeserializeOwned + FieldPacketType,
-    {
-        if let Some(data) = self.wire_data.clone() {
-            let mut output = None;
-            T::from_binary(data, &mut output)?;
-
-            if let Some(data) = output {
-                self.data = Some(Box::new(data));
-            }
-        }
-
-        let offset = self.field_offset;
-        if let Some(value) = self.into_box::<T>() {
-            Ok(FieldOwned {
-                value: *value,
-                owner: std::any::type_name::<O>(),
-                name: std::any::type_name::<T>(),
-                offset,
-            })
-        } else {
-            Err(anyhow::anyhow!("Could not convert frame into type"))
+    pub fn into_field_owned(self) -> FieldOwned<FieldPacket> {
+        FieldOwned {
+            owner: self.owner_name.clone(),
+            name: self.field_name.clone(),
+            offset: self.field_offset,
+            value: self,
         }
     }
 }
@@ -344,6 +334,7 @@ where
     }
 }
 
+#[allow(unused_imports)]
 mod tests {
     use super::FieldMut;
     use crate::prelude::*;

@@ -549,9 +549,17 @@ impl Parse for StructField {
                         }
                     }
 
-                    ext = meta.path.is_ident("ext"); 
-                    plugin = meta.path.is_ident("plugin");
-                    wire = meta.path.is_ident("wire");
+                    if meta.path.is_ident("ext") {
+                        ext = true;
+                    }
+                    
+                    if meta.path.is_ident("plugin") {
+                        plugin = true;
+                    }
+                    
+                    if meta.path.is_ident("wire") {
+                        wire = true;
+                    }
 
                     if meta.path.is_ident("derive_fromstr") {
                         derive_fromstr = true;

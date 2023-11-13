@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use reality::prelude::*;
+use serde::{Serialize, Deserialize};
 use tokio::task::JoinHandle;
 
 /// Converts the type being extended into wire format,
@@ -36,7 +37,7 @@ impl Debug for WireBus {
 
 /// Plugin to enable the wire bus on an attribute,
 ///
-#[derive(Reality, Default, Clone)]
+#[derive(Reality, Serialize, Deserialize, Default, Clone)]
 #[reality(call=enable_wire_bus, plugin, rename = "enable-wirebus")]
 pub struct EnableWireBus {
     /// Path to the attribute,

@@ -33,7 +33,6 @@ pub mod prelude {
     pub use super::visit::Visit;
     pub use super::visit::VisitMut;
     pub use super::visit::ToFrame;
-    pub use super::visit::ApplyFrame;
     pub use super::visit::FieldPacket;
     pub use super::visit::FieldPacketType;
     pub use super::visit::Frame;
@@ -99,12 +98,6 @@ mod tests {
     use crate::BlockObject;
     use reality_derive::Reality;
     use serde::{Serialize, Deserialize};
-
-    pub mod reality {
-        pub use crate::prelude;
-        pub use crate::runmd;
-    }
-
     use async_trait::async_trait;
 
     /// Tests derive macro expansion
@@ -210,8 +203,8 @@ mod tests {
         let fields = <Test<String> as VisitMut<BTreeMap<String, String>>>::visit_mut(&mut test);
         println!("{:#?}", fields);
         test.set_field(FieldOwned {
-            owner: std::any::type_name::<Test<String>>(),
-            name: "name",
+            owner: std::any::type_name::<Test<String>>().to_string(),
+            name: "name".to_string(),
             offset: 0,
             value: String::from("hello-set-field"),
         });

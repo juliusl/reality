@@ -27,7 +27,6 @@ pub use crate::ResourceKeyHashBuilder;
 pub use crate::Visit;
 pub use crate::VisitMut;
 pub use crate::Frame;
-pub use crate::ApplyFrame;
 pub use crate::ToFrame;
 pub use crate::FieldPacket;
 pub use crate::FieldPacketType;

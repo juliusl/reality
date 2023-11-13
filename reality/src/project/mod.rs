@@ -14,6 +14,7 @@ mod extension;
 pub use extension::Transform;
 
 mod source;
+use serde::Deserialize;
 pub use source::Source;
 
 mod workspace;
@@ -261,7 +262,7 @@ struct Test2 {
     test3: Test3,
 }
 
-#[derive(Reality, Debug)]
+#[derive(Reality, Deserialize, Debug)]
 enum Test3 {
     A {
         a: String,

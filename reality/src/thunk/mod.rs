@@ -6,10 +6,11 @@ pub mod prelude {
     pub use super::call_async::*;
     pub use super::context::Context as ThunkContext;
     pub use super::plugin::Plugin;
-    pub use crate::ApplyFrame;
     pub use crate::AsyncStorageTarget;
     pub use crate::AttributeType;
     pub use crate::BlockObject;
+    use crate::FieldPacket;
+    use crate::SetField;
     pub use crate::Shared;
     pub use crate::StorageTarget;
     pub use crate::ToFrame;
@@ -40,7 +41,7 @@ pub mod prelude {
         P: Plugin + Default + Send + Sync + 'static,
     {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(self.0)
         }
     }
 
@@ -88,7 +89,7 @@ pub mod prelude {
     #[async_trait::async_trait]
     impl<P> BlockObject<Shared> for Thunk<P>
     where
-        P: Plugin + Send + Sync + 'static,
+        P: SetField<FieldPacket> + Plugin + Send + Sync + 'static,
     {
         /// Called when the block object is being loaded into it's namespace,
         ///
@@ -106,15 +107,6 @@ pub mod prelude {
         ///
         fn on_completed(storage: AsyncStorageTarget<Shared>) -> Option<AsyncStorageTarget<Shared>> {
             <P as BlockObject<Shared>>::on_completed(storage)
-        }
-    }
-
-    impl<P> ApplyFrame for Thunk<P>
-    where
-        P: Plugin + Send + Sync + 'static,
-    {
-        fn apply_frame(&mut self, _: crate::Frame) -> anyhow::Result<()> {
-            Ok(())
         }
     }
 
@@ -154,6 +146,15 @@ pub mod prelude {
                 },
                 CallOutput::Skip => std::task::Poll::Ready(Ok(None)),
             }
+        }
+    }
+
+    impl<P> SetField<FieldPacket> for Thunk<P> 
+    where
+        P: Plugin + Send + Sync + 'static,
+    {
+        fn set_field(&mut self, _: crate::FieldOwned<FieldPacket>) -> bool {
+            false
         }
     }
 }

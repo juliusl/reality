@@ -10,6 +10,8 @@ use hyper::Uri;
 use poem::http::uri::PathAndQuery;
 use poem::http::uri::Scheme;
 use reality::prelude::*;
+use serde::Deserialize;
+use serde::Serialize;
 use tracing::warn;
 
 use crate::prelude::EngineProxy;
@@ -167,13 +169,58 @@ impl HyperExt for ThunkContext {
     }
 }
 
-#[derive(Reality, Default, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct UriParam(hyper_serde::Serde<Uri>);
+
+impl std::ops::Deref for UriParam {
+    type Target = Uri;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
+    }
+}
+
+impl std::ops::DerefMut for UriParam {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.as_mut()
+    }
+}
+
+impl AsRef<Uri> for UriParam {
+    fn as_ref(&self) -> &Uri {
+        &self.0.0
+    }
+}
+
+impl AsMut<Uri> for UriParam {
+    fn as_mut(&mut self) -> &mut Uri {
+        &mut self.0.0
+    }
+}
+
+impl FromStr for UriParam {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let uri: Uri = s.parse()?;
+
+        Ok(UriParam(hyper_serde::Serde(uri)))
+    }
+}
+
+impl Default for UriParam {
+    fn default() -> Self {
+        UriParam(hyper_serde::Serde(Uri::from_static("/dev/null")))
+    }
+}
+
+#[derive(Reality, Deserialize, Serialize, Default, Debug, Clone)]
 #[reality(plugin, group="loopio.hyper")]
 pub struct Request {
     /// Uri to make request to,
     ///
     #[reality(derive_fromstr)]
-    uri: Uri,
+    uri: UriParam,
     /// Headers to attach to the request,
     ///
     #[reality(map_of=String)]
@@ -197,15 +244,15 @@ impl CallAsync for Request {
         // println!("Starting request {:?}", initialized);
 
         let uri = context
-            .internal_host_lookup(&initialized.uri)
+            .internal_host_lookup(initialized.uri.as_ref())
             .await
-            .unwrap_or(initialized.uri.clone());
+            .unwrap_or(initialized.uri.as_ref().clone());
 
         // println!("Resolved uri {:?}", uri);
         let mut request = hyper::Request::builder().uri(&uri);
 
         // Handle setting method on request
-        if let Some(method) = Method::from_str(&initialized.method).ok() {
+        if let Ok(method) = Method::from_str(&initialized.method) {
             request = request.method(method);
         }
 

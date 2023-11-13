@@ -547,7 +547,7 @@ impl Context {
 
     /// Schedules garbage collection of the variant,
     ///
-    pub(crate) fn garbage_collect(&self) {
+    pub fn garbage_collect(&self) {
         if let (Some(key), Some(_), Ok(storage)) = (
             self.attribute,
             self.variant_id,

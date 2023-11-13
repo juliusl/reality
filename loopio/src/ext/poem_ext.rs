@@ -5,7 +5,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use poem::delete;
 use poem::get;
-use poem::handler;
 use poem::head;
 use poem::http::HeaderMap;
 use poem::http::*;
@@ -23,7 +22,6 @@ use poem::EndpointExt;
 use poem::FromRequest;
 use poem::IntoEndpoint;
 use poem::RequestBody;
-use poem::Response;
 use poem::ResponseParts;
 use poem::Route;
 use reality::prelude::*;
@@ -34,6 +32,7 @@ use tracing::error;
 use crate::ext::*;
 use crate::operation::Operation;
 use crate::prelude::HyperExt;
+use crate::prelude::UriParam;
 use crate::sequence::Sequence;
 
 pub struct PoemRequest {
@@ -174,7 +173,7 @@ impl PoemExt for ThunkContext {
 ///
 /// Routes requests to a specific engine operation,
 ///
-#[derive(Reality, Default)]
+#[derive(Reality, Serialize, Deserialize, Default)]
 #[reality(plugin, call = start_engine_proxy, rename = "engine-proxy", group = "loopio.poem")]
 pub struct EngineProxy {
     /// Address to host the proxy on,
@@ -216,6 +215,7 @@ pub struct EngineProxy {
     /// Map of routes to fold into the proxy route,
     ///
     #[reality(ignore)]
+    #[serde(skip)]
     routes: BTreeMap<String, poem::RouteMethod>,
 }
 
@@ -485,53 +485,15 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[poem::async_trait]
-impl<'a, T: FieldPacketType> FromRequest<'a> for P<T> {
-    async fn from_request(_: &'a poem::Request, _: &mut RequestBody) -> poem::Result<Self> {
-        Ok(Self(PhantomData))
-    }
-}
-
-struct P<T>(pub PhantomData<T>);
-
-#[handler]
-async fn handle_remote_frame<T: ApplyFrame + Clone + Send + Sync + 'static>(
-    initialized: Data<&T>,
-    thunk_context: Data<&ThunkContext>,
-    frame: poem::Body,
-) -> poem::Result<Response> {
-    let bytes = frame.into_bytes().await?;
-    let packets = bincode::deserialize::<Vec<FieldPacket>>(&bytes);
-    match packets {
-        Ok(packets) => {
-            let mut initialized = initialized.clone();
-            initialized
-                .apply_frame(packets)
-                .map_err(|e| poem::Error::from_string(format!("{e}"), StatusCode::BAD_REQUEST))?;
-            let (_variant, branch) = thunk_context.branch();
-            unsafe {
-                let mut source = branch.node_mut().await;
-                source.put_resource(initialized, branch.attribute.map(|t| t.transmute()));
-            }
-            let _result = branch.call().await.unwrap();
-            // TODO -- _variant + _result + destinatio operation/sequence
-        }
-        Err(err) => {
-            error!("{err}");
-        }
-    }
-    Ok(Response::builder().finish())
-}
-
 /// Reverse proxy config,
 ///
-#[derive(Reality, Clone, Default)]
+#[derive(Reality, Serialize, Deserialize, Clone, Default)]
 #[reality(plugin, call = configure_reverse_proxy, rename = "reverse-proxy-config", group = "loopio.poem")]
 pub struct ReverseProxyConfig {
     /// Alias this config is for,
     ///
     #[reality(derive_fromstr)]
-    alias: Uri,
+    alias: UriParam,
     /// Allow headers,
     ///
     #[reality(rename = "allow-headers", option_of=CommaSeperatedStrings)]
@@ -600,7 +562,7 @@ impl ReverseProxyConfig {
 
 /// Reverse proxy plugin,
 ///
-#[derive(Reality, Default)]
+#[derive(Reality, Serialize, Deserialize, Default)]
 #[reality(plugin, call = start_reverse_proxy, rename = "reverse-proxy", group = "loopio.poem")]
 pub struct ReverseProxy {
     /// Address to host the proxy on,
@@ -609,8 +571,8 @@ pub struct ReverseProxy {
     address: String,
     /// Forward request to this host,
     ///
-    #[reality(vec_of=Uri)]
-    forward: Vec<Uri>,
+    #[reality(vec_of=UriParam)]
+    forward: Vec<UriParam>,
 }
 
 async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
@@ -621,8 +583,8 @@ async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
     for host in init.forward.iter() {
         let mut transient = tc.transient_mut().await;
         let resource =
-            transient.take_resource::<EngineProxy>(Some(ResourceKey::with_hash(host.to_string())));
-        eprintln!("Processing reverse proxy config for {}", host,);
+            transient.take_resource::<EngineProxy>(Some(ResourceKey::with_hash(host.as_ref().to_string())));
+        eprintln!("Processing reverse proxy config for {}", host.as_ref(),);
         if let Some(resource) = resource {
             for (address, route_method) in (*resource).routes {
                 eprintln!("Forwarding route {}", address);
@@ -712,8 +674,8 @@ async fn configure_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = tc.initialized::<ReverseProxyConfig>().await;
 
     if let (Some(host), Some(internal_host)) = (
-        init.alias.scheme_str(),
-        tc.internal_host_lookup(&init.alias).await,
+        init.alias.as_ref().scheme_str(),
+        tc.internal_host_lookup(&init.alias.as_ref()).await,
     ) {
         let client = Arc::new(hyper_ext::local_client());
         let client = &client;
@@ -722,7 +684,7 @@ async fn configure_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
         let internal_host = &internal_host;
 
         if let Some(mut engine_proxy) = tc.scan_host_for::<EngineProxy>(host).await {
-            println!("Configuring reverse proxy for {}", init.alias);
+            println!("Configuring reverse proxy for {}", init.alias.as_ref());
             let config = || init.clone().decorate(on_forward_request);
             create_routes!(
                 move || {

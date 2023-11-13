@@ -2,9 +2,12 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
+use serde::Deserialize;
+use serde::Serialize;
+
 /// Wrapper struct to include a tag w/ a parsed value,
 ///
-#[derive(Debug, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Tagged<T: FromStr + Send + Sync + 'static> {
     /// Untagged value,
     ///
@@ -65,9 +68,11 @@ impl<T: FromStr + Send + Sync + 'static> FromStr for Tagged<T> {
 ///
 pub type CommaSeperatedStrings = Delimitted<',', String>;
 
+#[derive(Serialize, Deserialize)]
 pub struct Delimitted<const DELIM: char, T: FromStr + Send + Sync + 'static> {
     value: String,
     cursor: usize,
+    #[serde(skip)]
     _t: PhantomData<T>,
 }
 
@@ -112,38 +117,39 @@ impl<const DELIM: char, T: FromStr + Send + Sync + 'static> Iterator for Delimit
     }
 }
 
-/// Struct that contains the parsed inner type as well as the idx 
-/// of the value.
-/// 
-/// TODO: Enabling this would allow for more multi-vector use-cases.
-/// 
-pub struct Indexed<T>
-where
-    T: FromStr<Err = anyhow::Error> + Send + Sync + 'static,
-{
-    idx: usize,
-    val: T,
-}
+// TODO: Enabling this would allow for more multi-vector use-cases.
+// /// Struct that contains the parsed inner type as well as the idx 
+// /// of the value.
+// /// 
+// /// 
+// /// 
+// pub struct Indexed<T>
+// where
+//     T: FromStr<Err = anyhow::Error> + Send + Sync + 'static,
+// {
+//     idx: usize,
+//     val: T,
+// }
 
-impl<T> Indexed<T> 
-where
-    T: FromStr<Err = anyhow::Error> + Send + Sync + 'static,
-{
-    /// Returns this struct w/ index set,
-    /// 
-    pub fn with_index(mut self, idx: usize) -> Self {
-        self.idx = idx;
-        self
-    }
-}
+// impl<T> Indexed<T> 
+// where
+//     T: FromStr<Err = anyhow::Error> + Send + Sync + 'static,
+// {
+//     /// Returns this struct w/ index set,
+//     /// 
+//     pub fn with_index(mut self, idx: usize) -> Self {
+//         self.idx = idx;
+//         self
+//     }
+// }
 
-impl<T> FromStr for Indexed<T> 
-where
-    T: FromStr<Err = anyhow::Error> + Send + Sync + 'static,
-{
-    type Err = anyhow::Error;
+// impl<T> FromStr for Indexed<T> 
+// where
+//     T: FromStr<Err = anyhow::Error> + Send + Sync + 'static,
+// {
+//     type Err = anyhow::Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self { val: T::from_str(s)?, idx: 0 })
-    }
-}
+//     fn from_str(s: &str) -> Result<Self, Self::Err> {
+//         Ok(Self { val: T::from_str(s)?, idx: 0 })
+//     }
+// }

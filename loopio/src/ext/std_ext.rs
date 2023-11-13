@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, path::PathBuf, process::ExitStatus};
 use async_trait::async_trait;
 use bytes::Bytes;
 use reality::prelude::*;
+use serde::{Serialize, Deserialize};
 
 #[async_trait::async_trait]
 pub trait StdExt {
@@ -48,7 +49,7 @@ impl StdExt for ThunkContext {
 
 /// Set of plugins for std.io,
 ///
-#[derive(Reality, Clone, Default)]
+#[derive(Reality, Deserialize, Serialize, Clone, Default)]
 #[reality(plugin, group = "loopio", rename = "std.io")]
 pub struct Stdio {
     /// Version to use for this ext,
@@ -78,7 +79,7 @@ impl CallAsync for Stdio {
 
 /// Plugin for reading a file path into transient storage,
 ///
-#[derive(Reality, Clone, Default)]
+#[derive(Reality, Serialize, Deserialize, Clone, Default)]
 #[reality(plugin, rename = "io.read-text-file", group = "loopio.std")]
 pub struct ReadTextFile {
     /// Path to read string from,
@@ -109,7 +110,7 @@ impl CallAsync for ReadTextFile {
 
 /// Plugin for reading a file path into transient storage,
 ///
-#[derive(Reality, Clone, Default)]
+#[derive(Reality, Serialize, Deserialize, Clone, Default)]
 #[reality(plugin, rename = "io.read-file", group = "loopio.std")]
 pub struct ReadFile {
     /// Path to read string from,
@@ -138,7 +139,7 @@ impl CallAsync for ReadFile {
 
 /// Plugin for reading a file path into transient storage,
 ///
-#[derive(Reality, Clone, Default)]
+#[derive(Reality, Serialize, Deserialize, Clone, Default)]
 #[reality(plugin, rename = "io.println", group = "loopio.std")]
 pub struct Println {
     /// Path to read string from,
@@ -158,7 +159,7 @@ impl CallAsync for Println {
 
 /// Process plugin,
 ///
-#[derive(Reality, Clone, Default)]
+#[derive(Reality, Serialize, Deserialize, Clone, Default)]
 #[reality(plugin, call = start_process, group = "loopio.std")]
 pub struct Process {
     /// Name of the program,

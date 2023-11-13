@@ -31,6 +31,7 @@ use crate::struct_field::StructField;
 ///        
 /// }
 /// ```
+#[derive(Clone)]
 pub(crate) struct StructData {
     /// Span of the struct being derived,
     /// 
@@ -64,6 +65,9 @@ pub(crate) struct StructData {
     /// CallAsync fn,
     /// 
     call: Option<Ident>,
+    /// If enabled, will consider all fields wirable,
+    /// 
+    wire: bool,
 }
 
 impl Parse for StructData {
@@ -81,6 +85,7 @@ impl Parse for StructData {
         let mut ext = false;
         let mut enum_flags = false;
         let mut call = None;
+        let mut wire = false;
 
         for attr in derive_input.attrs.iter() {
             if attr.path().is_ident("reality") {
@@ -125,6 +130,10 @@ impl Parse for StructData {
 
                     if meta.path.is_ident("enum_flags") {
                         enum_flags = true;
+                    }
+
+                    if meta.path.is_ident("wire") {
+                        wire = true;
                     }
                     Ok(())
                 })?;
@@ -191,6 +200,7 @@ impl Parse for StructData {
                 reality_on_completed,
                 plugin,
                 ext,
+                wire,
                 call,
             })
         }
@@ -284,11 +294,11 @@ impl StructData {
 
                 impl #impl_generics SetField<#ty> for #owner #ty_generics #where_clause {
                     fn set_field(&mut self, field: FieldOwned<#ty>) -> bool {
-                        if field.owner != std::any::type_name::<Self>() {
+                        if field.owner.as_str() != std::any::type_name::<Self>() {
                             return false;
                         }
 
-                        match (field.name, field.offset) {
+                        match (field.name.as_str(), field.offset) {
                             #(#_set_field_cases),*
                             _ => {
                                 false
@@ -457,7 +467,7 @@ impl StructData {
             )
         });
 
-        let to_frame = self.fields.iter().filter(|f| f.wire).map(|f| {
+        let to_frame = self.fields.iter().filter(|f| self.wire || f.wire).map(|f| {
             let offset = f.offset; 
             let ty = f.field_ty();
             let pty = &f.ty;
@@ -471,19 +481,6 @@ impl StructData {
                     packet.into_wire::<#pty>()
                 }
             )
-        });
-
-        let apply_frame = self.fields.iter().filter(|f| f.wire).rev().map(|f| {
-            let field_name = f.field_name_lit_str();
-            let ty = &f.ty;
-            quote_spanned!(f.span=>
-                if let Some(field) = frame.pop() {
-                    self.set_field(field.into_field_owned::<#name #ty_generics, #ty>()?);
-                } else {
-                    return Err(anyhow::anyhow!("Expected field packet to be {}", #field_name));
-                }
-            )
-
         });
         
         let plugin = if self.plugin {
@@ -563,24 +560,51 @@ impl StructData {
                 }
             }
 
-            
-            impl #_impl_generics ApplyFrame for #name #ty_generics #where_clause {
-                fn apply_frame(&mut self, mut frame: Frame) -> anyhow::Result<()> {
-                    #(#apply_frame)*
-
-                    Ok(())
-                }
-            }
-
             #plugin
             #call
             #unit_from_str
         );
 
 
-        let mut attribute_type = self.attribute_type_trait();
+        let mut attribute_type = self.clone().attribute_type_trait();
         attribute_type.extend(object_type_trait);
+        attribute_type.extend(self.object_ty_api());
         attribute_type
+    }
+
+
+    fn object_ty_api(self) -> TokenStream {
+        let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
+        let name = &self.name;
+        let fields = self.fields.iter().filter(|f| self.wire || (!f.ignore && f.wire)).map(|f| {
+            let ty = &f.ty;
+            let name = f.field_name_lit_str();
+            let offset = f.offset;
+
+            quote_spanned!(f.span=>
+                (#offset, #name) => {
+                    if let Some(value) = value.into_box::<#ty>() {
+                        <Self as SetField<#ty>>::set_field(self, FieldOwned { owner, name, offset, value: *value })
+                    } else {
+                        tracing::error!("Could not read value for {}.{}", stringify!(#ty), #name);
+                        false
+                    }
+                }
+            )
+        });
+
+        quote_spanned!(self.span=>
+            impl #impl_generics SetField<FieldPacket> for #name #ty_generics #where_clause {
+                fn set_field(&mut self, field: FieldOwned<FieldPacket>) -> bool {
+                    let FieldOwned { owner, name, offset, value } = field;
+        
+                    match (offset, value.field_name.as_str()) {
+                        #(#fields)*
+                        _ => false
+                    }
+                }
+            }
+        )
     }
 }
 

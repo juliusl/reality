@@ -3,6 +3,8 @@ use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::sync::Arc;
 use reality::SetIdentifiers;
+use serde::Deserialize;
+use serde::Serialize;
 use tokio::sync::Notify;
 
 use reality::prelude::*;
@@ -11,7 +13,14 @@ use crate::engine::EngineHandle;
 
 /// A condition specified on the host,
 /// 
-pub struct HostCondition(String, Arc<Notify>);
+#[derive(Serialize, Deserialize)]
+pub struct HostCondition(
+    /// Name of the condition
+    String, 
+    /// Notification handle,
+    #[serde(skip)]
+    Arc<Notify>
+);
 
 impl HostCondition {
     /// Notify observers of this condition,

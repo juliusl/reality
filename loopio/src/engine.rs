@@ -49,7 +49,7 @@ impl EngineBuilder {
 
     /// Registers a plugin w/ this engine builder,
     ///
-    pub fn enable<P: Plugin + Default + Clone + ApplyFrame + ToFrame + Send + Sync + 'static>(
+    pub fn enable<P: Plugin + Default + Clone + ToFrame + Send + Sync + 'static>(
         &mut self,
     ) {
         self.register_with(|parser| {
@@ -175,7 +175,7 @@ impl Engine {
     /// Registers a plugin w/ this engine,
     ///
     #[inline]
-    pub fn enable<P: Plugin + Default + Clone + ApplyFrame + ToFrame + Send + Sync + 'static>(
+    pub fn enable<P: Plugin + Default + Clone + ToFrame + Send + Sync + 'static>(
         &mut self,
     ) {
         self.register_with(|parser| {

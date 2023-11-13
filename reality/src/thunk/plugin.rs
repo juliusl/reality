@@ -6,7 +6,7 @@ use super::prelude::ThunkContext;
 
 /// Allows users to export logic as a simple fn,
 ///
-pub trait Plugin: BlockObject<Shared> + Clone + Default + CallAsync {
+pub trait Plugin: BlockObject<Shared> + CallAsync + Clone + Default {
     /// Called when an event executes,
     ///
     /// Returning PluginOutput determines the behavior of the Event.
