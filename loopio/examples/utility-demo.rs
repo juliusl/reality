@@ -1,10 +1,13 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+use bytes::BufMut;
+use bytes::BytesMut;
 use loopio::prelude::StdExt;
 use loopio::prelude::PoemExt;
 use loopio::engine::Engine;
 
+use loopio::prelude::flexbuffers_ext::FlexbufferExt;
 use reality::prelude::*;
 
 /// Demo and test bed for utility plugins and extensions,
@@ -43,6 +46,24 @@ struct Test {
 #[async_trait]
 impl CallAsync for Test {
     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
+        context.enable_flexbuffer_node().await;
+
+        let mut total_buf = BytesMut::new();
+        context.write_flexbuffer_node(|b| {
+            b.start_map().push("name", "jello");
+            total_buf.put(b.view());
+        }).await?;
+
+        let mut __name = Vec::new();
+        context.read_flexbuffer_node(|r| {
+            if let Some(name) = r.as_map().index("name").ok() {
+                assert_eq!("jello", name.as_str());
+                println!("reading from flexbuffer node -- {name}");
+                __name.push(name.as_str().to_string());
+            }
+        }).await?;
+
+        println!("Printing from outside -- {:?}", __name);
         use loopio::prelude::Ext;
         let initialized = context.initialized::<Test>().await;
 

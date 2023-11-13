@@ -80,6 +80,9 @@ pub(crate) struct StructField {
     pub wire: bool,
     pub offset: usize,
     pub variant: Option<(Ident, Ident)>,
+    /// TODO: Enable aliased struct fields,
+    /// 
+    __aliased: Vec<StructField>,
 }
 
 impl StructField {
@@ -442,6 +445,7 @@ impl Parse for StructField {
             if attribute.path().is_ident("skip") {
                 ignore = true;
             }
+
             // #[reality(ignore, rename = "SOME_NAME")]
             if attribute.path().is_ident("reality") {
                 attribute.parse_nested_meta(|meta| {
@@ -578,6 +582,7 @@ impl Parse for StructField {
             ty,
             variant: None,
             offset: 0,
+            __aliased: vec![],
         })
     }
 }

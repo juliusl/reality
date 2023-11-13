@@ -48,7 +48,3 @@ pub struct Command {
     #[reality(map_of=String)]
     pub arg: BTreeMap<String, String>,
 }
-
-pub trait Instruction {
-    
-}

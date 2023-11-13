@@ -3,12 +3,14 @@ use std::collections::HashSet;
 use std::marker::PhantomData;
 use once_cell::sync::OnceCell;
 
+use crate::ApplyFrame;
 use crate::AsyncStorageTarget;
 use crate::Attribute;
 use crate::AttributeParser;
 use crate::AttributeType;
 use crate::BlockObject;
 use crate::CallAsync;
+use crate::ToFrame;
 use crate::Transform;
 use crate::Plugin;
 use crate::ResourceKey;
@@ -43,6 +45,7 @@ pub trait SetupTransform<Bob: BlockObject<Shared> + Send + Sync + 'static>:
 
 /// Wrapper struct containing settings for applying a Transform,
 ///
+#[derive(Default)]
 pub struct TransformPlugin<C, Bob>
 where
     C: SetupTransform<Bob> + Send + Sync + 'static,
@@ -105,7 +108,7 @@ where
 impl<C, Bob> BlockObject<Shared> for TransformPlugin<C, Bob>
 where
     C: SetupTransform<Bob> + Send + Sync + 'static,
-    Bob: BlockObject<Shared> + Send + Sync + 'static,
+    Bob: Plugin + Clone + Default + Send + Sync + 'static,
 {
     /// Called when the block object is being loaded into it's namespace,
     ///
@@ -174,7 +177,37 @@ where
 
 impl<C, P> Plugin for TransformPlugin<C, P>
 where
+    C: SetupTransform<P> + Default + Clone + Send + Sync + 'static,
+    P: Plugin + Send + Sync + 'static,
+{
+}
+
+impl<C, P> ApplyFrame for TransformPlugin<C, P>
+where
     C: SetupTransform<P> + Send + Sync + 'static,
     P: Plugin + Clone + Default + Send + Sync + 'static,
 {
+    fn apply_frame(&mut self, _: crate::Frame) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+impl<C, P> ToFrame for TransformPlugin<C, P>
+where
+    C: SetupTransform<P> + Send + Sync + 'static,
+    P: Plugin + Clone + Default + Send + Sync + 'static,
+{
+    fn to_frame(&self, key: Option<ResourceKey<Attribute>>) -> crate::Frame {
+        P::to_frame(&P::default(), key)
+    }
+}
+
+impl<C, P> Clone for TransformPlugin<C, P>
+where
+    C: SetupTransform<P> + Send + Sync + 'static,
+    P: Plugin + Clone + Default + Send + Sync + 'static,
+{
+    fn clone(&self) -> Self {
+        TransformPlugin { _c: PhantomData, _p: PhantomData, _s: OnceCell::default() }
+    }
 }

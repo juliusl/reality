@@ -70,12 +70,12 @@ pub type Frame = Vec<FieldPacket>;
 pub trait ToFrame {
     /// Returns the current type as a Frame,
     ///
-    fn to_frame(self, key: Option<ResourceKey<Attribute>>) -> Frame;
+    fn to_frame(&self, key: Option<ResourceKey<Attribute>>) -> Frame;
 }
 
 /// Converts from a Frame into some type,
 ///
-pub trait ApplyFrame: Sized {
+pub trait ApplyFrame {
     /// Configures self from a frame,
     ///
     fn apply_frame(&mut self, frame: Frame) -> anyhow::Result<()>;
@@ -101,6 +101,9 @@ pub struct FieldPacket {
     /// Field offset in the owning type,
     ///
     pub field_offset: usize,
+    /// Name of the field,
+    /// 
+    pub field_name: String,
     /// Type name of the owner of this field,
     ///
     pub owner_name: String,
@@ -117,6 +120,7 @@ impl Clone for FieldPacket {
             data_type_name: self.data_type_name.clone(),
             data_type_size: self.data_type_size,
             field_offset: self.field_offset,
+            field_name: self.field_name.clone(),
             owner_name: self.owner_name.clone(),
             attribute_hash: self.attribute_hash,
         }
@@ -130,6 +134,7 @@ impl std::fmt::Debug for FieldPacket {
             .field("data_type_name", &self.data_type_name)
             .field("data_type_size", &self.data_type_size)
             .field("field_offset", &self.field_offset)
+            .field("field_name", &self.field_name)
             .field("owner_name", &self.owner_name)
             .field("attribute_hash", &self.attribute_hash)
             .finish()
@@ -148,6 +153,7 @@ impl FieldPacket {
             data: None,
             data_type_name: std::any::type_name::<T>().to_string(),
             data_type_size: std::mem::size_of::<T>(),
+            field_name: String::new(),
             owner_name: String::new(),
             field_offset: 0,
             attribute_hash: None,
@@ -211,6 +217,7 @@ impl FieldPacket {
             data_type_name: std::any::type_name::<T>().to_string(),
             data_type_size: std::mem::size_of::<T>(),
             field_offset: self.field_offset,
+            field_name: self.field_name.to_string(),
             attribute_hash: self.attribute_hash,
             wire_data: None,
             owner_name: self.owner_name.to_string(),

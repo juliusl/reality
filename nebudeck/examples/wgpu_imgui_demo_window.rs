@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use loopio::prelude::*;
 use nebudeck::desktop::*;
@@ -14,9 +14,6 @@ use nebudeck::ControlBus;
 ///
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // First create a controller, in this case the Desktop controller is required
-    let desktop = Desktop::<()>::new()?.enable_engine_packet_listener();
-
     // Next, create a workspace
     let mut workspace = CurrentDir.workspace();
 
@@ -24,8 +21,15 @@ async fn main() -> anyhow::Result<()> {
         "test.md",
         r"
     ```runmd
-    + .operation test
-    <demo.test2> hello world 2
+    + .operation show_frame_editor                  # Shows frame editor
+    <loopio.enable-wirebus>          a/demo.test2   # Enables the wire-bus for attribute at specific path
+    <nebudeck.frame-editor>          a/demo.test2   # Enables the frame editor for an attribute at a specific path
+    : .editor_name  Demo editor
+    : test .panel        Test Panel                 # Custom panels can be constructed from runmd
+    : test .text-edit    test_value                 # Adds a text editor for the property test_value
+    : test .text-display test_value
+
+    <a/demo.test2> hello world 2
     : .test_value Test value
 
     + .operation setup
@@ -34,11 +38,11 @@ async fn main() -> anyhow::Result<()> {
     ");
 
     // Build and compile an engine
-    let mut engine = Engine::builder();
+
+    let (desktop, mut engine) = DevProject.new_project();
     engine.enable::<Test>();
     engine.enable::<Test2>();
-
-    let engine = engine.build().compile(workspace).await;
+    let engine = engine.compile(workspace).await;
 
     // Create the new WgpuSystem
     WgpuSystem::with(vec![ImguiMiddleware::new()
@@ -56,26 +60,15 @@ async fn main() -> anyhow::Result<()> {
 struct Test {
     #[reality(derive_fromstr)]
     name: String,
+    #[reality(wire)]
+    value_str: String,
 }
 
 async fn test_ui(tc: &mut ThunkContext) -> anyhow::Result<()> {
     // Must cache before adding the node, otherwise the cache will not have the value
     tc.cache::<Test>().await;
-
-    if let Some(engine_handle) = tc.engine_handle().await {
-        engine_handle.sync().await?;
-        tc.write_cache(engine_handle);
-    }
-
-    {
-        let node = tc.node().await;
-        if let Some(parsed_attributes) = { node.current_resource::<ParsedAttributes>(None) } {
-            println!("{:#?}", parsed_attributes);
-            drop(node);
-            tc.write_cache(parsed_attributes);
-        }
-    }
-    // tc.update_status_from_instruction()?;
+    tc.find_and_cache::<EngineHandle>(true).await;
+    tc.find_and_cache::<ParsedAttributes>(true).await;
 
     println!("Adding ui node {:?}", tc.attribute);
     tc.add_ui_node(|__tc, ui| {
@@ -140,11 +133,11 @@ async fn test_ui(tc: &mut ThunkContext) -> anyhow::Result<()> {
 struct Test2 {
     #[reality(derive_fromstr)]
     name: String,
+    #[reality(wire)]
     test_value: String,
 }
 
 async fn test_2(tc: &mut ThunkContext) -> anyhow::Result<()> {
     println!("{:?}", tc.initialized::<Test2>().await);
-    tokio::time::sleep(Duration::from_secs(10)).await;
     Ok(())
 }

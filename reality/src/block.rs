@@ -2,11 +2,13 @@ use std::str::FromStr;
 
 use reality_derive::AttributeType;
 
+use crate::ApplyFrame;
 use crate::AsyncStorageTarget;
 use crate::AttributeParser;
 use crate::AttributeType;
 use crate::AttributeTypeParser;
 use crate::StorageTarget;
+use crate::ToFrame;
 
 /// Struct containing block object functions,
 ///
@@ -59,7 +61,7 @@ pub trait SetIdentifiers {
 #[crate::runmd::async_trait]
 pub trait BlockObject<Storage>: AttributeType<Storage>
 where
-    Self: Sized + Send + Sync + 'static,
+    Self: ToFrame + ApplyFrame + Sized + Send + Sync + 'static,
     Storage: StorageTarget + 'static,
 {
     /// Returns the attribute-type parser for the block-object type,
@@ -194,5 +196,17 @@ impl<Storage: StorageTarget + Send + Sync + 'static> BlockObject<Storage> for Te
 
     fn on_completed(storage: AsyncStorageTarget<Storage::Namespace>) -> Option<AsyncStorageTarget<Storage::Namespace>> {
         Some(storage)
+    }
+}
+
+impl ApplyFrame for Test {
+    fn apply_frame(&mut self, _: crate::Frame) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+impl ToFrame for Test {
+    fn to_frame(&self, _: Option<crate::ResourceKey<crate::Attribute>>) -> crate::Frame {
+        vec![]
     }
 }

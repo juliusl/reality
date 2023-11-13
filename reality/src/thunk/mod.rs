@@ -6,13 +6,15 @@ pub mod prelude {
     pub use super::call_async::*;
     pub use super::context::Context as ThunkContext;
     pub use super::plugin::Plugin;
+    use crate::ApplyFrame;
     pub use crate::AsyncStorageTarget;
     pub use crate::AttributeType;
     pub use crate::BlockObject;
     pub use crate::SetupTransform;
-    pub use crate::TransformPlugin;
     pub use crate::Shared;
     pub use crate::StorageTarget;
+    use crate::ToFrame;
+    pub use crate::TransformPlugin;
     pub use futures_util::Future;
     pub use futures_util::FutureExt;
     pub use std::marker::PhantomData;
@@ -22,16 +24,35 @@ pub mod prelude {
     ///
     pub type ThunkFn = fn(ThunkContext) -> CallOutput;
 
+    /// Wrapper struct for the enable frame fn,
+    /// 
+    #[derive(Clone)]
+    pub struct EnableFrame(pub ThunkFn);
+
     /// Pointer-struct for normalizing plugin types,
     ///
     pub struct Thunk<P>(pub PhantomData<P>)
     where
-        P: Plugin + Send + Sync + 'static;
+        P: Plugin + Default + Send + Sync + 'static;
 
-    impl<P> Plugin for Thunk<P>
+    impl<P> Plugin for Thunk<P> where P: Plugin + Send + Sync + 'static {}
+
+    impl<P> Clone for Thunk<P>
     where
-        P: Plugin + Send + Sync + 'static,
+        P: Plugin + Default + Send + Sync + 'static,
     {
+        fn clone(&self) -> Self {
+            Self(self.0.clone())
+        }
+    }
+
+    impl<P> Default for Thunk<P>
+    where
+        P: Plugin + Default + Send + Sync + 'static,
+    {
+        fn default() -> Self {
+            Self(PhantomData)
+        }
     }
 
     impl<P> AttributeType<Shared> for Thunk<P>
@@ -41,7 +62,7 @@ pub mod prelude {
         fn symbol() -> &'static str {
             <P as AttributeType<Shared>>::symbol()
         }
-        
+
         fn parse(parser: &mut crate::AttributeParser<Shared>, content: impl AsRef<str>) {
             <P as AttributeType<Shared>>::parse(parser, content);
 
@@ -49,6 +70,8 @@ pub mod prelude {
             if let Some(storage) = parser.storage() {
                 storage
                     .lazy_put_resource::<ThunkFn>(<P as Plugin>::call, key.map(|k| k.transmute()));
+                storage
+                    .lazy_put_resource::<EnableFrame>(EnableFrame(<P as Plugin>::enable_frame), key.map(|k| k.transmute()));
             }
         }
     }
@@ -85,6 +108,24 @@ pub mod prelude {
         ///
         fn on_completed(storage: AsyncStorageTarget<Shared>) -> Option<AsyncStorageTarget<Shared>> {
             <P as BlockObject<Shared>>::on_completed(storage)
+        }
+    }
+
+    impl<P> ApplyFrame for Thunk<P>
+    where
+        P: Plugin + Send + Sync + 'static,
+    {
+        fn apply_frame(&mut self, _: crate::Frame) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<P> ToFrame for Thunk<P>
+    where
+        P: Plugin + Send + Sync + 'static,
+    {
+        fn to_frame(&self, _: Option<crate::ResourceKey<crate::Attribute>>) -> crate::Frame {
+            vec![]
         }
     }
 

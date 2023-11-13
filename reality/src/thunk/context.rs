@@ -10,11 +10,12 @@ use tracing::debug;
 use tracing::trace;
 use uuid::Uuid;
 
-use crate::Dispatcher;
+use crate::Frame;
 use crate::prelude::Latest;
 use crate::AsyncStorageTarget;
 use crate::Attribute;
 use crate::BlockObject;
+use crate::Dispatcher;
 use crate::Node;
 use crate::ResourceKey;
 use crate::Shared;
@@ -51,8 +52,10 @@ pub struct Context {
     /// If set, will allow a thunk to audit it's usage,
     ///
     pub audit: Option<ThunkAudit>,
-    /// Cache,
-    ///
+    /// Cache storage,
+    /// 
+    /// **Note** Cloning the cache will creates a new branch.
+    /// 
     __cached: Shared,
 }
 
@@ -90,8 +93,9 @@ impl From<AsyncStorageTarget<Shared>> for Context {
 impl Context {
     /// Creates a branched thunk context,
     ///
+    #[deprecated = "This is for extension/extension_controller"]
     pub fn branch(&self) -> (Uuid, Self) {
-        println!("branching");
+        eprintln!("branching");
         let mut next = self.clone();
         // Create a variant for the type created here
         let variant_id = uuid::Uuid::new_v4();
@@ -237,12 +241,23 @@ impl Context {
     ///
     /// **Note**: This is the state that was evaluated at the start of the application, when the runmd was parsed.
     ///
-    pub async fn initialized<P: BlockObject<Shared> + Default + Clone + Sync + Send + 'static>(
+    pub async fn initialized<P: Plugin + Sync + Send + 'static>(
         &self,
     ) -> P {
         self.node()
             .await
             .current_resource::<P>(self.attribute.map(|a| a.transmute()))
+            .unwrap_or_default()
+    }
+
+    /// Retrieves the initialized frame state of the plugin,
+    /// 
+    pub async fn initialized_frame(
+        &self,
+    ) -> Frame {
+        self.node()
+            .await
+            .current_resource::<Frame>(self.attribute.map(|a| a.transmute()))
             .unwrap_or_default()
     }
 
@@ -277,6 +292,45 @@ impl Context {
             .resource_mut::<P>(self.attribute.map(|a| a.transmute()))
     }
 
+    /// Returns true if the kv store contains value P at key,
+    /// 
+    pub fn kv_contains<P>(&mut self, key: impl std::hash::Hash) -> bool
+    where
+        P: Send + Sync + 'static 
+    {
+        let key = self.attribute.map(|s| s.transmute().branch(key));
+        self.__cached.resource::<P>(key).is_some()
+    }
+
+    /// Store a resource by key in cache,
+    /// 
+    pub fn store_kv<P>(&mut self, key: impl std::hash::Hash, value: P) 
+    where
+        P: Send + Sync + 'static
+    {
+        self.__cached.put_resource::<P>(value, self.attribute.map(|s| s.transmute().branch(key)));
+    }
+
+    /// Fetch a kv pair by key,
+    /// 
+    pub fn fetch_kv<P>(&mut self, key: impl std::hash::Hash) -> Option<(ResourceKey<P>, <Shared as StorageTarget>::BorrowResource<'_, P>)>
+    where
+        P: Send + Sync + 'static
+    {
+        let key = self.attribute.map(|s| s.transmute().branch(key));
+        self.__cached.resource::<P>(key).map(|c| (key.expect("should be some"), c) )
+    }
+
+    /// Fetch a mutable reference to a kv pair by key,
+    /// 
+    pub fn fetch_mut_kv<P>(&mut self, key: impl std::hash::Hash) -> Option<(ResourceKey<P>, <Shared as StorageTarget>::BorrowMutResource<'_, P>)>
+    where
+        P: Send + Sync + 'static
+    {
+        let key = self.attribute.map(|s| s.transmute().branch(key));
+        self.__cached.resource_mut::<P>(key).map(|c| (key.expect("should be some"), c) )
+    }
+
     /// Writes a resource to the cache,
     ///
     pub fn write_cache<R: Sync + Send + 'static>(&mut self, resource: R) {
@@ -284,9 +338,32 @@ impl Context {
             .put_resource(resource, self.attribute.map(|a| a.transmute()))
     }
 
+    /// Takes a cached resource,
+    /// 
+    pub fn take_cache<R: Sync + Send + 'static>(&mut self) -> Option<Box<R>> {
+        self.__cached
+            .take_resource(self.attribute.map(|a| a.transmute()))
+    }
+
+    /// Find and cache a resource,
+    /// 
+    /// - Searches the current context for a resource P
+    /// - If include_root is true, searches the root resource key for resource P as well
+    ///
+    pub async fn find_and_cache<P: ToOwned<Owned = P> + Send + Sync + 'static>(&mut self, include_root: bool) {
+        let node = self.node().await;
+        if let Some(resource) = {
+            node.current_resource::<P>(self.attribute.map(|a| a.transmute()))
+                .or_else(|| if include_root { node.current_resource::<P>(None) } else { None })
+        } {
+            drop(node);
+            self.write_cache(resource);
+        }
+    }
+
     /// Caches P,
     ///
-    pub async fn cache<P: BlockObject<Shared> + Default + Clone + Sync + Send + 'static>(
+    pub async fn cache<P: Plugin + Sync + Send + 'static>(
         &mut self,
     ) {
         let next = self.initialized().await;
@@ -322,7 +399,7 @@ impl Context {
     }
 
     /// Scan and take resourrces of type P from node storage,
-    /// 
+    ///
     pub async fn scan_take_node<P: Sync + Send + 'static>(&self) -> Vec<P> {
         let attrs = self
             .node()
@@ -335,11 +412,11 @@ impl Context {
             let mut clone = self.clone();
             clone.attribute = Some(attr);
 
-            println!("Scanning to take {:?}", &clone.attribute);
+            trace!("Scanning to take {:?}", &clone.attribute);
             if let Some(init) = clone.scan_take_node_for::<P>().await {
                 acc.push(init);
             }
-            println!("Finished scanning to take {:?}", acc.len());
+            trace!("Finished scanning to take {:?}", acc.len());
         }
 
         acc
@@ -492,6 +569,20 @@ impl Context {
             .await
             .current_resource::<ThunkFn>(self.attribute.map(|a| a.transmute()));
         if let Some(thunk) = thunk {
+            (thunk)(self.clone()).await
+        } else {
+            Err(anyhow::anyhow!("Did not execute thunk"))
+        }
+    }
+
+    /// Calls the enable frame thunk fn related to this context,
+    /// 
+    pub async fn enable_frame(&self) -> anyhow::Result<Option<Context>> {
+        let thunk = self
+            .node()
+            .await
+            .current_resource::<EnableFrame>(self.attribute.map(|a| a.transmute()));
+        if let Some(EnableFrame(thunk)) = thunk {
             (thunk)(self.clone()).await
         } else {
             Err(anyhow::anyhow!("Did not execute thunk"))

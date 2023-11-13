@@ -112,10 +112,13 @@ impl<T: 'static> ImguiMiddleware<T> {
         */
 
         self.with_aux_node(|handle, ui| {
-            ui.window("aux-demo").build(move || {
+            ui.window("aux-demo").size([600.0, 400.0], imgui::Condition::Appearing).build(move || {
+                ui.text("Operations --");
                 for (idx, (op, __op)) in handle.operations.iter_mut().enumerate() {
+                    ui.label_text("Name", op);
+                    
                     if !__op.is_running() {
-                        if ui.button(format!("Start {op}##{idx}")) {
+                        if ui.button(format!("Start##{idx}")) {
                             __op.spawn();
                         }
                     } else if __op.is_finished() {
@@ -124,6 +127,27 @@ impl<T: 'static> ImguiMiddleware<T> {
                     } else {
                         ui.text("Running");
                     }
+
+                    ui.indent();
+                    if let Some(context) = __op.context() {
+                        if let Ok(s) = context.node.storage.try_read() {
+                            if let Some(attributes) = s.resource::<ParsedAttributes>(None) {
+                                if !attributes.paths.is_empty() {
+                                    ui.text("Paths:");
+                                    for (p, a) in attributes.paths.iter() {
+                                        ui.label_text(format!("{}", a.key()), p);
+
+                                        if let Some(defined) = attributes.properties.defined.get(a) {
+                                            ui.label_text("# of properties", defined.len().to_string());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    ui.unindent();
+                    ui.separator();
+                    ui.new_line();
                 }
 
                 // Engine Handle Controls
@@ -191,7 +215,6 @@ impl<T: 'static> ImguiMiddleware<T> {
                     if last_updated.elapsed().as_secs() <= 10 {
                         return;
                     }
-                    eprintln!("Looking for any new ui nodes");
                     self.__last_updated.take();
                 }
 
@@ -205,12 +228,10 @@ impl<T: 'static> ImguiMiddleware<T> {
                         };
 
                         if !nodes.is_empty() {
-                            println!("Adding to cache");
                             let e = &mut e;
                             e.cache.put_resource(nodes, None);
                         }
 
-                        println!("Finishing engine task");
                         Ok(e)
                     })
                 }) {
@@ -218,11 +239,8 @@ impl<T: 'static> ImguiMiddleware<T> {
                 }
             } else if let Some(true) = engine.is_finished() {
                 if let Some(_wait_for_finish) = self.__update_start.take() {
-                    eprintln!("Waiting for finish");
                     if let Ok(mut r) = engine.wait_for_finish(_wait_for_finish) {
-                        eprintln!("Received update");
                         if let Some(nodes) = r.cache.take_resource::<Vec<UiNode>>(None) {
-                            eprintln!("Adding new ui nodes");
                             self.ui_nodes.extend(*nodes);
                         }
                         self.__last_updated = Some(Instant::now());

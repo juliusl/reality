@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use serde::Serialize;
+use tracing::debug;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -250,7 +251,7 @@ impl<S: StorageTarget> AttributeParser<S> {
     ///
     pub fn add_object_type(&mut self, object_ty: impl Into<BlockObjectType<S>>) {
         let object_ty = object_ty.into();
-
+        debug!("Enabling object type {}", object_ty.ident);
         self.block_object_types
             .insert(object_ty.ident.to_string(), object_ty);
     }

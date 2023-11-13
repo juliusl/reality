@@ -24,5 +24,7 @@ pub mod ext;
 
 #[cfg(feature = "desktop")]
 pub mod desktop;
+#[cfg(feature = "desktop-imgui")]
+pub mod widgets;
 #[cfg(feature = "terminal")]
 pub mod terminal;

@@ -52,7 +52,7 @@ mod tests {
         args: Vec<String>,
     }
 
-    #[derive(Default)]
+    #[derive(Default, Clone)]
     struct TestTransform {}
 
     impl SetupTransform<TestPlugin> for TestTransform {

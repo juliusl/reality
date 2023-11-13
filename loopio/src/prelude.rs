@@ -8,6 +8,9 @@ pub use crate::ext::poem_ext::*;
 pub use crate::ext::std_ext::*;
 pub use crate::ext::*;
 
+#[cfg(feature="wire-ext")]
+pub use crate::ext::wire_ext::*;
+
 pub use crate::engine::Engine;
 pub use crate::engine::EngineHandle;
 pub use crate::host::Host;

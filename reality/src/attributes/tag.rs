@@ -62,24 +62,31 @@ impl<T: FromStr + Send + Sync + 'static> FromStr for Tagged<T> {
 }
 
 /// Type-alias for a Delimitted<',', String>,
-/// 
+///
 pub type CommaSeperatedStrings = Delimitted<',', String>;
 
 pub struct Delimitted<const DELIM: char, T: FromStr + Send + Sync + 'static> {
     value: String,
     cursor: usize,
-    _t: PhantomData<T>
+    _t: PhantomData<T>,
 }
 
 impl<const DELIM: char, T: FromStr + Send + Sync + 'static> Clone for Delimitted<DELIM, T> {
     fn clone(&self) -> Self {
-        Self { value: self.value.clone(), cursor: self.cursor, _t: PhantomData }
+        Self {
+            value: self.value.clone(),
+            cursor: self.cursor,
+            _t: PhantomData,
+        }
     }
 }
 
 impl<const DELIM: char, T: FromStr + Send + Sync + 'static> Debug for Delimitted<DELIM, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Delimitted").field("value", &self.value).field("cursor", &self.cursor).finish()
+        f.debug_struct("Delimitted")
+            .field("value", &self.value)
+            .field("cursor", &self.cursor)
+            .finish()
     }
 }
 
@@ -87,7 +94,11 @@ impl<const DELIM: char, T: FromStr + Send + Sync + 'static> FromStr for Delimitt
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Delimitted { value: s.to_string(), cursor: 0, _t: PhantomData })
+        Ok(Delimitted {
+            value: s.to_string(),
+            cursor: 0,
+            _t: PhantomData,
+        })
     }
 }
 
@@ -95,12 +106,44 @@ impl<const DELIM: char, T: FromStr + Send + Sync + 'static> Iterator for Delimit
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut value = self
-            .value
-            .split(DELIM)
-            .rev()
-            .skip(self.cursor);
+        let mut value = self.value.split(DELIM).rev().skip(self.cursor);
         self.cursor += 1;
         value.next().and_then(|v| T::from_str(v.trim()).ok())
+    }
+}
+
+/// Struct that contains the parsed inner type as well as the idx 
+/// of the value.
+/// 
+/// TODO: Enabling this would allow for more multi-vector use-cases.
+/// 
+pub struct Indexed<T>
+where
+    T: FromStr<Err = anyhow::Error> + Send + Sync + 'static,
+{
+    idx: usize,
+    val: T,
+}
+
+impl<T> Indexed<T> 
+where
+    T: FromStr<Err = anyhow::Error> + Send + Sync + 'static,
+{
+    /// Returns this struct w/ index set,
+    /// 
+    pub fn with_index(mut self, idx: usize) -> Self {
+        self.idx = idx;
+        self
+    }
+}
+
+impl<T> FromStr for Indexed<T> 
+where
+    T: FromStr<Err = anyhow::Error> + Send + Sync + 'static,
+{
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self { val: T::from_str(s)?, idx: 0 })
     }
 }

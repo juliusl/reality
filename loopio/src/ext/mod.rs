@@ -11,7 +11,12 @@ pub mod hyper_ext;
 pub mod poem_ext;
 #[cfg(feature = "std-ext")]
 pub mod std_ext;
+#[cfg(feature = "wire-ext")]
 pub mod wire_ext;
+#[cfg(feature = "flexbuffers-ext")]
+pub mod flexbuffers_ext;
+
+pub mod filter_ext;
 
 /// General extensions for ThunkContext,
 ///
@@ -127,6 +132,11 @@ pub mod utility {
         #[cfg(feature = "hyper-ext")]
         #[reality(ext)]
         request: super::hyper_ext::Request,
+        /// Enables a wire bus for an attribute,
+        /// 
+        #[cfg(feature = "wire-ext")]
+        #[reality(ext)]
+        enable_wire_bus: super::wire_ext::EnableWireBus,
     }
 }
 

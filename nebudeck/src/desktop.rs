@@ -12,7 +12,7 @@ use winit::event_loop::EventLoopBuilder;
 use winit::event_loop::EventLoopWindowTarget;
 use winit::window::Window;
 use winit::window::WindowId;
-use winit_27::event_loop::EventLoopProxy;
+use winit::event_loop::EventLoopProxy;
 
 pub mod winit {
     #[cfg(feature = "desktop-imgui")]
@@ -24,6 +24,25 @@ pub mod winit {
 use crate::controller::ControlBus;
 use crate::BackgroundWork;
 use crate::Controller;
+
+/// Desktop app that enables developer utilities,
+/// 
+/// - Enables the engine packet listener on app launch,
+/// - Enables developer widget plugins on the loopio engine
+/// 
+pub struct DevProject;
+
+impl DevProject {
+    /// Creates a new project,
+    /// 
+    pub fn new_project(self) -> (Desktop<()>, Engine) {
+        (Desktop::<()>::new().expect("should be able to create a new desktop app").enable_engine_packet_listener(), {
+            let mut engine = Engine::builder();
+            engine.enable::<crate::widgets::FrameEditor>();
+            engine.build()
+        })
+    }
+}
 
 /// This controller provides access to winit Windowing system and event loop,
 ///
@@ -41,7 +60,7 @@ where
     pub event_loop_proxy: winit::event_loop::EventLoopProxy<T>,
     /// If true, will enable the engine packet listener delegated
     /// to this controller.
-    /// 
+    ///
     pub enable_engine_packet_listener: bool,
 }
 
@@ -63,10 +82,10 @@ impl<T: 'static> Desktop<T> {
     }
 
     /// Enables the engine packet listener,
-    /// 
+    ///
     /// The engine packet listener is required for engine packets to be received and handled
     /// by the engine.
-    /// 
+    ///
     pub fn enable_engine_packet_listener(mut self) -> Self {
         self.enable_engine_packet_listener = true;
         self
@@ -97,11 +116,11 @@ impl<T: 'static> Desktop<T> {
     }
 
     fn handle_event<D: DesktopApp<T> + 'static>(
-        event: Event<T>, 
-        window: &Window, 
-        window_target: &EventLoopWindowTarget<T>, 
-        app: &mut D) 
-    {
+        event: Event<T>,
+        window: &Window,
+        window_target: &EventLoopWindowTarget<T>,
+        app: &mut D,
+    ) {
         let desktop = DesktopContext {
             window,
             event_loop_target: window_target,
@@ -114,27 +133,26 @@ impl<T: 'static> Desktop<T> {
                     if size.height >= u32::MAX || size.height >= u32::MAX {
                         return;
                     }
-                },
+                }
                 WindowEvent::Moved(pos) => {
                     if pos.x >= i32::MAX || pos.y >= i32::MAX {
                         return;
                     }
-                },
-                WindowEvent::ScaleFactorChanged { ref new_inner_size, .. } => {
+                }
+                WindowEvent::ScaleFactorChanged {
+                    ref new_inner_size, ..
+                } => {
                     if new_inner_size.height >= u32::MAX || new_inner_size.width >= u32::MAX {
                         return;
                     }
-                },
-                _ => {
                 }
+                _ => {}
             }
         }
         app.before_event(&event, &desktop);
 
         match event {
-            winit::event::Event::NewEvents(start_cause) => {
-                app.on_new_events(start_cause, &desktop)
-            }
+            winit::event::Event::NewEvents(start_cause) => app.on_new_events(start_cause, &desktop),
             winit::event::Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
@@ -157,9 +175,7 @@ impl<T: 'static> Desktop<T> {
             winit::event::Event::DeviceEvent { device_id, event } => {
                 app.on_device_event(device_id, &event, &desktop)
             }
-            winit::event::Event::UserEvent(user_event) => {
-                app.on_user_event(&user_event, &desktop)
-            }
+            winit::event::Event::UserEvent(user_event) => app.on_user_event(&user_event, &desktop),
             winit::event::Event::Suspended => app.on_suspended(&desktop),
             winit::event::Event::Resumed => app.on_resumed(&desktop),
             #[cfg(feature = "desktop-vnext")]
@@ -180,15 +196,15 @@ impl<T: 'static> Desktop<T> {
             #[cfg(feature = "desktop-imgui")]
             winit::event::Event::MainEventsCleared => {
                 window.request_redraw();
-            },
+            }
             #[cfg(feature = "desktop-imgui")]
-            winit::event::Event::RedrawEventsCleared => {},
+            winit::event::Event::RedrawEventsCleared => {}
             #[cfg(feature = "desktop-imgui")]
             winit::event::Event::LoopDestroyed => {
                 return;
-            },
+            }
         }
-        
+
         app.after_event(&desktop);
     }
 }
@@ -199,9 +215,7 @@ impl<T: 'static, A: DesktopApp<T> + 'static> Controller<A> for Desktop<T> {
 
         // Starts engine packet listener
         if self.enable_engine_packet_listener {
-            let _ = engine.spawn(|_, op| {
-                Some(op)
-            });
+            let _ = engine.spawn(|_, op| Some(op));
         }
 
         self.open(*app);
