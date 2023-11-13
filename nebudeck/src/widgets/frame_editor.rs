@@ -83,6 +83,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                 attribute_hash,
                                 data,
                                 wire_data,
+                                ..
                             } = packet;
                             field_map.insert(field_name.to_string(), (data_type_name.clone(), wire_data.clone()));
 

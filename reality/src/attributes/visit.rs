@@ -110,6 +110,10 @@ pub struct FieldPacket {
     /// Attribute hash value,
     ///
     pub attribute_hash: Option<u64>,
+    /// Operation code,
+    /// (TODO)
+    #[serde(skip)]
+    op: u128,
 }
 
 impl Clone for FieldPacket {
@@ -123,6 +127,7 @@ impl Clone for FieldPacket {
             field_name: self.field_name.clone(),
             owner_name: self.owner_name.clone(),
             attribute_hash: self.attribute_hash,
+            op: self.op.clone(),
         }
     }
 }
@@ -137,6 +142,7 @@ impl std::fmt::Debug for FieldPacket {
             .field("field_name", &self.field_name)
             .field("owner_name", &self.owner_name)
             .field("attribute_hash", &self.attribute_hash)
+            .field("op", &self.op)
             .finish()
     }
 }
@@ -157,6 +163,7 @@ impl FieldPacket {
             owner_name: String::new(),
             field_offset: 0,
             attribute_hash: None,
+            op: 0,
         }
     }
 
@@ -221,6 +228,7 @@ impl FieldPacket {
             attribute_hash: self.attribute_hash,
             wire_data: None,
             owner_name: self.owner_name.to_string(),
+            op: 0,
         };
 
         packet.wire_data = self.into_box::<T>().and_then(|d| d.to_binary().ok());
