@@ -6,15 +6,13 @@ pub mod prelude {
     pub use super::call_async::*;
     pub use super::context::Context as ThunkContext;
     pub use super::plugin::Plugin;
-    use crate::ApplyFrame;
+    pub use crate::ApplyFrame;
     pub use crate::AsyncStorageTarget;
     pub use crate::AttributeType;
     pub use crate::BlockObject;
-    pub use crate::SetupTransform;
     pub use crate::Shared;
     pub use crate::StorageTarget;
-    use crate::ToFrame;
-    pub use crate::TransformPlugin;
+    pub use crate::ToFrame;
     pub use futures_util::Future;
     pub use futures_util::FutureExt;
     pub use std::marker::PhantomData;

@@ -52,53 +52,6 @@ mod tests {
         args: Vec<String>,
     }
 
-    #[derive(Default, Clone)]
-    struct TestTransform {}
-
-    impl SetupTransform<TestPlugin> for TestTransform {
-        fn ident() -> &'static str {
-            "transform"
-        }
-
-        fn setup_transform(
-            resource_key: Option<&reality::ResourceKey<reality::Attribute>>,
-        ) -> Transform<Self, TestPlugin> {
-            println!("Extending -- {:?}", resource_key.map(|a| a.key()));
-            Self::default_setup(resource_key)
-
-            // .before(|_, _, t| {
-            //     if let Ok(mut t) = t {
-            //         use std::io::Write;
-            //         println!("Enter Name (current_value = {}):", t.name);
-            //         print!("> ");
-            //         std::io::stdout().flush()?;
-            //         let mut name = String::new();
-            //         std::io::stdin().read_line(&mut name)?;
-            //         let name = name.trim();
-            //         if !name.is_empty() {
-            //             t.name = name.to_string();
-            //         }
-            //         Ok(t)
-            //     } else {
-            //         t
-            //     }
-            // })
-        }
-    }
-
-    impl SetupTransform<TestPlugin2> for TestTransform {
-        fn ident() -> &'static str {
-            "transform"
-        }
-
-        fn setup_transform(
-            resource_key: Option<&reality::ResourceKey<reality::Attribute>>,
-        ) -> Transform<Self, TestPlugin2> {
-            println!("Extending -- {:?}", resource_key.map(|a| a.key()));
-            Self::default_setup(resource_key)
-        }
-    }
-
     #[async_trait::async_trait]
     impl CallAsync for TestPlugin {
         async fn call(tc: &mut ThunkContext) -> anyhow::Result<()> {
@@ -147,14 +100,12 @@ mod tests {
         // TODO: Test Isoloation -- 7bda126d-466c-4408-b5b7-9683eea90b65
         let mut builder = Engine::builder();
         builder.enable::<TestPlugin>();
-        builder.enable_transform::<TestTransform, TestPlugin>();
-        builder.enable_transform::<TestTransform, TestPlugin2>();
 
         let engine = builder.build();
         let runmd = r#"
         ```runmd
         + .operation test/operation
-        <test/(transform demo.test_plugin)> cargo
+        <test/demo.test_plugin> cargo
         : .name hello-world-3
         : RUST_LOG .env lifec=trace
         : HOME .env /home/test2
@@ -210,13 +161,5 @@ mod tests {
         _seq.unwrap().await.unwrap();
 
         ()
-    }
-
-    #[test]
-    fn test_ext() {
-        let t = TransformPlugin::<TestTransform, TestPlugin>::symbol();
-        println!("{}", t);
-        let t = TransformPlugin::<TestTransform, TestPlugin2>::symbol();
-        println!("{}", t);
     }
 }

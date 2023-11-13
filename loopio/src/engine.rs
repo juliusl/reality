@@ -28,9 +28,6 @@ use crate::prelude::secure_client;
 #[cfg(feature = "hyper-ext")]
 use crate::prelude::local_client;
 
-#[cfg(feature = "wire-ext")]
-use crate::prelude::WireBus;
-
 pub struct EngineBuilder {
     /// Plugins to register w/ the Engine
     ///
@@ -57,19 +54,6 @@ impl EngineBuilder {
     ) {
         self.register_with(|parser| {
             parser.with_object_type::<Thunk<P>>();
-        });
-    }
-
-    /// Registers a plugin w/ this engine builder,
-    ///
-    pub fn enable_transform<
-        C: SetupTransform<P> + Clone + Default + Send + Sync + 'static,
-        P: Plugin + Send + Sync + 'static,
-    >(
-        &mut self,
-    ) {
-        self.register_with(|parser| {
-            parser.with_object_type::<Thunk<TransformPlugin<C, P>>>();
         });
     }
 
@@ -196,20 +180,6 @@ impl Engine {
     ) {
         self.register_with(|parser| {
             parser.with_object_type::<Thunk<P>>();
-        });
-    }
-
-    /// Registers a plugin w/ this engine builder,
-    ///
-    #[inline]
-    pub fn enable_transform<
-        C: SetupTransform<P> + Clone + Default + Send + Sync + 'static,
-        P: Plugin + Send + Sync + 'static,
-    >(
-        &mut self,
-    ) {
-        self.register_with(|parser| {
-            parser.with_object_type::<Thunk<TransformPlugin<C, P>>>();
         });
     }
 

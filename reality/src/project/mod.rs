@@ -13,10 +13,6 @@ pub use node::Node;
 mod extension;
 pub use extension::Transform;
 
-mod extension_controller;
-pub use extension_controller::SetupTransform;
-pub use extension_controller::TransformPlugin;
-
 mod source;
 pub use source::Source;
 

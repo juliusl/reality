@@ -22,8 +22,6 @@ pub use crate::Workspace;
 pub use crate::CurrentDir;
 pub use crate::Shared;
 pub use crate::Transform;
-pub use crate::SetupTransform;
-pub use crate::TransformPlugin;
 pub use crate::ResourceKey;
 pub use crate::ResourceKeyHashBuilder;
 pub use crate::Visit;

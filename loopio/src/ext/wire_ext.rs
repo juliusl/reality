@@ -1,40 +1,6 @@
 use std::fmt::Debug;
-use std::sync::Arc;
 
 use reality::prelude::*;
-
-/// Type-alias for a frame middleware,
-/// 
-type FrameMiddlewareFn =
-    Arc<dyn for<'a> Fn(&'a WireBus, &'a ThunkContext, Frame) -> Frame + Send + Sync + 'static>;
-
-/// Trait for adding a wire protocol for a Reality type,
-///
-/// **Note** Based on `to_frames/from_frames` derivatives.
-///
-#[async_trait::async_trait]
-pub trait WireExt {
-    /// Extends the wire bus with a middleware fn assigned to the current node,
-    ///
-    async fn extend_wire_bus(
-        &mut self,
-        middleware: impl for<'a> Fn(&'a WireBus, &'a ThunkContext, Frame) -> Frame + Send + Sync + 'static,
-    );
-}
-
-#[async_trait::async_trait]
-impl WireExt for ThunkContext {
-    async fn extend_wire_bus(
-        &mut self,
-        middleware: impl for<'a> Fn(&'a WireBus, &'a ThunkContext, Frame) -> Frame + Send + Sync + 'static,
-    ) {
-        unsafe {
-            self.node_mut()
-                .await
-                .put_resource::<FrameMiddlewareFn>(Arc::new(middleware), self.attribute.map(|a| a.transmute()))
-        }
-    }
-}
 
 /// Converts the type being extended into wire format,
 ///

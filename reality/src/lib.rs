@@ -16,8 +16,6 @@ pub use project::Node;
 pub use project::BlockPlugin;
 pub use project::NodePlugin;
 pub use project::Transform;
-pub use project::SetupTransform;
-pub use project::TransformPlugin;
 pub use project::Source;
 pub use project::Workspace;
 pub use project::RegisterWith;

@@ -93,7 +93,6 @@ impl From<AsyncStorageTarget<Shared>> for Context {
 impl Context {
     /// Creates a branched thunk context,
     ///
-    #[deprecated = "This is for extension/extension_controller"]
     pub fn branch(&self) -> (Uuid, Self) {
         eprintln!("branching");
         let mut next = self.clone();
