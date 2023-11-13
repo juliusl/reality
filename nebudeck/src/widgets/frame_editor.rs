@@ -1,8 +1,7 @@
 use std::{collections::BTreeMap, ops::Deref};
 
-use imgui::{CollapsingHeader, TreeNodeFlags};
+use imgui::TreeNodeFlags;
 use loopio::prelude::*;
-use tracing::instrument;
 
 use crate::ext::imgui_ext::ImguiExt;
 
@@ -31,6 +30,14 @@ pub struct FrameEditor {
     ///
     #[reality(vec_of=Tagged<String>, rename="text-display")]
     text_display: Vec<Tagged<String>>,
+    /// usize edit inputs,
+    ///
+    #[reality(vec_of=Tagged<String>, rename="usize-edit")]
+    usize_edit: Vec<Tagged<String>>,
+    /// usize edit inputs,
+    ///
+    #[reality(vec_of=Tagged<String>, rename="usize-display")]
+    usize_display: Vec<Tagged<String>>,
 }
 
 async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
@@ -77,7 +84,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                 data,
                                 wire_data,
                             } = packet;
-                            field_map.insert(field_name.to_string(), wire_data.clone());
+                            field_map.insert(field_name.to_string(), (data_type_name.clone(), wire_data.clone()));
 
                             render.push(move || {
                                 ui.text(format!("Field Packet {idx}:"));
@@ -126,6 +133,18 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                             {
                                 text_display(panel_name, field, name, &field_map, ui)
                             }
+
+                            for (panel_name, field) in
+                                init.usize_edit.iter().map(|t| (t.tag(), t.value()))
+                            {
+                                usize_edit(panel_name, field, name, &field_map, ui, tc);
+                            }
+
+                            for (panel_name, field) in
+                                init.usize_display.iter().map(|t| (t.tag(), t.value()))
+                            {
+                                usize_display(panel_name, field, name, &field_map, ui)
+                            }
                         }
                     }
                 });
@@ -143,7 +162,7 @@ fn text_edit(
     panel_name: Option<&String>,
     field: Option<&String>,
     name: &String,
-    field_map: &BTreeMap<String, Option<Vec<u8>>>,
+    field_map: &BTreeMap<String, (String, Option<Vec<u8>>)>,
     ui: &imgui::Ui,
     tc: &mut ThunkContext,
 ) {
@@ -151,7 +170,10 @@ fn text_edit(
         if panel_name == name {
             if let Some(val) = field_map
                 .get(field)
-                .and_then(|f| f.clone())
+                .filter(|(f, _)| {
+                    f == std::any::type_name::<String>()
+                })
+                .and_then(|f| f.1.clone())
                 .and_then(|v| bincode::deserialize::<String>(&v).ok())
             {
                 ui.text(format!("Current Value -- {val}"));
@@ -168,6 +190,8 @@ fn text_edit(
                         ui.text("Value has changed");
                     }
                 }
+            } else {
+                ui.text("Not a String");
             }
         }
     }
@@ -177,17 +201,88 @@ fn text_display(
     panel_name: Option<&String>,
     field: Option<&String>,
     name: &String,
-    field_map: &BTreeMap<String, Option<Vec<u8>>>,
+    field_map: &BTreeMap<String, (String, Option<Vec<u8>>)>,
     ui: &imgui::Ui,
 ) {
     if let (Some(panel_name), Some(field)) = (panel_name, field) {
         if panel_name == name {
             if let Some(val) = field_map
                 .get(field)
-                .and_then(|f| f.clone())
+                .filter(|(f, _)| {
+                    f == std::any::type_name::<String>()
+                })
+                .and_then(|f| f.1.clone())
                 .and_then(|v| bincode::deserialize::<String>(&v).ok())
             {
                 ui.label_text(field, val.as_str());
+            } else {
+                ui.text("Not a String");
+            }
+        }
+    }
+}
+
+/// Displays a text edit field,
+///
+fn usize_edit(
+    panel_name: Option<&String>,
+    field: Option<&String>,
+    name: &String,
+    field_map: &BTreeMap<String, (String, Option<Vec<u8>>)>,
+    ui: &imgui::Ui,
+    tc: &mut ThunkContext,
+) {
+    if let (Some(panel_name), Some(field)) = (panel_name, field) {
+        if panel_name == name {
+            if let Some(val) = field_map
+                .get(field)
+                .filter(|(f, _)| {
+                    f == std::any::type_name::<usize>()
+                })
+                .and_then(|f| f.1.clone())
+                .and_then(|v| bincode::deserialize::<i32>(&v).ok())
+            {
+                ui.text(format!("Current Value -- {val}"));
+
+                if !tc.kv_contains::<i32>(field) {
+                    tc.store_kv(field, val);
+                }
+
+                if let Some((key, mut value)) = tc.fetch_mut_kv::<i32>(field) {
+                    ui.input_int(format!("{}##{:?}", field, key), &mut value)
+                        .build();
+
+                    if value.deref() != &val {
+                        ui.text("Value has changed");
+                    }
+                }
+            } else {
+                ui.text("Not usize");
+            }
+        }
+    }
+}
+
+fn usize_display(
+    panel_name: Option<&String>,
+    field: Option<&String>,
+    name: &String,
+    field_map: &BTreeMap<String, (String, Option<Vec<u8>>)>,
+    ui: &imgui::Ui,
+) {
+    if let (Some(panel_name), Some(field)) = (panel_name, field) {
+        if panel_name == name {
+            if let Some(val) = field_map
+                .get(field)
+                .filter(|(f, _)| {
+                    f == std::any::type_name::<usize>()
+                })
+                .and_then(|f| f.1.clone())
+                .and_then(|v| bincode::deserialize::<i32>(&v).ok())
+            {
+                ui.label_text(field, val.to_string());
+            } else {
+                ui.text("Not usize");
             }
         }
     }
