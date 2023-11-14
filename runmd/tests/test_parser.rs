@@ -15,6 +15,8 @@ const SOURCE: &'static str = r"
 : .name-1 hello-world-2         # Test defining a property
 : .name-2 'hello-world-3'       # Test defining a property
 
+# -- # Example documentation
+# -- This is example documentation
 + example .test test/test.node  # Test adding an additional node
 <application/test.extension>    # Test loading an extension
 <..example>     Hello World     # Test loading an extension by suffix
@@ -25,7 +27,12 @@ const SOURCE: &'static str = r"
 : shouldn't be used
 
 ```runmd .. alt
+# -- # Example new block and node
+# -- Includes comment properties example as well. 
 + .test test/test.node-2        # Test adding a different block
+|# name = Test node 2
+|# description = This is just a test node that doesn't do anything
+
 ```
 ";
 

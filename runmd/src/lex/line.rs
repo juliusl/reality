@@ -27,6 +27,9 @@ pub struct Line<'a> {
     /// Comment value,
     /// 
     pub comment: Option<Vec<&'a str>>,
+    /// Stack of documentation headers,
+    /// 
+    pub doc_headers: Vec<&'a str>,
     /// Properties derived from comments,
     /// 
     pub comment_properties: BTreeMap<String, String>,

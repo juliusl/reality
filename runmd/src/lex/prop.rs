@@ -35,7 +35,6 @@ impl ReadProp {
 #[logos(extras = Context<'s>)]
 enum PropReader<'s> {
     #[regex(r#"["][a-zA-Z]*[a-zA-Z0-9]+["][ ]*:"#, on_json)]
-    #[regex(r#"['][a-zA-Z]*[a-zA-Z0-9]+['][ ]*:"#, on_json)]
     #[regex(r#"[a-zA-Z]*[a-zA-Z0-9]+[ ]*:"#, on_json)]
     Json(Prop<'s>),
     #[regex(r#"[a-zA-Z]*[a-zA-Z0-9]+[ ]*="#, on_toml)]
@@ -50,7 +49,7 @@ struct Prop<'a>(pub &'a str, pub Input<'a>);
 fn on_json<'a>(lex: &mut Lexer<'a, PropReader<'a>>) -> Filter<Prop<'a>> {
     let name = lex
         .slice()
-        .trim_matches(|c| c == '\'' || c == '"' || c == ':' || c == '[' || c == ']')
+        .trim_matches(|c| c == '"' || c == ':' || c == '[' || c == ']')
         .trim();
     let mut input_lexer: Lexer<Input> = lex.clone().morph();
 
@@ -69,7 +68,6 @@ fn on_toml<'a>(lex: &mut Lexer<'a, PropReader<'a>>) -> Filter<Prop<'a>> {
 
     if let Some(Ok(input)) = input_lexer.next() {
         *lex = input_lexer.morph();
-        lex.bump_line();
         Filter::Emit(Prop(name, input))
     } else {
         Filter::Skip

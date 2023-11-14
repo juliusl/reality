@@ -9,11 +9,10 @@ pub enum Input<'source> {
     ///
     #[regex(r#"["][^"]*["]"#, on_escaped_input)]
     #[regex(r#"[`][^`]*[`]"#, on_escaped_input)]
-    #[regex(r#"['][^']*[']"#, on_escaped_input)]
     EscapedText(&'source str),
     /// Text value,
     ///
-    #[regex(r##"[^\r\n'"`#]*"##, on_input)]
+    #[regex(r##"[^\r\n"`#]*"##, on_input)]
     Text(&'source str),
     /// Multiple lines of input text,
     /// 
@@ -24,7 +23,7 @@ pub enum Input<'source> {
 fn on_escaped_input<'s>(lex: &mut Lexer<'s, Input<'s>>) -> &'s str {
     lex.slice()
         .trim()
-        .trim_matches(|c| c == '\'' || c == '\"' || c == '`')
+        .trim_matches(|c| c == '\"' || c == '`')
 }
 
 #[inline]
