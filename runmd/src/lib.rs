@@ -6,6 +6,9 @@ mod block;
 
 pub mod prelude {
     pub use super::parse::prelude::Parser;
+    pub use super::lex::prelude::Instruction;
+    pub use super::lex::prelude::Line;
+    pub use super::lex::prelude::ReadProp;
     pub use super::node::Node;
     pub use super::node::BoxedNode;
     pub use super::node::NodeInfo;

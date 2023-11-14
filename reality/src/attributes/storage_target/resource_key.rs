@@ -49,7 +49,7 @@ impl<T: Send + Sync + 'static> ResourceKeyHashBuilder<T, DefaultHasher> {
 ///
 #[derive(Debug, Serialize, Deserialize, Hash, Eq, PartialEq, PartialOrd)]
 pub struct ResourceKey<T: Send + Sync + 'static> {
-    data: u128,
+    pub data: u128,
     #[serde(skip)]
     _t: PhantomData<T>,
 }

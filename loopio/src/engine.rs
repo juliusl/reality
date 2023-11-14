@@ -310,7 +310,7 @@ impl Engine {
         {
             let handle = self.handle();
 
-            let nodes = project.nodes.into_inner().unwrap();
+            let nodes = project.nodes.latest().await;
 
             // Extract hosts
             for (_, target) in nodes.iter() {
@@ -366,11 +366,23 @@ impl Engine {
                 target.write().await.drain_dispatch_queues();
             }
 
+            // Add EngineHandle to all nodes,
             for (_, target) in nodes.iter() {
                 target
                     .write()
                     .await
                     .put_resource(self.engine_handle(), None);
+            }
+
+            // Add ParsedBlock to all nodes,
+            if let Ok(block) = project.parsed_block().await {
+                eprintln!("{:#?}", block);
+                for (_, target) in nodes.iter() {
+                    target
+                        .write()
+                        .await
+                        .put_resource(block.clone(), None);
+                }
             }
         }
 

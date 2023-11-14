@@ -11,7 +11,7 @@ use crate::ext::imgui_ext::ImguiExt;
 /// Widget to edit frames of an attribute,
 ///
 #[derive(Reality, Default, Clone)]
-#[reality(call = enable_frame_editor, plugin, rename = "frame-editor")]
+#[reality(call = enable_frame_editor, plugin, rename = "frame-editor", wire)]
 pub struct FrameEditor {
     /// Path to the attribute being edited,
     ///
@@ -49,6 +49,7 @@ pub struct FrameEditor {
 
 async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = tc.initialized::<FrameEditor>().await;
+    tc.print_parsed_comments().await;
 
     info!("Enabling frame editor -- {}", init.path);
     if let Some(mut editing) = tc.navigate(&init.path).await {

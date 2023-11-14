@@ -1,10 +1,10 @@
 use serde::Deserialize;
 use serde::Serialize;
-use tracing::debug;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
+use tracing::debug;
 use tracing::trace;
 
 use runmd::prelude::*;
@@ -23,7 +23,16 @@ use crate::BlockObject;
 use crate::BlockObjectType;
 use crate::ResourceKey;
 
-/// Type-alias for parsed attributes,
+/// Struct for a parsed block,
+///
+#[derive(Debug, Clone, Default)]
+pub struct ParsedBlock {
+    /// ParsedAttributes for each node,
+    ///
+    pub nodes: Vec<ParsedAttributes>,
+}
+
+/// Struct for parsed attributes,
 ///
 #[derive(Debug, Default, Clone)]
 pub struct ParsedAttributes {
@@ -36,6 +45,12 @@ pub struct ParsedAttributes {
     /// Properties defined by parsed attributes,
     ///
     pub properties: Properties,
+    /// Parsed lines,
+    ///
+    pub lines: Vec<String>,
+    /// Map of labeled comments,
+    /// 
+    pub comment_properties: HashMap<ResourceKey<Attribute>, BTreeMap<String, String>>,
 }
 
 /// Defined properties,
@@ -45,9 +60,9 @@ pub struct Properties {
     /// Map of defined properties,
     ///
     pub defined: HashMap<ResourceKey<Attribute>, Vec<ResourceKey<Property>>>,
-    /// Comments defined for each property,
-    ///
-    pub comments: HashMap<ResourceKey<Property>, Comments>,
+    /// Map of labeled comments,
+    /// 
+    pub comment_properties: HashMap<ResourceKey<Property>, BTreeMap<String, String>>,
 }
 
 impl ParsedAttributes {
@@ -108,20 +123,34 @@ impl ParsedAttributes {
         defined.push(prop);
     }
 
-    /// Adds a comment for a property,
+    /// Adds a comment to the last property,
     ///
     #[inline]
-    pub fn add_property_comment(
-        &mut self,
-        prop: ResourceKey<Property>,
-        comment: impl Into<String>,
-    ) {
-        let comments = self
-            .properties
-            .comments
-            .entry(prop)
-            .or_insert_with(|| Comments(vec![]));
-        comments.0.push(comment.into());
+    pub fn add_line(&mut self, line: &Line) {
+        for line in line.to_string().lines() {
+            self.lines.push(line.to_string());
+        }
+
+        if !line.comment_properties.is_empty() {
+            if line.attr.is_some() && line.extension.is_some() {
+                if let Some(last) = self.last() {
+                    if let Some(last) = self.properties.defined.get(last).and_then(|l| l.last()) {
+                        self.properties.comment_properties
+                            .insert(*last, line.comment_properties.clone());
+                    }
+                }
+            } else if line.extension.is_some() && line.attr.is_none() {
+                if let Some(last) = self.last() {
+                    self.comment_properties
+                            .insert(*last, line.comment_properties.clone());
+                }
+            } else if line.extension.is_none() && line.attr.is_some() {
+                if let Some(last) = self.last() {
+                    self.comment_properties
+                            .insert(*last, line.comment_properties.clone());
+                }
+            }
+        }
     }
 }
 
@@ -159,9 +188,6 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     /// Attributes parsed,
     ///
     pub attributes: ParsedAttributes,
-    /// Comments to include w/ the attribute being parsed,
-    ///
-    pub comments: Vec<String>,
 }
 
 impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
@@ -174,7 +200,6 @@ impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
             handlers: Default::default(),
             storage: Default::default(),
             attributes: ParsedAttributes::default(),
-            comments: vec![],
         }
     }
 }
@@ -189,7 +214,6 @@ impl<S: StorageTarget + 'static> Clone for AttributeParser<S> {
             handlers: self.handlers.clone(),
             storage: self.storage.clone(),
             attributes: self.attributes.clone(),
-            comments: self.comments.clone(),
         }
     }
 }
@@ -218,14 +242,12 @@ impl<S: StorageTarget> AttributeParser<S> {
         let idx = self.attributes.len();
         let key = ResourceKey::<Attribute>::with_hash(idx);
 
-        let comments = self.comments.drain(..).collect();
         // Storage target must be enabled,
         if let Some(storage) = self.storage() {
             // Initialize attribute type,
             if let Ok(init) = source.as_ref().parse::<T>() {
                 parsed_key = Some(key.transmute());
                 storage.lazy_put_resource(init, parsed_key);
-                storage.lazy_put_resource(Comments(comments), parsed_key.map(|k| k.transmute()));
                 if let Some(tag) = self.tag() {
                     storage
                         .lazy_put_resource(Tag(tag.to_string()), parsed_key.map(|k| k.transmute()));
@@ -511,9 +533,10 @@ where
 
     fn set_info(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {
         trace!("{:#?}", _node_info);
-        if let Some(comment) = &_node_info.get_comment() {
-            self.comments.push(comment.to_string());
-        }
+    }
+
+    fn parsed_line(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {
+        self.attributes.add_line(&_node_info.line);
     }
 
     fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>) {

@@ -14,6 +14,7 @@ pub use crate::ext::wire_ext::*;
 pub use crate::engine::Engine;
 pub use crate::engine::EngineHandle;
 pub use crate::host::Host;
+pub use crate::address::Address;
 pub use crate::spawned::*;
 
 pub use reality::prelude::*;

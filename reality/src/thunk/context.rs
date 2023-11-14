@@ -11,6 +11,8 @@ use tracing::error;
 use tracing::trace;
 use uuid::Uuid;
 
+use crate::FieldPacket;
+use crate::ParsedAttributes;
 use crate::prelude::Latest;
 use crate::AsyncStorageTarget;
 use crate::Attribute;
@@ -630,6 +632,29 @@ impl Context {
             (thunk)(self.clone()).await
         } else {
             Err(anyhow::anyhow!("Did not execute thunk"))
+        }
+    }
+
+    /// Returns any formatted attribute comments parsed from the comments,
+    /// 
+    pub async fn print_parsed_comments(&self) {
+        if let Some(parsed) =  self.node().await.current_resource::<ParsedAttributes>(None) {
+            for rk in parsed.attributes {
+                if let Some(comments) = parsed.comment_properties.get(&rk) {
+                    eprintln!("\t --- {:#?}", comments)
+                }
+                if let Some(properties) = parsed.properties.defined.get(&rk).cloned() {
+                    for prop in properties {
+                        if let Some(field_packet) = self.node().await.resource::<FieldPacket>(Some(prop.transmute())) {
+                            eprintln!("{:#?} --- {:#?}", prop, field_packet)
+                        }
+
+                        if let Some(comments) = parsed.properties.comment_properties.get(&prop) {
+                            eprintln!("\t--- {:#?}", comments);
+                        }
+                    }
+                } 
+            }
         }
     }
 }

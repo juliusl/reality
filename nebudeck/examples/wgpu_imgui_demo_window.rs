@@ -24,20 +24,28 @@ async fn main() -> anyhow::Result<()> {
     + .operation show_frame_editor                              # Shows frame editor
     <loopio.enable-wirebus>             a/demo.test2            # Enables the wire-bus for attribute at specific path
 
-    <nebudeck.frame-editor>             a/demo.test2            # Enables the frame editor for an attribute at a specific path
+    <b/nebudeck.frame-editor>             a/demo.test2            # Enables the frame editor for an attribute at a specific path
     : .editor_name                      Demo editor
     : test .panel                       Test Panel              # Custom panels can be constructed from runmd
     : test .text-edit                   test_value              # Adds a text editor for the property test_value
     : test .text-display                test_value
     : test .text-edit                   test_not_str
+    
     : test .text-display                test_not_str
-    : test .usize-edit                  test_not_str
-    : test .usize-display               test_not_str
-    : test .action                      Run Test
+    |# widget = text
 
-    <a/demo.test2> hello world 2
-    : .test_value   Test value
-    : .test_not_str 10
+    : test .action                      Run Test
+    |# title        = Run Test
+    |# description  = Runs a test
+
+    <a/demo.test2> hello world 2        # Test comment a
+    |# title = Test title
+    
+    : .test_value   Test value          # Test comment b
+    |# name = hello world
+    |# not a property
+    
+    : .test_not_str 10                  # Test comment c
 
     + .operation setup
     <demo.test> hello world
@@ -148,5 +156,7 @@ struct Test2 {
 
 async fn test_2(tc: &mut ThunkContext) -> anyhow::Result<()> {
     println!("{:?}", tc.initialized::<Test2>().await);
+
+    tc.print_parsed_comments().await;
     Ok(())
 }

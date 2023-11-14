@@ -1,50 +1,75 @@
+use reality::SetIdentifiers;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::sync::Arc;
-use reality::SetIdentifiers;
-use serde::Deserialize;
-use serde::Serialize;
 use tokio::sync::Notify;
 
 use reality::prelude::*;
 
 use crate::engine::EngineHandle;
 
+/// An address to listen to,
+///
+/// When the address has been activated, the condition configured will be notified.
+///
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub struct HostListen {
+    //// Addresss to listen to,
+    ///
+    address: String,
+    /// Name of the condition to notify,
+    ///
+    condition: String,
+}
+
+impl FromStr for HostListen {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(HostListen {
+            address: s.to_string(),
+            condition: String::new(),
+        })
+    }
+}
+
 /// A condition specified on the host,
-/// 
+///
 #[derive(Serialize, Deserialize)]
-pub struct HostCondition(
+pub struct HostCondition {
     /// Name of the condition
-    String, 
+    name: String,
     /// Notification handle,
     #[serde(skip)]
-    Arc<Notify>
-);
+    notify: Arc<Notify>,
+}
 
 impl HostCondition {
     /// Notify observers of this condition,
-    /// 
+    ///
     pub fn notify(&self) {
-        let HostCondition(_, notify) = self.clone(); 
-        
+    let HostCondition { notify, ..} = self.clone();
+
         notify.notify_waiters();
     }
 
-    /// Observe this condition, 
-    /// 
+    /// Observe this condition,
+    ///
     /// returns when the condition has completed
-    /// 
+    ///
     pub async fn listen(&self) {
-        let HostCondition(_, notify) = self.clone(); 
-        
+        let HostCondition { notify, ..} = self.clone();
+
         notify.notified().await;
     }
 }
 
 impl Ord for HostCondition {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.cmp(&other.0)
+        self.name.cmp(&other.name)
     }
 }
 
@@ -56,13 +81,13 @@ impl PartialOrd for HostCondition {
 
 impl PartialEq for HostCondition {
     fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
+        self.name == other.name
     }
 }
 
 impl Clone for HostCondition {
     fn clone(&self) -> Self {
-        Self(self.0.clone(), self.1.clone())
+        Self { name: self.name.clone(), notify: self.notify.clone() }
     }
 }
 
@@ -72,7 +97,10 @@ impl FromStr for HostCondition {
     type Err = std::convert::Infallible;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(HostCondition(s.to_string(), Arc::new(Notify::new())))
+        Ok(HostCondition {
+            name: s.to_string(),
+            notify: Arc::new(Notify::new()),
+        })
     }
 }
 
@@ -97,19 +125,23 @@ pub struct Host {
     #[reality(ignore)]
     pub handle: Option<EngineHandle>,
     /// Vector of child hosts,
-    /// 
+    ///
     /// Only used by the default host,
-    /// 
+    ///
     #[reality(ignore)]
     pub(crate) children: BTreeMap<String, Host>,
     /// Name of the action that "starts" this host,
     ///
     #[reality(option_of=Tagged<String>)]
     start: Option<Tagged<String>>,
-    /// Map of conditions,
+    /// Set of conditions,
     ///
-    #[reality(set_of=HostCondition)]
-    condition: BTreeSet<HostCondition>,
+    #[reality(set_of=Tagged<HostCondition>)]
+    condition: BTreeSet<Tagged<HostCondition>>,
+    /// Set of listeners,
+    /// 
+    #[reality(set_of=Tagged<HostListen>)]
+    listen: BTreeSet<Tagged<HostListen>>,
 }
 
 impl Host {
@@ -121,15 +153,16 @@ impl Host {
     }
 
     /// Returns true if a condition has been signaled,
-    /// 
+    ///
     /// Returns false if this condition is not registered w/ this host.
     ///
     pub fn set_condition(&self, condition: impl AsRef<str>) -> bool {
         if let Some(condition) = self
             .condition
             .iter()
-            .find(|c| c.0 == condition.as_ref())
-            .map(|c| c.1.clone())
+            .filter_map(|c| c.value())
+            .find(|c| c.name == condition.as_ref())
+            .map(|c| c.notify.clone())
         {
             condition.clone().notify_waiters();
             true
@@ -142,7 +175,7 @@ impl Host {
     ///
     pub async fn start(&self) -> anyhow::Result<ThunkContext> {
         self.initialized_conditions().await;
-        
+
         if let Some(engine) = self.handle.clone() {
             if let Some(start) = self.start.as_ref() {
                 let address = match (start.tag(), start.value()) {
@@ -165,15 +198,15 @@ impl Host {
     }
 
     /// Initialize conditions on the host,
-    /// 
+    ///
     async fn initialized_conditions(&self) {
         if let Some(storage) = self.host_storage.as_ref().map(|h| h.storage.clone()) {
             let mut storage = storage.write().await;
 
-            for condition in self.condition.iter() {
+            for condition in self.condition.iter().filter_map(|c| c.value()) {
                 storage.put_resource(
                     condition.clone(),
-                    Some(ResourceKey::with_hash(&condition.0)),
+                    Some(ResourceKey::with_hash(&condition.name)),
                 );
             }
         }

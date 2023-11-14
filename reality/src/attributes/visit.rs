@@ -107,7 +107,7 @@ pub struct FieldPacket {
     pub owner_name: String,
     /// Attribute hash value,
     ///
-    pub attribute_hash: Option<u64>,
+    pub attribute_hash: Option<u128>,
     /// Operation code,
     /// (TODO)
     #[serde(skip)]
@@ -148,10 +148,7 @@ impl std::fmt::Debug for FieldPacket {
 impl FieldPacket {
     /// Creates a new packet w/o data,
     ///
-    pub fn new<T>() -> Self
-    where
-        T: FieldPacketType,
-    {
+    pub fn new<T>() -> Self {
         Self {
             wire_data: None,
             data: None,
@@ -249,7 +246,7 @@ impl FieldPacket {
 
     /// Sets the routing information for this packet,
     ///
-    pub fn route(mut self, field_offset: usize, attribute: Option<u64>) -> Self {
+    pub fn route(mut self, field_offset: usize, attribute: Option<u128>) -> Self {
         self.field_offset = field_offset;
         self.attribute_hash = attribute;
         self

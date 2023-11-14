@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::ParsedBlock;
 use crate::StorageTarget;
 use crate::ResourceKeyHashBuilder;
 use crate::ResourceKey;
@@ -45,7 +47,7 @@ pub type NodeTable<Storage> = HashMap<ResourceKey<()>, ParsedNode<Storage>>;
 pub struct Project<Storage: StorageTarget + 'static> {
     root: Storage,
 
-    pub nodes: std::sync::RwLock<NodeTable<Storage::Namespace>>,
+    pub nodes: tokio::sync::RwLock<NodeTable<Storage::Namespace>>,
 }
 
 impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
@@ -108,6 +110,23 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
         drop(parser);
 
         loading.unload()
+    }
+
+    /// Returns the parsed block from this project,
+    /// 
+    pub async fn parsed_block(&self) -> anyhow::Result<ParsedBlock> {
+        let nodes = self.nodes.read().await;
+
+        let mut block = ParsedBlock { nodes: vec![] };
+        for (_, s) in nodes.deref().iter() {
+            let s = s.read().await;
+
+            if let Some(parsed) = s.current_resource::<ParsedAttributes>(None) {
+                block.nodes.push(parsed);
+            }
+        }
+        
+        Ok(block)
     }
 }
 
@@ -208,7 +227,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::NodeProvide
         node_info: &NodeInfo,
         block_info: &BlockInfo,
     ) -> Option<runmd::prelude::BoxedNode> {
-        if let Ok(mut nodes) = self.0.nodes.write() {
+        if let Ok(mut nodes) = self.0.nodes.try_write() {
             let mut key_builder = ResourceKeyHashBuilder::new_default_hasher();
             key_builder.hash(block_info);
             key_builder.hash(node_info);
@@ -405,9 +424,9 @@ async fn test_project_parser() {
 
     let mut _project = project.load_file(".test/v2v2test.md").await.unwrap();
 
-    println!("{:#?}", _project.nodes.read().unwrap().keys());
+    println!("{:#?}", _project.nodes.read().await.keys());
 
-    for (k, node) in _project.nodes.write().unwrap().iter_mut() {
+    for (k, node) in _project.nodes.write().await.iter_mut() {
         let node = node.read().await;
         println!("{:?}", k);
 

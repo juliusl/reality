@@ -22,6 +22,13 @@ pub trait Node : crate::prelude::ExtensionLoader + std::fmt::Debug  {
     /// Block info details the location within the block this node belongs,
     /// 
     fn set_info(&mut self, node_info: NodeInfo, block_info: BlockInfo);
+
+
+    /// Called after a line is parsed,
+    /// 
+    fn parsed_line(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {
+
+    }
     
     /// Define a property for this node,
     /// 

@@ -20,6 +20,8 @@
 
     + .operation test_poem                                      # Tests poem utilities
     <loopio.poem.engine-proxy> localhost:0                      # Runs a local server that can start operations or sequences
+    |# notify = engine_proxy_started
+    
     : .alias testhost://test-engine-proxy
     : test          .route test_std_io
     : test_2        .route run_println

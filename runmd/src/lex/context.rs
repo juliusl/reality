@@ -112,12 +112,14 @@ impl<'a> Context<'a> {
         if let Some(block) = self.analyzing.as_mut() {
             line.extension = self.extension.clone();
             line.instruction = self.instruction.take().unwrap_or_default();
+            line.block_moniker = block.moniker;
+            line.block_ty = block.ty;
             block.lines.push(line);
         }
     }
 
     /// Append input to the last line if applicable,
-    /// 
+    ///
     pub fn append_input(&mut self, input: &'a str) {
         if let Some(line) = self.analyzing.as_mut().and_then(|b| b.lines.last_mut()) {
             if let Some(_input) = line
@@ -139,11 +141,22 @@ impl<'a> Context<'a> {
     }
 
     /// Append comment to the last line,
-    /// 
+    ///
     pub fn append_comment(&mut self, input: &'a str) {
         if let Some(line) = self.analyzing.as_mut().and_then(|b| b.lines.last_mut()) {
-            if let Some(comments) = line.comment.as_mut() {
-                comments.push(input);
+            let comments = line.comment.get_or_insert(vec![""]);
+            comments.push(input);
+        }
+    }
+
+    /// Appends a property,
+    ///
+    pub fn append_property(&mut self) {
+        if let Some(line) = self.analyzing.as_mut().and_then(|b| b.lines.last_mut()) {
+            if let Some(comment) = line.comment.as_ref().and_then(|c| c.last()) {
+                if let Some((name, value)) = ReadProp.parse(&comment) {
+                    line.comment_properties.insert(name, value);
+                }
             }
         }
     }

@@ -24,7 +24,7 @@ use super::StorageTarget;
 ///
 pub trait AttributeType<S: StorageTarget> {
     /// Symbol of the attribute type, this symbol will be used to represent this type in runmd,
-    /// 
+    ///
     fn symbol() -> &'static str;
 
     /// Parse content received by the runmd node into state w/ an attribute parser,
@@ -237,7 +237,7 @@ where
             ) => {
                 borrow_mut!(storage, Owner, key, |owner| => {
                     let property = owner.on_parse(value, tag.as_ref());
-                    properties.push(property);
+                    properties.push((property, Owner::empty_packet()));
                 });
             }
             (
@@ -261,8 +261,12 @@ where
         }
 
         if let Some(key) = key {
-            for prop in properties.drain(..) {
-               parser.attributes.define_property(key.transmute(), prop);
+            for (prop, mut empty_packet) in properties.drain(..) {
+                empty_packet.attribute_hash = Some(prop.data);
+                parser.attributes.define_property(key.transmute(), prop);
+                if let Some(mut storage) = parser.storage_mut() {
+                    storage.put_resource(empty_packet, Some(prop.transmute()));
+                }
             }
         }
     }
@@ -289,20 +293,24 @@ where
 
         let mut properties = vec![];
         if let Some(mut storage) = parser.storage_mut() {
-             // If set by parse, it must be set w/ a resource key set to None
-             let resource = { storage.take_resource::<T>(None) };
+            // If set by parse, it must be set w/ a resource key set to None
+            let resource = { storage.take_resource::<T>(None) };
 
-             if let Some(resource) = resource {
-                 borrow_mut!(storage, Owner, key, |owner| => {
-                     let prop = owner.on_parse(*resource, tag.as_ref());
-                     properties.push(prop);
-                 });
-             }
+            if let Some(resource) = resource {
+                borrow_mut!(storage, Owner, key, |owner| => {
+                    let prop = owner.on_parse(*resource, tag.as_ref());
+                    properties.push((prop, Owner::empty_packet()));
+                });
+            }
         }
 
         if let Some(key) = key {
-            for prop in properties.drain(..) {
-               parser.attributes.define_property(key.transmute(), prop);
+            for (prop, mut empty_packet) in properties.drain(..) {
+                empty_packet.attribute_hash = Some(prop.data);
+                parser.attributes.define_property(key.transmute(), prop);
+                if let Some(mut storage) = parser.storage_mut() {
+                    storage.put_resource(empty_packet, Some(prop.transmute()));
+                }
             }
         }
     }
@@ -329,20 +337,24 @@ where
 
         let mut properties = vec![];
         if let Some(mut storage) = parser.storage_mut() {
-             // If set by parse, it must be set w/ a resource key set to None
-             let resource = { storage.take_resource::<T>(None) };
+            // If set by parse, it must be set w/ a resource key set to None
+            let resource = { storage.take_resource::<T>(None) };
 
-             if let Some(resource) = resource {
-                 borrow_mut!(storage, Owner, key, |owner| => {
-                     let prop = owner.on_parse(*resource, tag.as_ref());
-                     properties.push(prop);
-                 });
-             }
+            if let Some(resource) = resource {
+                borrow_mut!(storage, Owner, key, |owner| => {
+                    let prop = owner.on_parse(*resource, tag.as_ref());
+                    properties.push((prop, Owner::empty_packet()));
+                });
+            }
         }
-        
+
         if let Some(key) = key {
-            for prop in properties.drain(..) {
-               parser.attributes.define_property(key.transmute(), prop);
+            for (prop, mut empty_packet) in properties.drain(..) {
+                empty_packet.attribute_hash = Some(prop.data);
+                parser.attributes.define_property(key.transmute(), prop);
+                if let Some(mut storage) = parser.storage_mut() {
+                    storage.put_resource(empty_packet, Some(prop.transmute()));
+                }
             }
         }
     }
@@ -410,12 +422,11 @@ where
 
     /// Returns an empty packet for this field,
     ///
-    fn empty_packet() -> FieldPacket
-    where
-        T: FieldPacketType,
-    {
+    fn empty_packet() -> FieldPacket {
         let mut packet = FieldPacket::new::<T>();
         packet.field_offset = FIELD_OFFSET;
+        packet.field_name = Self::field_name().to_string();
+        packet.owner_name = std::any::type_name::<Self>().to_string();
         packet
     }
 
@@ -427,6 +438,8 @@ where
     {
         let mut data = FieldPacket::new_data(data);
         data.field_offset = FIELD_OFFSET;
+        data.field_name = Self::field_name().to_string();
+        data.owner_name = std::any::type_name::<Self>().to_string();
         data
     }
 
@@ -444,6 +457,8 @@ where
         if let Some(data) = _data {
             let mut data = FieldPacket::new_data(data);
             data.field_offset = FIELD_OFFSET;
+            data.field_name = Self::field_name().to_string();
+            data.owner_name = std::any::type_name::<Self>().to_string();
             Ok(data)
         } else {
             Err(anyhow!(
@@ -462,6 +477,8 @@ where
         let bincode = bincode::serialize(data)?;
         let mut data = FieldPacket::new::<T>();
         data.field_offset = FIELD_OFFSET;
+        data.field_name = Self::field_name().to_string();
+        data.owner_name = std::any::type_name::<Self>().to_string();
         data.wire_data = Some(bincode);
         Ok(data)
     }

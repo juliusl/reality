@@ -7,8 +7,10 @@ mod extension;
 mod input;
 mod line;
 mod block;
+mod prop;
 
 pub mod prelude {
+    pub use super::prop::ReadProp;
     pub use super::line::Line;
     pub use super::input::Input;
     pub use super::extension::Extension;

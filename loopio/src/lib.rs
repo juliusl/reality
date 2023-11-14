@@ -5,6 +5,7 @@ pub mod operation;
 pub mod prelude;
 pub mod sequence;
 pub mod spawned;
+pub mod address;
 
 #[allow(unused_imports)]
 mod tests {
