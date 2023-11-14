@@ -43,7 +43,7 @@ where
         Self {
             status: instruction.setup_status_updates(),
             messages: instruction.setup_instruction_proxy(),
-            spawned: instruction.spawn(),
+            spawned: instruction.spawn_call(),
         }
     }
 
@@ -137,7 +137,7 @@ where
 {
     /// Consume the current context and spawn a new task,
     /// 
-    fn spawn(self) -> JoinHandle<anyhow::Result<Self>>;
+    fn spawn_call(self) -> JoinHandle<anyhow::Result<Self>>;
 
     /// Returns a sender if the current instruction supports receiving messages,
     ///
@@ -157,7 +157,7 @@ where
 }
 
 impl Instruction for ThunkContext {
-    fn spawn(self) -> JoinHandle<anyhow::Result<Self>> {
+    fn spawn_call(self) -> JoinHandle<anyhow::Result<Self>> {
         tokio::spawn(async move {
             if let Some(next) = self.call().await? {
                 Ok(next)

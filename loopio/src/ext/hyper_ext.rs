@@ -110,10 +110,11 @@ impl HyperExt for ThunkContext {
             replace.port_u16(),
         );
 
+        let init = self.initialized::<EngineProxy>().await;
+
         if let Some(mut transport) =
             unsafe { self.host_mut(alias.scheme_str().unwrap_or_default()).await }
         {
-            let init = self.initialized::<EngineProxy>().await;
             transport.put_resource(init, None);
 
             let key = ResourceKey::<(Option<Scheme>, Option<String>, Option<u16>)>::with_hash(key);

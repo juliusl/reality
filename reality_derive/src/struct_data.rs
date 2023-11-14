@@ -364,6 +364,8 @@ impl StructData {
             let get_fn = f.render_get_fn();
             let get_mut_fn = f.render_get_mut_fn();
 
+            let mut_value = f.set_of.as_ref().map(|_| quote!(mut));
+
             quote_spanned! {f.span=>
                 impl #original_impl_generics OnParseField<#offset, #ty> for #ident #ty_generics #where_clause {
                     type ProjectedType = #absolute_ty;
@@ -373,7 +375,7 @@ impl StructData {
                     }
                 
                     #[allow(unused_variables)]
-                    fn on_parse(&mut self, value: #ty, _tag: Option<&String>) -> ResourceKey<Property> {
+                    fn on_parse(&mut self, #mut_value value: #ty, _tag: Option<&String>) -> ResourceKey<Property> {
                         let mut hasher = ResourceKeyHashBuilder::new_default_hasher();
                         hasher.hash(_tag);
                         hasher.hash(#offset);
@@ -485,9 +487,9 @@ impl StructData {
         
         let plugin = if self.plugin {
             quote!(
-            impl Plugin for #name #ty_generics #where_clause  {}
+            impl #_impl_generics Plugin for #name #ty_generics #where_clause  {}
 
-            impl #name #ty_generics #where_clause  {
+            impl #_impl_generics #name #ty_generics #where_clause  {
                 pub fn register(mut host: &mut impl RegisterWith) {
                   #(#plugins)*
                   host.register_with(|_parser| {
@@ -498,7 +500,7 @@ impl StructData {
             )
         } else if self.ext {
             quote!(
-                impl #name #ty_generics #where_clause  {
+                impl #_impl_generics #name #ty_generics #where_clause  {
                     pub fn register(mut host: &mut impl RegisterWith) {
                         #(#plugins)*
                         host.register_with(|_parser| {
@@ -514,7 +516,7 @@ impl StructData {
         let call = self.call.as_ref().map(|ref c| {
             quote_spanned!(c.span()=>
                 #[async_trait]
-                impl CallAsync for #name {
+                impl #_impl_generics CallAsync for #name #ty_generics #where_clause {
                     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
                         #c(context).await
                     }
@@ -524,7 +526,7 @@ impl StructData {
 
         let unit_from_str = if self.fields.is_empty() {
             quote_spanned!(name.span()=>
-                impl FromStr for #name {
+                impl #_impl_generics FromStr for #name #ty_generics #where_clause {
                     type Err = std::convert::Infallible;
 
                     fn from_str(_: &str) -> std::result::Result<Self, Self::Err> {

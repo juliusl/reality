@@ -138,6 +138,16 @@ impl<'a> Context<'a> {
         }
     }
 
+    /// Append comment to the last line,
+    /// 
+    pub fn append_comment(&mut self, input: &'a str) {
+        if let Some(line) = self.analyzing.as_mut().and_then(|b| b.lines.last_mut()) {
+            if let Some(comments) = line.comment.as_mut() {
+                comments.push(input);
+            }
+        }
+    }
+
     /// Returns true if the current instruction is AddNode,
     ///
     #[inline]

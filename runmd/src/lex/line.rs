@@ -18,5 +18,5 @@ pub struct Line<'a> {
     pub attr: Option<Attribute<'a>>,
     /// Comment value,
     /// 
-    pub comment: Option<&'a str>,
+    pub comment: Option<Vec<&'a str>>,
 }

@@ -28,8 +28,12 @@ pub enum Instruction {
     LoadExtensionSuffix,
     /// Appends input to the last line,
     /// 
-    #[token("|", on_append_input)]
+    #[token("| ", on_append_input)]
     AppendInput,
+    /// Appends a comment to the last line,
+    /// 
+    #[token("|#", on_append_comment)]
+    AppendComment,
     /// End of a block,
     ///
     #[token("```", on_block_end)]
@@ -111,6 +115,18 @@ fn on_append_input(lex: &mut Lexer<Instruction>) -> Filter<()> {
     if lex.extras.is_analyzing() {
         if let Some(input) = lex.bump_line() {
             lex.extras.append_input(input.trim_start_matches('|').trim());
+        }
+        Filter::Emit(())
+    } else {
+        Filter::Skip
+    }
+}
+
+#[inline]
+fn on_append_comment(lex: &mut Lexer<Instruction>) -> Filter<()> {
+    if lex.extras.is_analyzing() {
+        if let Some(input) = lex.bump_line() {
+            lex.extras.append_comment(input.trim_start_matches("|").trim_start_matches('#').trim());
         }
         Filter::Emit(())
     } else {
@@ -215,6 +231,9 @@ fn test_add_node_instruction() {
     | 4 
     | 5 
     | 6 test 12345 
+    + .test hello world 4   # test comment 2
+    |# [table=true]
+    |# [name=Test]
     ",
         context,
     );
@@ -225,6 +244,9 @@ fn test_add_node_instruction() {
     assert_eq!(lex.next(), Some(Ok(Instruction::AppendInput)));
     assert_eq!(lex.next(), Some(Ok(Instruction::AppendInput)));
     assert_eq!(lex.next(), Some(Ok(Instruction::AppendInput)));
+    assert_eq!(lex.next(), Some(Ok(Instruction::AddNode)));
+    assert_eq!(lex.next(), Some(Ok(Instruction::AppendComment)));
+    assert_eq!(lex.next(), Some(Ok(Instruction::AppendComment)));
     lex.extras.end_block();
 
     let block = lex.extras.blocks.pop().expect("should have a block");
@@ -232,18 +254,24 @@ fn test_add_node_instruction() {
     let line = &block.lines[0];
     assert_eq!(line.tag, Some(Tag("example")));
     assert_eq!(line.attr, Some(Attribute { name: "test", input: Some(Input::EscapedText("hello-world")) }));
-    assert_eq!(line.comment, Some("# Test comment"));
+    assert_eq!(line.comment, Some(vec!["# Test comment"]));
     assert!(line.extension.is_none());
 
     let line = &block.lines[1];
     assert_eq!(line.attr, Some(Attribute { name: "test", input: Some(Input::Text("hello world 2")) }));
-    assert_eq!(line.comment, Some("# test comment"));
+    assert_eq!(line.comment, Some(vec!["# test comment"]));
     assert!(line.extension.is_none());
     assert!(line.tag.is_none());
 
     let line = &block.lines[2];
     assert_eq!(line.attr, Some(Attribute { name: "test", input: Some(Input::Lines(vec!["hello world 3", "4", "5", "6 test 12345"])) }));
-    assert_eq!(line.comment, Some("# test comment"));
+    assert_eq!(line.comment, Some(vec!["# test comment"]));
+    assert!(line.extension.is_none());
+    assert!(line.tag.is_none());
+
+    let line = &block.lines[3];
+    assert_eq!(line.attr, Some(Attribute { name: "test", input: Some(Input::Text("hello world 4")) }));
+    assert_eq!(line.comment, Some(vec!["# test comment 2", "[table=true]", "[name=Test]"]));
     assert!(line.extension.is_none());
     assert!(line.tag.is_none());
 }

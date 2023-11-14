@@ -66,6 +66,11 @@ pub struct FieldOwned<T> {
 ///
 pub type Frame = Vec<FieldPacket>;
 
+/// Wrapper struct over frames meant to update a block object,
+/// 
+#[derive(Clone, Default, Debug)]
+pub struct FrameUpdates(pub Frame);
+
 /// Converts a type to a list of packets,
 ///
 pub trait ToFrame {

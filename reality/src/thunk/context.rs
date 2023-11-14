@@ -7,15 +7,17 @@ use futures_util::StreamExt;
 use futures_util::TryStreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
+use tracing::error;
 use tracing::trace;
 use uuid::Uuid;
 
-use crate::Frame;
 use crate::prelude::Latest;
 use crate::AsyncStorageTarget;
 use crate::Attribute;
 use crate::BlockObject;
 use crate::Dispatcher;
+use crate::Frame;
+use crate::FrameUpdates;
 use crate::Node;
 use crate::ResourceKey;
 use crate::Shared;
@@ -53,9 +55,9 @@ pub struct Context {
     ///
     pub audit: Option<ThunkAudit>,
     /// Cache storage,
-    /// 
+    ///
     /// **Note** Cloning the cache will creates a new branch.
-    /// 
+    ///
     __cached: Shared,
 }
 
@@ -213,7 +215,9 @@ impl Context {
     ///
     /// Returns a join-handle if the task was created.
     ///
-    pub fn spawn<F>(self, task: impl FnOnce(Context) -> F + 'static) -> SpawnResult
+    /// **Note** Will start immediately on the tokio-runtime.
+    ///
+    pub fn spawn<F>(&self, task: impl FnOnce(Context) -> F + 'static) -> SpawnResult
     where
         F: Future<Output = anyhow::Result<Context>> + Send + 'static,
     {
@@ -221,7 +225,7 @@ impl Context {
             .runtime
             .clone()
             .as_ref()
-            .map(|h| h.clone().spawn(task(self)))
+            .map(|h| h.clone().spawn(task(self.clone())))
     }
 
     /// Convenience for `PluginOutput::Skip`
@@ -240,20 +244,33 @@ impl Context {
     ///
     /// **Note**: This is the state that was evaluated at the start of the application, when the runmd was parsed.
     ///
-    pub async fn initialized<P: Plugin + Sync + Send + 'static>(
-        &self,
-    ) -> P {
-        self.node()
-            .await
+    pub async fn initialized<P: Plugin + Sync + Send + 'static>(&mut self) -> P {
+        let node = self.node().await;
+        let mut output = node
             .current_resource::<P>(self.attribute.map(|a| a.transmute()))
-            .unwrap_or_default()
+            .unwrap_or_default();
+        drop(node);
+
+        // TODO: This might need a bit of thinking
+        if let Some(packets) = self
+            .node()
+            .await
+            .resource::<FrameUpdates>(self.attribute.map(|a| a.transmute()))
+        {
+            trace!("Frame updates enabled, applying field packets");
+            for field in packets.0.clone().drain(..).map(|f| f.into_field_owned()) {
+                if !output.set_field(field) {
+                    error!("Could not set field");
+                }
+            }
+        }
+
+        output
     }
 
     /// Retrieves the initialized frame state of the plugin,
-    /// 
-    pub async fn initialized_frame(
-        &self,
-    ) -> Frame {
+    ///
+    pub async fn initialized_frame(&self) -> Frame {
         self.node()
             .await
             .current_resource::<Frame>(self.attribute.map(|a| a.transmute()))
@@ -261,9 +278,13 @@ impl Context {
     }
 
     /// Initializes and returns a dispatcher for resource T,
-    /// 
-    pub async fn initialized_dispatcher<T: Default + Sync + Send + 'static>(&self) -> Dispatcher<Shared, T> {
-        self.node.intialize_dispatcher(self.attribute.map(|a| a.transmute())).await
+    ///
+    pub async fn initialized_dispatcher<T: Default + Sync + Send + 'static>(
+        &self,
+    ) -> Dispatcher<Shared, T> {
+        self.node
+            .intialize_dispatcher(self.attribute.map(|a| a.transmute()))
+            .await
     }
 
     /// If cached, returns a cached value of P,
@@ -292,42 +313,59 @@ impl Context {
     }
 
     /// Returns true if the kv store contains value P at key,
-    /// 
+    ///
     pub fn kv_contains<P>(&mut self, key: impl std::hash::Hash) -> bool
     where
-        P: Send + Sync + 'static 
+        P: Send + Sync + 'static,
     {
         let key = self.attribute.map(|s| s.transmute().branch(key));
         self.__cached.resource::<P>(key).is_some()
     }
 
     /// Store a resource by key in cache,
-    /// 
-    pub fn store_kv<P>(&mut self, key: impl std::hash::Hash, value: P) 
+    ///
+    pub fn store_kv<P>(&mut self, key: impl std::hash::Hash, value: P)
     where
-        P: Send + Sync + 'static
+        P: Send + Sync + 'static,
     {
-        self.__cached.put_resource::<P>(value, self.attribute.map(|s| s.transmute().branch(key)));
+        self.__cached
+            .put_resource::<P>(value, self.attribute.map(|s| s.transmute().branch(key)));
     }
 
     /// Fetch a kv pair by key,
-    /// 
-    pub fn fetch_kv<P>(&mut self, key: impl std::hash::Hash) -> Option<(ResourceKey<P>, <Shared as StorageTarget>::BorrowResource<'_, P>)>
+    ///
+    pub fn fetch_kv<P>(
+        &mut self,
+        key: impl std::hash::Hash,
+    ) -> Option<(
+        ResourceKey<P>,
+        <Shared as StorageTarget>::BorrowResource<'_, P>,
+    )>
     where
-        P: Send + Sync + 'static
+        P: Send + Sync + 'static,
     {
         let key = self.attribute.map(|s| s.transmute().branch(key));
-        self.__cached.resource::<P>(key).map(|c| (key.expect("should be some"), c) )
+        self.__cached
+            .resource::<P>(key)
+            .map(|c| (key.expect("should be some"), c))
     }
 
     /// Fetch a mutable reference to a kv pair by key,
-    /// 
-    pub fn fetch_mut_kv<P>(&mut self, key: impl std::hash::Hash) -> Option<(ResourceKey<P>, <Shared as StorageTarget>::BorrowMutResource<'_, P>)>
+    ///
+    pub fn fetch_mut_kv<P>(
+        &mut self,
+        key: impl std::hash::Hash,
+    ) -> Option<(
+        ResourceKey<P>,
+        <Shared as StorageTarget>::BorrowMutResource<'_, P>,
+    )>
     where
-        P: Send + Sync + 'static
+        P: Send + Sync + 'static,
     {
         let key = self.attribute.map(|s| s.transmute().branch(key));
-        self.__cached.resource_mut::<P>(key).map(|c| (key.expect("should be some"), c) )
+        self.__cached
+            .resource_mut::<P>(key)
+            .map(|c| (key.expect("should be some"), c))
     }
 
     /// Writes a resource to the cache,
@@ -338,22 +376,31 @@ impl Context {
     }
 
     /// Takes a cached resource,
-    /// 
+    ///
     pub fn take_cache<R: Sync + Send + 'static>(&mut self) -> Option<Box<R>> {
         self.__cached
             .take_resource(self.attribute.map(|a| a.transmute()))
     }
 
     /// Find and cache a resource,
-    /// 
+    ///
     /// - Searches the current context for a resource P
     /// - If include_root is true, searches the root resource key for resource P as well
     ///
-    pub async fn find_and_cache<P: ToOwned<Owned = P> + Send + Sync + 'static>(&mut self, include_root: bool) {
+    pub async fn find_and_cache<P: ToOwned<Owned = P> + Send + Sync + 'static>(
+        &mut self,
+        include_root: bool,
+    ) {
         let node = self.node().await;
         if let Some(resource) = {
             node.current_resource::<P>(self.attribute.map(|a| a.transmute()))
-                .or_else(|| if include_root { node.current_resource::<P>(None) } else { None })
+                .or_else(|| {
+                    if include_root {
+                        node.current_resource::<P>(None)
+                    } else {
+                        None
+                    }
+                })
         } {
             drop(node);
             self.write_cache(resource);
@@ -362,9 +409,7 @@ impl Context {
 
     /// Caches P,
     ///
-    pub async fn cache<P: Plugin + Sync + Send + 'static>(
-        &mut self,
-    ) {
+    pub async fn cache<P: Plugin + Sync + Send + 'static>(&mut self) {
         let next = self.initialized().await;
 
         self.__cached
@@ -575,7 +620,7 @@ impl Context {
     }
 
     /// Calls the enable frame thunk fn related to this context,
-    /// 
+    ///
     pub async fn enable_frame(&self) -> anyhow::Result<Option<Context>> {
         let thunk = self
             .node()

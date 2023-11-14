@@ -7,7 +7,7 @@ use serde::Serialize;
 
 /// Wrapper struct to include a tag w/ a parsed value,
 ///
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, PartialEq, Eq, Deserialize, Default)]
 pub struct Tagged<T: FromStr + Send + Sync + 'static> {
     /// Untagged value,
     ///
@@ -15,6 +15,27 @@ pub struct Tagged<T: FromStr + Send + Sync + 'static> {
     /// Map of values,
     ///
     tag: Option<String>,
+}
+
+impl<T: PartialOrd + FromStr + Send + Sync + 'static> PartialOrd for Tagged<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.value.partial_cmp(&other.value) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.tag.partial_cmp(&other.tag)
+    }
+}
+
+impl<T: Ord + FromStr + Send + Sync + 'static> Ord for Tagged<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self.value.as_ref(), other.value.as_ref()) {
+            (Some(a), Some(b)) => a.cmp(&b),
+            (None, None) => std::cmp::Ordering::Equal,
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+        }
+    }
 }
 
 impl<T: FromStr + Clone + Send + Sync + 'static> Clone for Tagged<T> {

@@ -49,9 +49,7 @@ impl EngineBuilder {
 
     /// Registers a plugin w/ this engine builder,
     ///
-    pub fn enable<P: Plugin + Default + Clone + ToFrame + Send + Sync + 'static>(
-        &mut self,
-    ) {
+    pub fn enable<P: Plugin + Default + Clone + ToFrame + Send + Sync + 'static>(&mut self) {
         self.register_with(|parser| {
             parser.with_object_type::<Thunk<P>>();
         });
@@ -175,9 +173,7 @@ impl Engine {
     /// Registers a plugin w/ this engine,
     ///
     #[inline]
-    pub fn enable<P: Plugin + Default + Clone + ToFrame + Send + Sync + 'static>(
-        &mut self,
-    ) {
+    pub fn enable<P: Plugin + Default + Clone + ToFrame + Send + Sync + 'static>(&mut self) {
         self.register_with(|parser| {
             parser.with_object_type::<Thunk<P>>();
         });
@@ -343,6 +339,10 @@ impl Engine {
                     if let Some(previous) = self.operations.insert(operation.address(), operation) {
                         info!(address = previous.address(), "Replacing operation");
                     }
+
+                    if let Some(parsed) = target.read().await.resource::<ParsedAttributes>(None) {
+                        let __parsed = parsed.clone();
+                    }
                 }
 
                 target.write().await.drain_dispatch_queues();
@@ -356,6 +356,10 @@ impl Engine {
                         sequence.bind(self.new_context(target.clone()).await),
                     ) {
                         info!(address = previous.address(), "Replacing sequence");
+                    }
+
+                    if let Some(parsed) = target.read().await.resource::<ParsedAttributes>(None) {
+                        let __parsed = parsed.clone();
                     }
                 }
 
@@ -451,7 +455,7 @@ impl Engine {
                 println!("Handling packet {:?}", packet.action);
                 match packet.action {
                     Action::Run { address, tx } => {
-                        println!("Running {}", address);
+                        eprintln!("Running {}", address);
                         info!(address, "Running operation");
                         let action = self
                             .operations
@@ -485,6 +489,11 @@ impl Engine {
                         tokio::time::sleep(delay).await;
                         self.cancellation.cancel();
                         break;
+                    }
+                    Action::EnableWireBus {
+                        ..
+                    } => {
+                        
                     }
                 }
             }
@@ -540,6 +549,10 @@ pub enum Action {
         #[serde(skip)]
         tx: Option<tokio::sync::oneshot::Sender<EngineHandle>>,
     },
+    EnableWireBus {
+        attribute: ResourceKey<Attribute>,
+        allow_changes: bool,
+    },
     /// Compiles the operations from a project,
     ///
     Compile { relative: String, content: String },
@@ -564,6 +577,14 @@ impl Debug for Action {
             Self::Sync { tx } => f
                 .debug_struct("Sync")
                 .field("has_tx", &tx.is_some())
+                .finish(),
+            Self::EnableWireBus {
+                attribute,
+                allow_changes,
+            } => f
+                .debug_struct("EnableWireBus")
+                .field("attribute", attribute)
+                .field("allow_changes", allow_changes)
                 .finish(),
             Self::Shutdown(arg0) => f.debug_tuple("Shutdown").field(arg0).finish(),
         }

@@ -36,6 +36,7 @@ pub mod prelude {
     pub use super::visit::FieldPacket;
     pub use super::visit::FieldPacketType;
     pub use super::visit::Frame;
+    pub use super::visit::FrameUpdates;
 
     /// Returns fields for an attribute type,
     ///

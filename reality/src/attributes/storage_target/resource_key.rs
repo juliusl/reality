@@ -1,16 +1,22 @@
 use core::slice;
+
 use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hasher, Hash};
+use std::hash::Hasher;
+use std::hash::Hash;
 use std::marker::PhantomData;
+use serde::Serialize;
+use serde::Deserialize;
 
 /// Build a resource key,
-/// 
+///
 pub struct ResourceKeyHashBuilder<T: Send + Sync + 'static, H: Hasher + Default> {
     hasher: H,
     _t: PhantomData<T>,
 }
 
-impl<T: Send + Sync + 'static, H: Hasher + Default>  From<ResourceKeyHashBuilder<T, H>> for ResourceKey<T> {
+impl<T: Send + Sync + 'static, H: Hasher + Default> From<ResourceKeyHashBuilder<T, H>>
+    for ResourceKey<T>
+{
     fn from(val: ResourceKeyHashBuilder<T, H>) -> Self {
         ResourceKey::with_hash_value(val.hasher.finish())
     }
@@ -18,19 +24,22 @@ impl<T: Send + Sync + 'static, H: Hasher + Default>  From<ResourceKeyHashBuilder
 
 impl<T: Send + Sync + 'static> ResourceKeyHashBuilder<T, DefaultHasher> {
     /// Creates a new resource key hash builder,
-    /// 
+    ///
     pub fn new_default_hasher() -> Self {
-        Self { hasher: DefaultHasher::new(), _t: PhantomData }
+        Self {
+            hasher: DefaultHasher::new(),
+            _t: PhantomData,
+        }
     }
 
     /// Adds to hash state,
-    /// 
+    ///
     pub fn hash(&mut self, hashable: impl Hash) {
         hashable.hash(&mut self.hasher);
     }
 
     /// Finishes building the resource key w/ hash,
-    /// 
+    ///
     pub fn finish(self) -> ResourceKey<T> {
         self.into()
     }
@@ -38,9 +47,10 @@ impl<T: Send + Sync + 'static> ResourceKeyHashBuilder<T, DefaultHasher> {
 
 /// Struct containing properties of a resource key,
 ///
-#[derive(Debug, Hash, Eq, PartialEq, PartialOrd)]
+#[derive(Debug, Serialize, Deserialize, Hash, Eq, PartialEq, PartialOrd)]
 pub struct ResourceKey<T: Send + Sync + 'static> {
     data: u128,
+    #[serde(skip)]
     _t: PhantomData<T>,
 }
 
@@ -74,7 +84,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
     }
 
     /// Creates a new resource-key derived from hashable input,
-    /// 
+    ///
     pub fn with_hash(hashable: impl std::hash::Hash) -> Self {
         let mut key = DefaultHasher::new();
         hashable.hash(&mut key);
@@ -87,7 +97,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
     }
 
     /// Creates a new resource_key set w/ a hash value,
-    /// 
+    ///
     pub fn with_hash_value(hash: u64) -> Self {
         let key = hash;
         let type_key = Self::type_key();
@@ -98,10 +108,10 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
 
     /// Transmute a resource-key to a different resource key type,
     ///
-    /// If a label was set, transfers the label to the new key, 
-    /// 
+    /// If a label was set, transfers the label to the new key,
+    ///
     /// If hashed, transfers the hash key over,
-    /// 
+    ///
     /// Otherwise, creates a new key.
     ///
     pub fn transmute<B: Send + Sync + 'static>(&self) -> ResourceKey<B> {
@@ -144,19 +154,19 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
             None
         }
     }
-    
+
     /// Returns true if this key has a cursor enabled,
-    /// 
+    ///
     pub fn is_cursor(&self) -> bool {
         self.flags().contains(ResourceKeyFlags::ENABLE_CURSOR)
     }
 
     /// Creates a branch of the current resource-key,
-    /// 
+    ///
     /// Hashes the .key() value from the current key first followed by the hash of hashable after.
-    /// 
+    ///
     /// The result is the key returned.
-    /// 
+    ///
     pub fn branch(&self, hashable: impl std::hash::Hash) -> Self {
         let mut hash_builder = ResourceKeyHashBuilder::<T, _>::new_default_hasher();
         hash_builder.hash(self.key());
@@ -187,7 +197,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
     }
 
     /// Returns the hash value from the resource-key,
-    /// 
+    ///
     fn hashed_parts(&self) -> Option<u64> {
         if !self.flags().contains(ResourceKeyFlags::HASHED) {
             None
@@ -294,9 +304,7 @@ impl<T: Send + Sync + 'static> TryFrom<Option<&'static str>> for ResourceKey<T> 
     }
 }
 
-impl<T: Send + Sync + 'static> Copy for ResourceKey<T> {
-
-}
+impl<T: Send + Sync + 'static> Copy for ResourceKey<T> {}
 
 impl<T: Send + Sync + 'static> Clone for ResourceKey<T> {
     fn clone(&self) -> Self {
@@ -307,24 +315,24 @@ impl<T: Send + Sync + 'static> Clone for ResourceKey<T> {
 bitflags::bitflags! {
     struct ResourceKeyFlags: u16 {
         /// Resource key was created with a label
-        /// 
+        ///
         const WITH_LABEL = 1;
         /// Type size is equal to the length of the label,
-        /// 
+        ///
         const TYPE_SIZE_EQ_LABEL_LEN = 1 << 1;
         /// Type size is equal to the length of the type name len,
-        /// 
+        ///
         const TYPE_SIZE_EQ_TYPE_NAME_LEN = 1 << 2;
         /// Resource key was created from hashing a value,
-        /// 
+        ///
         const HASHED = 1 << 3;
         /// Resource key will enable a cursor has a cursor enabled,
-        /// 
+        ///
         const ENABLE_CURSOR = 1 << 4;
         /// Resource key is a hashed counter, meaning within the same namespace, it can store
         /// multiple references to the same type under a hashkey plus index. This allows
         /// resource_iter to be used.
-        /// 
+        ///
         const HASHED_COUNTER = ResourceKeyFlags::HASHED.bits() | ResourceKeyFlags::ENABLE_CURSOR.bits();
     }
 }

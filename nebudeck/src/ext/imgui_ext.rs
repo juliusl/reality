@@ -241,6 +241,9 @@ impl<T: 'static> ImguiMiddleware<T> {
                 if let Some(_wait_for_finish) = self.__update_start.take() {
                     if let Ok(mut r) = engine.wait_for_finish(_wait_for_finish) {
                         if let Some(nodes) = r.cache.take_resource::<Vec<UiNode>>(None) {
+                            // TODO -- Should clear?
+                            self.ui_nodes.clear();
+
                             self.ui_nodes.extend(*nodes);
                         }
                         self.__last_updated = Some(Instant::now());

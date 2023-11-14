@@ -31,7 +31,7 @@ pub trait Plugin: BlockObject<Shared> + CallAsync + Clone + Default {
     /// the result to node storage.
     /// 
     fn enable_frame(context: ThunkContext) -> CallOutput {
-        CallOutput::Spawn(context.spawn(|c| async {
+        CallOutput::Spawn(context.spawn(|mut c| async {
             let init = c.initialized::<Self>().await;
             let frame = init.to_frame(c.attribute);
             unsafe { c.node_mut().await.put_resource(frame, c.attribute.map(|c| c.transmute())) }

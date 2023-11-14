@@ -58,9 +58,9 @@ impl<'a> Tokens<'a> {
     /// Consumes self and returns as Attribute or None
     ///
     #[inline]
-    pub fn parse_comment(self) -> Option<&'a str> {
+    pub fn parse_comment(self) -> Option<Vec<&'a str>> {
         match self {
-            Tokens::Comment(c) => Some(c),
+            Tokens::Comment(c) => Some(vec![c]),
             _ => None,
         }
     }

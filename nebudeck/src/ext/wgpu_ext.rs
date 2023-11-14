@@ -272,7 +272,7 @@ impl<T: 'static> DesktopApp<T> for WgpuSystem<T> {
         window: winit::window::Window,
     ) -> crate::desktop::winit::window::Window {
         window.set_resizable(true);
-        window.set_maximized(true);
+        // window.set_maximized(true);
         self.hardware
             .set(HardwareContext::new(&window).expect("should be able to create hardware context"))
             .expect("should only be called once");
