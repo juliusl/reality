@@ -538,6 +538,31 @@ impl StructData {
             quote!()
         };
 
+
+
+        let module_name = format_ident!("{}_roperties", self.name.to_string().to_lowercase());
+        let properties_impl = quote_spanned!(self.span=> {
+            pub mod #module_name {
+                pub struct Properties {
+
+                }
+
+                impl Default for Properties {
+                    fn default() -> Self {
+                        Self::new()
+                    }
+                }
+
+                impl Properties {
+                    pub fn new() -> Self {
+                        Self {
+
+                        }
+                    }
+                }
+            }
+        });
+
         let object_type_trait = quote_spanned!(self.span=>
             #[async_trait]
             impl #impl_generics BlockObject<Storage> for #name #ty_generics #where_clause {
