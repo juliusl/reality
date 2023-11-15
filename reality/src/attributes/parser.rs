@@ -49,8 +49,11 @@ pub struct ParsedAttributes {
     ///
     pub lines: Vec<String>,
     /// Map of labeled comments,
-    /// 
+    ///
     pub comment_properties: HashMap<ResourceKey<Attribute>, BTreeMap<String, String>>,
+    ///  Map of doc headers found for attributes,
+    ///
+    pub doc_headers: HashMap<ResourceKey<Attribute>, Vec<String>>,
 }
 
 /// Defined properties,
@@ -61,8 +64,11 @@ pub struct Properties {
     ///
     pub defined: HashMap<ResourceKey<Attribute>, Vec<ResourceKey<Property>>>,
     /// Map of labeled comments,
-    /// 
+    ///
     pub comment_properties: HashMap<ResourceKey<Property>, BTreeMap<String, String>>,
+    /// Map of doc headers found for properties,
+    ///
+    pub doc_headers: HashMap<ResourceKey<Property>, Vec<String>>,
 }
 
 impl ParsedAttributes {
@@ -135,19 +141,42 @@ impl ParsedAttributes {
             if line.attr.is_some() && line.extension.is_some() {
                 if let Some(last) = self.last() {
                     if let Some(last) = self.properties.defined.get(last).and_then(|l| l.last()) {
-                        self.properties.comment_properties
+                        self.properties
+                            .comment_properties
                             .insert(*last, line.comment_properties.clone());
                     }
                 }
             } else if line.extension.is_some() && line.attr.is_none() {
-                if let Some(last) = self.last() {
+                if let Some(last) = self.last().cloned() {
                     self.comment_properties
-                            .insert(*last, line.comment_properties.clone());
+                        .insert(last, line.comment_properties.clone());
+                } else if line.extension.is_none() && line.attr.is_some() {
+                    if let Some(last) = self.last().cloned() {
+                        self.comment_properties
+                            .insert(last, line.comment_properties.clone());
+                    }
                 }
-            } else if line.extension.is_none() && line.attr.is_some() {
+            }
+        }
+
+        if !line.doc_headers.is_empty() {
+            if line.attr.is_some() && line.extension.is_some() {
                 if let Some(last) = self.last() {
-                    self.comment_properties
-                            .insert(*last, line.comment_properties.clone());
+                    if let Some(last) = self.properties.defined.get(last).and_then(|l| l.last()) {
+                        self.properties
+                            .doc_headers
+                            .insert(*last, line.doc_headers.iter().map(|h| h.to_string()).collect());
+                    }
+                }
+            } else if line.extension.is_some() && line.attr.is_none() {
+                if let Some(last) = self.last().cloned() {
+                    self.doc_headers
+                        .insert(last, line.doc_headers.iter().map(|h| h.to_string()).collect());
+                } else if line.extension.is_none() && line.attr.is_some() {
+                    if let Some(last) = self.last().cloned() {
+                        self.doc_headers
+                            .insert(last, line.doc_headers.iter().map(|h| h.to_string()).collect());
+                    }
                 }
             }
         }
@@ -536,6 +565,7 @@ where
     }
 
     fn parsed_line(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {
+        trace!("[PARSED] {}", _node_info.line);
         self.attributes.add_line(&_node_info.line);
     }
 

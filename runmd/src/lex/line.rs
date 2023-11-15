@@ -52,6 +52,10 @@ impl<'a> std::fmt::Display for Line<'a> {
                 }
             },
             Instruction::AddNode => {
+                for doc_header in self.doc_headers.iter() {
+                    writeln!(f, "# -- {doc_header}")?;
+                }
+
                 match (self.attr.as_ref(), self.tag.as_ref()) {
                     (Some(Attribute { name, input: Some(input) }), Some(tag)) => {
                         write!(f, "+ {} .{name} {}", tag.0, input.clone().input_str(), )
@@ -71,6 +75,10 @@ impl<'a> std::fmt::Display for Line<'a> {
                 }
             },
             Instruction::DefineProperty => {
+                for doc_header in self.doc_headers.iter() {
+                    writeln!(f, "# -- {doc_header}")?;
+                }
+
                 match (self.attr.as_ref(), self.tag.as_ref()) {
                     (Some(Attribute { name, input: Some(input) }), Some(tag)) => {
                         write!(f, ": {} .{name} {}", tag.0, input.clone().input_str())
@@ -90,6 +98,10 @@ impl<'a> std::fmt::Display for Line<'a> {
                 }
             },
             Instruction::LoadExtension | Instruction::LoadExtensionSuffix => {
+                for doc_header in self.doc_headers.iter() {
+                    writeln!(f, "# -- {doc_header}")?;
+                }
+                
                 match self.extension.as_ref() {
                     Some(Extension { tag: Some(tag), name, suffix: Some(suffix), input: Some(input) }) => {
                         write!(f, "<{tag}/{name}.{suffix}> {}", input.clone().input_str())

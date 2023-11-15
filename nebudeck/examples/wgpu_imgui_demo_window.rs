@@ -21,19 +21,22 @@ async fn main() -> anyhow::Result<()> {
         "test.md",
         r"
     ```runmd
-    + .operation show_frame_editor                              # Shows frame editor
-    <loopio.enable-wirebus>             a/demo.test2            # Enables the wire-bus for attribute at specific path
+    + .operation show_frame_editor                                  # Shows frame editor
+    <loopio.enable-wirebus>             a/demo.test2                # Enables the wire-bus for attribute at specific path
+    <loopio.enable-wirebus>             b/nebudeck.frame-editor     # Enables the wire-bus for attribute at specific path
+    <nebudeck.frame-editor>             b/nebudeck.frame-editor     # Enables the frame editor for the frame editor
 
-    <b/nebudeck.frame-editor>             a/demo.test2            # Enables the frame editor for an attribute at a specific path
+    <b/nebudeck.frame-editor>           a/demo.test2                # Enables the frame editor for an attribute at a specific path
     : .editor_name                      Demo editor
-    : test .panel                       Test Panel              # Custom panels can be constructed from runmd
-    : test .text-edit                   test_value              # Adds a text editor for the property test_value
-    : test .text-display                test_value
-    : test .text-edit                   test_not_str
-    
-    : test .text-display                test_not_str
+    : test .panel                       Test Panel                  # Custom panels can be constructed from runmd
+    : test .text-edit                   test_value                  # Adds a text editor for the property test_value
     |# widget = text
 
+    : test .text-display                test_value
+    
+    # -- # Example: Configuring a property edit widget for a property
+    # -- This is an example of editing 
+    : test  .edit                       test_value
     : test .action                      Run Test
     |# title        = Run Test
     |# description  = Runs a test

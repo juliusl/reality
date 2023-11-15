@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use anyhow::anyhow;
@@ -96,17 +97,19 @@ where
 }
 
 /// Plain wrapper over T,
-/// 
+///
 pub struct Field<T>(T);
 
-/// Generic wrapper over inner field type to make generating 
+/// Generic wrapper over inner field type to make generating
 /// a reader easier,
-/// 
+///
 pub struct PropertyReader<T>
 where
     for<'de> T: Deserialize<'de>,
 {
     value: T,
+    doc_headers: Vec<String>,
+    comment_properties: BTreeMap<String, String>,
 }
 
 impl<T> From<PropertyReader<T>> for Field<T>
@@ -123,7 +126,11 @@ where
     for<'de> T: Deserialize<'de>,
 {
     fn from(value: T) -> Self {
-        Self { value }
+        Self {
+            value,
+            doc_headers: Vec::default(),
+            comment_properties: BTreeMap::default(),
+        }
     }
 }
 
@@ -148,10 +155,17 @@ where
         if let Some(wire_data) = &field.wire_data {
             Ok(PropertyReader {
                 value: bincode::deserialize::<T>(wire_data)?,
+                doc_headers: Vec::default(),
+                comment_properties: BTreeMap::default(),
             })
         } else {
             Err(anyhow!("Packet has no wire data"))
         }
+    }
+
+    pub fn with_comment_properties(mut self, properties: BTreeMap<String, String>) -> Self {
+        self.comment_properties = properties;
+        self
     }
 }
 
@@ -234,9 +248,11 @@ where
 {
     /// Creates a new function resource from a block object,
     ///
-    pub fn new<BlockStorage: StorageTarget<Namespace = Storage> + 'static, B: BlockObject<BlockStorage>>() -> BlockObjectHandler<BlockStorage::Namespace> 
-    where 
-    {
+    pub fn new<
+        BlockStorage: StorageTarget<Namespace = Storage> + 'static,
+        B: BlockObject<BlockStorage>,
+    >() -> BlockObjectHandler<BlockStorage::Namespace>
+where {
         Self {
             on_load: B::on_load,
             on_unload: B::on_unload,

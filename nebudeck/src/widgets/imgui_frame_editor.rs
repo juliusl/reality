@@ -1,6 +1,6 @@
-use std::ops::Deref;
-use std::collections::BTreeSet;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
+use std::ops::Deref;
 
 use imgui::TreeNodeFlags;
 use loopio::prelude::*;
@@ -27,20 +27,25 @@ pub struct FrameEditor {
     panel: BTreeMap<String, String>,
     /// Text edit inputs,
     ///
-    #[reality(vec_of=Tagged<String>, rename="text-edit")]
+    #[reality(vec_of=Tagged<String>, rename="text-edit", wire)]
     text_edit: Vec<Tagged<String>>,
     /// Text edit inputs,
     ///
-    #[reality(vec_of=Tagged<String>, rename="text-display")]
+    #[reality(vec_of=Tagged<String>, rename="text-display", wire)]
     text_display: Vec<Tagged<String>>,
     /// usize edit inputs,
     ///
-    #[reality(vec_of=Tagged<String>, rename="usize-edit")]
+    #[reality(vec_of=Tagged<String>, rename="usize-edit", wire)]
     usize_edit: Vec<Tagged<String>>,
     /// usize edit inputs,
     ///
-    #[reality(vec_of=Tagged<String>, rename="usize-display")]
+    #[reality(vec_of=Tagged<String>, rename="usize-display", wire)]
     usize_display: Vec<Tagged<String>>,
+    /// List of properties to edit,
+    ///
+    #[reality(vec_of=Tagged<String>, wire)]
+    edit: Vec<Tagged<String>>,
+
     /// Action button,
     ///
     #[reality(set_of=Tagged<String>)]
@@ -49,6 +54,7 @@ pub struct FrameEditor {
 
 async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = tc.initialized::<FrameEditor>().await;
+
     tc.print_parsed_comments().await;
 
     info!("Enabling frame editor -- {}", init.path);
@@ -72,6 +78,38 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                 info!("Found change pipeline");
                 drop(node);
                 editing.write_cache(change_pipeline);
+            }
+        }
+        {
+            let node = editing.node().await;
+            if let Some(parsed_attributes) = node.current_resource::<ParsedAttributes>(None) {
+                info!("Found parsed attributes");
+                drop(node);
+                editing.write_cache(parsed_attributes);
+            }
+        }
+
+        {
+            let properties = if let Some(parsed) = editing.cached::<ParsedAttributes>() {
+                parsed
+                    .properties
+                    .defined
+                    .iter()
+                    .map(|(_, v)| v.clone())
+                    .flatten()
+                    .collect::<Vec<_>>()
+            } else {
+                vec![]
+            };
+
+            for prop in properties {
+                let node = editing.node().await;
+                if let Some(field_packet) = node.current_resource::<FieldPacket>(Some(prop.transmute()))
+                {
+                    info!("Found field packet");
+                    drop(node);
+                    editing.store_kv(prop, field_packet);
+                }
             }
         }
 
@@ -131,6 +169,72 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
                         if ui.collapsing_header("Wire Bus", TreeNodeFlags::empty()) {
                             for r in render.drain(..) {
+                                r();
+                            }
+                        }
+                    }
+
+                    let mut render_properties = vec![];
+                    if let Some(parsed) = tc.cached_ref::<ParsedAttributes>() {
+                        if let Some(rk) = tc.attribute.as_ref() {
+                            if let Some(defined) = parsed.properties.defined.get(rk) {
+                                render_properties.push(|| {
+                                    for prop in defined.clone() {
+                                        if let Some(headers) = parsed.doc_headers.get(rk) {
+                                            ui.text(format!("Attribute - {} Comments", rk.key()));
+                                            for h in headers {
+                                                ui.bullet_text(h);
+                                            }
+                                        }
+
+                                        if let Some(comment_properties) =
+                                            parsed.properties.comment_properties.get(&prop)
+                                        {
+                                            if let Some(comment_properties) =
+                                                parsed.comment_properties.get(rk)
+                                            {
+                                                ui.text(format!("Attribute - {}", rk.key()));
+
+                                                for (name, value) in comment_properties.iter() {
+                                                    ui.label_text(name, value);
+                                                }
+                                            }
+
+                                            if let Some(fp) = tc.fetch_kv::<FieldPacket>(prop) {
+                                                ui.text(format!("Property - {}", fp.1.field_name));
+                                                for (name, value) in comment_properties.iter() {
+                                                    ui.label_text(name, value);
+                                                }
+                                            } else {
+                                                ui.text(format!("Property - {}", prop.key()));
+                                                for (name, value) in comment_properties.iter() {
+                                                    ui.label_text(name, value);
+                                                }
+                                            }
+                                        }
+
+                                        if let Some(headers) =
+                                            parsed.properties.doc_headers.get(&prop)
+                                        {
+                                            if let Some(fp) = tc.fetch_kv::<FieldPacket>(prop) {
+                                                ui.text(format!("Property - {} Comments", fp.1.field_name));
+                                                for h in headers {
+                                                    ui.bullet_text(h);
+                                                }
+                                            } else {
+                                                ui.text(format!("Property - {} Comments", prop.key()));
+                                                for h in headers {
+                                                    ui.bullet_text(h);
+                                                }
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                        }
+
+                        if ui.collapsing_header("Defined Properties", TreeNodeFlags::empty()) {
+                            for r in render_properties {
                                 r();
                             }
                         }
@@ -274,10 +378,10 @@ fn text_edit(
                 if !changes.is_empty() {
                     tc.spawn(|tc| async move {
                         unsafe {
-                            if let Some(mut packets) =
-                                tc.node_mut().await.resource_mut::<FrameUpdates>(
-                                    tc.attribute.map(|a| a.transmute()),
-                                )
+                            if let Some(mut packets) = tc
+                                .node_mut()
+                                .await
+                                .resource_mut::<FrameUpdates>(tc.attribute.map(|a| a.transmute()))
                             {
                                 for change in changes {
                                     packets.0.push(change);

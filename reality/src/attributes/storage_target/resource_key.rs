@@ -329,6 +329,24 @@ bitflags::bitflags! {
         /// Resource key will enable a cursor has a cursor enabled,
         ///
         const ENABLE_CURSOR = 1 << 4;
+        /// If set, the type name of the resource has been hashed into the resource key,
+        /// 
+        const HASH_TYPE_NAME = 1 << 5;
+        /// If set the type name of an owning type has been hashed into the resource key,
+        /// 
+        const HASH_OWNER_TYPE_NAME = 1 << 6;
+        /// If set, the field offset has been hashed into the resource key,
+        /// 
+        const HASH_OFFSET_TYPE_NAME = 1 << 7;
+        /// If set, the field name has been hashed into the resource key,
+        /// 
+        const HASH_FIELD_NAME = 1 << 8;
+        /// If set, the tag value has been hashed into the resource key,
+        /// 
+        const HASH_TAG_VALUE = 1 << 9;
+        /// If set, the length of the field name was hashed into the resoruce key,
+        /// 
+        const HASH_FIELD_NAME_LEN = 1 << 10;
         /// Resource key is a hashed counter, meaning within the same namespace, it can store
         /// multiple references to the same type under a hashkey plus index. This allows
         /// resource_iter to be used.

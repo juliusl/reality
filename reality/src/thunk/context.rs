@@ -337,7 +337,7 @@ impl Context {
     /// Fetch a kv pair by key,
     ///
     pub fn fetch_kv<P>(
-        &mut self,
+        &self,
         key: impl std::hash::Hash,
     ) -> Option<(
         ResourceKey<P>,
