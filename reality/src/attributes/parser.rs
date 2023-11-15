@@ -163,23 +163,54 @@ impl ParsedAttributes {
             if line.attr.is_some() && line.extension.is_some() {
                 if let Some(last) = self.last() {
                     if let Some(last) = self.properties.defined.get(last).and_then(|l| l.last()) {
-                        self.properties
-                            .doc_headers
-                            .insert(*last, line.doc_headers.iter().map(|h| h.to_string()).collect());
+                        self.properties.doc_headers.insert(
+                            *last,
+                            line.doc_headers.iter().map(|h| h.to_string()).collect(),
+                        );
                     }
                 }
             } else if line.extension.is_some() && line.attr.is_none() {
                 if let Some(last) = self.last().cloned() {
-                    self.doc_headers
-                        .insert(last, line.doc_headers.iter().map(|h| h.to_string()).collect());
+                    self.doc_headers.insert(
+                        last,
+                        line.doc_headers.iter().map(|h| h.to_string()).collect(),
+                    );
                 } else if line.extension.is_none() && line.attr.is_some() {
                     if let Some(last) = self.last().cloned() {
-                        self.doc_headers
-                            .insert(last, line.doc_headers.iter().map(|h| h.to_string()).collect());
+                        self.doc_headers.insert(
+                            last,
+                            line.doc_headers.iter().map(|h| h.to_string()).collect(),
+                        );
                     }
                 }
             }
         }
+    }
+
+    /// Finds any parsed extras for a resource key,
+    ///
+    #[inline]
+    pub fn extras(&self, rk: &ResourceKey<Attribute>) -> HashMap<u64, (Option<BTreeMap<String, String>>, Option<Vec<String>>)> {
+        let mut map = HashMap::new();
+        map.insert(
+            rk.key(),
+            (self.comment_properties.get(rk), self.doc_headers.get(rk)),
+        );
+
+        let mut map = HashMap::new();
+        if let Some(properties) = self.properties.defined.get(rk) {
+            for prop in properties {
+                map.insert(
+                    prop.key(),
+                    (
+                        self.properties.comment_properties.get(prop).cloned(),
+                        self.properties.doc_headers.get(prop).map(|r| r.clone()),
+                    ),
+                );
+            }
+        }
+
+        map
     }
 }
 

@@ -90,27 +90,13 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
         }
 
         {
-            let properties = if let Some(parsed) = editing.cached::<ParsedAttributes>() {
-                parsed
-                    .properties
-                    .defined
-                    .iter()
-                    .map(|(_, v)| v.clone())
-                    .flatten()
-                    .collect::<Vec<_>>()
-            } else {
-                vec![]
-            };
-
-            for prop in properties {
-                let node = editing.node().await;
-                if let Some(field_packet) = node.current_resource::<FieldPacket>(Some(prop.transmute()))
-                {
-                    info!("Found field packet");
-                    drop(node);
-                    editing.store_kv(prop, field_packet);
+            if let Some(parsed) = editing.cached::<ParsedAttributes>() {
+                if let Some(attr) = editing.attribute {
+                    println!("{:#?}", attr);
+                    println!("{:#?}", parsed.extras(&attr));
                 }
             }
+
         }
 
         editing

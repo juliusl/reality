@@ -1,3 +1,5 @@
+use tracing::trace;
+
 use crate::prelude::*;
 
 use super::prelude::CallAsync;
@@ -34,7 +36,15 @@ pub trait Plugin: BlockObject<Shared> + CallAsync + Clone + Default {
         CallOutput::Spawn(context.spawn(|mut c| async {
             let init = c.initialized::<Self>().await;
             let frame = init.to_frame(c.attribute);
-            unsafe { c.node_mut().await.put_resource(frame, c.attribute.map(|c| c.transmute())) }
+            trace!("Putting frame for resource");
+            unsafe { 
+                c.node_mut().await.put_resource(frame, c.attribute.map(|c| c.transmute())) 
+            }
+
+            if let Some(parsed) = c.node().await.resource::<ParsedAttributes>(None) {
+                
+            }
+
             Ok(c)
         }))
     }
