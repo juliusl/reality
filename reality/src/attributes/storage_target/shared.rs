@@ -33,6 +33,29 @@ impl StorageTarget for Shared {
         self.resources.remove(&key.key()).is_some()
     }
 
+    fn maybe_put_resource<T: Send + Sync + 'static>(
+        &mut self,
+        resource: T,
+        resource_key: Option<ResourceKey<T>>,
+    ) -> Option<Self::BorrowMutResource<'_, T>> {
+        let key = Self::key::<T>(resource_key);
+
+        if !self.resources.contains_key(&key) {
+            self.put_resource(resource, resource_key);
+        }
+
+        self.resource_mut(resource_key)
+    }
+
+    fn contains<T: Send + Sync + 'static>(
+        &self,
+        resource_key: Option<ResourceKey<T>>,
+    ) -> bool {
+        let key = Self::key::<T>(resource_key);
+
+        self.resources.contains_key(&key)
+    }
+
     fn put_resource<T: Send + Sync + 'static>(
         &mut self,
         resource: T,

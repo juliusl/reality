@@ -108,8 +108,8 @@ where
     for<'de> T: Deserialize<'de>,
 {
     value: T,
-    doc_headers: Vec<String>,
-    comment_properties: BTreeMap<String, String>,
+    _doc_headers: Vec<String>,
+    _comment_properties: BTreeMap<String, String>,
 }
 
 impl<T> From<PropertyReader<T>> for Field<T>
@@ -128,8 +128,8 @@ where
     fn from(value: T) -> Self {
         Self {
             value,
-            doc_headers: Vec::default(),
-            comment_properties: BTreeMap::default(),
+            _doc_headers: Vec::default(),
+            _comment_properties: BTreeMap::default(),
         }
     }
 }
@@ -155,8 +155,8 @@ where
         if let Some(wire_data) = &field.wire_data {
             Ok(PropertyReader {
                 value: bincode::deserialize::<T>(wire_data)?,
-                doc_headers: Vec::default(),
-                comment_properties: BTreeMap::default(),
+                _doc_headers: Vec::default(),
+                _comment_properties: BTreeMap::default(),
             })
         } else {
             Err(anyhow!("Packet has no wire data"))
@@ -164,7 +164,7 @@ where
     }
 
     pub fn with_comment_properties(mut self, properties: BTreeMap<String, String>) -> Self {
-        self.comment_properties = properties;
+        self._comment_properties = properties;
         self
     }
 }
@@ -319,8 +319,11 @@ impl<Storage: StorageTarget + Send + Sync + 'static> BlockObject<Storage> for Te
 }
 
 impl ToFrame for Test {
-    fn to_frame(&self, _: Option<crate::ResourceKey<crate::Attribute>>) -> crate::Frame {
-        vec![]
+    fn to_frame(&self, key: Option<crate::ResourceKey<crate::Attribute>>) -> crate::Frame {
+        crate::Frame {
+            fields: vec![],
+            recv: self.receiver_packet(key),
+        }
     }
 }
 
@@ -333,7 +336,7 @@ impl SetField<FieldPacket> for Test {
 #[test]
 fn test_property_reader() {
     let test = Test {};
-    if let Some(test) = test.to_frame(None).first() {
+    if let Some(test) = test.to_frame(None).fields.first() {
         let _reader = PropertyReader::<usize>::read_packet(test).unwrap();
     }
 }

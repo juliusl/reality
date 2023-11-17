@@ -64,9 +64,19 @@ pub struct FieldOwned<T> {
 
 /// Type-alias for a the frame version of an attribute type,
 ///
-pub type Frame = Vec<FieldPacket>;
+#[derive(Clone, Default, Debug)]
+pub struct Frame {
+    /// TODO: If set, acts as the receiver for any field packets,
+    /// 
+    pub recv: FieldPacket,
+    /// Packets for all fields,
+    /// 
+    pub fields: Vec<FieldPacket>
+}
 
 /// Wrapper struct over frames meant to update a block object,
+/// 
+/// TODO: Could add filters and such
 /// 
 #[derive(Clone, Default, Debug)]
 pub struct FrameUpdates(pub Frame);
@@ -77,11 +87,41 @@ pub trait ToFrame {
     /// Returns the current type as a Frame,
     ///
     fn to_frame(&self, key: Option<ResourceKey<Attribute>>) -> Frame;
+
+    /// Returns the current type as a Frame w/ wire data set,
+    /// 
+    fn to_wire_frame(&self, key: Option<ResourceKey<Attribute>>) -> Frame 
+    where
+        Self: Sized + Serialize,
+    {
+        let mut frame = self.to_frame(key);
+        frame.recv.wire_data = bincode::serialize(self).ok();
+        frame
+    }
+
+    /// Returns an empty receiver packet,
+    /// 
+    fn receiver_packet(&self, key: Option<ResourceKey<Attribute>>) -> FieldPacket 
+    where
+        Self: Sized
+    {
+        FieldPacket {
+            data: None,
+            wire_data: None,
+            data_type_name: std::any::type_name::<Self>().to_string(),
+            data_type_size: std::mem::size_of::<Self>(),
+            field_offset: usize::MAX,
+            field_name: "self".to_string(),
+            owner_name: "self".to_string(),
+            attribute_hash: key.map(|k| k.data),
+            op: 0,
+        }
+    }
 }
 
 /// Struct for containing an object safe Field representation,
 ///
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct FieldPacket {
     /// Pointer to data this packet has access to,
     ///
@@ -349,8 +389,9 @@ mod tests {
     }
 
     use async_trait::async_trait;
+    use serde::Serialize;
 
-    #[derive(Reality, Default)]
+    #[derive(Reality, Serialize, Default)]
     struct Test {
         #[reality(derive_fromstr)]
         name: String,

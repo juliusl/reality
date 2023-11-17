@@ -9,8 +9,8 @@ pub mod prelude {
     pub use crate::AsyncStorageTarget;
     pub use crate::AttributeType;
     pub use crate::BlockObject;
-    use crate::FieldPacket;
-    use crate::SetField;
+    pub use super::context::Interactive;
+    pub use super::context::NonInteractive;
     pub use crate::Shared;
     pub use crate::StorageTarget;
     pub use crate::ToFrame;
@@ -18,6 +18,8 @@ pub mod prelude {
     pub use futures_util::FutureExt;
     pub use std::marker::PhantomData;
     pub use std::ops::DerefMut;
+    use crate::FieldPacket;
+    use crate::SetField;
 
     /// Type alias for the fn passed by the THunk type,
     ///
@@ -114,8 +116,11 @@ pub mod prelude {
     where
         P: Plugin + Send + Sync + 'static,
     {
-        fn to_frame(&self, _: Option<crate::ResourceKey<crate::Attribute>>) -> crate::Frame {
-            vec![]
+        fn to_frame(&self, key: Option<crate::ResourceKey<crate::Attribute>>) -> crate::Frame {
+            crate::Frame {
+                fields: vec![],
+                recv: self.receiver_packet(key),
+            }
         }
     }
 

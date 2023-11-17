@@ -7,20 +7,19 @@ use futures_util::StreamExt;
 use futures_util::TryStreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
-use tracing::error;
 use tracing::trace;
 use uuid::Uuid;
 
-use crate::FieldPacket;
-use crate::ParsedAttributes;
 use crate::prelude::Latest;
 use crate::AsyncStorageTarget;
 use crate::Attribute;
 use crate::BlockObject;
 use crate::Dispatcher;
+use crate::FieldPacket;
 use crate::Frame;
 use crate::FrameUpdates;
 use crate::Node;
+use crate::ParsedAttributes;
 use crate::ResourceKey;
 use crate::Shared;
 use crate::StorageTarget;
@@ -81,8 +80,8 @@ impl From<AsyncStorageTarget<Shared>> for Context {
     fn from(value: AsyncStorageTarget<Shared>) -> Self {
         let handle = value.runtime.clone().expect("should have a runtime");
         Self {
-            hosts: BTreeMap::new(),
             node: value,
+            hosts: BTreeMap::new(),
             attribute: None,
             transient: Shared::default().into_thread_safe_with(handle),
             cancellation: CancellationToken::new(),
@@ -246,28 +245,27 @@ impl Context {
     ///
     /// **Note**: This is the state that was evaluated at the start of the application, when the runmd was parsed.
     ///
-    pub async fn initialized<P: Plugin + Sync + Send + 'static>(&mut self) -> P {
-        let node = self.node().await;
-        let mut output = node
-            .current_resource::<P>(self.attribute.map(|a| a.transmute()))
-            .unwrap_or_default();
-        drop(node);
-
-        // TODO: This might need a bit of thinking
-        if let Some(packets) = self
-            .node()
+    pub async fn initialized<P: Plugin + Sync + Send + 'static>(&self) -> P {
+        self.node()
             .await
-            .resource::<FrameUpdates>(self.attribute.map(|a| a.transmute()))
-        {
-            trace!("Frame updates enabled, applying field packets");
-            for field in packets.0.clone().drain(..).map(|f| f.into_field_owned()) {
-                if !output.set_field(field) {
-                    error!("Could not set field");
-                }
-            }
-        }
+            .current_resource::<P>(self.attribute.map(|a| a.transmute()))
+            .unwrap_or_default()
+    }
 
-        output
+    /// Creates a new initializer,
+    ///
+    pub async fn initialize<'a: 'b, 'b, P: Plugin + Sync + Send + 'static>(
+        &'a mut self,
+    ) -> Initializer<'b, P> {
+        let mut init = self.initialized::<P>().await;
+        init.sync(self);
+
+        let init = Initializer {
+            initialized: init,
+            context: self,
+        };
+
+        init
     }
 
     /// Retrieves the initialized frame state of the plugin,
@@ -334,6 +332,16 @@ impl Context {
             .put_resource::<P>(value, self.attribute.map(|s| s.transmute().branch(key)));
     }
 
+    pub fn take_kv<P>(&mut self, key: impl std::hash::Hash) -> Option<(ResourceKey<P>, P)>
+    where
+        P: Send + Sync + 'static,
+    {
+        let key = self.attribute.map(|s| s.transmute().branch(key));
+        self.__cached
+            .take_resource::<P>(key)
+            .map(|p| (key.expect("should be some"), *p))
+    }
+
     /// Fetch a kv pair by key,
     ///
     pub fn fetch_kv<P>(
@@ -382,6 +390,16 @@ impl Context {
     pub fn take_cache<R: Sync + Send + 'static>(&mut self) -> Option<Box<R>> {
         self.__cached
             .take_resource(self.attribute.map(|a| a.transmute()))
+    }
+
+    /// Returns true if the cache was written to,
+    ///
+    pub fn maybe_write_cache<R: Sync + Send + 'static>(
+        &mut self,
+        resource: R,
+    ) -> Option<<Shared as StorageTarget>::BorrowMutResource<'_, R>> {
+        self.__cached
+            .maybe_put_resource(resource, self.attribute.map(|a| a.transmute()))
     }
 
     /// Find and cache a resource,
@@ -636,16 +654,20 @@ impl Context {
     }
 
     /// Returns any formatted attribute comments parsed from the comments,
-    /// 
+    ///
     pub async fn print_parsed_comments(&self) {
-        if let Some(parsed) =  self.node().await.current_resource::<ParsedAttributes>(None) {
+        if let Some(parsed) = self.node().await.current_resource::<ParsedAttributes>(None) {
             for rk in parsed.attributes {
                 if let Some(comments) = parsed.comment_properties.get(&rk) {
                     eprintln!("\t --- {:#?}", comments)
                 }
                 if let Some(properties) = parsed.properties.defined.get(&rk).cloned() {
                     for prop in properties {
-                        if let Some(field_packet) = self.node().await.resource::<FieldPacket>(Some(prop.transmute())) {
+                        if let Some(field_packet) = self
+                            .node()
+                            .await
+                            .resource::<FieldPacket>(Some(prop.transmute()))
+                        {
                             eprintln!("{:#?} --- {:#?}", prop, field_packet)
                         }
 
@@ -653,8 +675,126 @@ impl Context {
                             eprintln!("\t--- {:#?}", comments);
                         }
                     }
-                } 
+                }
             }
         }
+    }
+}
+
+/// Pointer struct for convenience calling plugin initializers,
+///
+pub struct Interactive;
+
+impl Interactive {
+    /// Creates plugin P w/ enhancements,
+    ///
+    pub async fn create<P>(self, tc: &mut ThunkContext) -> P
+    where
+        P: Plugin + Sync + Send + 'static,
+    {
+        let mut p = tc
+            .initialize::<P>()
+            .await
+            .apply_frame_updates()
+            .await
+            .apply_decorations()
+            .await
+            .finish();
+
+        p.sync(&tc);
+        p
+    }
+}
+
+/// Pointer struct for convenience calling plugin initializers,
+///
+pub struct NonInteractive;
+
+impl NonInteractive {
+    /// Creates plugin P w/ enhancements,
+    ///
+    pub async fn create<P>(self, tc: &mut ThunkContext) -> P
+    where
+        P: Plugin + Sync + Send + 'static,
+    {
+        let mut plugin = tc
+            .initialize::<P>()
+            .await
+            .apply_decorations()
+            .await
+            .finish();
+
+        plugin.sync(&tc);
+        plugin
+    }
+}
+
+pub struct Initializer<'a, P>
+where
+    P: Plugin + Sync + Send + 'static,
+{
+    initialized: P,
+
+    context: &'a mut ThunkContext,
+}
+
+impl<'a, P> Initializer<'a, P>
+where
+    P: Plugin + Sync + Send + 'static,
+{
+    /// Applies frame updates,
+    ///
+    pub async fn apply_frame_updates(mut self) -> Initializer<'a, P> {
+        let node = self.context.node().await;
+
+        println!("Looking for updates {:?}", self.context.attribute);
+
+        if let Some(packets) =
+            node.resource::<FrameUpdates>(self.context.attribute.map(|a| a.transmute()))
+        {
+            println!(
+                "Frame updates enabled, applying field packets, {}",
+                packets.0.fields.len()
+            );
+            for field in packets
+                .0
+                .fields
+                .iter()
+                .map(|f| f.clone().into_field_owned())
+            {
+                println!("Applying frame update {:?}", field);
+                if !self.initialized.set_field(field) {
+                    eprintln!("Could not set field");
+                }
+            }
+        }
+
+        drop(node);
+
+        self
+    }
+
+    /// Apply decorations,
+    ///
+    pub async fn apply_decorations(self) -> Initializer<'a, P> {
+        // Index decorations into the current cache,
+        {
+            let node = self.context.node().await;
+            if let Some(parsed) = node.current_resource::<ParsedAttributes>(None) {
+                drop(node);
+                parsed
+                    .index_decorations(&self.context.attribute.unwrap(), self.context)
+                    .await;
+            }
+        }
+
+        // Set decorations on types that support decorations
+        self
+    }
+
+    /// Finishes initializing and returns the initialized plugin,
+    ///
+    pub fn finish(self) -> P {
+        self.initialized
     }
 }

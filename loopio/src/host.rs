@@ -132,16 +132,20 @@ pub struct Host {
     pub(crate) children: BTreeMap<String, Host>,
     /// Name of the action that "starts" this host,
     ///
-    #[reality(option_of=Tagged<String>)]
-    start: Option<Tagged<String>>,
+    #[reality(option_of=Decorated<String>)]
+    start: Option<Decorated<String>>,
+    /// List of actions to register w/ this host,
+    /// 
+    #[reality(vec_of=Decorated<String>)]
+    action: Vec<Decorated<String>>,
     /// Set of conditions,
     ///
-    #[reality(set_of=Tagged<HostCondition>)]
-    condition: BTreeSet<Tagged<HostCondition>>,
+    #[reality(set_of=Decorated<HostCondition>)]
+    condition: BTreeSet<Decorated<HostCondition>>,
     /// Set of listeners,
     /// 
-    #[reality(set_of=Tagged<HostListen>)]
-    listen: BTreeSet<Tagged<HostListen>>,
+    #[reality(set_of=Decorated<HostListen>)]
+    listen: BTreeSet<Decorated<HostListen>>,
 }
 
 impl Host {

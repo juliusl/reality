@@ -3,11 +3,11 @@ use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::ParsedBlock;
-use crate::StorageTarget;
-use crate::ResourceKeyHashBuilder;
-use crate::ResourceKey;
 use crate::AttributeParser;
+use crate::ParsedBlock;
+use crate::ResourceKey;
+use crate::ResourceKeyHashBuilder;
+use crate::StorageTarget;
 
 mod node;
 pub use node::Node;
@@ -17,11 +17,12 @@ pub use extension::Transform;
 
 mod source;
 use serde::Deserialize;
+use serde::Serialize;
 pub use source::Source;
 
 mod workspace;
-pub use workspace::Workspace;
 pub use workspace::CurrentDir;
+pub use workspace::Workspace;
 
 mod host;
 pub use host::RegisterWith;
@@ -32,14 +33,15 @@ pub type BlockPlugin<S> = Arc<dyn Fn(&mut AttributeParser<S>) + Send + Sync + 's
 
 /// Node plugin fn,
 ///
-pub type NodePlugin<S> = Arc<dyn Fn(Option<&str>, Option<&str>, &mut AttributeParser<S>) + Send + Sync + 'static>;
+pub type NodePlugin<S> =
+    Arc<dyn Fn(Option<&str>, Option<&str>, &mut AttributeParser<S>) + Send + Sync + 'static>;
 
 /// Type-alias for a parsed node,
-/// 
+///
 pub type ParsedNode<Storage> = Arc<tokio::sync::RwLock<Storage>>;
 
 /// Type-alias for a table of storages created per node,
-/// 
+///
 pub type NodeTable<Storage> = HashMap<ResourceKey<()>, ParsedNode<Storage>>;
 
 /// Project storing the main runmd parser,
@@ -83,7 +85,14 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
 
     /// Adds a node plugin,
     ///
-    pub fn add_node_plugin(&mut self, name: &str, plugin: impl Fn(Option<&str>, Option<&str>, &mut AttributeParser<Storage::Namespace>) + Send + Sync + 'static) {
+    pub fn add_node_plugin(
+        &mut self,
+        name: &str,
+        plugin: impl Fn(Option<&str>, Option<&str>, &mut AttributeParser<Storage::Namespace>)
+            + Send
+            + Sync
+            + 'static,
+    ) {
         let key = ResourceKey::with_hash(name);
 
         self.root
@@ -113,7 +122,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
     }
 
     /// Returns the parsed block from this project,
-    /// 
+    ///
     pub async fn parsed_block(&self) -> anyhow::Result<ParsedBlock> {
         let nodes = self.nodes.read().await;
 
@@ -125,16 +134,14 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
                 block.nodes.push(parsed);
             }
         }
-        
+
         Ok(block)
     }
 }
 
 struct Loading<Storage: StorageTarget + Send + Sync + 'static>(Arc<Project<Storage>>);
 
-impl<Storage: StorageTarget + Send + Sync + 'static> From<Project<Storage>>
-    for Loading<Storage>
-{
+impl<Storage: StorageTarget + Send + Sync + 'static> From<Project<Storage>> for Loading<Storage> {
     fn from(value: Project<Storage>) -> Self {
         Loading(Arc::new(value))
     }
@@ -265,14 +272,14 @@ mod reality {
     pub use crate::*;
 }
 
-#[derive(Debug, Reality)]
+#[derive(Debug, Serialize, Reality)]
 #[reality(group = "reality")]
 struct Test {
     name: String,
     file: PathBuf,
 }
 
-#[derive(Debug, Reality)]
+#[derive(Debug, Serialize, Deserialize, Reality)]
 #[reality(group = "reality")]
 struct Test2 {
     name: String,
@@ -281,14 +288,10 @@ struct Test2 {
     test3: Test3,
 }
 
-#[derive(Reality, Deserialize, Debug)]
+#[derive(Reality, Serialize, Deserialize, Debug)]
 enum Test3 {
-    A {
-        a: String,
-    },
-    _B {
-        b: String,
-    }
+    A { a: String },
+    _B { b: String },
 }
 
 impl FromStr for Test3 {
@@ -301,7 +304,7 @@ impl FromStr for Test3 {
 
 use async_trait::async_trait;
 
-#[derive(Reality, Default, Clone, Debug)]
+#[derive(Reality, Serialize, Default, Clone, Debug)]
 #[reality(plugin, call = test_call)]
 pub struct Test4;
 
@@ -312,15 +315,16 @@ pub async fn test_call(_: &mut ThunkContext) -> anyhow::Result<()> {
 #[test]
 fn test() {
     let _test = Test3::A { a: String::new() };
-
 }
 impl Test3 {
     fn __test1(&self) -> &String {
         struct _Test {
-            a: String 
+            a: String,
         }
 
-        let _test = Test3::A { a: Default::default() };
+        let _test = Test3::A {
+            a: Default::default(),
+        };
 
         if let Test3::A { a } = self {
             a
@@ -337,7 +341,7 @@ impl Test3 {
 //         match s {
 //             "a" => {
 //                 Ok(Test3::A { a: s.to_string() })
-//             }, 
+//             },
 //             "b" => {
 //                 Ok(Test3::B { b: s.to_string() })
 //             },
@@ -366,7 +370,7 @@ impl FromStr for Test2 {
         Ok(Test2 {
             name: String::new(),
             file: PathBuf::from(""),
-            test3: Test3::A { a: String::new() }
+            test3: Test3::A { a: String::new() },
         })
     }
 }
@@ -430,7 +434,7 @@ async fn test_project_parser() {
         let node = node.read().await;
         println!("{:?}", k);
 
-        let attributes =  node.resource::<ParsedAttributes>(None);
+        let attributes = node.resource::<ParsedAttributes>(None);
 
         if let Some(attributes) = attributes {
             println!("{:#?}", attributes);
@@ -439,13 +443,16 @@ async fn test_project_parser() {
                 let test = node.resource::<Test>(Some(attr.transmute()));
                 println!("{:?}", test);
                 if let Some(test) = test {
-                    let fields = crate::visitor::<crate::Shared, PathBuf>(std::ops::Deref::deref(&test));
+                    let fields =
+                        crate::visitor::<crate::Shared, PathBuf>(std::ops::Deref::deref(&test));
                     println!("{:#?}", fields);
-                    println!("Find field: {:#?}", crate::FindField::find_field::<()>(&fields, "file"));
+                    println!(
+                        "Find field: {:#?}",
+                        crate::FindField::find_field::<()>(&fields, "file")
+                    );
                 }
                 let test = node.resource::<Test2>(Some(attr.transmute()));
                 println!("{:?}", test);
-
             }
         }
     }

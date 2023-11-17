@@ -2,15 +2,19 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::ops::Deref;
 
+use imgui::TableColumnFlags;
+use imgui::TableColumnSetup;
+use imgui::TableFlags;
 use imgui::TreeNodeFlags;
 use loopio::prelude::*;
 use tracing::info;
+use tracing::trace;
 
 use crate::ext::imgui_ext::ImguiExt;
 
 /// Widget to edit frames of an attribute,
 ///
-#[derive(Reality, Default, Clone)]
+#[derive(Reality, Debug, Default, Clone)]
 #[reality(call = enable_frame_editor, plugin, rename = "frame-editor", wire)]
 pub struct FrameEditor {
     /// Path to the attribute being edited,
@@ -23,43 +27,29 @@ pub struct FrameEditor {
     editor_name: Option<String>,
     /// Map of panels,
     ///
-    #[reality(map_of=String)]
-    panel: BTreeMap<String, String>,
-    /// Text edit inputs,
-    ///
-    #[reality(vec_of=Tagged<String>, rename="text-edit", wire)]
-    text_edit: Vec<Tagged<String>>,
-    /// Text edit inputs,
-    ///
-    #[reality(vec_of=Tagged<String>, rename="text-display", wire)]
-    text_display: Vec<Tagged<String>>,
-    /// usize edit inputs,
-    ///
-    #[reality(vec_of=Tagged<String>, rename="usize-edit", wire)]
-    usize_edit: Vec<Tagged<String>>,
-    /// usize edit inputs,
-    ///
-    #[reality(vec_of=Tagged<String>, rename="usize-display", wire)]
-    usize_display: Vec<Tagged<String>>,
+    #[reality(map_of=Decorated<String>, wire)]
+    panel: BTreeMap<String, Decorated<String>>,
     /// List of properties to edit,
     ///
-    #[reality(vec_of=Tagged<String>, wire)]
-    edit: Vec<Tagged<String>>,
-
+    #[reality(vec_of=Decorated<String>, wire)]
+    edit: Vec<Decorated<String>>,
     /// Action button,
     ///
-    #[reality(set_of=Tagged<String>)]
-    action: BTreeSet<Tagged<String>>,
+    #[reality(set_of=Decorated<String>)]
+    action: BTreeSet<Decorated<String>>,
 }
 
 async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let init = tc.initialized::<FrameEditor>().await;
-
-    tc.print_parsed_comments().await;
+    let init = Interactive.create::<FrameEditor>(tc).await;
 
     info!("Enabling frame editor -- {}", init.path);
     if let Some(mut editing) = tc.navigate(&init.path).await {
+        editing.write_cache(
+            init.clone()
+        );
+
         info!("Found path -- {:?}", editing.attribute);
+        // If enabled, allows available field packets to be decoded,
         {
             let node = editing.node().await;
             if let Some(bus) =
@@ -67,9 +57,11 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
             {
                 info!("Found wire bus");
                 drop(node);
-                editing.write_cache(bus);
+                editing.maybe_write_cache(bus);
             }
         }
+
+        // If set, allows the ability to apply frame updates. (**Note** The receiving end must enable updating)
         {
             let node = editing.node().await;
             if let Some(change_pipeline) =
@@ -77,158 +69,126 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
             {
                 info!("Found change pipeline");
                 drop(node);
-                editing.write_cache(change_pipeline);
+                editing.maybe_write_cache(change_pipeline);
             }
         }
+
+        let recv = editing.initialized_frame().await.recv.clone();
+        // Gets the current parsed attributes state of the target attribute,
         {
             let node = editing.node().await;
             if let Some(parsed_attributes) = node.current_resource::<ParsedAttributes>(None) {
                 info!("Found parsed attributes");
                 drop(node);
-                editing.write_cache(parsed_attributes);
-            }
-        }
+                if editing.maybe_write_cache(parsed_attributes).is_some() {
+                    if let Some(parsed) = editing.cached::<ParsedAttributes>() {
+                        parsed
+                            .index_decorations(&editing.attribute.unwrap(), &mut editing)
+                            .await;
 
-        {
-            if let Some(parsed) = editing.cached::<ParsedAttributes>() {
-                if let Some(attr) = editing.attribute {
-                    println!("{:#?}", attr);
-                    println!("{:#?}", parsed.extras(&attr));
+                        editing.store_kv(&editing.attribute.unwrap(), recv);
+                    }
                 }
             }
-
         }
 
         editing
             .add_ui_node(move |tc, ui| {
-                let init = init.clone();
-
+                let mut init = tc.cached::<FrameEditor>().unwrap();
+                // let debug = format!("{:#?}", &init);
                 let title = init.editor_name.unwrap_or(format!("{:?}", tc.attribute));
 
-                ui.window(format!("Frame Editor - {}", title)).build(|| {
+                ui.window(format!("Frame Editor - {}", title)).size([800.0, 600.0], imgui::Condition::Once).build(|| {
                     if let Some(rk) = tc.attribute.as_ref().map(|r| r.key()) {
                         ui.label_text("Resource Key", rk.to_string());
                     }
 
-                    let mut field_map = BTreeMap::new();
+                    // if ui.collapsing_header("DEBUG --", TreeNodeFlags::empty()) {
+                    //     ui.text(debug);
+                    // }
+
+                    // Map of field metadata settings compiled to wire bus,
+                    //
+                    let mut field_map = BTreeMap::<String, Vec<FieldPacket>>::new();
 
                     if let Some(wb) = tc.cached_ref::<WireBus>() {
-                        let mut render = vec![];
-
-                        for (idx, packet) in wb.frame.iter().enumerate() {
-                            let FieldPacket {
-                                data_type_name,
-                                data_type_size,
-                                field_offset,
-                                owner_name,
-                                field_name,
-                                attribute_hash,
-                                data,
-                                wire_data,
-                                ..
-                            } = packet;
-                            field_map.insert(field_name.to_string(), packet.clone());
-
-                            render.push(move || {
-                                ui.text(format!("Field Packet {idx}:"));
-                                ui.label_text("field_name", field_name);
-                                ui.label_text("type_name", data_type_name);
-                                ui.label_text("type_size", data_type_size.to_string());
-                                ui.label_text("field_offset", field_offset.to_string());
-                                ui.label_text("owner_name", owner_name);
-                                ui.label_text("attribute hash", format!("{:?}", attribute_hash));
-
-                                if let Some(_) = data {
-                                    ui.text("Has data");
-                                }
-
-                                if let Some(bin) = wire_data {
-                                    ui.text("Has binary data");
-                                    if ui.button("Deserialize") {
-                                        if let Ok(s) = bincode::deserialize::<String>(&bin) {
-                                            println!("Deserialized: {s}");
-                                        }
-                                    }
-                                }
-                            });
+                        for packet in wb.packets().iter() {
+                            let entry = field_map.entry(packet.field_name.to_string()).or_default();
+                            entry.push(packet.clone());
                         }
 
+                        // Shows the frames available in the wire bus,
+                        //
                         if ui.collapsing_header("Wire Bus", TreeNodeFlags::empty()) {
-                            for r in render.drain(..) {
-                                r();
-                            }
-                        }
-                    }
+                            let table_flags: TableFlags = TableFlags::REORDERABLE
+                                | TableFlags::HIDEABLE
+                                | TableFlags::RESIZABLE
+                                | TableFlags::NO_BORDERS_IN_BODY
+                                | TableFlags::SIZING_STRETCH_PROP;
 
-                    let mut render_properties = vec![];
-                    if let Some(parsed) = tc.cached_ref::<ParsedAttributes>() {
-                        if let Some(rk) = tc.attribute.as_ref() {
-                            if let Some(defined) = parsed.properties.defined.get(rk) {
-                                render_properties.push(|| {
-                                    for prop in defined.clone() {
-                                        if let Some(headers) = parsed.doc_headers.get(rk) {
-                                            ui.text(format!("Attribute - {} Comments", rk.key()));
-                                            for h in headers {
-                                                ui.bullet_text(h);
-                                            }
-                                        }
-
-                                        if let Some(comment_properties) =
-                                            parsed.properties.comment_properties.get(&prop)
-                                        {
-                                            if let Some(comment_properties) =
-                                                parsed.comment_properties.get(rk)
-                                            {
-                                                ui.text(format!("Attribute - {}", rk.key()));
-
-                                                for (name, value) in comment_properties.iter() {
-                                                    ui.label_text(name, value);
-                                                }
-                                            }
-
-                                            if let Some(fp) = tc.fetch_kv::<FieldPacket>(prop) {
-                                                ui.text(format!("Property - {}", fp.1.field_name));
-                                                for (name, value) in comment_properties.iter() {
-                                                    ui.label_text(name, value);
-                                                }
-                                            } else {
-                                                ui.text(format!("Property - {}", prop.key()));
-                                                for (name, value) in comment_properties.iter() {
-                                                    ui.label_text(name, value);
-                                                }
-                                            }
-                                        }
-
-                                        if let Some(headers) =
-                                            parsed.properties.doc_headers.get(&prop)
-                                        {
-                                            if let Some(fp) = tc.fetch_kv::<FieldPacket>(prop) {
-                                                ui.text(format!("Property - {} Comments", fp.1.field_name));
-                                                for h in headers {
-                                                    ui.bullet_text(h);
-                                                }
-                                            } else {
-                                                ui.text(format!("Property - {} Comments", prop.key()));
-                                                for h in headers {
-                                                    ui.bullet_text(h);
-                                                }
-                                            }
-                                        }
+                            if let Some(_h) = ui.begin_table_header_with_flags(
+                                "table",
+                                [
+                                    "field_offset",
+                                    "field_name",
+                                    "type_name",
+                                    "type_size",
+                                    "owner_name",
+                                    "attribute_hash",
+                                ]
+                                .map(TableColumnSetup::new)
+                                .map(|mut s| {
+                                    if s.name == "owner_name"
+                                        || s.name == "attribute_hash"
+                                        || s.name == "field_offset"
+                                    {
+                                        s.flags = TableColumnFlags::DEFAULT_HIDE
+                                    } else if s.name == "type_name" {
+                                        s.flags = TableColumnFlags::WIDTH_STRETCH;
                                     }
-                                });
-                            }
-                        }
+                                    s
+                                }),
+                                table_flags,
+                            ) {
+                                for (_, packet) in wb.packets().iter().enumerate() {
+                                    let FieldPacket {
+                                        data_type_name,
+                                        data_type_size,
+                                        field_offset,
+                                        owner_name,
+                                        field_name,
+                                        attribute_hash,
+                                        ..
+                                    } = packet;
 
-                        if ui.collapsing_header("Defined Properties", TreeNodeFlags::empty()) {
-                            for r in render_properties {
-                                r();
+                                    ui.table_next_column();
+                                    ui.text(field_offset.to_string());
+
+                                    ui.table_next_column();
+                                    ui.text(field_name);
+
+                                    ui.table_next_column();
+                                    ui.text(data_type_name);
+
+                                    ui.table_next_column();
+                                    ui.text(data_type_size.to_string());
+
+                                    ui.table_next_column();
+                                    ui.text(owner_name);
+
+                                    ui.table_next_column();
+                                    ui.text(attribute_hash.unwrap_or_default().to_string());
+                                }
                             }
                         }
                     }
 
+                    defined_properties_section(tc, ui);
+
+                    let mut queue_update = false;
                     if let Some(queued) = tc.cached_ref::<FrameUpdates>() {
                         let mut render = vec![];
-                        for (idx, q) in queued.0.iter().enumerate() {
+                        for (idx, q) in queued.0.fields.iter().enumerate() {
                             let FieldPacket {
                                 data,
                                 wire_data,
@@ -266,47 +226,118 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                         }
 
                         if ui.collapsing_header("Queued Changes", TreeNodeFlags::empty()) {
+                            if !render.is_empty() && ui.button("Submit") {
+                                queue_update = true;
+                            }
+
                             for r in render.drain(..) {
                                 r();
                             }
                         }
                     }
 
-                    for (name, title) in init.panel.iter() {
-                        if ui.collapsing_header(title, TreeNodeFlags::DEFAULT_OPEN) {
+                    for (name, panel) in init.panel.iter() {
+                        if ui.collapsing_header(
+                            panel.value.as_ref().unwrap_or(name),
+                            TreeNodeFlags::DEFAULT_OPEN,
+                        ) {
+                            if let Some(deco) = panel.decoration.as_ref() {
+                                if let Some(docs) = deco.docs() {
+                                    for d in docs {
+                                        ui.text(d);
+                                    }
+                                    ui.new_line();
+                                }
+                            }
+
+                            ui.indent();
                             // This can be optimized later -
-                            for (panel_name, field) in
-                                init.text_edit.iter().map(|t| (t.tag(), t.value()))
-                            {
-                                text_edit(panel_name, field, name, &field_map, ui, tc);
+                            for edit in init.edit.iter_mut() {
+                                if !tc.kv_contains::<FieldWidget>(&edit) {
+                                    if let Decorated {
+                                        value,
+                                        decoration: Some(deco),
+                                        ..
+                                    } = edit
+                                    {
+                                        if let Some(value) = value.as_ref() {
+                                            let properties =
+                                                ["title", "widget", "help"].map(|d| deco.prop(d));
+                                            match properties {
+                                                [title, Some(widget), help] => {
+                                                    let editor = FieldWidget {
+                                                        title: title.unwrap_or(&value).to_string(),
+                                                        widget: widget.to_string(),
+                                                        field: value.to_string(),
+                                                        field_map: field_map.clone(),
+                                                        doc_headers: deco
+                                                            .docs()
+                                                            .map(|d| d.to_vec())
+                                                            .unwrap_or_default(),
+                                                        help: help.map(String::to_string),
+                                                        widget_table: tc
+                                                            .cached::<EditorWidgetTable>()
+                                                            .unwrap_or_default(),
+                                                    };
+                                                    tc.store_kv(&edit, editor);
+                                                }
+                                                _ => {
+                                                    ui.label_text(value, "Widget is not specified");
+                                                }
+                                            }
+                                        } else {
+                                            ui.text("Value is not initialized");
+                                        }
+                                    }
+                                } else if let Some((_, mut editor)) =
+                                    tc.take_kv::<FieldWidget>(&edit)
+                                {
+                                    editor.show(tc, ui);
+                                    tc.store_kv(&edit, editor);
+                                } else {
+                                    ui.text("Could not initialize field widget");
+                                }
                             }
 
-                            for (panel_name, field) in
-                                init.text_display.iter().map(|t| (t.tag(), t.value()))
-                            {
-                                text_display(panel_name, field, name, &field_map, ui)
-                            }
-
-                            for (panel_name, field) in
-                                init.usize_edit.iter().map(|t| (t.tag(), t.value()))
-                            {
-                                usize_edit(panel_name, field, name, &field_map, ui, tc);
-                            }
-
-                            for (panel_name, field) in
-                                init.usize_display.iter().map(|t| (t.tag(), t.value()))
-                            {
-                                usize_display(panel_name, field, name, &field_map, ui);
-                            }
-
+                            // List of actions
+                            ui.new_line();
                             for (panel_name, field) in
                                 init.action.iter().map(|t| (t.tag(), t.value()))
                             {
                                 action_button(panel_name, field, name, ui, tc);
                             }
+
+                            ui.unindent();
+                        }
+                    }
+
+                    if queue_update {
+                        trace!("Queued frame update");
+                        let rk = tc.cached::<ResourceKey<Attribute>>();
+
+                        if let Some(cache) = tc.take_cache::<FrameUpdates>() {
+                            tc.spawn(move |tc| async move {
+                                unsafe {
+                                    println!("Outside: {:?}", &rk);
+                                    println!(
+                                        "Putting frame change -- {:?} packets: {}",
+                                        tc.attribute,
+                                        cache.0.fields.len()
+                                    );
+                                    println!("{:#?}", cache);
+                                    tc.node_mut().await.put_resource::<FrameUpdates>(
+                                        *cache,
+                                        tc.attribute.map(|a| a.transmute()),
+                                    );
+                                }
+                                Ok(tc)
+                            });
+
+                            tc.write_cache(FrameUpdates::default());
                         }
                     }
                 });
+
                 true
             })
             .await;
@@ -315,158 +346,295 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Displays a text edit field,
+/// Contains a set of relevant properties for a field widget,
 ///
-fn text_edit(
-    panel_name: Option<&String>,
-    field: Option<&String>,
-    target_panel: &String,
-    field_map: &BTreeMap<String, FieldPacket>,
-    ui: &imgui::Ui,
-    tc: &mut ThunkContext,
-) {
-    if let (Some(panel_name), Some(field)) = (panel_name, field) {
-        if panel_name == target_panel {
-            if let Some(val) = field_map
-                .get(field)
-                .filter(|f| f.data_type_name == std::any::type_name::<String>())
-                .and_then(|f| f.wire_data.clone())
-                .and_then(|v| bincode::deserialize::<String>(&v).ok())
-            {
-                ui.text(format!("Current Value -- {val}"));
+#[derive(Debug)]
+pub struct FieldWidget {
+    /// Title for the widget be set w/ a comment property,
+    ///
+    /// |# title = Title
+    ///
+    pub title: String,
+    /// Widget name,
+    ///
+    /// |# widget = text
+    ///
+    pub widget: String,
+    /// Help message that can be displayed to assist with operating
+    /// this widget.
+    ///
+    pub help: Option<String>,
+    /// Documentation headers stored w/ this field widget,
+    ///
+    pub doc_headers: Vec<String>,
+    /// Field name,
+    ///
+    pub field: String,
+    /// Map of field metadata,
+    ///
+    pub field_map: BTreeMap<String, Vec<FieldPacket>>,
+    /// Table of widgets that can be used,
+    ///
+    /// TODO: This could be generic.
+    ///
+    pub widget_table: EditorWidgetTable,
+}
 
-                if !tc.kv_contains::<String>(field) {
-                    tc.store_kv(field, val.to_string());
-                }
+/// Table of widget functions,
+///
+#[derive(Clone, Debug)]
+pub struct EditorWidgetTable {
+    /// Map of widget functions,
+    ///
+    widget_table: BTreeMap<String, fn(&mut FieldWidget, &mut ThunkContext, &imgui::Ui)>,
+}
 
+impl EditorWidgetTable {
+    /// Returns true if a widget already exists,
+    ///
+    pub fn is_registered(&self, name: impl AsRef<str>) -> bool {
+        self.widget_table.contains_key(name.as_ref())
+    }
+
+    /// Registers a new widget func,
+    ///
+    /// Widgets cannot be replaced after being added.
+    ///
+    pub fn register(
+        &mut self,
+        name: impl Into<String>,
+        func: fn(&mut FieldWidget, &mut ThunkContext, &imgui::Ui),
+    ) {
+        self.widget_table.entry(name.into()).or_insert(func);
+    }
+
+    /// Show a widget,
+    ///
+    fn show(&self, widget: &mut FieldWidget, tc: &mut ThunkContext, ui: &imgui::Ui) {
+        if let Some(show_fn) = self.widget_table.get(&widget.widget) {
+            show_fn(widget, tc, ui)
+        } else {
+            ui.text(format!("Could not find widget: {:?}", widget.widget));
+        }
+    }
+
+    /// Creates a new widget table,
+    ///
+    pub fn new() -> Self {
+        let mut table = Self {
+            widget_table: BTreeMap::new(),
+        };
+
+        // Simple UI fields
+        table.register("text", |widget, tc, ui| {
+            if let Some(field) = widget.field_map.get(&widget.field) {
                 let mut changes = vec![];
-                if let Some((key, mut value)) = tc.fetch_mut_kv::<String>(field) {
-                    ui.input_text(format!("{}##{:?}", field, key), &mut value)
-                        .build();
 
-                    if value.deref() != &val {
-                        ui.text("Value has changed");
-                        ui.same_line();
-                        let token = ui.push_id(key.key().to_string());
-                        if ui.button("Save change") {
-                            if let (Some(mut field), Ok(wire)) = (
-                                field_map.get(field).cloned(),
-                                bincode::serialize(&value.deref()),
-                            ) {
-                                field.wire_data = Some(wire);
-                                changes.push(field);
+                // Iterate through each discovered packet,
+                for p in field.iter() {
+                    if let Some((f, mut field)) =
+                        tc.fetch_mut_kv::<(String, String, FieldPacket)>(&p.field_name)
+                    {
+                        // Display any doc headers before this
+                        for d in &widget.doc_headers {
+                            ui.text(d);
+                        }
+
+                        // Enables text editing input
+                        ui.input_text(&widget.title, &mut field.1).build();
+
+                        // Modification actions
+                        if field.0 != field.1 {
+                            ui.text("Value has changed");
+                            ui.same_line();
+                            if ui.button("Reset") {
+                                field.1 = field.0.to_string();
+                            }
+
+                            ui.same_line();
+                            if ui.button("Save Changes") {
+                                field.0 = field.1.to_string();
+                                if let (mut field, Ok(wire)) =
+                                    (field.2.clone(), bincode::serialize(&field.0.deref()))
+                                {
+                                    field.wire_data = Some(wire);
+                                    changes.push(field);
+                                }
                             }
                         }
-                        token.end();
+
+                        // Show the help popup
+                        let key = format!("help_popup##{}", f.key());
+                        if let Some(help) = widget.help.as_ref() {
+                            ui.popup(&key, || {
+                                ui.text(help);
+                            });
+                            ui.same_line();
+                            ui.text("(?)");
+                            if ui.is_item_hovered() {
+                                ui.open_popup(&key);
+                            }
+                        }
+
+                        ui.new_line();
+                        ui.separator();
+                        continue;
+                    }
+
+                    if let Some(s) = p
+                        .wire_data
+                        .as_ref()
+                        .and_then(|d| bincode::deserialize::<String>(&d).ok())
+                    {
+                        tc.store_kv(&p.field_name, (s.to_string(), s, p.clone()));
+                    } else {
+                        ui.text("Unable to read field as a String");
+                        ui.text(format!("{:#?}", p));
+                        ui.text(format!("{:#?}", widget));
                     }
                 }
 
                 if !changes.is_empty() {
-                    tc.spawn(|tc| async move {
-                        unsafe {
-                            if let Some(mut packets) = tc
-                                .node_mut()
-                                .await
-                                .resource_mut::<FrameUpdates>(tc.attribute.map(|a| a.transmute()))
-                            {
-                                for change in changes {
-                                    packets.0.push(change);
-                                }
+                    tc.spawn(|mut tc| async move {
+                        if let Some(mut updates) = tc.cached_mut::<FrameUpdates>() {
+                            for change in changes {
+                                updates.0.fields.push(change);
                             }
                         }
                         Ok(tc)
                     });
                 }
-            } else {
-                ui.text("Not a String");
             }
-        }
+        });
+
+        table
     }
 }
 
-fn text_display(
-    panel_name: Option<&String>,
-    field: Option<&String>,
-    name: &String,
-    field_map: &BTreeMap<String, FieldPacket>,
-    ui: &imgui::Ui,
-) {
-    if let (Some(panel_name), Some(field)) = (panel_name, field) {
-        if panel_name == name {
-            if let Some(val) = field_map
-                .get(field)
-                .filter(|f| f.data_type_name.as_str() == std::any::type_name::<String>())
-                .and_then(|f| f.wire_data.clone())
-                .and_then(|v| bincode::deserialize::<String>(&v).ok())
-            {
-                ui.label_text(field, val.as_str());
-            } else {
-                ui.text("Not a String");
-            }
-        }
+impl Default for EditorWidgetTable {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-/// Displays a text edit field,
-///
-fn usize_edit(
-    panel_name: Option<&String>,
-    field: Option<&String>,
-    name: &String,
-    field_map: &BTreeMap<String, FieldPacket>,
-    ui: &imgui::Ui,
-    tc: &mut ThunkContext,
-) {
-    if let (Some(panel_name), Some(field)) = (panel_name, field) {
-        if panel_name == name {
-            if let Some(val) = field_map
-                .get(field)
-                .filter(|f| f.data_type_name.as_str() == std::any::type_name::<usize>())
-                .and_then(|f| f.wire_data.clone())
-                .and_then(|v| bincode::deserialize::<i32>(&v).ok())
-            {
-                ui.text(format!("Current Value -- {val}"));
+impl FieldWidget {
+    /// Shows the widget,
+    ///
+    pub fn show(&mut self, tc: &mut ThunkContext, ui: &imgui::Ui) {
+        self.widget_table.clone().show(self, tc, ui)
+    }
+}
 
-                if !tc.kv_contains::<i32>(field) {
-                    tc.store_kv(field, val);
-                }
-
-                if let Some((key, mut value)) = tc.fetch_mut_kv::<i32>(field) {
-                    ui.input_int(format!("{}##{:?}", field, key), &mut value)
-                        .build();
-
-                    if value.deref() != &val {
-                        ui.text("Value has changed");
+fn defined_properties_section(tc: &ThunkContext, ui: &imgui::Ui) {
+    let mut render_properties = vec![];
+    if let Some(parsed) = tc.cached_ref::<ParsedAttributes>() {
+        if let Some(rk) = tc.attribute.as_ref() {
+            render_properties.push(|| {
+                view_decorations(*rk, &tc, ui);
+                if let Some(defined) = parsed.properties.defined.get(rk) {
+                    for prop in defined.clone() {
+                        view_decorations(prop, &tc, ui);
                     }
                 }
-            } else {
-                ui.text("Not usize");
+            });
+        }
+
+        if ui.collapsing_header("Defined Properties", TreeNodeFlags::empty()) {
+            for r in render_properties {
+                r();
             }
         }
     }
 }
 
-fn usize_display(
-    panel_name: Option<&String>,
-    field: Option<&String>,
-    name: &String,
-    field_map: &BTreeMap<String, FieldPacket>,
+fn view_field_packet<T: std::hash::Hash + Send + Sync + 'static>(
+    rk: ResourceKey<T>,
+    tc: &ThunkContext,
     ui: &imgui::Ui,
 ) {
-    if let (Some(panel_name), Some(field)) = (panel_name, field) {
-        if panel_name == name {
-            if let Some(val) = field_map
-                .get(field)
-                .filter(|f| f.data_type_name == std::any::type_name::<usize>())
-                .and_then(|f| f.wire_data.clone())
-                .and_then(|v| bincode::deserialize::<i32>(&v).ok())
-            {
-                ui.label_text(field, val.to_string());
-            } else {
-                ui.text("Not usize");
+    if let Some((_, packet)) = tc.fetch_kv::<FieldPacket>(rk) {
+        if let Some(_t) = ui.tree_node(format!("Field - packet {}", rk.data)) {
+            let FieldPacket {
+                data_type_name,
+                data_type_size,
+                field_offset,
+                field_name,
+                owner_name,
+                attribute_hash,
+                ..
+            } = packet.clone();
+
+            if let Some(_t) = ui.begin_table_header(
+                attribute_hash.unwrap_or_default().to_string(),
+                ["value", ""].map(TableColumnSetup::new),
+            ) {
+                ui.table_next_column();
+                ui.text(field_offset.to_string());
+
+                ui.table_next_column();
+                ui.text("field_offset");
+
+                ui.table_next_column();
+                ui.text(field_name);
+
+                ui.table_next_column();
+                ui.text("field_name");
+
+                ui.table_next_column();
+                ui.text(data_type_name);
+
+                ui.table_next_column();
+                ui.text("type_name");
+
+                ui.table_next_column();
+                ui.text(data_type_size.to_string());
+
+                ui.table_next_column();
+                ui.text("type_size");
+
+                ui.table_next_column();
+                ui.text(owner_name);
+
+                ui.table_next_column();
+                ui.text("owner_name");
+
+                ui.table_next_column();
+                ui.text(rk.data.to_string());
+
+                ui.table_next_column();
+                ui.text("attribute hash");
             }
         }
     }
+}
+
+/// Visualize decorations for a resource,
+///
+fn view_decorations<T: std::hash::Hash + Send + Sync + 'static>(
+    rk: ResourceKey<T>,
+    tc: &ThunkContext,
+    ui: &imgui::Ui,
+) {
+    // ui.indent();
+    if let Some((_, dec)) = tc.fetch_kv::<Decoration>(rk) {
+        if let Some(_n) = ui.tree_node(format!("Decorations {}", rk.data.to_string())) {
+            if let Some(doc_h) = dec.docs() {
+                for d in doc_h {
+                    ui.text(d);
+                }
+                ui.new_line();
+            }
+
+            if !dec.props().is_empty() {
+                for (name, prop) in dec.props() {
+                    ui.label_text(name, prop);
+                }
+            }
+
+            view_field_packet(rk, tc, ui);
+        }
+    }
+    // ui.unindent();
 }
 
 fn action_button(
@@ -480,10 +648,12 @@ fn action_button(
         if panel_name == name {
             if !field.is_empty() {
                 if ui.button(field) {
+                    __tc.clone().spawn_call();
                     eprintln!("{} pressed", field);
                 }
             } else {
                 if ui.button("Start") {
+                    __tc.clone().spawn_call();
                     eprintln!("start pressed");
                 }
             }

@@ -364,7 +364,7 @@ impl StructData {
             let get_fn = f.render_get_fn();
             let get_mut_fn = f.render_get_mut_fn();
 
-            let mut_value = f.set_of.as_ref().map(|_| quote!(mut));
+            let mut_value = f.set_of.as_ref().or(f.map_of.as_ref()).map(|_| quote!(mut));
 
             quote_spanned! {f.span=>
                 impl #original_impl_generics OnParseField<#offset, #ty> for #ident #ty_generics #where_clause {
@@ -384,8 +384,6 @@ impl StructData {
                         hasher.hash(std::any::type_name::<Self>());
 
                         #callback
-
-                        hasher.finish()
                     }
 
                     #[inline]
@@ -484,10 +482,63 @@ impl StructData {
                 }
             )
         });
+
+        let synchronizable = self.fields.iter()
+            .filter(|f| !f.ignore && f.is_decorated)
+            .map(|f| {
+                let name = &f.name;
+
+                if f.vec_of.is_some() {
+                    quote_spanned!(f.span=>
+                        for m in self.#name.iter_mut() {
+                            m.sync(context);
+                        }
+                    )
+                } else if f.map_of.is_some() {
+                    quote_spanned!(f.span=>
+                        for (_, m) in self.#name.iter_mut() {
+                            m.sync(context);
+                        }
+                    )
+                } else if f.set_of.is_some() {
+                    let __sync_temp = format_ident!("__sync_temp_{}", name);
+                    quote_spanned!(f.span=>
+                        let mut #__sync_temp = vec![];
+                        while let Some(mut m) = self.#name.pop_first() {
+                            m.sync(context);
+                            #__sync_temp.push(m);
+                        }
+                        for m in #__sync_temp {
+                            self.#name.insert(m);
+                        }
+                    )
+                } else if f.option_of.is_some() {
+                    quote_spanned!(f.span=>
+                        if let Some(f) = self.#name.as_mut() {
+                            f.sync(context);
+                        }
+                    )
+                }else if f.vecdeq_of.is_some() {
+                    quote_spanned!(f.span=>
+                        for m in self.#name.iter_mut() {
+                            m.sync(context);
+                        }
+                    )
+                } else {
+                    quote_spanned!(f.span=>
+                        self.#name.sync(context);
+                    )
+                }
+            });
         
         let plugin = if self.plugin {
             quote!(
-            impl #_impl_generics Plugin for #name #ty_generics #where_clause  {}
+            impl #_impl_generics Plugin for #name #ty_generics #where_clause  {
+                #[allow(unused_variables)]
+                fn sync(&mut self, context: &ThunkContext) {
+                    #(#synchronizable)*
+                }
+            }
 
             impl #_impl_generics #name #ty_generics #where_clause  {
                 pub fn register(mut host: &mut impl RegisterWith) {
@@ -538,31 +589,6 @@ impl StructData {
             quote!()
         };
 
-
-
-        let module_name = format_ident!("{}_roperties", self.name.to_string().to_lowercase());
-        let properties_impl = quote_spanned!(self.span=> {
-            pub mod #module_name {
-                pub struct Properties {
-
-                }
-
-                impl Default for Properties {
-                    fn default() -> Self {
-                        Self::new()
-                    }
-                }
-
-                impl Properties {
-                    pub fn new() -> Self {
-                        Self {
-
-                        }
-                    }
-                }
-            }
-        });
-
         let object_type_trait = quote_spanned!(self.span=>
             #[async_trait]
             impl #impl_generics BlockObject<Storage> for #name #ty_generics #where_clause {
@@ -581,9 +607,12 @@ impl StructData {
 
             impl #_impl_generics ToFrame for #name #ty_generics #where_clause {
                 fn to_frame(&self, key: Option<ResourceKey<Attribute>>) -> Frame {
-                    vec![
-                        #(#to_frame),*
-                    ]
+                    Frame { 
+                        recv: self.receiver_packet(key),
+                        fields: vec![
+                            #(#to_frame),*
+                        ]
+                    }
                 }
             }
 

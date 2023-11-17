@@ -186,28 +186,28 @@ pub struct EngineProxy {
     alias: Option<String>,
     /// Adds a route for a HEAD request,
     ///
-    #[reality(vec_of=Tagged<String>)]
-    head: Vec<Tagged<String>>,
+    #[reality(vec_of=Decorated<String>)]
+    head: Vec<Decorated<String>>,
     /// Adds a route for a GET request,
     ///
-    #[reality(vec_of=Tagged<String>)]
-    get: Vec<Tagged<String>>,
+    #[reality(vec_of=Decorated<String>)]
+    get: Vec<Decorated<String>>,
     /// Adds a route for a POST request,
     ///
-    #[reality(vec_of=Tagged<String>)]
-    post: Vec<Tagged<String>>,
+    #[reality(vec_of=Decorated<String>)]
+    post: Vec<Decorated<String>>,
     /// Adds a route for a PUT request,
     ///
-    #[reality(vec_of=Tagged<String>)]
-    put: Vec<Tagged<String>>,
+    #[reality(vec_of=Decorated<String>)]
+    put: Vec<Decorated<String>>,
     /// Adds a route for a DELETE request,
     ///
-    #[reality(vec_of=Tagged<String>)]
-    delete: Vec<Tagged<String>>,
+    #[reality(vec_of=Decorated<String>)]
+    delete: Vec<Decorated<String>>,
     /// Adds a route for a PATCH request,
     ///
-    #[reality(vec_of=Tagged<String>)]
-    patch: Vec<Tagged<String>>,
+    #[reality(vec_of=Decorated<String>)]
+    patch: Vec<Decorated<String>>,
     /// Map of routes to the operations they map to,
     ///
     #[reality(map_of=String)]
@@ -586,7 +586,7 @@ async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
             transient.take_resource::<EngineProxy>(Some(ResourceKey::with_hash(host.as_ref().to_string())));
         eprintln!("Processing reverse proxy config for {}", host.as_ref(),);
         if let Some(resource) = resource {
-            for (address, route_method) in (*resource).routes {
+            for (address, route_method) in resource.routes {
                 eprintln!("Forwarding route {}", address);
                 routes.insert(address, route_method);
             }
@@ -675,7 +675,7 @@ async fn configure_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
     if let (Some(host), Some(internal_host)) = (
         init.alias.as_ref().scheme_str(),
-        tc.internal_host_lookup(&init.alias.as_ref()).await,
+        tc.internal_host_lookup(init.alias.as_ref()).await,
     ) {
         let client = Arc::new(hyper_ext::local_client());
         let client = &client;

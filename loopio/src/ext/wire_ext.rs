@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
 use reality::prelude::*;
-use serde::Serialize;
 use serde::Deserialize;
+use serde::Serialize;
 use tracing::info;
 
 /// Converts the type being extended into wire format,
@@ -13,7 +13,20 @@ use tracing::info;
 pub struct WireBus {
     /// Current frame,
     ///
-    pub frame: Frame,
+    frame: Frame,
+}
+
+impl WireBus {
+    /// Returns a vector of packets currently stored on the bus,
+    /// 
+    pub fn packets(&self) -> Vec<FieldPacket> {
+        // TODO: This could be optimized later, but for brevity this is what needs to be returned,
+        [self.frame.recv.clone()]
+            .iter()
+            .chain(self.frame.fields.iter())
+            .cloned()
+            .collect::<Vec<FieldPacket>>()
+    }
 }
 
 /// Plugin to enable the wire bus on an attribute,
@@ -41,18 +54,15 @@ async fn enable_wire_bus(tc: &mut ThunkContext) -> anyhow::Result<()> {
         if let Some(enabled) = path.enable_frame().await? {
             let frame = enabled.initialized_frame().await;
 
-            let wire_bus = WireBus {
-                frame,
-            };
             unsafe {
                 // Creates a new wire bus
                 path.node_mut()
                     .await
-                    .put_resource(wire_bus, path.attribute.map(|a| a.transmute()));
+                    .put_resource(WireBus { frame }, path.attribute.map(|a| a.transmute()));
 
                 // If enabled this will enable frame updates for the plugin,
                 if init.allow_frame_updates {
-                    path.node_mut().await.put_resource::<FrameUpdates>(
+                    path.node_mut().await.maybe_put_resource::<FrameUpdates>(
                         FrameUpdates::default(),
                         path.attribute.map(|a| a.transmute()),
                     );

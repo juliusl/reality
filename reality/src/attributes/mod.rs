@@ -2,21 +2,18 @@ mod attribute;
 mod attribute_type;
 mod parser;
 mod storage_target;
-mod tag;
+mod decorated;
+mod decoration;
 mod visit;
 
 pub mod prelude {
     pub(super) use std::convert::Infallible;
     pub(super) use std::str::FromStr;
 
+    pub use super::decoration::Decoration;
     pub use super::attribute::Attribute;
     pub use super::attribute::Property;
-    pub use super::attribute_type::AttributeType;
-    pub use super::attribute_type::AttributeTypeParser;
-    pub use super::attribute_type::Callback;
-    pub use super::attribute_type::CallbackMut;
-    pub use super::attribute_type::Handler;
-    pub use super::attribute_type::OnParseField;
+    pub use super::attribute_type::*;
     pub use super::parser::AttributeParser;
     pub use super::parser::ParsedAttributes;
     pub use super::parser::ParsedBlock;
@@ -24,9 +21,9 @@ pub mod prelude {
     pub use super::parser::Tag;
     pub use super::parser::Properties;
     pub use super::storage_target::prelude::*;
-    pub use super::tag::Tagged;
-    pub use super::tag::Delimitted;
-    pub use super::tag::CommaSeperatedStrings;
+    pub use super::decorated::Decorated;
+    pub use super::decorated::Delimitted;
+    pub use super::decorated::CommaSeperatedStrings;
     pub use super::visit::Field;
     pub use super::visit::FieldMut;
     pub use super::visit::FieldOwned;
@@ -104,12 +101,12 @@ mod tests {
 
     /// Tests derive macro expansion
     ///
-    #[derive(Reality, Debug, Default)]
+    #[derive(Reality, Serialize, Deserialize, Debug, Default)]
     #[reality(
         rename = "test",
         load=on_load
     )]
-    pub struct Test<T: Send + Sync + 'static> {
+    pub struct Test<T: Serialize + Send + Sync + 'static> {
         /// Name for test,
         ///
         #[reality(wire, parse=on_name)]
@@ -120,7 +117,7 @@ mod tests {
         pub author: String,
         /// Description of the test,
         ///
-        _description: Tagged<String>,
+        _description: Decorated<String>,
         /// Testing vec_of parse macro,
         ///
         #[reality(vec_of=String)]
@@ -154,13 +151,13 @@ mod tests {
     }
 
     #[allow(dead_code)]
-    fn on_name<T: Send + Sync>(test: &mut Test<T>, value: String, _tag: Option<&String>) {
+    fn on_name<T: Serialize + Send + Sync>(test: &mut Test<T>, value: String, _tag: Option<&String>) {
         test.name = value;
-        test._description = Tagged::default();
+        test._description = Decorated::default();
         test._test2 = Test2 {};
     }
 
-    impl<T: Send + Sync + 'static> FromStr for Test<T> {
+    impl<T: Serialize + Send + Sync + 'static> FromStr for Test<T> {
         type Err = Infallible;
 
         fn from_str(_s: &str) -> Result<Self, Self::Err> {
@@ -214,7 +211,7 @@ mod tests {
         assert_eq!("hello-set-field", test.name.as_str());
         let frames = test.to_frame(None);
      
-        for frame in frames {
+        for frame in frames.fields {
             println!("{:?}", frame);
         }
     }

@@ -20,6 +20,16 @@ impl CurrentDir {
     }
 }
 
+// TODO: Add different Workspace initializers
+// pub struct Empty;
+// impl Empty {
+//      /// Creates a new empty workspace,
+//     /// 
+//     pub fn workspace(self) -> Workspace {
+//         Workspace::new()
+//     }
+// }
+
 /// Struct containing a workspace of sources,
 ///
 pub struct Workspace {

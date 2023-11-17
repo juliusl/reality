@@ -31,21 +31,24 @@ pub trait Plugin: BlockObject<Shared> + CallAsync + Clone + Default {
 
     /// Converts initialized plugin into frame representation and stores
     /// the result to node storage.
-    /// 
+    ///
     fn enable_frame(context: ThunkContext) -> CallOutput {
-        CallOutput::Spawn(context.spawn(|mut c| async {
+        CallOutput::Spawn(context.spawn(|c| async {
             let init = c.initialized::<Self>().await;
             let frame = init.to_frame(c.attribute);
             trace!("Putting frame for resource");
-            unsafe { 
-                c.node_mut().await.put_resource(frame, c.attribute.map(|c| c.transmute())) 
+            unsafe {
+                c.node_mut()
+                    .await
+                    .put_resource(frame, c.attribute.map(|c| c.transmute()))
             }
-
-            if let Some(parsed) = c.node().await.resource::<ParsedAttributes>(None) {
-                
-            }
-
             Ok(c)
         }))
+    }
+
+    /// Sync values from context,
+    /// 
+    #[allow(unused_variables)]
+    fn sync(&mut self, context: &ThunkContext) {
     }
 }

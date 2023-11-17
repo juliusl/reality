@@ -22,12 +22,12 @@ pub struct Sequence {
     pub tag: Option<String>,
     /// Steps that should be executed only once at the beginning,
     ///
-    #[reality(vecdeq_of=Delimitted<',', Tagged<Step>>)]
-    once: VecDeque<Delimitted<',', Tagged<Step>>>,
+    #[reality(vecdeq_of=Delimitted<',', Decorated<Step>>)]
+    once: VecDeque<Delimitted<',', Decorated<Step>>>,
     /// Steps that should be executed one-after the other,
     ///
-    #[reality(vecdeq_of=Delimitted<',', Tagged<Step>>)]
-    next: VecDeque<Delimitted<',', Tagged<Step>>>,
+    #[reality(vecdeq_of=Delimitted<',', Decorated<Step>>)]
+    next: VecDeque<Delimitted<',', Decorated<Step>>>,
     /// Indicates the sequence should loop,
     ///
     #[reality(rename = "loop")]
@@ -131,7 +131,7 @@ impl Sequence {
     /// If _loop is true, after None is returned it will reset the cursor, such
     /// that next() will then return the beginning of the next sequence.
     ///
-    pub fn next_step(&mut self) -> Option<Delimitted<',', Tagged<Step>>> {
+    pub fn next_step(&mut self) -> Option<Delimitted<',', Decorated<Step>>> {
         let once = self.once.pop_front();
         if once.is_some() {
             return once;
@@ -170,7 +170,7 @@ impl std::future::Future for Sequence {
             return Poll::Ready(Err(anyhow::anyhow!("Shutting down")));
         }
 
-        fn address(step: Tagged<Step>) -> String {
+        fn address(step: Decorated<Step>) -> String {
             match (step.value(), step.tag()) {
                 (Some(address), None) => address.0.to_string(),
                 (Some(address), Some(_)) => address.0.to_string(),

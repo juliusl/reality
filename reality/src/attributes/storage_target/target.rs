@@ -75,6 +75,25 @@ pub trait StorageTarget {
         self.resource(resource_key).map(|r| r.to_owned())
     }
 
+    /// Put a resource in storage if it doesn't already exist,
+    ///
+    /// Will always override the existing value,
+    ///
+    fn maybe_put_resource<T: Send + Sync + 'static>(
+        &mut self,
+        _resource: T,
+        _resource_key: Option<ResourceKey<T>>,
+    ) -> Option<Self::BorrowMutResource<'_, T>> {
+        unimplemented!()
+    }
+
+    fn contains<T: Send + Sync + 'static>(
+        &self,
+        _resource_key: Option<ResourceKey<T>>,
+    ) -> bool {
+        false
+    }
+
     /// Put a resource in storage,
     ///
     /// Will always override the existing value,

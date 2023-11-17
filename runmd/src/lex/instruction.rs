@@ -137,7 +137,7 @@ fn on_append_input(lex: &mut Lexer<Instruction>) {
 fn on_append_comment(lex: &mut Lexer<Instruction>) {
     if lex.extras.is_analyzing() {
         if let Some(input) = lex.bump_line() {
-            lex.extras.append_comment(input.trim_start_matches("|").trim_start_matches('#').trim());
+            lex.extras.append_comment(input.trim_start_matches('|').trim_start_matches('#').trim());
         }
     }
 }
@@ -188,7 +188,8 @@ fn on_load_extension_suffix(lex: &mut Lexer<Instruction>) -> Filter<()> {
 
 /// Parses the parameters of an attribute container,
 /// 
-fn on_attribute<'a>(lex: &mut Lexer<'a, Instruction>) {
+#[inline]
+fn on_attribute(lex: &mut Lexer<Instruction>) {
     // Morph into tokens lexer
     let tokens: Lexer<Tokens> = lex.clone().morph();
 

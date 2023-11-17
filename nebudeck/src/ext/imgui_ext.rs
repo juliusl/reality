@@ -433,7 +433,7 @@ impl ImguiExt for ThunkContext {
         unsafe {
             self.node_mut()
                 .await
-                .put_resource(ui_node, self.attribute.map(|a| a.transmute()))
+                .put_resource(ui_node, self.attribute.map(|a| a.transmute()));
         };
     }
 

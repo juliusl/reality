@@ -16,12 +16,15 @@ use super::attribute_type::ParsableAttributeTypeField;
 use super::attribute_type::ParsableField;
 use super::AttributeTypeParser;
 use super::StorageTarget;
+use crate::Decoration;
 use crate::block::BlockObjectHandler;
 use crate::AsyncStorageTarget;
 use crate::AttributeType;
 use crate::BlockObject;
 use crate::BlockObjectType;
+use crate::FieldPacket;
 use crate::ResourceKey;
+use crate::ThunkContext;
 
 /// Struct for a parsed block,
 ///
@@ -30,6 +33,9 @@ pub struct ParsedBlock {
     /// ParsedAttributes for each node,
     ///
     pub nodes: Vec<ParsedAttributes>,
+}
+
+impl ParsedBlock {
 }
 
 /// Struct for parsed attributes,
@@ -190,27 +196,42 @@ impl ParsedAttributes {
     /// Finds any parsed extras for a resource key,
     ///
     #[inline]
-    pub fn extras(&self, rk: &ResourceKey<Attribute>) -> HashMap<u64, (Option<BTreeMap<String, String>>, Option<Vec<String>>)> {
-        let mut map = HashMap::new();
-        map.insert(
-            rk.key(),
-            (self.comment_properties.get(rk), self.doc_headers.get(rk)),
+    pub async fn index_decorations(&self, rk: &ResourceKey<Attribute>, tc: &mut ThunkContext) {
+        tc.store_kv(
+            rk,
+            Decoration {
+                comment_properties: self.comment_properties.get(rk).cloned(),
+                doc_headers: self.doc_headers.get(rk).cloned(),
+            },
         );
 
-        let mut map = HashMap::new();
+        let mut props = vec![];
         if let Some(properties) = self.properties.defined.get(rk) {
             for prop in properties {
-                map.insert(
-                    prop.key(),
-                    (
-                        self.properties.comment_properties.get(prop).cloned(),
-                        self.properties.doc_headers.get(prop).map(|r| r.clone()),
-                    ),
+                tc.store_kv(
+                    prop,
+                    Decoration {
+                        comment_properties: self.properties.comment_properties.get(prop).cloned(),
+                        doc_headers: self.properties.doc_headers.get(prop).cloned(),
+                    },
                 );
+                props.push(prop);
             }
         }
 
-        map
+        let mut packets = vec![];
+        {
+            let node = tc.node().await;
+            for prop in props {
+                if let Some(fp) = node.current_resource::<FieldPacket>(Some(prop.transmute())) {
+                    packets.push((*prop, fp));
+                }
+            }
+        }
+
+        for (pk, fp) in packets {
+            tc.store_kv(pk, fp);
+        }
     }
 }
 
