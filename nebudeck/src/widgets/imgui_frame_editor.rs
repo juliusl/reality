@@ -100,7 +100,6 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                 let title = init
                     .editor_name
                     .clone()
-                    .or(decorations.clone())
                     .unwrap_or_else(|| format!("{:?}", tc.attribute));
 
                 ui.window(format!("Frame Editor - {}", title))
@@ -109,8 +108,6 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                         if let Some(rk) = tc.attribute.as_ref().map(|r| r.key()) {
                             ui.label_text("Resource Key", rk.to_string());
                         }
-
-                        ui.text(format!("{:#?}", decorations));
 
                         // if ui.collapsing_header("DEBUG --", TreeNodeFlags::empty()) {
                         //     ui.text(debug);
