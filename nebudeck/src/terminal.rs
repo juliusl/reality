@@ -99,33 +99,3 @@ pub trait TerminalApp: ControlBus {
     ///
     fn process_command(&mut self, command: clap::Command);
 }
-
-impl SetupTransform<crate::controller::Command> for Terminal {
-    fn ident() -> &'static str {
-        "terminal"
-    }
-
-    fn setup_transform(
-        resource_key: Option<&loopio::prelude::ResourceKey<loopio::prelude::Attribute>>,
-    ) -> loopio::prelude::Transform<Self, crate::controller::Command> {
-        Self::default_setup(resource_key).before_task(|context, terminal, cmd| {
-            Box::pin(async move {
-                if let Ok(ref cmd) = cmd {
-                    let _clap_command = cmd
-                        .arg
-                        .iter()
-                        .fold(clap::Command::new(&cmd.name), |cmd, (arg, desc)| {
-                            cmd.arg(clap::Arg::new(arg).help(desc))
-                        });
-
-                    context.transient_mut()
-                        .await
-                        .put_resource(_clap_command, None);
-                    Ok((terminal, Ok(cmd.clone())))
-                } else {
-                    Ok((terminal, cmd))
-                }
-            })
-        })
-    }
-}

@@ -14,14 +14,15 @@ pub trait Plugin: BlockObject<Shared> + CallAsync + Clone + Default {
     /// Returning PluginOutput determines the behavior of the Event.
     ///
     fn call(context: ThunkContext) -> CallOutput {
-        if context
-            .filter
-            .as_ref()
-            .filter(|f| !Self::symbol().contains(*f))
-            .is_some()
-        {
-            return CallOutput::Skip;
-        }
+        // TODO
+        // if context
+        //     .filter
+        //     .as_ref()
+        //     .filter(|f| !Self::symbol().contains(*f))
+        //     .is_some()
+        // {
+        //     return CallOutput::Skip;
+        // }
 
         CallOutput::Spawn(context.spawn(|mut c| async {
             <Self as CallAsync>::call(&mut c).await?;

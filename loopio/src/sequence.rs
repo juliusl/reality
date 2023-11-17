@@ -6,7 +6,7 @@ use reality::{prelude::*, SetIdentifiers};
 use tokio::task::{JoinHandle, JoinSet};
 use tracing::{error, trace};
 
-use crate::ext::Ext;
+use crate::{ext::Ext, address::Action};
 
 /// Struct containing steps of a sequence of operations,
 ///
@@ -104,24 +104,6 @@ impl Sequence {
         } else {
             self.name.to_string()
         }
-    }
-
-    /// Binds an engine handle to this sequence,
-    ///
-    pub fn bind(&self, context: ThunkContext) -> Self {
-        let mut clone = self.clone();
-        clone.binding = Some(context);
-        clone
-    }
-
-    /// Adds an operation filter to the context binding,
-    /// 
-    pub fn operation_filter(&self, filter: impl Into<String>) -> Self {
-        let mut clone = self.clone();
-        if let Some(tc) = clone.binding.as_mut() {
-            *tc = tc.filter(filter.into());
-        }
-        clone
     }
 
     /// Returns the next operation to run,
@@ -293,5 +275,23 @@ impl FromStr for Sequence {
             binding: None,
             current: None,
         })
+    }
+}
+
+impl Action for Sequence {
+    fn address(&self) -> String {
+        self.address()
+    }
+
+    fn context(&self) -> &ThunkContext {
+        self.binding.as_ref().expect("should be bound to an engine")
+    }
+
+    fn context_mut(&mut self) -> &mut ThunkContext {
+        self.binding.as_mut().expect("should be bound to an engine")
+    }
+
+    fn bind(&mut self, context: ThunkContext) {
+        self.binding = Some(context);
     }
 }

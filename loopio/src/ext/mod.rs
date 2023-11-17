@@ -17,8 +17,6 @@ pub mod wire_ext;
 #[cfg(feature = "flexbuffers-ext")]
 pub mod flexbuffers_ext;
 
-pub mod filter_ext;
-
 /// General extensions for ThunkContext,
 ///
 #[async_trait]

@@ -21,22 +21,23 @@ async fn main() -> anyhow::Result<()> {
         "test.md",
         r"
     ```runmd
-    + .operation show_frame_editor                                          # Shows frame editor
-    <loopio.enable-wirebus>             a/demo.test2                        # Enables the wire-bus for attribute at specific path
-    : .allow_frame_updates              true
+    + .operation show_frame_editor                                              # Shows frame editor
+    <loopio.enable-wirebus>                 demo://call_test_2/a/demo.test2     # Enables the wire-bus for attribute at specific path
+    : .allow_frame_updates                  true
     
-    <loopio.enable-wirebus>             b/nebudeck.frame-editor             # Enables the wire-bus for attribute at specific path
-    <nebudeck.frame-editor>             b/nebudeck.frame-editor             # Enables the frame editor for the frame editor
-    : .editor_name                      Demo editor Demo editor
+    <loopio.enable-wirebus>                 b/nebudeck.frame-editor             # Enables the wire-bus for attribute at specific path
+    
+    <nebudeck.frame-editor>                 b/nebudeck.frame-editor             # Enables the frame editor for the frame editor
+    |# title = Demo editor Demo editor 2
 
     # -- # Demo: Customizable editor for editing and launching plugins
     # -- Also demonstrates the additional markup support
-    <b/nebudeck.frame-editor>           demo://call_test_2/a/demo.test2     # Enables the frame editor for an attribute at a specific path
-    : .editor_name                      Demo editor
-    
+    <b/nebudeck.frame-editor>               demo://call_test_2/a/demo.test2     # Enables the frame editor for an attribute at a specific path
+    |# title = Demo editor for test2
+
     # -- Example: Panel of customizable widgets
     # -- This example shows how to configure a customizable panel
-    :  test         .panel                  Test Panel                      # Custom panels can be constructed from runmd
+    :  test         .panel                  Test Panel                          # Custom panels can be constructed from runmd
     |# help         = This is an example help documentation
     
     # -- Example: Configuring a property edit widget for a property
@@ -59,7 +60,12 @@ async fn main() -> anyhow::Result<()> {
     + .operation setup
     <demo.test> hello world
 
+    + .sequence start_demo
+    : .once show_frame_editor
+    : .loop false
+
     + .host demo
+    : .start    start_demo
     : .action   call_test_2/a/demo.test2
     |# help = Indexes a path to a plugin
 
@@ -169,7 +175,7 @@ struct Test2 {
 }
 
 async fn test_2(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let init: Test2 = Interactive.create(tc).await;
+    let init = Interactive.create::<Test2>(tc).await;
     println!("{:#?}", init);
     Ok(())
 }

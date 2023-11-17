@@ -309,7 +309,7 @@ impl FieldPacket {
 pub trait FieldPacketType: Send + Sync + 'static {
     /// Type that can be serialized to/from a string,
     ///
-    fn from_str(str: &str, dest: &mut Option<Self>) -> anyhow::Result<()>
+    fn from_str_to_dest(str: &str, dest: &mut Option<Self>) -> anyhow::Result<()>
     where
         Self: FromStr + Sized;
 
@@ -365,7 +365,7 @@ impl<T> FieldPacketType for T
 where
     T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
 {
-    fn from_str(str: &str, dest: &mut Option<Self>) -> anyhow::Result<()>
+    fn from_str_to_dest(str: &str, dest: &mut Option<Self>) -> anyhow::Result<()>
     where
         Self: FromStr + Sized,
     {

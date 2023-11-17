@@ -1,9 +1,12 @@
 use std::fmt::Debug;
 
+use anyhow::anyhow;
 use reality::prelude::*;
 use serde::Deserialize;
 use serde::Serialize;
 use tracing::info;
+
+use crate::prelude::Action;
 
 /// Converts the type being extended into wire format,
 ///
@@ -49,27 +52,28 @@ pub struct EnableWireBus {
 async fn enable_wire_bus(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = tc.initialized::<EnableWireBus>().await;
 
-    if let Some(path) = tc.navigate(&init.path).await {
+    if let Some(mut path) = tc.navigate(&init.path).await {
         info!("Enabling wire bus {}", init.path);
-        if let Some(enabled) = path.enable_frame().await? {
+        if let Some(enabled) = path.context().enable_frame().await? {
+            let attr = path.context().attribute.clone();
             let frame = enabled.initialized_frame().await;
-
             unsafe {
                 // Creates a new wire bus
-                path.node_mut()
+                path.context_mut().node_mut()
                     .await
-                    .put_resource(WireBus { frame }, path.attribute.map(|a| a.transmute()));
+                    .put_resource(WireBus { frame }, attr.map(|a| a.transmute()));
 
                 // If enabled this will enable frame updates for the plugin,
                 if init.allow_frame_updates {
-                    path.node_mut().await.maybe_put_resource::<FrameUpdates>(
+                    path.context_mut().node_mut().await.maybe_put_resource::<FrameUpdates>(
                         FrameUpdates::default(),
-                        path.attribute.map(|a| a.transmute()),
+                        attr.map(|a| a.transmute()),
                     );
                 }
             };
         }
+        Ok(())
+    } else {
+        Err(anyhow!("Could not find resource {:?}", init.path))
     }
-
-    Ok(())
 }

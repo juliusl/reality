@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::str::FromStr;
-
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -85,7 +84,6 @@ impl<T: FromStr + Send + Sync + 'static> Decorated<T> {
     pub fn set_property(&mut self, key: ResourceKey<Property>) {
         self.property = Some(key);
     }
-
     /// Sets the decoration on this container,
     ///
     pub fn set_decoration(&mut self, decoration: Decoration) {
@@ -93,7 +91,7 @@ impl<T: FromStr + Send + Sync + 'static> Decorated<T> {
     }
 
     /// Sync the state w/ a context,
-    /// 
+    ///
     pub fn sync(&mut self, tc: &ThunkContext) {
         if let Some(prop) = self.property.as_ref() {
             self.decoration = tc.fetch_kv::<Decoration>(*prop).map(|(_, d)| d.clone());

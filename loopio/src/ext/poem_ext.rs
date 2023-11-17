@@ -31,6 +31,7 @@ use tracing::error;
 
 use crate::ext::*;
 use crate::operation::Operation;
+use crate::prelude::Action;
 use crate::prelude::HyperExt;
 use crate::prelude::UriParam;
 use crate::sequence::Sequence;
@@ -267,19 +268,18 @@ async fn on_proxy(
     match *operation {
         Either::Left(op) => {
             let mut operation = op.clone();
-            if let Some(context) = operation.context_mut() {
-                context.reset();
+            let context = operation.context_mut();
+            context.reset();
 
-                context.transient_mut().await.put_resource(
-                    PoemRequest {
-                        path: path_vars,
-                        uri: req.uri().clone(),
-                        headers: req.headers().clone(),
-                        body: Some(body),
-                    },
-                    None,
-                );
-            }
+            context.transient_mut().await.put_resource(
+                PoemRequest {
+                    path: path_vars,
+                    uri: req.uri().clone(),
+                    headers: req.headers().clone(),
+                    body: Some(body),
+                },
+                None,
+            );
 
             let mut context = operation.execute().await.map_err(|e| {
                 poem::Error::from_string(format!("{e}"), StatusCode::INTERNAL_SERVER_ERROR)
@@ -510,7 +510,7 @@ pub struct ReverseProxyConfig {
 
 impl ReverseProxyConfig {
     /// Configure an endpoint w/ reverse proxy settings,
-    /// 
+    ///
     pub fn decorate(&self, endpoint: impl IntoEndpoint + Endpoint) -> impl IntoEndpoint + Endpoint {
         let allow_headers = self.allow_headers.clone();
         let deny_headers = self.deny_headers.clone();
@@ -544,17 +544,20 @@ impl ReverseProxyConfig {
             }
 
             if let Some(allow_hosts) = &allow_hosts {
-                if !allow_hosts.clone().fold(false, |allow, h| {
-                    allow | (host == h)
-                }) {
-                    result = Err(
-                        poem::Error::from_string("Host is not allowed", StatusCode::FORBIDDEN));
+                if !allow_hosts
+                    .clone()
+                    .fold(false, |allow, h| allow | (host == h))
+                {
+                    result = Err(poem::Error::from_string(
+                        "Host is not allowed",
+                        StatusCode::FORBIDDEN,
+                    ));
                 }
             }
 
             async {
                 result?;
-                 Ok(req) 
+                Ok(req)
             }
         })
     }
@@ -582,8 +585,8 @@ async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
     for host in init.forward.iter() {
         let mut transient = tc.transient_mut().await;
-        let resource =
-            transient.take_resource::<EngineProxy>(Some(ResourceKey::with_hash(host.as_ref().to_string())));
+        let resource = transient
+            .take_resource::<EngineProxy>(Some(ResourceKey::with_hash(host.as_ref().to_string())));
         eprintln!("Processing reverse proxy config for {}", host.as_ref(),);
         if let Some(resource) = resource {
             for (address, route_method) in resource.routes {
@@ -687,11 +690,7 @@ async fn configure_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
             println!("Configuring reverse proxy for {}", init.alias.as_ref());
             let config = || init.clone().decorate(on_forward_request);
             create_routes!(
-                move || {
-                    config()
-                        .data(client.clone())
-                        .data(internal_host.clone())
-                },
+                move || { config().data(client.clone()).data(internal_host.clone()) },
                 tc,
                 engine_proxy,
                 [head, get, post, put, patch, delete]

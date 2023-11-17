@@ -17,6 +17,7 @@ pub mod prelude {
     pub use super::parser::AttributeParser;
     pub use super::parser::ParsedAttributes;
     pub use super::parser::ParsedBlock;
+    pub use super::parser::HostedResource;
     pub use super::parser::Comments;
     pub use super::parser::Tag;
     pub use super::parser::Properties;

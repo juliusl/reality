@@ -14,12 +14,15 @@ use crate::prelude::Latest;
 use crate::AsyncStorageTarget;
 use crate::Attribute;
 use crate::BlockObject;
+use crate::Decoration;
 use crate::Dispatcher;
 use crate::FieldPacket;
 use crate::Frame;
 use crate::FrameUpdates;
+use crate::HostedResource;
 use crate::Node;
 use crate::ParsedAttributes;
+use crate::ParsedBlock;
 use crate::ResourceKey;
 use crate::Shared;
 use crate::StorageTarget;
@@ -49,31 +52,14 @@ pub struct Context {
     /// If the context has been branched, this will be the Uuid assigned to the variant,
     ///
     pub variant_id: Option<Uuid>,
-    /// If set, will filter attributes based on thier identifier,
+    /// Decorations parsed for this context,
     ///
-    pub filter: Option<String>,
-    /// If set, will allow a thunk to audit it's usage,
-    ///
-    pub audit: Option<ThunkAudit>,
+    pub decoration: Option<Decoration>,
     /// Cache storage,
     ///
     /// **Note** Cloning the cache will creates a new branch.
     ///
     __cached: Shared,
-}
-
-/// Struct containing audited config information on the thunk,
-///
-#[derive(Clone)]
-pub struct ThunkAudit {
-    /// True if the thunk writes to node storage,
-    ///
-    /// **Consideration** This means that a write lock on shared storage will be taken during thunk execution.
-    ///
-    pub writes_to_node: bool,
-    /// True if the thunk writes to transient storage,
-    ///
-    pub writes_to_transient: bool,
 }
 
 impl From<AsyncStorageTarget<Shared>> for Context {
@@ -86,14 +72,22 @@ impl From<AsyncStorageTarget<Shared>> for Context {
             transient: Shared::default().into_thread_safe_with(handle),
             cancellation: CancellationToken::new(),
             variant_id: None,
-            filter: None,
-            audit: None,
+            decoration: None,
             __cached: Shared::default(),
         }
     }
 }
 
 impl Context {
+    /// Returns the value of a property decoration if found,
+    ///
+    pub fn property(&self, name: impl AsRef<str>) -> Option<&String> {
+        self.decoration
+            .as_ref()
+            .and_then(|d| d.comment_properties.as_ref())
+            .and_then(|c| c.get(name.as_ref()))
+    }
+
     /// Creates a branched thunk context,
     ///
     pub fn branch(&self) -> (Uuid, Self) {
@@ -114,20 +108,6 @@ impl Context {
         self.node()
             .await
             .current_resource(self.attribute.map(|a| a.transmute()))
-    }
-
-    /// Creates a context w/ a filter set,
-    ///
-    pub fn filter(&self, filter: impl Into<String>) -> Self {
-        let mut with_filter = self.clone();
-        with_filter.filter = Some(filter.into());
-        with_filter
-    }
-
-    /// Resets the filter,
-    ///
-    pub fn reset_filter(&mut self) {
-        self.filter.take();
     }
 
     /// Reset the transient storage,
@@ -600,14 +580,18 @@ impl Context {
 
     /// Resolves an attribute by path, returns a context if an attribute was found,
     ///
-    pub async fn navigate(&self, path: impl AsRef<str>) -> Option<Self> {
-        if let Some(located) = self.node.resolve::<Attribute>(path.as_ref()).await {
-            let mut navigation = self.clone();
-            navigation.set_attribute(located);
-            Some(navigation)
-        } else {
-            None
+    pub async fn navigate(&self, path: impl AsRef<str>) -> Option<HostedResource> {
+        let node = self.node().await;
+        if let Some(block) = node.resource::<ParsedBlock>(None) {
+            eprintln!("Looking for resource at: {}", path.as_ref());
+            if let Some(hosted_resource) = block.find_resource(path.as_ref().to_string()) {
+                eprintln!("Found hosted resource: {:?}", hosted_resource);
+
+                return Some(hosted_resource.clone());
+            }
         }
+
+        None
     }
 
     /// Schedules garbage collection of the variant,
@@ -702,6 +686,9 @@ impl Interactive {
             .finish();
 
         p.sync(&tc);
+        tc.decoration = tc
+            .fetch_kv::<Decoration>(tc.attribute.unwrap_or_default())
+            .map(|(_, deco)| deco.clone());
         p
     }
 }

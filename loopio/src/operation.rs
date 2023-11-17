@@ -5,10 +5,14 @@ use futures_util::FutureExt;
 
 use anyhow::anyhow;
 
+use reality::SetIdentifiers;
 use reality::ThunkContext;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use tracing::trace;
 use tracing::warn;
+
+use crate::address::Action;
 
 /// Struct for a top-level node,
 ///
@@ -25,12 +29,6 @@ pub struct Operation {
     /// Running operation,
     ///
     spawned: Option<(CancellationToken, JoinHandle<anyhow::Result<ThunkContext>>)>,
-}
-
-pub struct Spawned {
-    pub started: tokio::time::Instant,
-    pub cancel: CancellationToken,
-    pub task: JoinHandle<anyhow::Result<ThunkContext>>,
 }
 
 impl Clone for Operation {
@@ -56,52 +54,14 @@ impl Operation {
         }
     }
 
-    /// Returns the address to use w/ this operation,
-    ///
-    pub fn address(&self) -> String {
-        if let Some(tag) = self.tag.as_ref() {
-            format!("{}#{}", self.name, tag)
-        } else {
-            self.name.to_string()
-        }
-    }
-
-    /// Binds operation to a thunk context,
-    ///
-    pub fn bind(&mut self, context: ThunkContext) {
-        self.context = Some(context);
-    }
-
-    /// Returns a reference to the inner context,
-    ///
-    pub fn context(&self) -> Option<&ThunkContext> {
-        self.context.as_ref()
-    }
-
-    /// Returns a mutable reference to the inner context,
-    ///
-    pub fn context_mut(&mut self) -> Option<&mut ThunkContext> {
-        self.context.as_mut()
-    }
-
     /// Executes the operation,
     ///
     pub async fn execute(&self) -> anyhow::Result<ThunkContext> {
         if let Some(context) = self.context.clone() {
             context.apply_thunks_with(|c, _next| async move {
-                eprintln!("Executing next {:?}", _next);
+                trace!("Executing next {:?}", _next);
                 Ok(c)
             }).await
-        } else {
-            Err(anyhow!("Could not execute operation, "))
-        }
-    }
-
-    /// Executes plugins that match the filter,
-    /// 
-    pub async fn filter_execute(&self, filter: impl Into<String>) -> anyhow::Result<ThunkContext> {
-        if let Some(context) = self.context.as_ref().map(|c| c.filter(filter)) {
-            context.apply_thunks().await
         } else {
             Err(anyhow!("Could not execute operation, "))
         }
@@ -174,7 +134,7 @@ impl Operation {
     pub async fn navigate(&self, path: impl AsRef<str>) -> anyhow::Result<ThunkContext> {
         if let Some(tc) = self.context.as_ref() {
             if let Some(tc) = tc.navigate(path.as_ref()).await {
-                let tc = tc.call().await?;
+                let tc = tc.context().call().await?;
                 if let Some(tc) = tc {
                     return Ok(tc);
                 }
@@ -219,5 +179,34 @@ impl Debug for Operation {
             .field("name", &self.name)
             .field("tag", &self.tag)
             .finish()
+    }
+}
+
+impl Action for Operation {
+    fn address(&self) -> String {
+        if let Some(tag) = self.tag.as_ref() {
+            format!("{}#{}", self.name, tag)
+        } else {
+            self.name.to_string()
+        }
+    }
+
+    fn bind(&mut self, context: ThunkContext) {
+        self.context = Some(context);
+    }
+
+    fn context(&self) -> &ThunkContext {
+        self.context.as_ref().expect("should be bound to an engine")
+    }
+
+    fn context_mut(&mut self) -> &mut ThunkContext {
+        self.context.as_mut().expect("should be bound to an engine")
+    }
+}
+
+impl SetIdentifiers for Operation {
+    fn set_identifiers(&mut self, name: &str, tag: Option<&String>) {
+        self.name = name.to_string();
+        self.tag = tag.cloned();
     }
 }

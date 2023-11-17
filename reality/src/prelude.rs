@@ -5,6 +5,8 @@ pub use crate::derive::RealityTest;
 pub use crate::Attribute;
 pub use crate::AttributeType;
 pub use crate::ParsedAttributes;
+pub use crate::ParsableField;
+pub use crate::ParsedBlock;
 pub use crate::Properties;
 pub use crate::Comments;
 pub use crate::StorageTarget;
@@ -37,6 +39,8 @@ pub use crate::FieldMut;
 pub use crate::FieldOwned;
 pub use crate::SetField;
 pub use crate::RegisterWith;
+pub use crate::SetIdentifiers;
+pub use crate::HostedResource;
 
 /*
     Macros for working w/ a storage target

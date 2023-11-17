@@ -3,7 +3,6 @@ use async_stream::stream;
 use futures_util::Stream;
 use host::Host;
 use reality::prelude::*;
-use reality::SetIdentifiers;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -17,9 +16,12 @@ use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
 use tracing::trace;
+use tracing::warn;
 
+use crate::address::Action;
 use crate::host;
 use crate::operation::Operation;
+use crate::prelude::Address;
 use crate::sequence::Sequence;
 
 #[cfg(feature = "hyper-ext")]
@@ -234,7 +236,7 @@ impl Engine {
         tag: Option<&str>,
         target: &mut AttributeParser<Shared>,
     ) where
-        T: BlockObject<Shared> + SetIdentifiers,
+        T: BlockObject<Shared> + crate::address::Action + SetIdentifiers,
     {
         let name = name
             .map(|n| n.to_string())
@@ -245,9 +247,17 @@ impl Engine {
         if let Some(last) = target.attributes.last().cloned() {
             if let Some(mut storage) = target.storage_mut() {
                 storage.drain_dispatch_queues();
+                let mut address = None;
                 if let Some(mut seq) = storage.resource_mut(Some(last.transmute::<T>())) {
                     T::set_identifiers(&mut seq, &name, tag.map(|t| t.to_string()).as_ref());
+                    address = Some(Address::new(seq.address()));
                 }
+
+                if let Some(address) = address {
+                    eprintln!("Setting address {:?}", address);
+                    storage.put_resource(address, None);
+                }
+
                 storage.put_resource(last.transmute::<T>(), None);
             }
         }
@@ -291,7 +301,15 @@ impl Engine {
                 .unwrap_or(format!("{}", uuid::Uuid::new_v4()));
 
             if let Some(mut storage) = target.storage_mut() {
-                storage.put_resource(Operation::new(name, tag.map(|t| t.to_string())), None)
+                let operation = Operation::new(name, tag.map(|t| t.to_string()));
+                if let Ok(address) = Address::from_str(&operation.address()) {
+                    eprintln!("Adding address for operation -- {}", address);
+                    storage.put_resource(address, None);
+                } else {
+                    eprintln!("Could not add address for {}", (&operation.address()));
+                }
+
+                storage.put_resource(operation, None);
             }
 
             for p in plugins.iter() {
@@ -308,29 +326,40 @@ impl Engine {
             .ok()
             .and_then(|mut w| w.project.take())
         {
-            let handle = self.handle();
-
             let nodes = project.nodes.latest().await;
+
+            let mut host_actions = vec![];
 
             // Extract hosts
             for (_, target) in nodes.iter() {
                 target.write().await.drain_dispatch_queues();
-
                 let storage = target.latest().await;
                 let hostkey = storage.current_resource::<ResourceKey<Host>>(None);
-                if let Some(host) = storage.current_resource::<Host>(hostkey) {
-                    if let Some(previous) = self.hosts.insert(
-                        host.name.to_string(),
-                        host.bind(Shared::default().into_thread_safe_with(handle.clone())),
-                    ) {
-                        info!(address = previous.name, "Replacing host");
+                if let Some(mut host) = storage.current_resource::<Host>(hostkey) {
+                    // Since new_context set the host map, earlier hosts are available to later hosts
+                    host.bind(
+                        self.new_context(Arc::new(tokio::sync::RwLock::new(storage)))
+                            .await,
+                    );
+
+                    // Find actions defined by the host for adding to the parsed block later
+                    for (dec, a) in host
+                        .action
+                        .iter()
+                        .filter(|a| a.value().is_some())
+                        .map(|a| (a.decoration.clone(), a.value.clone().unwrap()))
+                    {
+                        host_actions.push((host.name.to_string(), a, dec));
+                    }
+
+                    if let Some(previous) = self.hosts.insert(host.name.to_string(), host) {
+                        warn!(address = previous.name, "Replacing host");
                     }
                 }
-
                 target.write().await.drain_dispatch_queues();
             }
 
-            // Extract operations
+            // Extract actions
             for (_, target) in nodes.iter() {
                 if let Some(mut operation) =
                     target.latest().await.current_resource::<Operation>(None)
@@ -339,30 +368,18 @@ impl Engine {
                     if let Some(previous) = self.operations.insert(operation.address(), operation) {
                         info!(address = previous.address(), "Replacing operation");
                     }
-
-                    if let Some(parsed) = target.read().await.resource::<ParsedAttributes>(None) {
-                        let __parsed = parsed.clone();
-                    }
                 }
-
                 target.write().await.drain_dispatch_queues();
 
                 let storage = target.latest().await;
                 let seqkey = storage.current_resource::<ResourceKey<Sequence>>(None);
 
-                if let Some(sequence) = storage.current_resource::<Sequence>(seqkey) {
-                    if let Some(previous) = self.sequences.insert(
-                        sequence.address(),
-                        sequence.bind(self.new_context(target.clone()).await),
-                    ) {
+                if let Some(mut sequence) = storage.current_resource::<Sequence>(seqkey) {
+                    sequence.bind(self.new_context(target.clone()).await);
+                    if let Some(previous) = self.sequences.insert(sequence.address(), sequence) {
                         info!(address = previous.address(), "Replacing sequence");
                     }
-
-                    if let Some(parsed) = target.read().await.resource::<ParsedAttributes>(None) {
-                        let __parsed = parsed.clone();
-                    }
                 }
-
                 target.write().await.drain_dispatch_queues();
             }
 
@@ -375,13 +392,40 @@ impl Engine {
             }
 
             // Add ParsedBlock to all nodes,
-            if let Ok(block) = project.parsed_block().await {
-                eprintln!("{:#?}", block);
+            if let Ok(mut block) = project.parsed_block().await {
+                // Bind all pending address to the block first
+                for (node, target) in nodes.iter() {
+                    if let Some(address) = target.read().await.resource::<Address>(None) {
+                        block.bind_node_to_path(node.transmute(), address.to_string());
+                    }
+                }
+
+                // Bind all hosted resources to a thunk context
+                for (host_name, address, deco) in host_actions {
+                    if let Some(node) = block.paths.get(&address.node_address()) {
+                        if let Some(node_storage) = nodes.get(&node.transmute()).cloned() {
+                            if let Some(_node) = block.nodes.get(node).cloned() {
+                                if let Some(resource) = _node.paths.get(address.path()) {
+                                    let address = address.clone().with_host(host_name);
+                                    let hosted_resource = block.bind_resource_path(
+                                        address.to_string(),
+                                        *node,
+                                        resource.clone(),
+                                        deco,
+                                    );
+
+                                    let mut context = self.new_context(node_storage.clone()).await;
+                                    context.set_attribute(*resource);
+                                    hosted_resource.bind(context);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Share the block w/ all nodes
                 for (_, target) in nodes.iter() {
-                    target
-                        .write()
-                        .await
-                        .put_resource(block.clone(), None);
+                    target.write().await.put_resource(block.clone(), None);
                 }
             }
         }
@@ -436,10 +480,7 @@ impl Engine {
     /// Get host compiled by this engine,
     ///
     pub fn get_host(&self, name: impl AsRef<str>) -> Option<host::Host> {
-        self.hosts.get(name.as_ref()).cloned().map(|mut h| {
-            h.handle = Some(self.engine_handle());
-            h
-        })
+        self.hosts.get(name.as_ref()).cloned()
     }
 
     /// Takes ownership of the engine and starts listening for packets,
@@ -466,7 +507,7 @@ impl Engine {
             if let Some(packet) = middleware(&mut self, packet) {
                 println!("Handling packet {:?}", packet.action);
                 match packet.action {
-                    Action::Run { address, tx } => {
+                    EngineAction::Run { address, tx } => {
                         eprintln!("Running {}", address);
                         info!(address, "Running operation");
                         let action = self
@@ -481,14 +522,14 @@ impl Engine {
                             tx.send(action).map_err(|_| anyhow!("Channel is closed"))?;
                         }
                     }
-                    Action::Compile { relative, content } => {
+                    EngineAction::Compile { relative, content } => {
                         info!("Compiling content");
                         if let Some(mut workspace) = self.workspace.take() {
                             workspace.add_buffer(relative, content);
                             self = self.compile(workspace).await;
                         }
                     }
-                    Action::Sync { mut tx } => {
+                    EngineAction::Sync { mut tx } => {
                         info!("Syncing engine handle");
                         if let Some(tx) = tx.take() {
                             if tx.send(self.engine_handle()).is_err() {
@@ -496,17 +537,13 @@ impl Engine {
                             }
                         }
                     }
-                    Action::Shutdown(delay) => {
+                    EngineAction::Shutdown(delay) => {
                         info!(delay_ms = delay.as_millis(), "Shutdown requested");
                         tokio::time::sleep(delay).await;
                         self.cancellation.cancel();
                         break;
                     }
-                    Action::EnableWireBus {
-                        ..
-                    } => {
-                        
-                    }
+                    EngineAction::EnableWireBus { .. } => {}
                 }
             }
         }
@@ -537,13 +574,13 @@ impl Drop for Engine {
 pub struct EnginePacket {
     /// Address of the operation to execute,
     ///
-    action: Action,
+    action: EngineAction,
 }
 
 /// Enumeration of actions that can be requested by a packet,
 ///
 #[derive(Serialize, Deserialize)]
-pub enum Action {
+enum EngineAction {
     /// Runs an operation on the engine,
     ///
     Run {
@@ -561,6 +598,8 @@ pub enum Action {
         #[serde(skip)]
         tx: Option<tokio::sync::oneshot::Sender<EngineHandle>>,
     },
+    /// Enables
+    ///
     EnableWireBus {
         attribute: ResourceKey<Attribute>,
         allow_changes: bool,
@@ -573,7 +612,7 @@ pub enum Action {
     Shutdown(tokio::time::Duration),
 }
 
-impl Debug for Action {
+impl Debug for EngineAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Run { address, tx } => f
@@ -658,7 +697,7 @@ impl EngineHandle {
             tokio::sync::oneshot::channel::<tokio_util::either::Either<Operation, Sequence>>();
 
         let packet = EnginePacket {
-            action: Action::Run {
+            action: EngineAction::Run {
                 address: address.into(),
                 tx: Some(tx),
             },
@@ -677,7 +716,7 @@ impl EngineHandle {
         content: impl Into<String>,
     ) -> anyhow::Result<()> {
         let packet = EnginePacket {
-            action: Action::Compile {
+            action: EngineAction::Compile {
                 relative: relative.into(),
                 content: content.into(),
             },
@@ -692,7 +731,7 @@ impl EngineHandle {
     ///
     pub async fn shutdown(&self, delay: tokio::time::Duration) -> anyhow::Result<()> {
         let packet = EnginePacket {
-            action: Action::Shutdown(delay),
+            action: EngineAction::Shutdown(delay),
         };
 
         self.sender.send(packet)?;
@@ -705,7 +744,7 @@ impl EngineHandle {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         let packet = EnginePacket {
-            action: Action::Sync { tx: Some(tx) },
+            action: EngineAction::Sync { tx: Some(tx) },
         };
 
         self.sender.send(packet)?;
@@ -721,10 +760,9 @@ impl EngineHandle {
     {
         stream! {
             for (_, op) in self.operations.iter() {
-                if let Some(tc) = op.context() {
-                    for resource in tc.scan_take_node::<T>().await {
-                        yield resource;
-                    }
+                let tc = op.context();
+                for resource in tc.scan_take_node::<T>().await {
+                    yield resource;
                 }
             }
         }
@@ -736,10 +774,9 @@ impl EngineHandle {
     {
         stream! {
             for (_, op) in self.operations.iter() {
-                if let Some(tc) = op.context() {
-                    for resource in tc.scan_node::<T>().await {
-                        yield resource;
-                    }
+                let tc = op.context();
+                for resource in tc.scan_node::<T>().await {
+                    yield resource;
                 }
             }
         }
@@ -753,11 +790,10 @@ impl EngineHandle {
     {
         stream! {
             for (_, op) in self.operations.iter() {
-                if let Some(tc) = op.context() {
-                    if let Some(host) = tc.host(host).await {
-                        if let Some(r) = host.current_resource::<T>(tc.attribute.map(|a| a.transmute())) {
-                            yield r;
-                        }
+                let tc = op.context();
+                if let Some(host) = tc.host(host).await {
+                    if let Some(r) = host.current_resource::<T>(tc.attribute.map(|a| a.transmute())) {
+                        yield r;
                     }
                 }
             }

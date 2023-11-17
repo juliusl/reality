@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::path::Path;
@@ -126,13 +127,13 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
     pub async fn parsed_block(&self) -> anyhow::Result<ParsedBlock> {
         let nodes = self.nodes.read().await;
 
-        let mut block = ParsedBlock { nodes: vec![] };
-        for (_, s) in nodes.deref().iter() {
+        let mut block = ParsedBlock { nodes: HashMap::new(), paths: BTreeMap::new(), resource_paths: BTreeMap::new() };
+        for (rk, s) in nodes.deref().iter() {
             let s = s.read().await;
-
+            
             if let Some(parsed) = s.current_resource::<ParsedAttributes>(None) {
-                block.nodes.push(parsed);
-            }
+                block.nodes.insert(rk.transmute(), parsed);
+             }
         }
 
         Ok(block)

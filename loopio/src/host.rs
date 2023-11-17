@@ -9,7 +9,9 @@ use tokio::sync::Notify;
 
 use reality::prelude::*;
 
-use crate::engine::EngineHandle;
+use crate::address::Action;
+use crate::prelude::Address;
+use crate::prelude::Ext;
 
 /// An address to listen to,
 ///
@@ -120,10 +122,6 @@ pub struct Host {
     ///
     #[reality(ignore)]
     pub host_storage: Option<AsyncStorageTarget<Shared>>,
-    /// Engine handle,
-    ///
-    #[reality(ignore)]
-    pub handle: Option<EngineHandle>,
     /// Vector of child hosts,
     ///
     /// Only used by the default host,
@@ -136,8 +134,8 @@ pub struct Host {
     start: Option<Decorated<String>>,
     /// List of actions to register w/ this host,
     /// 
-    #[reality(vec_of=Decorated<String>)]
-    action: Vec<Decorated<String>>,
+    #[reality(vec_of=Decorated<Address>)]
+    pub action: Vec<Decorated<Address>>,
     /// Set of conditions,
     ///
     #[reality(set_of=Decorated<HostCondition>)]
@@ -146,12 +144,16 @@ pub struct Host {
     /// 
     #[reality(set_of=Decorated<HostListen>)]
     listen: BTreeSet<Decorated<HostListen>>,
+    /// Binding to an engine,
+    /// 
+    #[reality(ignore)]
+    binding: Option<ThunkContext>,
 }
 
 impl Host {
     /// Bind this host to a storage target,
     ///
-    pub fn bind(mut self, storage: AsyncStorageTarget<Shared>) -> Self {
+    pub fn bind_storage(mut self, storage: AsyncStorageTarget<Shared>) -> Self {
         self.host_storage = Some(storage);
         self
     }
@@ -180,7 +182,9 @@ impl Host {
     pub async fn start(&self) -> anyhow::Result<ThunkContext> {
         self.initialized_conditions().await;
 
-        if let Some(engine) = self.handle.clone() {
+        if let Some(engine) = self.binding.as_ref() {
+            let engine = engine.engine_handle().await.expect("should be bound to an engine handle");
+
             if let Some(start) = self.start.as_ref() {
                 let address = match (start.tag(), start.value()) {
                     (None, Some(name)) => name.to_string(),
@@ -222,8 +226,8 @@ impl Debug for Host {
         f.debug_struct("Host")
             .field("name", &self.name)
             .field("_tag", &self._tag)
-            .field("handle", &self.handle)
             .field("start", &self.start)
+            .field("has_binding", &self.binding.is_some())
             .finish()
     }
 }
@@ -232,5 +236,23 @@ impl SetIdentifiers for Host {
     fn set_identifiers(&mut self, name: &str, tag: Option<&String>) {
         self.name = name.to_string();
         self._tag = tag.cloned();
+    }
+}
+
+impl Action for Host {
+    fn address(&self) -> String {
+        format!("{}://", self.name)
+    }
+
+    fn context(&self) -> &ThunkContext {
+        self.binding.as_ref().expect("should be bound to an engine")
+    }
+
+    fn context_mut(&mut self) -> &mut ThunkContext {
+        self.binding.as_mut().expect("should be bound to an engine")
+    }
+
+    fn bind(&mut self, context: ThunkContext) {
+        self.binding = Some(context);
     }
 }

@@ -399,7 +399,6 @@ impl StructData {
             }
         });
 
-
         quote_spanned! {self.span=> 
             impl #impl_generics AttributeType<S> for #ident #ty_generics #where_clause {
                 fn symbol() -> &'static str {
@@ -407,7 +406,7 @@ impl StructData {
                 }
 
                 fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
-                    let mut enable = parser.parse_attribute::<Self>(content);
+                    let mut enable = parser.parse_attribute::<Self>(content.as_ref());
 
                     if enable.is_some() {
                         #(#fields)*

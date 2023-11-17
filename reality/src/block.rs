@@ -1,20 +1,14 @@
-use std::collections::BTreeMap;
 use std::str::FromStr;
 
-use anyhow::anyhow;
-use async_trait::async_trait;
 use reality_derive::AttributeType;
-use serde::Deserialize;
 
 use crate::AsyncStorageTarget;
 use crate::AttributeParser;
 use crate::AttributeType;
 use crate::AttributeTypeParser;
 use crate::FieldPacket;
-use crate::Plugin;
 use crate::SetField;
 use crate::StorageTarget;
-use crate::ThunkContext;
 use crate::ToFrame;
 
 /// Struct containing block object functions,
@@ -61,112 +55,6 @@ impl<Storage: StorageTarget + 'static> Clone for BlockObjectType<Storage> {
 
 pub trait SetIdentifiers {
     fn set_identifiers(&mut self, name: &str, tag: Option<&String>);
-}
-
-/// Trait for adding utilities for reading property data from a plugin
-/// definition
-///
-#[async_trait]
-pub trait PropertySource<T>
-where
-    T: Plugin,
-{
-    /// Property reader,
-    ///
-    type Reader;
-
-    /// Returns a handler to the reader type,
-    ///
-    async fn properties(tc: &mut ThunkContext) -> anyhow::Result<Self::Reader> {
-        let init = tc.initialized::<T>().await;
-        // 1. Convert to frame
-        // 2. Get the ParsedAttributes
-        // 3. Assign comment properties
-        // 4. Cache?
-        /*
-            Reader can
-            - iter properties?
-            - find updated values?
-        */
-        Self::reader(init, tc).await
-    }
-
-    /// Constructs a new property reader,
-    ///
-    async fn reader(init: T, tc: &mut ThunkContext) -> anyhow::Result<Self::Reader>;
-}
-
-/// Plain wrapper over T,
-///
-pub struct Field<T>(T);
-
-/// Generic wrapper over inner field type to make generating
-/// a reader easier,
-///
-pub struct PropertyReader<T>
-where
-    for<'de> T: Deserialize<'de>,
-{
-    value: T,
-    _doc_headers: Vec<String>,
-    _comment_properties: BTreeMap<String, String>,
-}
-
-impl<T> From<PropertyReader<T>> for Field<T>
-where
-    for<'de> T: Deserialize<'de>,
-{
-    fn from(value: PropertyReader<T>) -> Self {
-        Field(value.value)
-    }
-}
-
-impl<T> From<T> for PropertyReader<T>
-where
-    for<'de> T: Deserialize<'de>,
-{
-    fn from(value: T) -> Self {
-        Self {
-            value,
-            _doc_headers: Vec::default(),
-            _comment_properties: BTreeMap::default(),
-        }
-    }
-}
-
-impl<T> TryFrom<&FieldPacket> for PropertyReader<T>
-where
-    for<'de> T: Deserialize<'de>,
-{
-    type Error = anyhow::Error;
-
-    fn try_from(value: &FieldPacket) -> Result<Self, Self::Error> {
-        Self::read_packet(value)
-    }
-}
-
-impl<T> PropertyReader<T>
-where
-    for<'de> T: Deserialize<'de>,
-{
-    /// Read a field packet as some type T,
-    ///
-    fn read_packet(field: &FieldPacket) -> anyhow::Result<PropertyReader<T>> {
-        if let Some(wire_data) = &field.wire_data {
-            Ok(PropertyReader {
-                value: bincode::deserialize::<T>(wire_data)?,
-                _doc_headers: Vec::default(),
-                _comment_properties: BTreeMap::default(),
-            })
-        } else {
-            Err(anyhow!("Packet has no wire data"))
-        }
-    }
-
-    pub fn with_comment_properties(mut self, properties: BTreeMap<String, String>) -> Self {
-        self._comment_properties = properties;
-        self
-    }
 }
 
 /// Object type that lives inside of a runmd block,
@@ -330,13 +218,5 @@ impl ToFrame for Test {
 impl SetField<FieldPacket> for Test {
     fn set_field(&mut self, _: crate::FieldOwned<FieldPacket>) -> bool {
         false
-    }
-}
-
-#[test]
-fn test_property_reader() {
-    let test = Test {};
-    if let Some(test) = test.to_frame(None).fields.first() {
-        let _reader = PropertyReader::<usize>::read_packet(test).unwrap();
     }
 }

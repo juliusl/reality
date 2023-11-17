@@ -2,6 +2,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
 use tracing::debug;
@@ -16,15 +17,52 @@ use super::attribute_type::ParsableAttributeTypeField;
 use super::attribute_type::ParsableField;
 use super::AttributeTypeParser;
 use super::StorageTarget;
-use crate::Decoration;
+use crate::SetIdentifiers;
 use crate::block::BlockObjectHandler;
 use crate::AsyncStorageTarget;
 use crate::AttributeType;
 use crate::BlockObject;
 use crate::BlockObjectType;
+use crate::Decoration;
 use crate::FieldPacket;
 use crate::ResourceKey;
 use crate::ThunkContext;
+
+/// Represents a resource that has been assigned a path,
+///
+#[derive(Clone, Default)]
+pub struct HostedResource {
+    /// Address to list the resource under,
+    ///
+    pub address: String,
+    /// The node resource key,
+    ///
+    pub node_rk: ResourceKey<Attribute>,
+    /// The hosted resource key,
+    ///
+    pub rk: ResourceKey<Attribute>,
+    /// Any decorations to add w/ this resource,
+    ///
+    pub decoration: Option<Decoration>,
+    /// Thunk context that is configured to the resource being hosted,
+    ///
+    pub binding: Option<ThunkContext>,
+}
+
+impl Debug for HostedResource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HostedResource")
+            .field("address", &self.address)
+            .field("node_rk", &self.node_rk)
+            .field("rk", &self.rk)
+            .field("decoration", &self.decoration)
+            .finish()
+    }
+}
+
+impl SetIdentifiers for HostedResource {
+    fn set_identifiers(&mut self, _: &str, _: Option<&String>) {}
+}
 
 /// Struct for a parsed block,
 ///
@@ -32,10 +70,63 @@ use crate::ThunkContext;
 pub struct ParsedBlock {
     /// ParsedAttributes for each node,
     ///
-    pub nodes: Vec<ParsedAttributes>,
+    pub nodes: HashMap<ResourceKey<Attribute>, ParsedAttributes>,
+    /// Bounded parsed paths,
+    ///
+    pub paths: BTreeMap<String, ResourceKey<Attribute>>,
+    /// Bounded resource paths,
+    ///
+    pub resource_paths: BTreeMap<String, HostedResource>,
 }
 
+
 impl ParsedBlock {
+    /// Binds a node to a path in this parsed block,
+    ///
+    pub fn bind_node_to_path(
+        &mut self,
+        node: ResourceKey<Attribute>,
+        path: impl Into<String>,
+    ) -> bool {
+        if let Some(_) = self.nodes.get(&node) {
+            self.paths.insert(path.into(), node);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Gets the parsed attributes of a node,
+    ///
+    pub fn get_node(&self, node: ResourceKey<Attribute>) -> Option<&ParsedAttributes> {
+        self.nodes.get(&node)
+    }
+
+    /// Binds a path to a resource from a resource w/in the parsed block,
+    ///
+    pub fn bind_resource_path(
+        &mut self,
+        path: impl Into<String>,
+        node: ResourceKey<Attribute>,
+        resource: ResourceKey<Attribute>,
+        decoration: Option<Decoration>,
+    ) -> &mut HostedResource {
+        let path = path.into();
+
+        self.resource_paths.entry(path.clone()).or_insert(HostedResource {
+            address: path,
+            node_rk: node,
+            rk: resource,
+            decoration,
+            binding: None,
+        })
+    }
+
+    /// Looks for a hosted resource by path,
+    /// 
+    pub fn find_resource(&self, resource: impl AsRef<str>) -> Option<&HostedResource> {
+        self.resource_paths.get(resource.as_ref())
+    }
 }
 
 /// Struct for parsed attributes,

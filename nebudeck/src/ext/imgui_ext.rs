@@ -60,7 +60,7 @@ pub struct ImguiMiddleware<T> {
     ///
     ui_type_nodes: Vec<UiTypeNode>,
     /// Vector of aux ui nodes,
-    /// 
+    ///
     __aux_ui: Vec<AuxUiNode>,
     /// Update attempted to start,
     ///
@@ -99,37 +99,39 @@ impl<T: 'static> ImguiMiddleware<T> {
     }
 
     /// Enables the aux widget demo window,
-    /// 
+    ///
     pub fn enable_aux_demo_window(self) -> Self {
         /*
         Aux tool ideas
         - The aux tools are based on an engine handle, which basically has access to everything
         - So some generic tooling widgets could be helpful
-        -- Tool Idea: Future monitor -- 
+        -- Tool Idea: Future monitor --
             -- Visualizing futures could be helpful in general, especially w/ view status of an EngineHandle
-            -- 
-        -- Tool Idea: 
+            --
+        -- Tool Idea:
         */
 
         self.with_aux_node(|handle, ui| {
-            ui.window("aux-demo").size([600.0, 400.0], imgui::Condition::Appearing).build(move || {
-                ui.text("Operations --");
-                for (idx, (op, __op)) in handle.operations.iter_mut().enumerate() {
-                    ui.label_text("Name", op);
-                    
-                    if !__op.is_running() {
-                        if ui.button(format!("Start##{idx}")) {
-                            __op.spawn();
-                        }
-                    } else if __op.is_finished() {
-                        let result = __op.block_result();
-                        eprintln!("success: {}", result.is_ok());
-                    } else {
-                        ui.text("Running");
-                    }
+            ui.window("aux-demo")
+                .size([600.0, 400.0], imgui::Condition::Appearing)
+                .build(move || {
+                    ui.text("Operations --");
+                    for (idx, (op, __op)) in handle.operations.iter_mut().enumerate() {
+                        ui.label_text("Name", op);
 
-                    ui.indent();
-                    if let Some(context) = __op.context() {
+                        if !__op.is_running() {
+                            if ui.button(format!("Start##{idx}")) {
+                                __op.spawn();
+                            }
+                        } else if __op.is_finished() {
+                            let result = __op.block_result();
+                            eprintln!("success: {}", result.is_ok());
+                        } else {
+                            ui.text("Running");
+                        }
+
+                        ui.indent();
+                        let context = __op.context();
                         if let Ok(s) = context.node.storage.try_read() {
                             if let Some(attributes) = s.resource::<ParsedAttributes>(None) {
                                 if !attributes.paths.is_empty() {
@@ -137,48 +139,76 @@ impl<T: 'static> ImguiMiddleware<T> {
                                     for (p, a) in attributes.paths.iter() {
                                         ui.label_text(format!("{}", a.key()), p);
 
-                                        if let Some(defined) = attributes.properties.defined.get(a) {
-                                            ui.label_text("# of properties", defined.len().to_string());
+                                        if let Some(defined) = attributes.properties.defined.get(a)
+                                        {
+                                            ui.label_text(
+                                                "# of properties",
+                                                defined.len().to_string(),
+                                            );
                                         }
                                     }
                                 }
                             }
                         }
+                        ui.unindent();
+                        ui.separator();
+                        ui.new_line();
                     }
-                    ui.unindent();
-                    ui.separator();
-                    ui.new_line();
-                }
 
-                // Engine Handle Controls
-                if !handle.is_running() {
-                    if ui.button("Sync") {
-                        if let Some(started) =
-                            handle.spawn(|e| tokio::spawn(async move { e.sync().await }))
+                    // Engine Handle Controls
+                    if !handle.is_running() {
+                        if ui.button("Sync") {
+                            if let Some(started) =
+                                handle.spawn(|e| tokio::spawn(async move { e.sync().await }))
+                            {
+                                handle.cache.put_resource(
+                                    started,
+                                    Some(ResourceKey::with_hash("sync_command")),
+                                )
+                            }
+                        }
+                    } else if let Some(true) = handle.is_finished() {
+                        if let Some(started) = handle
+                            .cache
+                            .take_resource::<Instant>(Some(ResourceKey::with_hash("sync_command")))
                         {
-                            handle
-                                .cache
-                                .put_resource(started, Some(ResourceKey::with_hash("sync_command")))
+                            if let Ok(finished) = handle.wait_for_finish(*started) {
+                                *handle = finished;
+                            } else {
+                                // Remember to put this back
+                                handle.cache.put_resource(
+                                    started,
+                                    Some(ResourceKey::with_hash("sync_command")),
+                                )
+                            }
                         }
+                    } else if ui.button("cancel") {
+                        handle.cancel();
                     }
-                } else if let Some(true) = handle.is_finished() {
-                    if let Some(started) = handle
-                        .cache
-                        .take_resource::<Instant>(Some(ResourceKey::with_hash("sync_command")))
-                    {
-                        if let Ok(finished) = handle.wait_for_finish(*started) {
-                            *handle = finished;
-                        } else {
-                            // Remember to put this back
-                            handle
-                                .cache
-                                .put_resource(started, Some(ResourceKey::with_hash("sync_command")))
-                        }
+
+                    if ui.button("Print all operations") {
+                        handle.spawn(|e| {
+                            tokio::spawn(async {
+                                for ctx in e.operations.iter().map(|o| o.1.context()) {
+                                    if let Some(address) = ctx.scan_node_for::<Address>().await {
+                                        eprintln!("{:?}", address);
+                                    }
+                                }
+                                for ctx in e.sequences.iter().map(|s| s.1.context()) {
+                                    if let Some(address) = ctx.scan_node_for::<Address>().await {
+                                        eprintln!("{:?}", address);
+                                    }
+                                }
+                                for ctx in e.hosts.iter().map(|s| s.1.context()) {
+                                    if let Some(address) = ctx.scan_node_for::<Address>().await {
+                                        eprintln!("{:?}", address);
+                                    }
+                                }
+                                Ok(e)
+                            })
+                        });
                     }
-                } else if ui.button("cancel") {
-                    handle.cancel();
-                }
-            });
+                });
             true
         })
     }
@@ -204,9 +234,9 @@ impl<T: 'static> ImguiMiddleware<T> {
     }
 
     /// Update any ui nodes,
-    /// 
+    ///
     /// TODO: Make this called more lazily
-    /// 
+    ///
     pub fn update(&mut self) {
         if let Some(engine) = self.engine.get_mut() {
             if !engine.is_running() {
@@ -415,7 +445,10 @@ pub trait ImguiExt {
 
     async fn add_ui_type_node<G: Default + Send + Sync + 'static>(
         &self,
-        show: impl for<'a, 'b> Fn(&'a mut Dispatcher<Shared, Attribute>, &'b Ui) -> bool + Send + Sync + 'static,
+        show: impl for<'a, 'b> Fn(&'a mut Dispatcher<Shared, Attribute>, &'b Ui) -> bool
+            + Send
+            + Sync
+            + 'static,
     );
 }
 
@@ -439,7 +472,10 @@ impl ImguiExt for ThunkContext {
 
     async fn add_ui_type_node<G: Default + Send + Sync + 'static>(
         &self,
-        show: impl for<'a, 'b> Fn(&'a mut Dispatcher<Shared, Attribute>, &'b Ui) -> bool + Send + Sync + 'static,
+        show: impl for<'a, 'b> Fn(&'a mut Dispatcher<Shared, Attribute>, &'b Ui) -> bool
+            + Send
+            + Sync
+            + 'static,
     ) {
         let ui_node = UiTypeNode {
             show_ui: Some(Arc::new(show)),
@@ -455,15 +491,16 @@ impl ImguiExt for ThunkContext {
 }
 
 /// Type-alias for a dispatcher based UI signature,
-/// 
-pub type ShowTypeUi = Arc<dyn Fn(&mut Dispatcher<Shared, Attribute>, &Ui) -> bool + Sync + Send + 'static>;
+///
+pub type ShowTypeUi =
+    Arc<dyn Fn(&mut Dispatcher<Shared, Attribute>, &Ui) -> bool + Sync + Send + 'static>;
 
 /// Type-alias for a plugin-based UI function signature,
-/// 
+///
 pub type ShowUi = Arc<dyn Fn(&mut ThunkContext, &Ui) -> bool + Sync + Send + 'static>;
 
 /// Type-alias for an engine handle based UI function signature,
-/// 
+///
 pub type AuxUi = Arc<RwLock<dyn FnMut(&mut EngineHandle, &Ui) -> bool + Sync + Send + 'static>>;
 
 /// UI Node contains a rendering function w/ a thunk context,
@@ -480,7 +517,7 @@ pub struct UiTypeNode {
 
 impl UiTypeNode {
     /// Shows the ui,
-    /// 
+    ///
     pub fn show(&mut self, ui: &Ui) -> bool {
         if let Some(show) = self.show_ui.as_ref() {
             show(&mut self.dispatcher, ui)
@@ -503,7 +540,7 @@ pub struct UiNode {
 }
 
 /// Auxilary UI node, containing a rendering function w/ engine handle,
-/// 
+///
 pub struct AuxUiNode {
     /// Engine handle,
     ///
@@ -528,7 +565,7 @@ impl UiNode {
 impl AuxUiNode {
     /// Shows the ui attached to a node,
     ///
-    pub fn show(&mut self, ui: &Ui) -> bool{
+    pub fn show(&mut self, ui: &Ui) -> bool {
         if let (Some(handle), Ok(mut show)) =
             (self.engine_handle.as_mut(), self.show_ui.try_write())
         {
@@ -539,14 +576,12 @@ impl AuxUiNode {
     }
 
     /// Show the UI w/ a different engine handle,
-    /// 
+    ///
     /// **Note** When created an aux ui node receives it's own engine handle. This allows
     /// passing a handle directly, such as the middleware's handle.
-    /// 
+    ///
     pub fn show_with(&mut self, engine_handle: &mut EngineHandle, ui: &Ui) -> bool {
-        if let Ok(mut show) =
-            self.show_ui.try_write()
-        {
+        if let Ok(mut show) = self.show_ui.try_write() {
             show(engine_handle, ui)
         } else {
             false

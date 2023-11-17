@@ -389,7 +389,7 @@ where
     /// Function called when a value is parsed correctly,
     ///
     fn on_parse(&mut self, value: T, tag: Option<&String>) -> ResourceKey<Property>;
-
+    
     /// Returns a reference to the field as the projected type,
     ///
     fn get(&self) -> &Self::ProjectedType;
