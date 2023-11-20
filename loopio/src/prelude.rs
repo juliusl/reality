@@ -6,16 +6,18 @@ pub use crate::ext::poem_ext::*;
 
 #[cfg(feature="std-ext")]
 pub use crate::ext::std_ext::*;
-pub use crate::ext::*;
 
 #[cfg(feature="wire-ext")]
 pub use crate::ext::wire_ext::*;
 
 pub use crate::engine::Engine;
 pub use crate::engine::EngineHandle;
+pub use crate::engine::DefaultEngine;
+pub use crate::foreground::ForegroundEngine;
 pub use crate::host::Host;
 pub use crate::address::Address;
-pub use crate::address::Action;
+pub use crate::action::Action;
 pub use crate::spawned::*;
+pub use crate::ext::*;
 
 pub use reality::prelude::*;

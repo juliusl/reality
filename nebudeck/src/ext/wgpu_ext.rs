@@ -1,6 +1,7 @@
 use super::prelude::*;
 
 use futures::executor::block_on;
+use loopio::foreground::ForegroundEngine;
 use loopio::prelude::Engine;
 use loopio::prelude::EngineHandle;
 use loopio::prelude::StorageTarget;
@@ -618,7 +619,7 @@ impl<T: 'static> ControlBus for WgpuSystem<T> {
         }
     }
 
-    fn delegate(self, controller: impl Controller<Self>, engine: Engine) -> BackgroundWork
+    fn delegate(self, controller: impl Controller<Self>, engine: ForegroundEngine) -> BackgroundWork
     where
         Self: Sized,
     {

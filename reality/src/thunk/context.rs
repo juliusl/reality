@@ -16,7 +16,6 @@ use crate::Attribute;
 use crate::BlockObject;
 use crate::Decoration;
 use crate::Dispatcher;
-use crate::FieldPacket;
 use crate::Frame;
 use crate::FrameUpdates;
 use crate::HostedResource;
@@ -59,7 +58,7 @@ pub struct Context {
     ///
     /// **Note** Cloning the cache will creates a new branch.
     ///
-    __cached: Shared,
+    pub(crate) __cached: Shared,
 }
 
 impl From<AsyncStorageTarget<Shared>> for Context {
@@ -78,7 +77,18 @@ impl From<AsyncStorageTarget<Shared>> for Context {
     }
 }
 
+impl Default for Context {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Context {
+    /// Returns a new blank thunk context,
+    /// 
+    pub fn new() -> Self {
+        Self::from(Shared::default().into_thread_safe())
+    }
     /// Returns the value of a property decoration if found,
     ///
     pub fn property(&self, name: impl AsRef<str>) -> Option<&String> {
@@ -86,6 +96,12 @@ impl Context {
             .as_ref()
             .and_then(|d| d.comment_properties.as_ref())
             .and_then(|c| c.get(name.as_ref()))
+    }
+
+    /// Returns the parsed block,
+    /// 
+    pub async fn parsed_block(&self) -> Option<ParsedBlock> {
+        self.node().await.current_resource::<ParsedBlock>(None)
     }
 
     /// Creates a branched thunk context,
@@ -192,6 +208,12 @@ impl Context {
         self.transient.storage.write().await
     }
 
+     /// Returns a readable reference to transient storage,
+    ///
+    pub async fn transient_ref(&self) -> tokio::sync::RwLockReadGuard<Shared> {
+        self.transient.storage.read().await
+    }
+
     /// Spawn a task w/ this context,
     ///
     /// Returns a join-handle if the task was created.
@@ -267,121 +289,6 @@ impl Context {
             .await
     }
 
-    /// If cached, returns a cached value of P,
-    ///
-    pub fn cached<P: ToOwned<Owned = P> + Sync + Send + 'static>(&self) -> Option<P> {
-        self.__cached
-            .current_resource::<P>(self.attribute.map(|a| a.transmute()))
-    }
-
-    /// If cached, returns a referenced to the cached value,
-    ///
-    pub fn cached_ref<P: Sync + Send + 'static>(
-        &self,
-    ) -> Option<<Shared as StorageTarget>::BorrowResource<'_, P>> {
-        self.__cached
-            .resource::<P>(self.attribute.map(|a| a.transmute()))
-    }
-
-    /// Returns a mutable reference to a cached resource,
-    ///
-    pub fn cached_mut<P: Sync + Send + 'static>(
-        &mut self,
-    ) -> Option<<Shared as StorageTarget>::BorrowMutResource<'_, P>> {
-        self.__cached
-            .resource_mut::<P>(self.attribute.map(|a| a.transmute()))
-    }
-
-    /// Returns true if the kv store contains value P at key,
-    ///
-    pub fn kv_contains<P>(&mut self, key: impl std::hash::Hash) -> bool
-    where
-        P: Send + Sync + 'static,
-    {
-        let key = self.attribute.map(|s| s.transmute().branch(key));
-        self.__cached.resource::<P>(key).is_some()
-    }
-
-    /// Store a resource by key in cache,
-    ///
-    pub fn store_kv<P>(&mut self, key: impl std::hash::Hash, value: P)
-    where
-        P: Send + Sync + 'static,
-    {
-        self.__cached
-            .put_resource::<P>(value, self.attribute.map(|s| s.transmute().branch(key)));
-    }
-
-    pub fn take_kv<P>(&mut self, key: impl std::hash::Hash) -> Option<(ResourceKey<P>, P)>
-    where
-        P: Send + Sync + 'static,
-    {
-        let key = self.attribute.map(|s| s.transmute().branch(key));
-        self.__cached
-            .take_resource::<P>(key)
-            .map(|p| (key.expect("should be some"), *p))
-    }
-
-    /// Fetch a kv pair by key,
-    ///
-    pub fn fetch_kv<P>(
-        &self,
-        key: impl std::hash::Hash,
-    ) -> Option<(
-        ResourceKey<P>,
-        <Shared as StorageTarget>::BorrowResource<'_, P>,
-    )>
-    where
-        P: Send + Sync + 'static,
-    {
-        let key = self.attribute.map(|s| s.transmute().branch(key));
-        self.__cached
-            .resource::<P>(key)
-            .map(|c| (key.expect("should be some"), c))
-    }
-
-    /// Fetch a mutable reference to a kv pair by key,
-    ///
-    pub fn fetch_mut_kv<P>(
-        &mut self,
-        key: impl std::hash::Hash,
-    ) -> Option<(
-        ResourceKey<P>,
-        <Shared as StorageTarget>::BorrowMutResource<'_, P>,
-    )>
-    where
-        P: Send + Sync + 'static,
-    {
-        let key = self.attribute.map(|s| s.transmute().branch(key));
-        self.__cached
-            .resource_mut::<P>(key)
-            .map(|c| (key.expect("should be some"), c))
-    }
-
-    /// Writes a resource to the cache,
-    ///
-    pub fn write_cache<R: Sync + Send + 'static>(&mut self, resource: R) {
-        self.__cached
-            .put_resource(resource, self.attribute.map(|a| a.transmute()))
-    }
-
-    /// Takes a cached resource,
-    ///
-    pub fn take_cache<R: Sync + Send + 'static>(&mut self) -> Option<Box<R>> {
-        self.__cached
-            .take_resource(self.attribute.map(|a| a.transmute()))
-    }
-
-    /// Returns true if the cache was written to,
-    ///
-    pub fn maybe_write_cache<R: Sync + Send + 'static>(
-        &mut self,
-        resource: R,
-    ) -> Option<<Shared as StorageTarget>::BorrowMutResource<'_, R>> {
-        self.__cached
-            .maybe_put_resource(resource, self.attribute.map(|a| a.transmute()))
-    }
-
     /// Find and cache a resource,
     ///
     /// - Searches the current context for a resource P
@@ -407,7 +314,7 @@ impl Context {
         }
     }
 
-    /// Caches P,
+    /// Caches the plugin P,
     ///
     pub async fn cache<P: Plugin + Sync + Send + 'static>(&mut self) {
         let next = self.initialized().await;
@@ -619,7 +526,7 @@ impl Context {
         if let Some(thunk) = thunk {
             (thunk)(self.clone()).await
         } else {
-            Err(anyhow::anyhow!("Did not execute thunk"))
+            Err(anyhow::anyhow!("Did not execute thunk {:?}", self.attribute))
         }
     }
 
@@ -637,30 +544,40 @@ impl Context {
         }
     }
 
-    /// Returns any formatted attribute comments parsed from the comments,
-    ///
-    pub async fn print_parsed_comments(&self) {
-        if let Some(parsed) = self.node().await.current_resource::<ParsedAttributes>(None) {
-            for rk in parsed.attributes {
-                if let Some(comments) = parsed.comment_properties.get(&rk) {
-                    eprintln!("\t --- {:#?}", comments)
-                }
-                if let Some(properties) = parsed.properties.defined.get(&rk).cloned() {
-                    for prop in properties {
-                        if let Some(field_packet) = self
-                            .node()
-                            .await
-                            .resource::<FieldPacket>(Some(prop.transmute()))
-                        {
-                            eprintln!("{:#?} --- {:#?}", prop, field_packet)
-                        }
-
-                        if let Some(comments) = parsed.properties.comment_properties.get(&prop) {
-                            eprintln!("\t--- {:#?}", comments);
-                        }
-                    }
-                }
+    /// Prints out debug information on this thunk context,
+    /// 
+    pub fn print_debug_info(&self) {
+        if let Some(doc_headers) = self
+            .decoration
+            .as_ref()
+            .and_then(|d| d.doc_headers.as_ref())
+        {
+            for d in doc_headers {
+                eprintln!("{d}");
             }
+            eprintln!();
+        }
+        eprintln!("attribute:      {:?}", self.attribute);
+        eprintln!("variant  :      {:?}", self.variant_id);
+        eprintln!("--- Decorations ---");
+        if let Some(properties) = self
+            .decoration
+            .as_ref()
+            .and_then(|d| d.comment_properties.as_ref())
+        {
+            for (n, v) in properties {
+                eprintln!("{n}: {v}");
+            }
+        } else {
+            eprintln!("None")
+        }
+        eprintln!("--- Cache State ---");
+        eprintln!("# of keys :      {}", self.__cached.len());
+
+        if let Some(frame) = self.cached_ref::<Frame>() {
+            eprintln!("--- Frame State ---");
+            eprintln!("# of fields:     {}", frame.fields.len());
+            // TODO
         }
     }
 }
@@ -770,7 +687,7 @@ where
             if let Some(parsed) = node.current_resource::<ParsedAttributes>(None) {
                 drop(node);
                 parsed
-                    .index_decorations(&self.context.attribute.unwrap(), self.context)
+                    .index_decorations(&self.context.attribute.unwrap_or_default(), self.context)
                     .await;
             }
         }

@@ -9,10 +9,10 @@ use serde::Deserialize;
 pub struct Decoration {
     /// Doc headers pushed on the current instruction,
     ///
-    pub(crate) doc_headers: Option<Vec<String>>,
+    pub doc_headers: Option<Vec<String>>,
     /// Properties parsed from the comments on this instruction,
     ///
-    pub(crate) comment_properties: Option<BTreeMap<String, String>>,
+    pub comment_properties: Option<BTreeMap<String, String>>,
 }
 
 impl Decoration {

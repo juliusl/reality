@@ -4,8 +4,12 @@ pub mod host;
 pub mod operation;
 pub mod prelude;
 pub mod sequence;
-pub mod spawned;
 pub mod address;
+pub mod action;
+pub mod spawned;
+pub mod deck;
+pub mod background_work;
+pub mod foreground;
 
 #[allow(unused_imports)]
 mod tests {
@@ -35,9 +39,9 @@ mod tests {
         #[reality(derive_fromstr)]
         _process: String,
         name: String,
-        #[reality(map_of=String, wire)]
+        #[reality(map_of=String)]
         env: BTreeMap<String, String>,
-        #[reality(vec_of=String, wire)]
+        #[reality(vec_of=String)]
         args: Vec<String>,
     }
 
@@ -47,9 +51,9 @@ mod tests {
         #[reality(derive_fromstr)]
         _process: String,
         name: String,
-        #[reality(map_of=String, wire)]
+        #[reality(map_of=String)]
         env: BTreeMap<String, String>,
-        #[reality(vec_of=String, wire)]
+        #[reality(vec_of=String)]
         args: Vec<String>,
     }
 

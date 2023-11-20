@@ -1,7 +1,9 @@
 use std::process::exit;
-use loopio::engine::Engine;
+
+use loopio::engine::EngineBuilder;
 use tracing::error;
 use tracing::info;
+
 use winit::event::DeviceEvent;
 use winit::event::DeviceId;
 use winit::event::Event;
@@ -14,6 +16,8 @@ use winit::window::WindowId;
 use winit::event_loop::EventLoopProxy;
 use winit::dpi::LogicalSize;
 
+use loopio::prelude::*;
+
 pub mod winit {
     #[cfg(feature = "desktop-imgui")]
     pub use winit_27::*;
@@ -24,6 +28,7 @@ pub mod winit {
 use crate::controller::ControlBus;
 use crate::BackgroundWork;
 use crate::Controller;
+use crate::ext::imgui_ext::ImguiExt;
 
 /// Desktop app that enables developer utilities,
 /// 
@@ -33,17 +38,50 @@ use crate::Controller;
 pub struct DevProject;
 
 impl DevProject {
-    /// Creates a new project,
+    /// Creates a new project based on the current directory,
     /// 
-    pub fn new_project(self) -> (Desktop<()>, Engine) {
+    pub fn current_project(self) -> (Desktop<()>, EngineBuilder) {
+        self.open_project(CurrentDir.workspace())
+    }
+
+    /// Opens a project from a workspace,
+    /// 
+    pub fn open_project(self, mut workspace: Workspace) -> (Desktop<()>, EngineBuilder) {
         (Desktop::<()>::new().expect("should be able to create a new desktop app").with_title("Dev Project App").enable_engine_packet_listener(), {
             let mut engine = Engine::builder();
             engine.enable::<crate::widgets::FrameEditor>();
-            engine.build()
+            engine.enable::<Placeholder>();
+            workspace.add_buffer("dec_project_frame_editor.md", 
+            r#"
+            ```runmd
+            + .operation open_debug_window
+            # -- Opens a debug window
+            <nebudeck.placeholder>
+            ```
+            "#);
+            engine.set_workspace(workspace);
+            engine
         })
     }
 }
 
+/// Placeholder plugin,
+/// 
+#[derive(Reality, Clone, Debug, Default)]
+#[reality(call = placeholder, plugin)]
+pub struct Placeholder {
+    #[reality(derive_fromstr)]
+    name: String
+}
+
+async fn placeholder(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    tc.print_debug_info();
+    tc.add_ui_node(|tc, ui| {
+        
+        true
+    }).await;
+    Ok(())
+}
 /// This controller provides access to winit Windowing system and event loop,
 ///
 /// This controller can be used to build a desktop app.
@@ -244,16 +282,10 @@ impl<T: 'static> Desktop<T> {
 }
 
 impl<T: 'static, A: DesktopApp<T> + 'static> Controller<A> for Desktop<T> {
-    fn take_control(self, mut app: Box<A>, engine: Engine) -> BackgroundWork {
+    fn take_control(self, mut app: Box<A>, engine: ForegroundEngine) -> BackgroundWork {
         app.bind(engine.engine_handle());
 
-        // Starts engine packet listener
-        if self.enable_engine_packet_listener {
-            let _ = engine.spawn(|_, op| Some(op));
-        }
-
         self.open(*app);
-
         None
     }
 }

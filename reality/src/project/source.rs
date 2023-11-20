@@ -4,7 +4,7 @@ use std::path::PathBuf;
 ///
 /// A source must have a unique relative path name.
 ///
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Source {
     /// Path to a local file,
     ///

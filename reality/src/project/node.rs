@@ -23,6 +23,8 @@ impl<S: StorageTarget + ToOwned<Owned = S> + Send + Sync + 'static> Node<S> {
         stream! {
             let parsed = self.0.latest().await.current_resource::<ParsedAttributes>(None);
             if let Some(parsed) =  parsed {
+                yield parsed.node;
+
                 for p in parsed.parsed() {
                     yield p;
                 }
@@ -38,6 +40,8 @@ impl<S: StorageTarget + ToOwned<Owned = S> + Send + Sync + 'static> AsyncStorage
         stream! {
             let parsed = self.storage.latest().await.current_resource::<ParsedAttributes>(None);
             if let Some(parsed) =  parsed {
+                yield parsed.node;
+
                 for p in parsed.parsed() {
                     yield p;
                 }
@@ -72,6 +76,8 @@ impl Shared {
         stream! {
             let parsed = self.current_resource::<ParsedAttributes>(None);
             if let Some(parsed) =  parsed {
+                // yield parsed.node;
+                
                 for p in parsed.parsed() {
                     yield p;
                 }

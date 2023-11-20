@@ -1,22 +1,17 @@
 use std::cell::OnceCell;
 use std::sync::Arc;
 use std::time::Instant;
-
-use futures::pin_mut;
-use futures::StreamExt;
 use imgui::Ui;
 use imgui_wgpu::RendererConfig;
 use imgui_winit_support::WinitPlatform;
 use tokio::sync::RwLock;
 use tracing::error;
-use winit::window::Window;
-
 use loopio::prelude::*;
-use winit_27::event_loop::EventLoopProxy;
+use winit::event_loop::EventLoopProxy;
+use winit::window::Window;
 
 use crate::desktop::DesktopApp;
 use crate::ControlBus;
-
 use super::wgpu_ext::RenderPipelineMiddleware;
 
 pub mod winit {
@@ -101,114 +96,49 @@ impl<T: 'static> ImguiMiddleware<T> {
     /// Enables the aux widget demo window,
     ///
     pub fn enable_aux_demo_window(self) -> Self {
-        /*
-        Aux tool ideas
-        - The aux tools are based on an engine handle, which basically has access to everything
-        - So some generic tooling widgets could be helpful
-        -- Tool Idea: Future monitor --
-            -- Visualizing futures could be helpful in general, especially w/ view status of an EngineHandle
-            --
-        -- Tool Idea:
-        */
-
         self.with_aux_node(|handle, ui| {
-            ui.window("aux-demo")
-                .size([600.0, 400.0], imgui::Condition::Appearing)
-                .build(move || {
-                    ui.text("Operations --");
-                    for (idx, (op, __op)) in handle.operations.iter_mut().enumerate() {
-                        ui.label_text("Name", op);
+            if let Some(bg) = handle.background() {
+                const ADDRESS_INPUT: &'static str = "Address_Input";
 
-                        if !__op.is_running() {
-                            if ui.button(format!("Start##{idx}")) {
-                                __op.spawn();
-                            }
-                        } else if __op.is_finished() {
-                            let result = __op.block_result();
-                            eprintln!("success: {}", result.is_ok());
-                        } else {
-                            ui.text("Running");
+                bg.tc.maybe_store_kv(ADDRESS_INPUT, String::new());
+
+                ui.window("Aux-demo Window")
+                    .size([800.0, 600.0], imgui::Condition::Once)
+                    .build(|| {
+                        let mut __address = None;
+                        if let Some((_, mut address)) = bg.tc.fetch_mut_kv::<String>(ADDRESS_INPUT) {
+                            if ui.input_text("Address", &mut address).build() {}
+                            __address = Some(address.to_string());
                         }
 
-                        ui.indent();
-                        let context = __op.context();
-                        if let Ok(s) = context.node.storage.try_read() {
-                            if let Some(attributes) = s.resource::<ParsedAttributes>(None) {
-                                if !attributes.paths.is_empty() {
-                                    ui.text("Paths:");
-                                    for (p, a) in attributes.paths.iter() {
-                                        ui.label_text(format!("{}", a.key()), p);
-
-                                        if let Some(defined) = attributes.properties.defined.get(a)
-                                        {
-                                            ui.label_text(
-                                                "# of properties",
-                                                defined.len().to_string(),
-                                            );
+                        if let Some(address) = __address.take() {
+                            if let Ok(mut bg) = bg.call(address.as_str()) {
+                                match bg.status() {
+                                    loopio::background_work::CallStatus::Enabled => {
+                                        if ui.button("Start") {
+                                            bg.spawn();
                                         }
                                     }
+                                    loopio::background_work::CallStatus::Disabled => {
+                                        ui.disabled(true, || {
+                                            if ui.button("Start") {
+                                            }
+                                        })
+                                    },
+                                    loopio::background_work::CallStatus::Running => {
+                                        ui.text("Running");
+                                    },
+                                    loopio::background_work::CallStatus::Pending => {
+                                        bg.into_foreground().unwrap();
+                                    },
                                 }
                             }
-                        }
-                        ui.unindent();
-                        ui.separator();
-                        ui.new_line();
-                    }
 
-                    // Engine Handle Controls
-                    if !handle.is_running() {
-                        if ui.button("Sync") {
-                            if let Some(started) =
-                                handle.spawn(|e| tokio::spawn(async move { e.sync().await }))
-                            {
-                                handle.cache.put_resource(
-                                    started,
-                                    Some(ResourceKey::with_hash("sync_command")),
-                                )
+                            if let Ok(_bg) = bg.listen(&address) {
                             }
                         }
-                    } else if let Some(true) = handle.is_finished() {
-                        if let Some(started) = handle
-                            .cache
-                            .take_resource::<Instant>(Some(ResourceKey::with_hash("sync_command")))
-                        {
-                            if let Ok(finished) = handle.wait_for_finish(*started) {
-                                *handle = finished;
-                            } else {
-                                // Remember to put this back
-                                handle.cache.put_resource(
-                                    started,
-                                    Some(ResourceKey::with_hash("sync_command")),
-                                )
-                            }
-                        }
-                    } else if ui.button("cancel") {
-                        handle.cancel();
-                    }
-
-                    if ui.button("Print all operations") {
-                        handle.spawn(|e| {
-                            tokio::spawn(async {
-                                for ctx in e.operations.iter().map(|o| o.1.context()) {
-                                    if let Some(address) = ctx.scan_node_for::<Address>().await {
-                                        eprintln!("{:?}", address);
-                                    }
-                                }
-                                for ctx in e.sequences.iter().map(|s| s.1.context()) {
-                                    if let Some(address) = ctx.scan_node_for::<Address>().await {
-                                        eprintln!("{:?}", address);
-                                    }
-                                }
-                                for ctx in e.hosts.iter().map(|s| s.1.context()) {
-                                    if let Some(address) = ctx.scan_node_for::<Address>().await {
-                                        eprintln!("{:?}", address);
-                                    }
-                                }
-                                Ok(e)
-                            })
-                        });
-                    }
-                });
+                    });
+            }
             true
         })
     }
@@ -238,49 +168,49 @@ impl<T: 'static> ImguiMiddleware<T> {
     /// TODO: Make this called more lazily
     ///
     pub fn update(&mut self) {
-        if let Some(engine) = self.engine.get_mut() {
-            if !engine.is_running() {
-                if let Some(last_updated) = self.__last_updated.as_ref() {
-                    // TODO: Can remove when it's on demand
-                    if last_updated.elapsed().as_secs() <= 10 {
-                        return;
-                    }
-                    self.__last_updated.take();
-                }
+        // if let Some(engine) = self.engine.get_mut() {
+        //     if !engine.is_running() {
+        //         if let Some(last_updated) = self.__last_updated.as_ref() {
+        //             // TODO: Can remove when it's on demand
+        //             if last_updated.elapsed().as_secs() <= 10 {
+        //                 return;
+        //             }
+        //             self.__last_updated.take();
+        //         }
 
-                if let Some(started) = engine.spawn(|mut e| {
-                    tokio::spawn(async move {
-                        let nodes = {
-                            let nodes = e.scan_take_nodes::<UiNode>();
-                            pin_mut!(nodes);
+        //         if let Some(started) = engine.spawn(|mut e| {
+        //             tokio::spawn(async move {
+        //                 let nodes = {
+        //                     let nodes = e.scan_take_nodes::<UiNode>();
+        //                     pin_mut!(nodes);
 
-                            nodes.collect::<Vec<_>>().await
-                        };
+        //                     nodes.collect::<Vec<_>>().await
+        //                 };
 
-                        if !nodes.is_empty() {
-                            let e = &mut e;
-                            e.cache.put_resource(nodes, None);
-                        }
+        //                 if !nodes.is_empty() {
+        //                     let e = &mut e;
+        //                     e.cache.put_resource(nodes, None);
+        //                 }
 
-                        Ok(e)
-                    })
-                }) {
-                    self.__update_start = Some(started);
-                }
-            } else if let Some(true) = engine.is_finished() {
-                if let Some(_wait_for_finish) = self.__update_start.take() {
-                    if let Ok(mut r) = engine.wait_for_finish(_wait_for_finish) {
-                        if let Some(nodes) = r.cache.take_resource::<Vec<UiNode>>(None) {
-                            // TODO -- Should clear?
-                            self.ui_nodes.clear();
+        //                 Ok(e)
+        //             })
+        //         }) {
+        //             self.__update_start = Some(started);
+        //         }
+        //     } else if let Some(true) = engine.is_finished() {
+        //         if let Some(_wait_for_finish) = self.__update_start.take() {
+        //             if let Ok(mut r) = engine.wait_for_finish(_wait_for_finish) {
+        //                 if let Some(nodes) = r.cache.take_resource::<Vec<UiNode>>(None) {
+        //                     // TODO -- Should clear?
+        //                     self.ui_nodes.clear();
 
-                            self.ui_nodes.extend(*nodes);
-                        }
-                        self.__last_updated = Some(Instant::now());
-                    }
-                }
-            }
-        }
+        //                     self.ui_nodes.extend(*nodes);
+        //                 }
+        //                 self.__last_updated = Some(Instant::now());
+        //             }
+        //         }
+        //     }
+        // }
     }
 }
 
@@ -390,10 +320,10 @@ impl<T: 'static> DesktopApp<T> for ImguiMiddleware<T> {
                     ui.show_demo_window(open_demo_window);
                 }
 
-                // TODO: Handle the output of show.
-
                 for uinode in self.ui_nodes.iter_mut() {
-                    uinode.show(&ui);
+                    if !uinode.show(&ui) {
+                        // TODO -- "Close the node"
+                    }
                 }
 
                 for auxnode in self.__aux_ui.iter_mut() {
@@ -406,11 +336,15 @@ impl<T: 'static> DesktopApp<T> for ImguiMiddleware<T> {
                         );
                     }
 
-                    auxnode.show(&ui);
+                    if !auxnode.show(&ui) {
+                        // TODO -- "Close the node"
+                    }
                 }
 
                 for ui_type_node in self.ui_type_nodes.iter_mut() {
-                    ui_type_node.show(&ui);
+                    if !ui_type_node.show(&ui) {
+                        // TODO -- "Close the node"
+                    }
                 }
 
                 platform.prepare_render(&ui, context.window);
@@ -421,18 +355,28 @@ impl<T: 'static> DesktopApp<T> for ImguiMiddleware<T> {
 
 impl<T: 'static> ControlBus for ImguiMiddleware<T> {
     fn bind(&mut self, engine: EngineHandle) {
-        {
-            let stream = engine.scan_take_nodes::<UiNode>();
-            pin_mut!(stream);
+        // {
+        //     // let stream = engine.scan_take_nodes::<UiNode>();
+        //     pin_mut!(stream);
 
-            let mut stream = futures::executor::block_on_stream(stream);
+        //     let mut stream = futures::executor::block_on_stream(stream);
 
-            while let Some(node) = stream.next() {
-                self.ui_nodes.push(node);
-            }
-        }
+        //     while let Some(node) = stream.next() {
+        //         self.ui_nodes.push(node);
+        //     }
+        // }
 
         self.engine.set(engine).expect("should only be called once");
+    }
+}
+
+impl<T> ImguiMiddleware<T> {
+    fn __middleware_tools(
+        &mut self,
+        _: winit::window::WindowId,
+        _: &crate::desktop::DesktopContext<T>,
+        _ui: &Ui,
+    ) {
     }
 }
 

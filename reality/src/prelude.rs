@@ -22,8 +22,11 @@ pub use crate::Decorated;
 pub use crate::Project;
 pub use crate::Source;
 pub use crate::Workspace;
+pub use crate::Dir;
 pub use crate::CurrentDir;
+pub use crate::EmptyWorkspace;
 pub use crate::Shared;
+pub use crate::Node;
 pub use crate::Transform;
 pub use crate::ResourceKey;
 pub use crate::ResourceKeyHashBuilder;
@@ -41,6 +44,7 @@ pub use crate::SetField;
 pub use crate::RegisterWith;
 pub use crate::SetIdentifiers;
 pub use crate::HostedResource;
+pub use crate::CacheExt;
 
 /*
     Macros for working w/ a storage target

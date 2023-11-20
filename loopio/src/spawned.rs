@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use anyhow::anyhow;
-use reality::ThunkContext;
+use reality::{ThunkContext, CacheExt};
 use tokio::task::JoinHandle;
 use tokio::sync::watch::Ref;
 

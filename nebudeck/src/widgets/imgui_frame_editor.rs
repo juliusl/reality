@@ -15,7 +15,7 @@ use crate::ext::imgui_ext::ImguiExt;
 /// Widget to edit frames of an attribute,
 ///
 #[derive(Reality, Debug, Default, Clone)]
-#[reality(call = enable_frame_editor, plugin, rename = "frame-editor", wire)]
+#[reality(call = enable_frame_editor, plugin, rename = "frame-editor")]
 pub struct FrameEditor {
     /// Path to the attribute being edited,
     ///
@@ -27,11 +27,11 @@ pub struct FrameEditor {
     editor_name: Option<String>,
     /// Map of panels,
     ///
-    #[reality(map_of=Decorated<String>, wire)]
+    #[reality(map_of=Decorated<String>)]
     panel: BTreeMap<String, Decorated<String>>,
     /// List of properties to edit,
     ///
-    #[reality(vec_of=Decorated<String>, wire)]
+    #[reality(vec_of=Decorated<String>)]
     edit: Vec<Decorated<String>>,
     /// Action button,
     ///
@@ -43,7 +43,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let mut init = Interactive.create::<FrameEditor>(tc).await;
 
     init.editor_name = init.editor_name.or(tc.property("title").cloned());
-    
+
     info!("Enabling frame editor -- {:?}", init.path);
     if let Some(mut editing) = tc.navigate(&init.path.to_string()).await {
         let editing = editing.context_mut();
@@ -251,7 +251,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                 panel.value.as_ref().unwrap_or(name),
                                 TreeNodeFlags::DEFAULT_OPEN,
                             ) {
-                                if let Some(deco) = panel.decoration.as_ref() {
+                                if let Some(deco) = panel.decorations() {
                                     if let Some(docs) = deco.docs() {
                                         for d in docs {
                                             ui.text(d);
@@ -264,45 +264,45 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                 // This can be optimized later -
                                 for edit in init.edit.iter_mut() {
                                     if !tc.kv_contains::<FieldWidget>(&edit) {
-                                        if let Decorated {
-                                            value,
-                                            decoration: Some(deco),
-                                            ..
-                                        } = edit
-                                        {
-                                            if let Some(value) = value.as_ref() {
-                                                let properties = ["title", "widget", "help"]
-                                                    .map(|d| deco.prop(d));
-                                                match properties {
-                                                    [title, Some(widget), help] => {
-                                                        let editor = FieldWidget {
-                                                            title: title
-                                                                .unwrap_or(&value)
-                                                                .to_string(),
-                                                            widget: widget.to_string(),
-                                                            field: value.to_string(),
-                                                            field_map: field_map.clone(),
-                                                            doc_headers: deco
-                                                                .docs()
-                                                                .map(|d| d.to_vec())
-                                                                .unwrap_or_default(),
-                                                            help: help.map(String::to_string),
-                                                            widget_table: tc
-                                                                .cached::<EditorWidgetTable>()
-                                                                .unwrap_or_default(),
-                                                        };
-                                                        tc.store_kv(&edit, editor);
+                                        match edit {
+                                            Decorated { ref value, .. } => {
+                                                if let Some(value) = value.as_ref() {
+                                                    let properties = ["title", "widget", "help"]
+                                                        .map(|d| edit.property(d));
+                                                    match properties {
+                                                        [title, Some(widget), help] => {
+                                                            let editor = FieldWidget {
+                                                                title: title
+                                                                    .unwrap_or(&value)
+                                                                    .to_string(),
+                                                                widget: widget.to_string(),
+                                                                field: value.to_string(),
+                                                                field_map: field_map.clone(),
+                                                                doc_headers: edit
+                                                                    .decorations()
+                                                                    .unwrap()
+                                                                    .docs()
+                                                                    .map(|d| d.to_vec())
+                                                                    .unwrap_or_default(),
+                                                                help: help.map(String::to_string),
+                                                                widget_table: tc
+                                                                    .cached::<EditorWidgetTable>()
+                                                                    .unwrap_or_default(),
+                                                            };
+                                                            tc.store_kv(&edit, editor);
+                                                        }
+                                                        _ => {
+                                                            ui.label_text(
+                                                                value,
+                                                                "Widget is not specified",
+                                                            );
+                                                        }
                                                     }
-                                                    _ => {
-                                                        ui.label_text(
-                                                            value,
-                                                            "Widget is not specified",
-                                                        );
-                                                    }
+                                                } else {
+                                                    ui.text("Value is not initialized");
                                                 }
-                                            } else {
-                                                ui.text("Value is not initialized");
                                             }
+                                            _ => (),
                                         }
                                     } else if let Some((_, mut editor)) =
                                         tc.take_kv::<FieldWidget>(&edit)

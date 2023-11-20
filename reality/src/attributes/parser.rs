@@ -10,6 +10,7 @@ use tracing::trace;
 
 use runmd::prelude::*;
 
+use super::attribute;
 use super::attribute::Attribute;
 use super::attribute::Property;
 use super::attribute_type::OnParseField;
@@ -17,7 +18,7 @@ use super::attribute_type::ParsableAttributeTypeField;
 use super::attribute_type::ParsableField;
 use super::AttributeTypeParser;
 use super::StorageTarget;
-use crate::SetIdentifiers;
+use crate::CallAsync;
 use crate::block::BlockObjectHandler;
 use crate::AsyncStorageTarget;
 use crate::AttributeType;
@@ -25,7 +26,9 @@ use crate::BlockObject;
 use crate::BlockObjectType;
 use crate::Decoration;
 use crate::FieldPacket;
+use crate::KvpExt;
 use crate::ResourceKey;
+use crate::SetIdentifiers;
 use crate::ThunkContext;
 
 /// Represents a resource that has been assigned a path,
@@ -37,16 +40,24 @@ pub struct HostedResource {
     pub address: String,
     /// The node resource key,
     ///
-    pub node_rk: ResourceKey<Attribute>,
+    pub node_rk: ResourceKey<crate::attributes::Node>,
     /// The hosted resource key,
     ///
-    pub rk: ResourceKey<Attribute>,
+    pub rk: Option<ResourceKey<Attribute>>,
     /// Any decorations to add w/ this resource,
     ///
     pub decoration: Option<Decoration>,
     /// Thunk context that is configured to the resource being hosted,
     ///
     pub binding: Option<ThunkContext>,
+}
+
+#[async_trait]
+impl CallAsync for HostedResource {
+    async fn call(tc: &mut ThunkContext) -> anyhow::Result<()> {
+        tc.call().await?;
+        Ok(())
+    }
 }
 
 impl Debug for HostedResource {
@@ -70,7 +81,7 @@ impl SetIdentifiers for HostedResource {
 pub struct ParsedBlock {
     /// ParsedAttributes for each node,
     ///
-    pub nodes: HashMap<ResourceKey<Attribute>, ParsedAttributes>,
+    pub nodes: HashMap<ResourceKey<crate::attributes::Node>, ParsedAttributes>,
     /// Bounded parsed paths,
     ///
     pub paths: BTreeMap<String, ResourceKey<Attribute>>,
@@ -79,17 +90,19 @@ pub struct ParsedBlock {
     pub resource_paths: BTreeMap<String, HostedResource>,
 }
 
-
 impl ParsedBlock {
     /// Binds a node to a path in this parsed block,
     ///
+    /// **Note** This will also update the node and bind the root path
+    /// to the node's resource key.
+    ///
     pub fn bind_node_to_path(
         &mut self,
-        node: ResourceKey<Attribute>,
+        node: ResourceKey<attribute::Node>,
         path: impl Into<String>,
     ) -> bool {
-        if let Some(_) = self.nodes.get(&node) {
-            self.paths.insert(path.into(), node);
+        if let Some(_node) = self.nodes.get_mut(&node) {
+            self.paths.insert(path.into(), node.transmute());
             true
         } else {
             false
@@ -98,7 +111,7 @@ impl ParsedBlock {
 
     /// Gets the parsed attributes of a node,
     ///
-    pub fn get_node(&self, node: ResourceKey<Attribute>) -> Option<&ParsedAttributes> {
+    pub fn get_node(&self, node: ResourceKey<crate::attributes::Node>) -> Option<&ParsedAttributes> {
         self.nodes.get(&node)
     }
 
@@ -107,25 +120,33 @@ impl ParsedBlock {
     pub fn bind_resource_path(
         &mut self,
         path: impl Into<String>,
-        node: ResourceKey<Attribute>,
+        node: ResourceKey<crate::attributes::Node>,
         resource: ResourceKey<Attribute>,
         decoration: Option<Decoration>,
     ) -> &mut HostedResource {
         let path = path.into();
 
-        self.resource_paths.entry(path.clone()).or_insert(HostedResource {
-            address: path,
-            node_rk: node,
-            rk: resource,
-            decoration,
-            binding: None,
-        })
+        self.resource_paths
+            .entry(path.clone())
+            .or_insert(HostedResource {
+                address: path,
+                node_rk: node,
+                rk: Some(resource),
+                decoration,
+                binding: None,
+            })
     }
 
     /// Looks for a hosted resource by path,
-    /// 
+    ///
     pub fn find_resource(&self, resource: impl AsRef<str>) -> Option<&HostedResource> {
         self.resource_paths.get(resource.as_ref())
+    }
+
+    /// Looks for a hosted resource by path and returns a mutable reference,
+    /// 
+    pub fn find_resource_mut(&mut self, resource: impl AsRef<str>) -> Option<&mut HostedResource> {
+        self.resource_paths.get_mut(resource.as_ref())
     }
 }
 
@@ -133,6 +154,9 @@ impl ParsedBlock {
 ///
 #[derive(Debug, Default, Clone)]
 pub struct ParsedAttributes {
+    /// Node resource key,
+    /// 
+    pub node: ResourceKey<Attribute>,
     /// Parsed attributes,
     ///
     pub attributes: Vec<ResourceKey<Attribute>>,
@@ -208,7 +232,7 @@ impl ParsedAttributes {
     ///
     #[inline]
     pub fn parsed(&self) -> impl Iterator<Item = ResourceKey<Attribute>> + '_ {
-        self.attributes.iter().cloned()
+       self.attributes.iter().cloned()
     }
 
     /// Resolve a path,
@@ -241,7 +265,11 @@ impl ParsedAttributes {
                         self.properties
                             .comment_properties
                             .insert(*last, line.comment_properties.clone());
+                    } else {
+                        eprintln!("a -- skipped {:?}", line)
                     }
+                } else {
+                    eprintln!("b -- skipped {:?}", line)
                 }
             } else if line.extension.is_some() && line.attr.is_none() {
                 if let Some(last) = self.last().cloned() {
@@ -251,8 +279,39 @@ impl ParsedAttributes {
                     if let Some(last) = self.last().cloned() {
                         self.comment_properties
                             .insert(last, line.comment_properties.clone());
+                    } else {
+                        eprintln!("c -- skipped {:?}", line)
+                    }
+                } else {
+                    eprintln!("d -- skipped {:?}", line)
+                }
+            } else if line.extension.is_none() && line.attr.is_some() {
+                if let Some(last) = self.last() {
+                    if let Some(last) = self.properties.defined.get(last).and_then(|l| l.last()) {
+                        self.properties
+                            .comment_properties
+                            .insert(*last, line.comment_properties.clone());
+                    } else {
+                        self.comment_properties.insert(
+                            self.node, 
+                            line.comment_properties.clone()
+                        );
+                    }
+                } else if line.extension.is_none() && line.attr.is_some() {
+                    if let Some(last) = self.last().cloned() {
+                        self.comment_properties
+                            .insert(last, line.comment_properties.clone());
+                    } else {
+                        // eprintln!("f -- skipped {:?}", line);
+                        // eprintln!("{:?}", self);
+                        self.comment_properties.insert(
+                            self.node, 
+                            line.comment_properties.clone()
+                        );
                     }
                 }
+            } else {
+                eprintln!("g -- skipped {:?}", line)
             }
         }
 
@@ -264,7 +323,11 @@ impl ParsedAttributes {
                             *last,
                             line.doc_headers.iter().map(|h| h.to_string()).collect(),
                         );
+                    } else {
+                        eprintln!("h -- skipped {:?}", line)
                     }
+                } else {
+                    eprintln!("i -- skipped {:?}", line)
                 }
             } else if line.extension.is_some() && line.attr.is_none() {
                 if let Some(last) = self.last().cloned() {
@@ -278,8 +341,49 @@ impl ParsedAttributes {
                             last,
                             line.doc_headers.iter().map(|h| h.to_string()).collect(),
                         );
+                    } else {
+                        eprintln!("j -- skipped {:?}", line)
                     }
+                } else {
+                    //  eprintln!("l -- skipped {:?}", line)
+                    self.doc_headers.insert(
+                        self.node,
+                        line.doc_headers.iter().map(|h| h.to_string()).collect(),
+                    );
                 }
+            } else if line.extension.is_none() && line.attr.is_some() {
+                if let Some(last) = self.last() {
+                    if let Some(last) = self.properties.defined.get(last).and_then(|l| l.last()) {
+                        self.properties.doc_headers.insert(
+                            *last,
+                            line.doc_headers.iter().map(|h| h.to_string()).collect(),
+                        );
+                    } else {
+                        // eprintln!("m -- skipped {:?}", line)
+                        self.doc_headers.insert(
+                            self.node,
+                            line.doc_headers.iter().map(|h| h.to_string()).collect(),
+                        );
+                    }
+                } else if line.extension.is_none() && line.attr.is_some() {
+                    if let Some(last) = self.last().cloned() {
+                        self.doc_headers.insert(
+                            last,
+                            line.doc_headers.iter().map(|h| h.to_string()).collect(),
+                        );
+                    } else {
+                        // eprintln!("n -- skipped {:?}", line);
+                        // eprintln!("{:?}", self);
+                        self.doc_headers.insert(
+                            self.node,
+                            line.doc_headers.iter().map(|h| h.to_string()).collect(),
+                        );
+                    }
+                } else {
+                    eprintln!("o -- skipped {:?}", line)
+                }
+            } else {
+                eprintln!("p -- skipped {:?}", line)
             }
         }
     }
@@ -408,7 +512,7 @@ impl<S: StorageTarget> AttributeParser<S> {
     pub fn parse_attribute<T: FromStr + Send + Sync + 'static>(
         &mut self,
         source: impl AsRef<str>,
-    ) -> Option<ResourceKey<T>> {
+    ) -> anyhow::Result<ResourceKey<T>> {
         let mut parsed_key = None;
 
         let idx = self.attributes.len();
@@ -417,13 +521,13 @@ impl<S: StorageTarget> AttributeParser<S> {
         // Storage target must be enabled,
         if let Some(storage) = self.storage() {
             // Initialize attribute type,
-            if let Ok(init) = source.as_ref().parse::<T>() {
-                parsed_key = Some(key.transmute());
-                storage.lazy_put_resource(init, parsed_key);
-                if let Some(tag) = self.tag() {
-                    storage
-                        .lazy_put_resource(Tag(tag.to_string()), parsed_key.map(|k| k.transmute()));
-                }
+            let init = source.as_ref().parse::<T>().map_err(|_| {
+                anyhow::anyhow!("Could not parse {} from {}", std::any::type_name::<T>(), source.as_ref())
+            })?;
+            parsed_key = Some(key.transmute());
+            storage.lazy_put_resource(init, parsed_key);
+            if let Some(tag) = self.tag() {
+                storage.lazy_put_resource(Tag(tag.to_string()), parsed_key.map(|k| k.transmute()));
             }
         }
 
@@ -431,7 +535,11 @@ impl<S: StorageTarget> AttributeParser<S> {
             self.attributes.push(key);
         }
 
-        parsed_key
+        if let Some(parsed_key) = parsed_key {
+            Ok(parsed_key)
+        } else {
+            Err(anyhow::anyhow!("Could not parsed attribute"))
+        }
     }
 
     /// Adds an object type to the parser,
@@ -705,6 +813,10 @@ where
 
     fn set_info(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {
         trace!("{:#?}", _node_info);
+        if _node_info.parent_idx.is_none() {
+            let last = self.attributes.attributes.last();
+            trace!("Add node {:?} {:?}", _node_info, last);
+        }
     }
 
     fn parsed_line(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {

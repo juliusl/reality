@@ -15,7 +15,7 @@ pub type BackgroundWork = Option<tokio::task::JoinHandle<anyhow::Result<()>>>;
 pub trait Controller<Bus: ControlBus> {
     /// Called when the controller should take control over the workspace,
     ///
-    fn take_control(self, bus: Box<Bus>, engine: Engine) -> BackgroundWork;
+    fn take_control(self, bus: Box<Bus>, engine: ForegroundEngine) -> BackgroundWork;
 }
 
 /// Trait for allowing controllers to constrain the "super-trait" of the bus delegating control to the controller,
@@ -27,7 +27,7 @@ pub trait ControlBus {
 
     /// Delegates control over this type over to a controller,
     ///
-    fn delegate(self, controller: impl Controller<Self>, engine: Engine) -> BackgroundWork
+    fn delegate(self, controller: impl Controller<Self>, engine: ForegroundEngine) -> BackgroundWork
     where
         Self: Sized,
     {

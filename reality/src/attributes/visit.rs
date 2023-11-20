@@ -6,7 +6,9 @@ use serde::Serialize;
 use tracing::error;
 
 use crate::Attribute;
+use crate::AttributeType;
 use crate::ResourceKey;
+use crate::Shared;
 
 /// Field access,
 ///
@@ -83,7 +85,7 @@ pub struct FrameUpdates(pub Frame);
 
 /// Converts a type to a list of packets,
 ///
-pub trait ToFrame {
+pub trait ToFrame : AttributeType<Shared> {
     /// Returns the current type as a Frame,
     ///
     fn to_frame(&self, key: Option<ResourceKey<Attribute>>) -> Frame;
@@ -111,7 +113,7 @@ pub trait ToFrame {
             data_type_name: std::any::type_name::<Self>().to_string(),
             data_type_size: std::mem::size_of::<Self>(),
             field_offset: usize::MAX,
-            field_name: "self".to_string(),
+            field_name: Self::symbol().to_string(),
             owner_name: "self".to_string(),
             attribute_hash: key.map(|k| k.data),
             op: 0,

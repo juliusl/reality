@@ -97,16 +97,26 @@ impl Parser {
 
             self.on_block(block_info.clone());
 
+            // let mut last = None;
+
             for (idx, line) in block.lines.drain(..).enumerate() {
                 let span = locations.pop();
                 match line.instruction {
                     Instruction::AddNode => {
+                        // if let Some((node_info, block_info)) = last.take() {
+                        //     if let Some(node) = self.graph.get_mut(self.current_node_idx.unwrap_or_default()) {
+                        //         node.assign_path(String::new());
+                        //         node.parsed_line(node_info, block_info);
+                        //     }
+                        // }
+
                         let node_info = NodeInfo {
                             idx,
                             parent_idx: None,
                             line,
                             span,
                         };
+                        // last = Some((node_info.clone(), block_info.clone()));
                         self.on_add_node(node_info, block_info.clone())
                     }
                     Instruction::DefineProperty => {
@@ -153,7 +163,7 @@ impl Parser {
     fn on_add_node(&mut self, node_info: NodeInfo, block_info: BlockInfo) {
         // Reset the current node index
         self.current_node_idx.take();
-
+        
         // Parse attr on line
         if let Some(ref attr) = node_info.line.attr {
             let node = self.node_provider.provide(

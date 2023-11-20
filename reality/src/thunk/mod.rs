@@ -1,8 +1,12 @@
 mod call_async;
 mod context;
 mod plugin;
+mod cache_ext;
+mod kvp_ext;
 
 pub mod prelude {
+    pub use super::kvp_ext::*;
+    pub use super::cache_ext::*;
     pub use super::call_async::*;
     pub use super::context::Context as ThunkContext;
     pub use super::plugin::Plugin;

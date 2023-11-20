@@ -1,26 +1,26 @@
 use anyhow::anyhow;
-use async_stream::stream;
-use futures_util::Stream;
 use host::Host;
 use reality::prelude::*;
+use reality::RwLock;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
-use std::time::Instant;
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
-use tokio_util::either::Either;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
 use tracing::trace;
 use tracing::warn;
 
-use crate::address::Action;
+use crate::background_work::BackgroundWorkEngineHandle;
 use crate::host;
+use crate::operation;
 use crate::operation::Operation;
+use crate::prelude::Action;
 use crate::prelude::Address;
 use crate::sequence::Sequence;
 
@@ -30,13 +30,24 @@ use crate::prelude::secure_client;
 #[cfg(feature = "hyper-ext")]
 use crate::prelude::local_client;
 
+pub struct DefaultEngine;
+
+impl DefaultEngine {
+    pub fn new(self) -> Engine {
+        Engine::builder().build()
+    }
+}
+
 pub struct EngineBuilder {
     /// Plugins to register w/ the Engine
     ///
     plugins: Vec<reality::BlockPlugin<Shared>>,
     /// Runtime builder,
     ///
-    runtime_builder: tokio::runtime::Builder,
+    pub(crate) runtime_builder: tokio::runtime::Builder,
+    /// Workspace,
+    /// 
+    pub(crate) workspace: Workspace,
 }
 
 impl EngineBuilder {
@@ -46,6 +57,7 @@ impl EngineBuilder {
         Self {
             plugins: vec![],
             runtime_builder,
+            workspace: EmptyWorkspace.workspace(),
         }
     }
 
@@ -73,6 +85,26 @@ impl EngineBuilder {
         let runtime = self.runtime_builder.build().unwrap();
 
         Engine::new_with(self.plugins, runtime)
+    }
+
+    /// Sets a workspace,
+    /// 
+    pub fn set_workspace(&mut self, workspace: Workspace) {
+        self.workspace = workspace;
+    }
+
+    /// Gets a mutable reference to the workspace,
+    /// 
+    pub fn workspace_mut(&mut self) -> &mut Workspace {
+        &mut self.workspace
+    }
+
+    pub async fn compile(self) -> Engine {
+        let workspace = self.workspace.clone();
+        let engine = self.build();
+
+        let engine = engine.compile(workspace).await;
+        engine
     }
 }
 
@@ -117,44 +149,54 @@ pub struct Engine {
     /// Cancelled when the engine is dropped,
     ///
     pub cancellation: CancellationToken,
+    /// Plugins to register w/ the Project
+    ///
+    plugins: Vec<reality::BlockPlugin<Shared>>,
     /// Host storage,
     ///
     /// All thunk contexts produced by this engine will share this storage target.
     ///
     hosts: BTreeMap<String, crate::host::Host>,
-    /// Plugins to register w/ the Project
-    ///
-    plugins: Vec<reality::BlockPlugin<Shared>>,
-    /// Wrapped w/ a runtime so that it can be dropped properly
-    ///
-    runtime: Option<tokio::runtime::Runtime>,
     /// Operations mapped w/ this engine,
     ///
     operations: BTreeMap<String, Operation>,
     /// Sequences mapped w/ this engine
     ///
     sequences: BTreeMap<String, Sequence>,
+    /// Current nodes,
+    ///
+    pub nodes: HashMap<ResourceKey<reality::attributes::Node>, Arc<RwLock<Shared>>>,
     /// Engine handle that can be used to send packets to this engine,
     ///
     handle: EngineHandle,
     /// Packet receiver,
     ///
     packet_rx: tokio::sync::mpsc::UnboundedReceiver<EnginePacket>,
+    /// Wrapped w/ a runtime so that it can be dropped properly
+    ///
+    runtime: Option<tokio::runtime::Runtime>,
     /// Workspace,
     ///
     workspace: Option<Workspace>,
+    /// Pasred block,
+    ///
+    pub block: Option<ParsedBlock>,
+    /// Internal hosted resources,
+    ///
+    __internal_resources: InternalResources,
+}
+
+impl Debug for Engine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Engine")
+            .field("hosts", &self.hosts)
+            .field("operations", &self.operations)
+            .field("sequences", &self.sequences)
+            .finish()
+    }
 }
 
 impl Engine {
-    /// Returns the default host for this engine,
-    ///
-    #[inline]
-    pub fn default_host(&self) -> Host {
-        let mut default_host = Host::default();
-        default_host.children = self.hosts.clone();
-        default_host
-    }
-
     /// Returns an iterator over hosts,
     ///
     #[inline]
@@ -193,7 +235,7 @@ impl Engine {
     /// **Note** By default creates a new multi_thread runtime w/ all features enabled
     ///
     #[inline]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let mut runtime = tokio::runtime::Builder::new_multi_thread();
         runtime.enable_all();
 
@@ -204,30 +246,29 @@ impl Engine {
     /// Creates a new engine w/ runtime,
     ///
     #[inline]
-    pub fn new_with(
+    pub(crate) fn new_with(
         plugins: Vec<reality::BlockPlugin<Shared>>,
         runtime: tokio::runtime::Runtime,
     ) -> Self {
         let (sender, rx) = tokio::sync::mpsc::unbounded_channel();
         let hosts = BTreeMap::new();
-
+        let cancellation = CancellationToken::new();
         Engine {
             hosts,
             plugins,
             runtime: Some(runtime),
-            cancellation: CancellationToken::new(),
+            cancellation: cancellation.clone(),
             operations: BTreeMap::new(),
             sequences: BTreeMap::new(),
             handle: EngineHandle {
                 sender: Arc::new(sender),
-                operations: BTreeMap::new(),
-                sequences: BTreeMap::new(),
-                hosts: BTreeMap::new(),
-                cache: Shared::default(),
-                __spawned: None,
+                background_work: None,
             },
             packet_rx: rx,
+            block: None,
             workspace: None,
+            nodes: HashMap::new(),
+            __internal_resources: BTreeMap::new(),
         }
     }
 
@@ -236,7 +277,7 @@ impl Engine {
         tag: Option<&str>,
         target: &mut AttributeParser<Shared>,
     ) where
-        T: BlockObject<Shared> + crate::address::Action + SetIdentifiers,
+        T: Plugin + BlockObject<Shared> + crate::prelude::Action + SetIdentifiers,
     {
         let name = name
             .map(|n| n.to_string())
@@ -244,11 +285,13 @@ impl Engine {
 
         T::parse(target, &name);
 
+        let node = target.attributes.node;
         if let Some(last) = target.attributes.last().cloned() {
             if let Some(mut storage) = target.storage_mut() {
                 storage.drain_dispatch_queues();
                 let mut address = None;
                 if let Some(mut seq) = storage.resource_mut(Some(last.transmute::<T>())) {
+                    seq.bind_node(node.transmute());
                     T::set_identifiers(&mut seq, &name, tag.map(|t| t.to_string()).as_ref());
                     address = Some(Address::new(seq.address()));
                 }
@@ -258,6 +301,11 @@ impl Engine {
                     storage.put_resource(address, None);
                 }
 
+                storage.put_resource::<ThunkFn>(<T as Plugin>::call, Some(last.transmute()));
+                storage.put_resource::<EnableFrame>(
+                    EnableFrame(<T as Plugin>::enable_frame),
+                    Some(last.transmute()),
+                );
                 storage.put_resource(last.transmute::<T>(), None);
             }
         }
@@ -299,9 +347,11 @@ impl Engine {
             let name = name
                 .map(|n| n.to_string())
                 .unwrap_or(format!("{}", uuid::Uuid::new_v4()));
-
+            let node = target.attributes.node;
             if let Some(mut storage) = target.storage_mut() {
-                let operation = Operation::new(name, tag.map(|t| t.to_string()));
+                let mut operation = Operation::new(name, tag.map(|t| t.to_string()));
+                operation.bind_node(node.transmute());
+
                 if let Ok(address) = Address::from_str(&operation.address()) {
                     eprintln!("Adding address for operation -- {}", address);
                     storage.put_resource(address, None);
@@ -309,6 +359,11 @@ impl Engine {
                     eprintln!("Could not add address for {}", (&operation.address()));
                 }
 
+                storage.put_resource::<ThunkFn>(<Operation as Plugin>::call, None);
+                storage.put_resource::<EnableFrame>(
+                    EnableFrame(<Operation as Plugin>::enable_frame),
+                    None,
+                );
                 storage.put_resource(operation, None);
             }
 
@@ -335,23 +390,28 @@ impl Engine {
                 target.write().await.drain_dispatch_queues();
                 let storage = target.latest().await;
                 let hostkey = storage.current_resource::<ResourceKey<Host>>(None);
-                if let Some(mut host) = storage.current_resource::<Host>(hostkey) {
+                if let Some(_) = storage.current_resource::<Host>(hostkey) {
                     // Since new_context set the host map, earlier hosts are available to later hosts
-                    host.bind(
-                        self.new_context(Arc::new(tokio::sync::RwLock::new(storage)))
-                            .await,
-                    );
+                    let mut context = self
+                        .new_context(Arc::new(tokio::sync::RwLock::new(storage)))
+                        .await;
+                    context.attribute = hostkey.map(|s| s.transmute());
 
+                    let mut host = Interactive.create::<Host>(&mut context).await;
+                    host.bind(context);
                     // Find actions defined by the host for adding to the parsed block later
                     for (dec, a) in host
                         .action
                         .iter()
                         .filter(|a| a.value().is_some())
-                        .map(|a| (a.decoration.clone(), a.value.clone().unwrap()))
+                        .map(|a| (a.decorations().cloned(), a.value.clone().unwrap()))
                     {
                         host_actions.push((host.name.to_string(), a, dec));
                     }
 
+                    if let Some(hostkey) = hostkey {
+                        host.bind_plugin(hostkey.transmute());
+                    }
                     if let Some(previous) = self.hosts.insert(host.name.to_string(), host) {
                         warn!(address = previous.name, "Replacing host");
                     }
@@ -365,6 +425,7 @@ impl Engine {
                     target.latest().await.current_resource::<Operation>(None)
                 {
                     operation.bind(self.new_context(target.clone()).await);
+
                     if let Some(previous) = self.operations.insert(operation.address(), operation) {
                         info!(address = previous.address(), "Replacing operation");
                     }
@@ -373,9 +434,16 @@ impl Engine {
 
                 let storage = target.latest().await;
                 let seqkey = storage.current_resource::<ResourceKey<Sequence>>(None);
+                if let Some(_) = storage.current_resource::<Sequence>(seqkey) {
+                    let mut context = self.new_context(target.clone()).await;
+                    context.attribute = seqkey.map(|a| a.transmute());
 
-                if let Some(mut sequence) = storage.current_resource::<Sequence>(seqkey) {
-                    sequence.bind(self.new_context(target.clone()).await);
+                    let mut sequence = Interactive.create::<Sequence>(&mut context).await;
+                    sequence.bind(context);
+                    if let Some(seqkey) = seqkey {
+                        sequence.bind_plugin(seqkey.transmute());
+                    }
+
                     if let Some(previous) = self.sequences.insert(sequence.address(), sequence) {
                         info!(address = previous.address(), "Replacing sequence");
                     }
@@ -400,24 +468,34 @@ impl Engine {
                     }
                 }
 
-                // Bind all hosted resources to a thunk context
+                // Bind all hosted resources to it's own thunk context
+                // This creates a seperate thunk context which shares node storage but has it's own cache
                 for (host_name, address, deco) in host_actions {
+                    trace!(
+                        host_name,
+                        address = address.to_string(),
+                        "Adding hosted resource --\n{:#?}",
+                        deco
+                    );
                     if let Some(node) = block.paths.get(&address.node_address()) {
                         if let Some(node_storage) = nodes.get(&node.transmute()).cloned() {
-                            if let Some(_node) = block.nodes.get(node).cloned() {
-                                if let Some(resource) = _node.paths.get(address.path()) {
-                                    let address = address.clone().with_host(host_name);
-                                    let hosted_resource = block.bind_resource_path(
-                                        address.to_string(),
-                                        *node,
-                                        resource.clone(),
-                                        deco,
-                                    );
+                            if let Some(resource) = block
+                                .nodes
+                                .get(&node.transmute())
+                                .and_then(|n| n.paths.get(address.path()))
+                                .cloned()
+                            {
+                                let address = address.clone().with_host(host_name);
+                                let hosted_resource = block.bind_resource_path(
+                                    address.to_string(),
+                                    node.transmute(),
+                                    resource,
+                                    deco,
+                                );
 
-                                    let mut context = self.new_context(node_storage.clone()).await;
-                                    context.set_attribute(*resource);
-                                    hosted_resource.bind(context);
-                                }
+                                let mut context = self.new_context(node_storage.clone()).await;
+                                context.set_attribute(resource);
+                                hosted_resource.bind(context);
                             }
                         }
                     }
@@ -427,10 +505,59 @@ impl Engine {
                 for (_, target) in nodes.iter() {
                     target.write().await.put_resource(block.clone(), None);
                 }
+
+                for (addr, host) in self.hosts.iter_mut() {
+                    unsafe {
+                        let mut node = host.context_mut().node_mut().await;
+                        node.put_resource(block.clone(), None);
+                    }
+
+                    self.__internal_resources.insert(
+                        Address::from_str(addr).unwrap(),
+                        host.into_hosted_resource(),
+                    );
+                }
+
+                for (addr, op) in self.operations.iter_mut() {
+                    unsafe {
+                        let mut node = op.context_mut().node_mut().await;
+                        node.put_resource(block.clone(), None);
+                    }
+                    self.__internal_resources
+                        .insert(Address::from_str(addr).unwrap(), op.into_hosted_resource());
+                }
+
+                for (addr, seq) in self.sequences.iter_mut() {
+                    unsafe {
+                        let mut node = seq.context_mut().node_mut().await;
+                        node.put_resource(block.clone(), None);
+                    }
+                    self.__internal_resources
+                        .insert(Address::from_str(addr).unwrap(), seq.into_hosted_resource());
+                }
+
+                for (address, resource) in block.resource_paths.iter() {
+                    if let Ok(address) = Address::from_str(address) {
+                        self.__internal_resources
+                            .insert(address.clone(), resource.clone());
+                        self.__internal_resources
+                            .insert(address.with_host("engine"), resource.clone());
+                    }
+                }
+
+                if let Some(_block) = self.block.as_mut() {
+                    _block.nodes.extend(block.nodes);
+                    _block.paths.extend(block.paths);
+                    _block.resource_paths.extend(block.resource_paths);
+                } else {
+                    self.block = Some(block);
+                }
             }
+
+            self.nodes = nodes;
         }
 
-        println!("Got hosts {:?}", self.hosts);
+        println!("Got hosts {:#?}", self.hosts);
 
         self.workspace = Some(workspace);
         self
@@ -458,6 +585,12 @@ impl Engine {
         self.sequences.iter()
     }
 
+    /// Returns the parsed block,
+    ///
+    pub fn block(&self) -> Option<&ParsedBlock> {
+        self.block.as_ref()
+    }
+
     /// Returns a tokio runtime handle,
     ///
     pub fn handle(&self) -> tokio::runtime::Handle {
@@ -470,17 +603,54 @@ impl Engine {
     /// Returns an engine handle,
     ///
     pub fn engine_handle(&self) -> EngineHandle {
-        let mut h = self.handle.clone();
-        h.operations = self.operations.clone();
-        h.sequences = self.sequences.clone();
-        h.hosts = self.hosts.clone();
-        h
+        self.handle.clone()
     }
 
     /// Get host compiled by this engine,
     ///
-    pub fn get_host(&self, name: impl AsRef<str>) -> Option<host::Host> {
-        self.hosts.get(name.as_ref()).cloned()
+    pub async fn get_host(&self, name: impl AsRef<str>) -> Option<host::Host> {
+        if let Some(mut host) = self.hosts.get(name.as_ref()).cloned() {
+            // TODO -- This is a bit wonky
+            // -- A little less wonky but still kind of weird
+            unsafe {
+                host.context_mut()
+                    .node_mut()
+                    .await
+                    .put_resource(self.engine_handle(), None);
+            }
+            Some(host)
+        } else {
+            None
+        }
+    }
+
+    pub async fn get_sequence(&self, name: impl AsRef<str>) -> Option<Sequence> {
+        if let Some(mut seq) = self.sequences.get(name.as_ref()).cloned() {
+            unsafe {
+                seq.context_mut()
+                    .node_mut()
+                    .await
+                    .put_resource(self.engine_handle(), None);
+            }
+            Some(seq)
+        } else {
+            None
+        }
+    }
+
+    pub async fn get_operation(&self, name: impl AsRef<str>) -> Option<operation::Operation> {
+        if let Some(mut operation) = self.operations.get(name.as_ref()).cloned() {
+            unsafe {
+                operation
+                    .context_mut()
+                    .node_mut()
+                    .await
+                    .put_resource(self.engine_handle(), None);
+            }
+            Some(operation)
+        } else {
+            None
+        }
     }
 
     /// Takes ownership of the engine and starts listening for packets,
@@ -505,28 +675,46 @@ impl Engine {
             }
 
             if let Some(packet) = middleware(&mut self, packet) {
-                println!("Handling packet {:?}", packet.action);
+                trace!("Handling packet {:?}", packet.action);
                 match packet.action {
-                    EngineAction::Run { address, tx } => {
-                        eprintln!("Running {}", address);
-                        info!(address, "Running operation");
-                        let action = self
-                            .operations
-                            .get(&address)
-                            .map(|o| Either::Left(o.clone()))
-                            .or(self
-                                .sequences
-                                .get(&address)
-                                .map(|s| Either::Right(s.clone())));
-                        if let (Some(tx), Some(action)) = (tx, action) {
-                            tx.send(action).map_err(|_| anyhow!("Channel is closed"))?;
-                        }
-                    }
-                    EngineAction::Compile { relative, content } => {
-                        info!("Compiling content");
-                        if let Some(mut workspace) = self.workspace.take() {
-                            workspace.add_buffer(relative, content);
-                            self = self.compile(workspace).await;
+                    EngineAction::Call { address, mut tx } => {
+                        info!(address, "Looking up hosted resource");
+                        match Address::from_str(&address) {
+                            Ok(address) => {
+                                // Lookup from the internal resources for a plugin
+                                if let Some(resource) = self.__internal_resources.get(&address) {
+                                    trace!(address = resource.address(), "Found resource");
+                                    if let Some(tx) = tx.take() {
+                                        let mut resource = resource.clone();
+                                        unsafe {
+                                            resource
+                                                .context_mut()
+                                                .node_mut()
+                                                .await
+                                                .put_resource(self.engine_handle(), None);
+                                        }
+
+                                        resource.context_mut().write_cache(self.engine_handle());
+
+                                        if let Some(node) = self.nodes.get(&resource.node_rk()) {
+                                            let mut tc = self.new_context(node.clone()).await;
+                                            tc.attribute = resource.plugin_rk();
+                                            resource.bind(tc);
+                                        }
+
+                                        if let Err(_) = tx.send(resource.spawn().into()) {
+                                            // TODO
+                                            eprintln!("Could not send spawn result");
+                                        }
+                                    }
+                                } else {
+                                    eprintln!(
+                                        "Did not find resource -- {:#?}\n{:#?}",
+                                        address, self.__internal_resources
+                                    );
+                                }
+                            }
+                            Err(_) => {}
                         }
                     }
                     EngineAction::Sync { mut tx } => {
@@ -543,7 +731,8 @@ impl Engine {
                         self.cancellation.cancel();
                         break;
                     }
-                    EngineAction::EnableWireBus { .. } => {}
+                    #[allow(unreachable_patterns)]
+                    _ => {}
                 }
             }
         }
@@ -551,6 +740,10 @@ impl Engine {
         Ok(self)
     }
 }
+
+/// Type alias for internal hosted resources,
+///
+type InternalResources = BTreeMap<Address, HostedResource>;
 
 impl Default for Engine {
     fn default() -> Self {
@@ -581,33 +774,25 @@ pub struct EnginePacket {
 ///
 #[derive(Serialize, Deserialize)]
 enum EngineAction {
-    /// Runs an operation on the engine,
+    /// Calls a plugin with an assigned address on the engine,
     ///
-    Run {
-        /// Address of the action to run,
+    Call {
+        /// Address of the plugin to call,
         ///
         address: String,
         /// Channel to transmit the result back to the sender,
         ///
         #[serde(skip)]
-        tx: Option<tokio::sync::oneshot::Sender<Either<Operation, Sequence>>>,
+        tx: Option<tokio::sync::oneshot::Sender<CallOutput>>,
     },
     /// Gets an updated engine handle,
     ///
+    /// **TODO**: This could be used to swap out the internals?
     Sync {
         #[serde(skip)]
         tx: Option<tokio::sync::oneshot::Sender<EngineHandle>>,
     },
-    /// Enables
-    ///
-    EnableWireBus {
-        attribute: ResourceKey<Attribute>,
-        allow_changes: bool,
-    },
-    /// Compiles the operations from a project,
-    ///
-    Compile { relative: String, content: String },
-    /// Requests the engine to
+    /// Requests the engine to shutdown,
     ///
     Shutdown(tokio::time::Duration),
 }
@@ -615,27 +800,14 @@ enum EngineAction {
 impl Debug for EngineAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Run { address, tx } => f
+            Self::Call { address, tx } => f
                 .debug_struct("Run")
                 .field("address", address)
                 .field("has_tx", &tx.is_some())
                 .finish(),
-            Self::Compile { relative, content } => f
-                .debug_struct("Compile")
-                .field("relative", relative)
-                .field("content", content)
-                .finish(),
             Self::Sync { tx } => f
                 .debug_struct("Sync")
                 .field("has_tx", &tx.is_some())
-                .finish(),
-            Self::EnableWireBus {
-                attribute,
-                allow_changes,
-            } => f
-                .debug_struct("EnableWireBus")
-                .field("attribute", attribute)
-                .field("allow_changes", allow_changes)
                 .finish(),
             Self::Shutdown(arg0) => f.debug_tuple("Shutdown").field(arg0).finish(),
         }
@@ -651,32 +823,16 @@ pub struct EngineHandle {
     /// Sends engine packets to the engine,
     ///
     sender: Arc<tokio::sync::mpsc::UnboundedSender<EnginePacket>>,
-    /// Map of operations,
+    /// Background work engine handle,
     ///
-    pub operations: BTreeMap<String, Operation>,
-    /// Map of sequences,
-    ///
-    pub sequences: BTreeMap<String, Sequence>,
-    /// Map of hosts,
-    ///
-    pub hosts: BTreeMap<String, Host>,
-    /// Local cache for the handle,
-    ///
-    pub cache: Shared,
-    /// Actively running task,
-    ///
-    __spawned: Option<(Instant, JoinHandle<anyhow::Result<Self>>)>,
+    pub(crate) background_work: Option<BackgroundWorkEngineHandle>,
 }
 
 impl Clone for EngineHandle {
     fn clone(&self) -> Self {
         Self {
             sender: self.sender.clone(),
-            operations: self.operations.clone(),
-            sequences: self.sequences.clone(),
-            hosts: self.hosts.clone(),
-            cache: self.cache.clone(),
-            __spawned: None,
+            background_work: self.background_work.clone(),
         }
     }
 }
@@ -693,11 +849,13 @@ impl EngineHandle {
     /// Runs an operation by sending a packet and waits for a response,
     ///
     pub async fn run(&self, address: impl Into<String>) -> anyhow::Result<ThunkContext> {
-        let (tx, rx) =
-            tokio::sync::oneshot::channel::<tokio_util::either::Either<Operation, Sequence>>();
+        let address = address.into();
+
+        trace!("Looking for {}", &address);
+        let (tx, rx) = tokio::sync::oneshot::channel::<CallOutput>();
 
         let packet = EnginePacket {
-            action: EngineAction::Run {
+            action: EngineAction::Call {
                 address: address.into(),
                 tx: Some(tx),
             },
@@ -705,26 +863,14 @@ impl EngineHandle {
 
         self.sender.send(packet)?;
 
-        rx.await?.await
-    }
-
-    /// Compiles content,
-    ///
-    pub async fn compile(
-        &self,
-        relative: impl Into<String>,
-        content: impl Into<String>,
-    ) -> anyhow::Result<()> {
-        let packet = EnginePacket {
-            action: EngineAction::Compile {
-                relative: relative.into(),
-                content: content.into(),
-            },
-        };
-
-        self.sender.send(packet)?;
-
-        Ok(())
+        match rx.await? {
+            CallOutput::Spawn(Some(jh)) => jh.await?,
+            CallOutput::Abort(err) => {
+                err?;
+                Err(anyhow!("Call was aborted"))
+            }
+            _ => Err(anyhow!("Call was skipped")),
+        }
     }
 
     /// Sends a signal for the engine to shutdown,
@@ -752,126 +898,9 @@ impl EngineHandle {
         Ok(rx.await?)
     }
 
-    /// Scans node storage for resource T,
+    /// Returns a background work engine handle,
     ///
-    pub fn scan_take_nodes<T>(&self) -> impl Stream<Item = T> + '_
-    where
-        T: Send + Sync + 'static,
-    {
-        stream! {
-            for (_, op) in self.operations.iter() {
-                let tc = op.context();
-                for resource in tc.scan_take_node::<T>().await {
-                    yield resource;
-                }
-            }
-        }
-    }
-
-    pub fn scan_nodes<T>(&self) -> impl Stream<Item = T> + '_
-    where
-        T: ToOwned<Owned = T> + Send + Sync + 'static,
-    {
-        stream! {
-            for (_, op) in self.operations.iter() {
-                let tc = op.context();
-                for resource in tc.scan_node::<T>().await {
-                    yield resource;
-                }
-            }
-        }
-    }
-
-    /// Scans host storage for resource T,
-    ///
-    pub fn scan_host<T>(&self, host: &'static str) -> impl Stream<Item = T> + '_
-    where
-        T: ToOwned<Owned = T> + Send + Sync + 'static,
-    {
-        stream! {
-            for (_, op) in self.operations.iter() {
-                let tc = op.context();
-                if let Some(host) = tc.host(host).await {
-                    if let Some(r) = host.current_resource::<T>(tc.attribute.map(|a| a.transmute())) {
-                        yield r;
-                    }
-                }
-            }
-        }
-    }
-
-    /// Navigates to an address,
-    ///
-    pub async fn navigate(
-        &self,
-        operation: impl AsRef<str>,
-        path: impl AsRef<str>,
-    ) -> anyhow::Result<ThunkContext> {
-        if let Some(op) = self.operations.get(operation.as_ref()) {
-            return op.navigate(path.as_ref().trim_start_matches('/')).await;
-        }
-
-        Err(anyhow::anyhow!(
-            "Could not find address: {} {}",
-            operation.as_ref(),
-            path.as_ref()
-        ))
-    }
-
-    /// Returns true if the spawn closure was successfully spawned,
-    ///
-    pub fn spawn(
-        &mut self,
-        spawn: impl FnOnce(EngineHandle) -> JoinHandle<anyhow::Result<Self>> + 'static,
-    ) -> Option<Instant> {
-        if self.__spawned.is_some() {
-            return None;
-        }
-
-        let start = Instant::now();
-        self.__spawned = Some((start, spawn(self.clone())));
-        Some(start)
-    }
-
-    /// Returns true if an internal task is running,
-    ///
-    pub fn is_running(&self) -> bool {
-        self.__spawned.is_some()
-    }
-
-    /// Returns Some(true) if the internal task is still running,
-    ///
-    pub fn is_finished(&self) -> Option<bool> {
-        self.__spawned.as_ref().map(|(_, s)| s.is_finished())
-    }
-
-    /// Updates in place,
-    ///
-    /// returns an error if there is not currently a running task,
-    ///
-    /// or; if the task could not be complete successfully,
-    ///
-    /// or; if the task completed but returned an error.
-    ///
-    pub fn wait_for_finish(&mut self, instant: Instant) -> anyhow::Result<EngineHandle> {
-        if let Some((started, _)) = self.__spawned.as_ref() {
-            if instant != *started {
-                return Err(anyhow!(""));
-            }
-        }
-
-        if let Some((_, spawned)) = self.__spawned.take() {
-            futures::executor::block_on(spawned)?
-        } else {
-            Err(anyhow!("No running task"))
-        }
-    }
-
-    /// Cancels any spawned join handles from this engine handle,
-    ///
-    pub fn cancel(&mut self) {
-        if let Some((_, spawned)) = self.__spawned.take() {
-            spawned.abort();
-        }
+    pub fn background(&mut self) -> Option<&mut BackgroundWorkEngineHandle> {
+        self.background_work.as_mut()
     }
 }

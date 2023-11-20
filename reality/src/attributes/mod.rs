@@ -7,12 +7,12 @@ mod decoration;
 mod visit;
 
 pub mod prelude {
-    pub(super) use std::convert::Infallible;
     pub(super) use std::str::FromStr;
 
     pub use super::decoration::Decoration;
     pub use super::attribute::Attribute;
     pub use super::attribute::Property;
+    pub use super::attribute::Node;
     pub use super::attribute_type::*;
     pub use super::parser::AttributeParser;
     pub use super::parser::ParsedAttributes;
@@ -110,7 +110,7 @@ mod tests {
     pub struct Test<T: Serialize + Send + Sync + 'static> {
         /// Name for test,
         ///
-        #[reality(wire, parse=on_name)]
+        #[reality(parse=on_name)]
         name: String,
         /// Author of the test,
         ///
@@ -125,15 +125,15 @@ mod tests {
         _test_vec_of: Vec<String>,
         /// Testing map_of parse macro,
         ///
-        #[reality(wire, map_of=String)]
+        #[reality(map_of=String)]
         _test_map_of: BTreeMap<String, String>,
         /// Testing option_of parse macro,
         ///
-        #[reality(wire, option_of=String)]
+        #[reality(option_of=String)]
         _test_option_of: Option<String>,
         /// Test2
         ///
-        #[reality(wire, attribute_type)]
+        #[reality(attribute_type)]
         _test2: Test2,
         /// Ignored,
         ///
@@ -159,7 +159,7 @@ mod tests {
     }
 
     impl<T: Serialize + Send + Sync + 'static> FromStr for Test<T> {
-        type Err = Infallible;
+        type Err = anyhow::Error;
 
         fn from_str(_s: &str) -> Result<Self, Self::Err> {
             todo!()

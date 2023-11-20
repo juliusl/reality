@@ -8,6 +8,7 @@ const SOURCE: &'static str = r"
 ```runmd application/test.block root
 : test .block-prop hello prop   # Test defining a property on the block
 
+# -- Example 3
 + .test test/test.node          # Test adding a new node
 <application/test.extension>    # Test loading in an extension
 : .name-1 hello-world           # Test defining a property

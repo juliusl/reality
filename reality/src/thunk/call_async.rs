@@ -39,3 +39,10 @@ impl From<SpawnResult> for CallOutput {
         CallOutput::Spawn(value)
     }
 }
+
+impl From<anyhow::Result<()>> for CallOutput {
+    fn from(value: anyhow::Result<()>) -> Self {
+        CallOutput::Abort(value)
+    }
+}
+

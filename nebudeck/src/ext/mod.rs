@@ -20,6 +20,9 @@ cfg_feature!("desktop-imgui", {
 #[cfg(feature = "desktop-imgui")]
 pub mod imgui_ext;
 
+pub mod aux_node;
+pub use aux_node::*;
+
 pub mod prelude {
     pub mod wgpu {
         #[cfg(feature = "desktop-imgui")]

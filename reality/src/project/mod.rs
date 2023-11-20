@@ -22,6 +22,8 @@ use serde::Serialize;
 pub use source::Source;
 
 mod workspace;
+pub use workspace::Dir;
+pub use workspace::Empty as EmptyWorkspace;
 pub use workspace::CurrentDir;
 pub use workspace::Workspace;
 
@@ -43,7 +45,7 @@ pub type ParsedNode<Storage> = Arc<tokio::sync::RwLock<Storage>>;
 
 /// Type-alias for a table of storages created per node,
 ///
-pub type NodeTable<Storage> = HashMap<ResourceKey<()>, ParsedNode<Storage>>;
+pub type NodeTable<Storage> = HashMap<ResourceKey<crate::attributes::Node>, ParsedNode<Storage>>;
 
 /// Project storing the main runmd parser,
 ///
@@ -172,6 +174,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Loading<Storage> {
     fn create_parser_for_block(
         &self,
         block_info: &BlockInfo,
+        node: Option<ResourceKey<Attribute>>,
     ) -> AttributeParser<Storage::Namespace> {
         let key = ResourceKey::with_hash(BlockInfo {
             idx: 0,
@@ -181,6 +184,10 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Loading<Storage> {
 
         // Create a new attribute parser per-block
         let mut parser = AttributeParser::<Storage::Namespace>::default();
+
+        if let Some(node) = node {
+            parser.attributes.node = node;
+        }
 
         // Blocks can have properties and load/unload properties
         if let Some(provider) = self
@@ -218,7 +225,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::BlockProvid
     for Loading<Storage>
 {
     fn provide(&self, block_info: BlockInfo) -> Option<runmd::prelude::BoxedNode> {
-        let parser = self.create_parser_for_block(&block_info);
+        let parser = self.create_parser_for_block(&block_info, None);
 
         Some(Box::pin(parser))
     }
@@ -242,7 +249,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::NodeProvide
             let key = key_builder.finish();
 
             let target = self.0.root.shared_namespace(key);
-            let mut parser = self.create_parser_for_block(block_info);
+            let mut parser = self.create_parser_for_block(block_info, Some(key.transmute()));
             parser.set_storage(target.storage);
 
             self.apply_plugin(name, input, tag, &mut parser);
@@ -285,14 +292,20 @@ struct Test {
 struct Test2 {
     name: String,
     file: PathBuf,
-    #[reality(attribute_type=Test3)]
+    #[reality(attribute_type=Test3, not_wire)]
     test3: Test3,
 }
 
 #[derive(Reality, Serialize, Deserialize, Debug)]
 enum Test3 {
-    A { a: String },
-    _B { b: String },
+    A { 
+        #[reality(not_wire)]
+        a: String 
+    },
+    _B { 
+        #[reality(not_wire)]
+        b: String 
+    },
 }
 
 impl FromStr for Test3 {

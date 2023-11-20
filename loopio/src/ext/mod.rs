@@ -164,7 +164,7 @@ async fn receive_signal(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let signal = tc.initialized::<ReceiveSignal>().await;
     eprintln!("Listening for signal {:?}", signal);
     if let Some(listener) = tc.listen_host(&signal.host, &signal.name).await {
-        listener.listen().await;
+        listener.listen().notified().await;
     }
     Ok(())
 }

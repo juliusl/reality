@@ -3,6 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bytes::BufMut;
 use bytes::BytesMut;
+use loopio::action::Action;
 use loopio::prelude::StdExt;
 use loopio::prelude::PoemExt;
 use loopio::engine::Engine;
@@ -25,14 +26,16 @@ async fn main() {
     let engine = engine.build();
     let engine = engine.compile(workspace).await;
 
-    let host = engine.get_host("testhost").expect("should have host");
+    let mut host = engine.get_host("testhost").await.expect("should have host");
 
     engine.spawn(|_, packet| {
+        println!("{:?}", packet);
         Some(packet)
     });
 
-    let result = host.start().await;
-    assert!(result.is_err());
+    let task = host.spawn();
+    task.unwrap().await.unwrap().unwrap();
+
     ()
 }
 
@@ -46,16 +49,17 @@ struct Test {
 #[async_trait]
 impl CallAsync for Test {
     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
-        context.enable_flexbuffer_node().await;
-
-        let mut total_buf = BytesMut::new();
-        context.write_flexbuffer_node(|b| {
-            b.start_map().push("name", "jello");
-            total_buf.put(b.view());
-        }).await?;
+        context.enable_flexbuffer().await;
+        {
+            let mut total_buf = BytesMut::new();
+            context.write_flexbuffer(|b| {
+                b.start_map().push("name", "jello");
+                total_buf.put(b.view());
+            }).await?;
+        }
 
         let mut __name = Vec::new();
-        context.read_flexbuffer_node(|r| {
+        context.read_flexbuffer(|r| {
             if let Some(name) = r.as_map().index("name").ok() {
                 assert_eq!("jello", name.as_str());
                 println!("reading from flexbuffer node -- {name}");
@@ -63,7 +67,7 @@ impl CallAsync for Test {
             }
         }).await?;
 
-        println!("Printing from outside -- {:?}", __name);
+        // println!("Printing from outside -- {:?}", __name);
         use loopio::prelude::Ext;
         let initialized = context.initialized::<Test>().await;
 

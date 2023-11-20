@@ -5,6 +5,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::Decoration;
+use crate::KvpExt;
 use crate::Property;
 use crate::ResourceKey;
 use crate::ThunkContext;
@@ -24,7 +25,7 @@ pub struct Decorated<T: FromStr + Send + Sync + 'static> {
     pub property: Option<ResourceKey<Property>>,
     /// Decoration value,
     ///
-    pub decoration: Option<Decoration>,
+    decoration: Option<Decoration>,
 }
 
 impl<T: PartialOrd + FromStr + Send + Sync + 'static> PartialOrd for Decorated<T> {
@@ -97,6 +98,18 @@ impl<T: FromStr + Send + Sync + 'static> Decorated<T> {
             self.decoration = tc.fetch_kv::<Decoration>(*prop).map(|(_, d)| d.clone());
         }
     }
+
+    /// Finds a property in decorations,
+    /// 
+    pub fn property(&self, name: impl AsRef<str>) -> Option<&String> {
+        self.decoration.as_ref().and_then(|d| d.prop(name.as_ref()))
+    }
+
+    /// Returns a reference to decorations,
+    /// 
+    pub fn decorations(&self) -> Option<&Decoration> {
+        self.decoration.as_ref()
+    }
 }
 
 impl<T: FromStr + Send + Sync + 'static> FromStr for Decorated<T> {
@@ -160,7 +173,7 @@ impl<const DELIM: char, T: FromStr + Send + Sync + 'static> Iterator for Delimit
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut value = self.value.split(DELIM).rev().skip(self.cursor);
+        let mut value = self.value.split(DELIM).skip(self.cursor);
         self.cursor += 1;
         value.next().and_then(|v| T::from_str(v.trim()).ok())
     }

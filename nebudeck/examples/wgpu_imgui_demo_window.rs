@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+use loopio::foreground::ForegroundEngine;
 use loopio::prelude::*;
 use nebudeck::desktop::*;
 use nebudeck::ext::imgui_ext::ImguiExt;
@@ -12,23 +13,25 @@ use nebudeck::ControlBus;
 ///
 /// This examples how to customize a WgpuSystem w/ middleware using the ImguiMiddleware implementation.
 ///
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Next, create a workspace
-    let mut workspace = CurrentDir.workspace();
-
-    workspace.add_buffer(
+fn main() -> anyhow::Result<()> {
+    // Build and compile an engine
+    let (desktop, mut engine) = DevProject.open_project(EmptyWorkspace.workspace());
+    engine.workspace_mut().add_buffer(
         "test.md",
         r"
     ```runmd
-    + .operation show_frame_editor                                              # Shows frame editor
+    + .operation debug_show_frame_editor
+    <loopio.enable-wirebus>                 demo://show_frame_editor/b/nebudeck.frame-editor             # Enables the wire-bus for attribute at specific path
+    
+    # -- Debug the frame editor w/ a frame editor
+    <nebudeck.frame-editor>                 demo://show_frame_editor/b/nebudeck.frame-editor             # Enables the frame editor for the frame editor
+    |# title = Demo editor Demo editor 2
+
+    + .operation show_frame_editor                                                                      # Shows frame editor
+    |# help = Shows a frame editor example
+
     <loopio.enable-wirebus>                 demo://call_test_2/a/demo.test2     # Enables the wire-bus for attribute at specific path
     : .allow_frame_updates                  true
-    
-    <loopio.enable-wirebus>                 b/nebudeck.frame-editor             # Enables the wire-bus for attribute at specific path
-    
-    <nebudeck.frame-editor>                 b/nebudeck.frame-editor             # Enables the frame editor for the frame editor
-    |# title = Demo editor Demo editor 2
 
     # -- # Demo: Customizable editor for editing and launching plugins
     # -- Also demonstrates the additional markup support
@@ -53,6 +56,8 @@ async fn main() -> anyhow::Result<()> {
     |# description  = Runs a test
 
     + .operation    call_test_2
+    # -- # Example User Plugin
+    # -- Simple plugin that prints out debug info
     <a/demo.test2> hello world 2        # Test comment a
     : .test_value   Test value          # Test comment b
     : .test_not_str 10                  # Test comment c
@@ -66,18 +71,20 @@ async fn main() -> anyhow::Result<()> {
 
     + .host demo
     : .start    start_demo
+
+    # -- # Example of a host action title
     : .action   call_test_2/a/demo.test2
     |# help = Indexes a path to a plugin
 
+    # -- # Example of an action to show a frame editor
+    : .action   show_frame_editor/b/nebudeck.frame-editor
+        
     ```
     ");
-
-    // Build and compile an engine
-
-    let (desktop, mut engine) = DevProject.new_project();
     engine.enable::<Test>();
     engine.enable::<Test2>();
-    let engine = engine.compile(workspace).await;
+
+    let foreground = ForegroundEngine::new(engine);
 
     // Create the new WgpuSystem
     WgpuSystem::with(vec![ImguiMiddleware::new()
@@ -85,7 +92,7 @@ async fn main() -> anyhow::Result<()> {
         .enable_aux_demo_window()
         .middleware()])
     // Opens the window by passing control over to the desktop ControlBus
-    .delegate(desktop, engine);
+    .delegate(desktop, foreground);
 
     Ok(())
 }
@@ -95,7 +102,6 @@ async fn main() -> anyhow::Result<()> {
 struct Test {
     #[reality(derive_fromstr)]
     name: String,
-    #[reality(wire)]
     value_str: String,
 }
 
@@ -113,27 +119,27 @@ async fn test_ui(tc: &mut ThunkContext) -> anyhow::Result<()> {
             if let Some(test) = __tc.cached::<Test>() {
                 ui.text(test.name);
 
-                if let Some(mut eh) = __tc.cached_mut::<EngineHandle>() {
+                if let Some(_eh) = __tc.cached_mut::<EngineHandle>() {
                     ui.text("Operations:");
                     ui.popup("test_popup", || {
                         ui.text("finished");
                     });
 
-                    for (idx, (op, __op)) in eh.operations.iter_mut().enumerate() {
-                        ui.text(op);
-                        if !__op.is_running() {
-                            if ui.button(format!("start##{}", idx)) {
-                                __op.spawn();
-                            }
-                        } else {
-                            ui.text("Running");
-                            if __op.is_finished() {
-                                if let Ok(_) = __op.block_result() {
-                                    ui.open_popup("test_popup");
-                                }
-                            }
-                        }
-                    }
+                    // for (idx, (op, __op)) in eh.operations.iter_mut().enumerate() {
+                    //     ui.text(op);
+                    //     if !__op.is_running() {
+                    //         if ui.button(format!("start##{}", idx)) {
+                    //             __op.spawn();
+                    //         }
+                    //     } else {
+                    //         ui.text("Running");
+                    //         if __op.is_finished() {
+                    //             if let Ok(_) = __op.block_result() {
+                    //                 ui.open_popup("test_popup");
+                    //             }
+                    //         }
+                    //     }
+                    // }
                 }
 
                 if let Some(parsed) = __tc.cached::<ParsedAttributes>() {
@@ -168,14 +174,15 @@ async fn test_ui(tc: &mut ThunkContext) -> anyhow::Result<()> {
 struct Test2 {
     #[reality(derive_fromstr)]
     name: String,
-    #[reality(wire)]
     test_value: String,
-    #[reality(wire)]
     test_not_str: usize,
 }
 
 async fn test_2(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = Interactive.create::<Test2>(tc).await;
     println!("{:#?}", init);
+    tc.print_debug_info();
+
     Ok(())
 }
+

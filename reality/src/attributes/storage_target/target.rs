@@ -55,6 +55,16 @@ pub trait StorageTarget {
         }
     }
 
+    /// Returns the number of resource keys currently stored,
+    /// 
+    fn len(&self) -> usize;
+
+    /// Returns true if the target is currently empty,
+    /// 
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Put a resource in storage w/ key
     ///
     fn put_resource_at<T: Send + Sync + 'static>(&mut self, _key: ResourceKey<T>, _resource: T) {

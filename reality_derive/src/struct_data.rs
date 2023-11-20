@@ -65,9 +65,6 @@ pub(crate) struct StructData {
     /// CallAsync fn,
     /// 
     call: Option<Ident>,
-    /// If enabled, will consider all fields wirable,
-    /// 
-    wire: bool,
 }
 
 impl Parse for StructData {
@@ -85,7 +82,6 @@ impl Parse for StructData {
         let mut ext = false;
         let mut enum_flags = false;
         let mut call = None;
-        let mut wire = false;
 
         for attr in derive_input.attrs.iter() {
             if attr.path().is_ident("reality") {
@@ -130,10 +126,6 @@ impl Parse for StructData {
 
                     if meta.path.is_ident("enum_flags") {
                         enum_flags = true;
-                    }
-
-                    if meta.path.is_ident("wire") {
-                        wire = true;
                     }
                     Ok(())
                 })?;
@@ -200,7 +192,6 @@ impl Parse for StructData {
                 reality_on_completed,
                 plugin,
                 ext,
-                wire,
                 call,
             })
         }
@@ -408,7 +399,7 @@ impl StructData {
                 fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
                     let mut enable = parser.parse_attribute::<Self>(content.as_ref());
 
-                    if enable.is_some() {
+                    if enable.is_ok() {
                         #(#fields)*
                     }
                 }
@@ -466,7 +457,7 @@ impl StructData {
             )
         });
 
-        let to_frame = self.fields.iter().filter(|f| self.wire || f.wire).map(|f| {
+        let to_frame = self.fields.iter().filter(|f| !f.ignore && !f.not_wire).map(|f| {
             let offset = f.offset; 
             let ty = f.field_ty();
             let pty = &f.ty;
@@ -577,7 +568,7 @@ impl StructData {
         let unit_from_str = if self.fields.is_empty() {
             quote_spanned!(name.span()=>
                 impl #_impl_generics FromStr for #name #ty_generics #where_clause {
-                    type Err = std::convert::Infallible;
+                    type Err = anyhow::Error;
 
                     fn from_str(_: &str) -> std::result::Result<Self, Self::Err> {
                         Ok(Self)
@@ -631,7 +622,7 @@ impl StructData {
     fn object_ty_api(self) -> TokenStream {
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
         let name = &self.name;
-        let fields = self.fields.iter().filter(|f| self.wire || (!f.ignore && f.wire)).map(|f| {
+        let fields = self.fields.iter().filter(|f| !f.ignore && !f.not_wire).map(|f| {
             let ty = &f.ty;
             let name = f.field_name_lit_str();
             let offset = f.offset;

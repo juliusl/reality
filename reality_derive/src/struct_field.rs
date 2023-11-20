@@ -75,9 +75,9 @@ pub(crate) struct StructField {
     /// Location of this field,
     ///
     pub span: Span,
-    /// Allow field to be handled as wire-data,
-    ///
-    pub wire: bool,
+    /// Disable a field's wire representation,
+    /// 
+    pub not_wire: bool,
     pub is_decorated: bool,
     pub offset: usize,
     pub variant: Option<(Ident, Ident)>,
@@ -235,8 +235,10 @@ impl StructField {
                                 let key = hasher.finish();
                                 #name.push(value);
 
-                                if let (Some(tag), Some(last)) = (_tag, #name.last_mut()) {
-                                    last.set_tag(tag);
+                                if let Some(last) = #name.last_mut() {
+                                    if let Some(tag) = _tag {
+                                        last.set_tag(tag);
+                                    }
                                     last.set_property(key);
                                 }
                                 key
@@ -263,9 +265,11 @@ impl StructField {
                             let key = hasher.finish();
                             if let #enum_ty::#variant { #name, .. } = self {
                                 *#name = Some(value);
-
-                                if let (Some(tag), Some(last)) = (_tag, #name.as_mut()) {
-                                    last.set_tag(tag);
+                                
+                                if let Some(last) = #name.as_mut() {
+                                    if let Some(tag) = _tag {
+                                        last.set_tag(tag);
+                                    }
                                     last.set_property(key);
                                 }
                             }
@@ -290,9 +294,11 @@ impl StructField {
                                 hasher.hash(#name.len());
                                 let key = hasher.finish();
                                 #name.push_back(value);
-    
-                                if let (Some(tag), Some(last)) = (_tag, #name.back_mut()) {
-                                    last.set_tag(tag);
+
+                                if let Some(last) = #name.back_mut() {
+                                    if let Some(tag) = _tag {
+                                        last.set_tag(tag);
+                                    }
                                     last.set_property(key);
                                 }
                                 key
@@ -321,8 +327,8 @@ impl StructField {
                                 let key = hasher.finish();
                                 if let Some(tag) = _tag {
                                     value.set_tag(tag);
-                                    value.set_property(key);
                                 }
+                                value.set_property(key);
                                 #name.insert(value);
                                 key
                             } else {
@@ -354,8 +360,8 @@ impl StructField {
                     let key = hasher.finish();
                     if let Some(tag) = _tag {
                         self.#name.set_tag(tag);
-                        self.#name.set_property(key);
                     }
+                    self.#name.set_property(key);
                     key
                 )
             },
@@ -377,9 +383,9 @@ impl StructField {
                 ty, 
                 || quote_spanned! {self.span=>
                     let key = hasher.finish();
+                    value.set_property(key);
                     if let Some(tag) = _tag {
                         value.set_tag(tag);
-                        value.set_property(key);
                         self.#name.insert(tag.to_string(), value);
                     }
                     key
@@ -400,8 +406,10 @@ impl StructField {
                         self.#name.push(value);
 
                         let key = hasher.finish();
-                        if let (Some(tag), Some(last)) = (_tag, self.#name.last_mut()) {
-                            last.set_tag(tag);
+                        if let Some(last) = self.#name.last_mut() {
+                            if let Some(tag) = _tag {
+                                last.set_tag(tag);
+                            }
                             last.set_property(key);
                         }
                         key
@@ -423,8 +431,10 @@ impl StructField {
                         self.#name = Some(value);
                         let key = hasher.finish();
 
-                        if let (Some(tag), Some(last)) = (_tag, self.#name.as_mut()) {
-                            last.set_tag(tag);
+                        if let Some(last) = self.#name.as_mut() {
+                            if let Some(tag) = _tag {
+                                last.set_tag(tag);
+                            }
                             last.set_property(key);
                         }
                         key
@@ -446,8 +456,10 @@ impl StructField {
                         self.#name.push_back(value);
                         let key = hasher.finish();
 
-                        if let (Some(tag), Some(last)) = (_tag, self.#name.back_mut()) {
-                            last.set_tag(tag);
+                        if let Some(last) = self.#name.back_mut() {
+                            if let Some(tag) = _tag {
+                                last.set_tag(tag);
+                            }
                             last.set_property(key);
                         }
 
@@ -507,7 +519,7 @@ impl Parse for StructField {
         let mut derive_fromstr = false;
         let mut ext = false;
         let mut plugin = false;
-        let mut wire = false;
+        let mut not_wire = false;
         let span = input.span();
 
         let visibility = input.parse::<Visibility>().ok();
@@ -634,8 +646,8 @@ impl Parse for StructField {
                         plugin = true;
                     }
                     
-                    if meta.path.is_ident("wire") {
-                        wire = true;
+                    if meta.path.is_ident("not_wire") {
+                        not_wire = true;
                     }
 
                     if meta.path.is_ident("derive_fromstr") {
@@ -659,7 +671,7 @@ impl Parse for StructField {
             attribute_type,
             ext,
             plugin,
-            wire,
+            not_wire,
             span,
             ignore,
             visibility,

@@ -329,88 +329,88 @@ async fn on_proxy(
     }
 }
 
-macro_rules! create_routes {
-    ($handler:ident, $ctx:ident, $rcv:ident, [$($ident:tt),*]) => {
-        let engine_handle = $ctx.engine_handle().await;
-        assert!(engine_handle.is_some());
-        let engine_handle = engine_handle.unwrap();
-        let operations = engine_handle.operations.clone();
-        let sequences = engine_handle.sequences.clone();
+// macro_rules! create_routes {
+//     ($handler:ident, $ctx:ident, $rcv:ident, [$($ident:tt),*]) => {
+//         let engine_handle = $ctx.engine_handle().await;
+//         assert!(engine_handle.is_some());
+//         let engine_handle = engine_handle.unwrap();
+//         let operations = engine_handle.operations.clone();
+//         let sequences = engine_handle.sequences.clone();
 
-        $(
-            for (value, tag) in $rcv.$ident.iter().map(|g| (g.value(), g.tag())) {
-                match (value, tag) {
-                    (Some(route), Some(op)) => {
-                        let op = $rcv.route.get(op).cloned().unwrap_or_default();
-                        if let Some(operation) = operations.get(&op).cloned()
-                        {
-                            if let Some(_route) = $rcv.routes.remove(route) {
-                                $rcv
-                                    .routes
-                                    .insert(route.to_string(), _route.$ident($handler.data(Either::<Operation, Sequence>::Left(operation))));
-                            } else {
-                                $rcv
-                                    .routes
-                                    .insert(route.to_string(), $ident($handler.data(Either::<Operation, Sequence>::Left(operation))));
-                            }
-                        } else if let Some(sequence) = sequences.get(&op).cloned() {
-                            if let Some(_route) = $rcv.routes.remove(route) {
-                                $rcv
-                                    .routes
-                                    .insert(route.to_string(), _route.$ident($handler.data(Either::<Operation, Sequence>::Right(sequence))));
-                            } else {
-                                $rcv
-                                    .routes
-                                    .insert(route.to_string(), $ident($handler.data(Either::<Operation, Sequence>::Right(sequence))));
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        )*
-    };
-    ($handler:expr, $ctx:ident, $rcv:ident, [$($ident:tt),*]) => {
-        let engine_handle = $ctx.engine_handle().await;
-        assert!(engine_handle.is_some());
-        let engine_handle = engine_handle.unwrap();
-        let operations = engine_handle.operations.clone();
-        let sequences = engine_handle.sequences.clone();
+//         $(
+//             for (value, tag) in $rcv.$ident.iter().map(|g| (g.value(), g.tag())) {
+//                 match (value, tag) {
+//                     (Some(route), Some(op)) => {
+//                         let op = $rcv.route.get(op).cloned().unwrap_or_default();
+//                         if let Some(operation) = operations.get(&op).cloned()
+//                         {
+//                             if let Some(_route) = $rcv.routes.remove(route) {
+//                                 $rcv
+//                                     .routes
+//                                     .insert(route.to_string(), _route.$ident($handler.data(Either::<Operation, Sequence>::Left(operation))));
+//                             } else {
+//                                 $rcv
+//                                     .routes
+//                                     .insert(route.to_string(), $ident($handler.data(Either::<Operation, Sequence>::Left(operation))));
+//                             }
+//                         } else if let Some(sequence) = sequences.get(&op).cloned() {
+//                             if let Some(_route) = $rcv.routes.remove(route) {
+//                                 $rcv
+//                                     .routes
+//                                     .insert(route.to_string(), _route.$ident($handler.data(Either::<Operation, Sequence>::Right(sequence))));
+//                             } else {
+//                                 $rcv
+//                                     .routes
+//                                     .insert(route.to_string(), $ident($handler.data(Either::<Operation, Sequence>::Right(sequence))));
+//                             }
+//                         }
+//                     }
+//                     _ => {}
+//                 }
+//             }
+//         )*
+//     };
+//     ($handler:expr, $ctx:ident, $rcv:ident, [$($ident:tt),*]) => {
+//         let engine_handle = $ctx.engine_handle().await;
+//         assert!(engine_handle.is_some());
+//         let engine_handle = engine_handle.unwrap();
+//         let operations = engine_handle.operations.clone();
+//         let sequences = engine_handle.sequences.clone();
 
-        $(
-            for (value, tag) in $rcv.$ident.iter().map(|g| (g.value(), g.tag())) {
-                match (value, tag) {
-                    (Some(route), Some(op)) => {
-                        let op = $rcv.route.get(op).cloned().unwrap_or_default();
-                        if let Some(_) = operations.get(&op).cloned()
-                        {
-                            if let Some(_route) = $rcv.routes.remove(route) {
-                                $rcv
-                                    .routes
-                                    .insert(route.to_string(), _route.$ident($handler()));
-                            } else {
-                                $rcv
-                                    .routes
-                                    .insert(route.to_string(), $ident($handler()));
-                            }
-                        } else if let Some(_) = sequences.get(&op).cloned() {
-                            if let Some(_route) = $rcv.routes.remove(route) {
-                                $rcv
-                                    .routes
-                                    .insert(route.to_string(), _route.$ident($handler()));
-                            } else {
-                                $rcv
-                                    .routes
-                                    .insert(route.to_string(), $ident($handler()));
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        )*
-    };
-}
+//         $(
+//             for (value, tag) in $rcv.$ident.iter().map(|g| (g.value(), g.tag())) {
+//                 match (value, tag) {
+//                     (Some(route), Some(op)) => {
+//                         let op = $rcv.route.get(op).cloned().unwrap_or_default();
+//                         if let Some(_) = operations.get(&op).cloned()
+//                         {
+//                             if let Some(_route) = $rcv.routes.remove(route) {
+//                                 $rcv
+//                                     .routes
+//                                     .insert(route.to_string(), _route.$ident($handler()));
+//                             } else {
+//                                 $rcv
+//                                     .routes
+//                                     .insert(route.to_string(), $ident($handler()));
+//                             }
+//                         } else if let Some(_) = sequences.get(&op).cloned() {
+//                             if let Some(_route) = $rcv.routes.remove(route) {
+//                                 $rcv
+//                                     .routes
+//                                     .insert(route.to_string(), _route.$ident($handler()));
+//                             } else {
+//                                 $rcv
+//                                     .routes
+//                                     .insert(route.to_string(), $ident($handler()));
+//                             }
+//                         }
+//                     }
+//                     _ => {}
+//                 }
+//             }
+//         )*
+//     };
+// }
 
 /// Starts the engine proxy,
 ///
@@ -422,12 +422,12 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
     );
 
     // Build routes for proxy server
-    create_routes!(
-        on_proxy,
-        context,
-        initialized,
-        [head, get, post, put, patch, delete]
-    );
+    // create_routes!(
+    //     on_proxy,
+    //     context,
+    //     initialized,
+    //     [head, get, post, put, patch, delete]
+    // );
 
     let route = initialized
         .routes
@@ -689,12 +689,12 @@ async fn configure_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
         if let Some(mut engine_proxy) = tc.scan_host_for::<EngineProxy>(host).await {
             println!("Configuring reverse proxy for {}", init.alias.as_ref());
             let config = || init.clone().decorate(on_forward_request);
-            create_routes!(
-                move || { config().data(client.clone()).data(internal_host.clone()) },
-                tc,
-                engine_proxy,
-                [head, get, post, put, patch, delete]
-            );
+            // create_routes!(
+            //     move || { config().data(client.clone()).data(internal_host.clone()) },
+            //     tc,
+            //     engine_proxy,
+            //     [head, get, post, put, patch, delete]
+            // );
 
             tc.transient_mut().await.put_resource(
                 engine_proxy,

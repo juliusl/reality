@@ -33,19 +33,21 @@
     : test_handler  .get /test-handler/:name
 
     + .operation start_reverse_proxy
-    <loopio.receive-signal>         engine_proxy_started
-    : .host                         testhost
-    <loopio.poem.reverse-proxy-config>        testhost://test-engine-proxy
-    <loopio.poem.reverse-proxy>               localhost:3576
-    : .host                      testhost://test-engine-proxy
+    <loopio.receive-signal>                     engine_proxy_started
+    : .host                                     testhost
+    <loopio.poem.reverse-proxy-config>          testhost://test-engine-proxy
+    <loopio.poem.reverse-proxy>                 localhost:3576
+    : .host                                     testhost://test-engine-proxy
 
     + .sequence start_tests                                  # Sequence that starts the demo
-    : .next test_std_io
-    : .next start_reverse_proxy, test_poem
+    : .step test_std_io
+    |# kind = once
+    
+    : .step start_reverse_proxy, test_poem
     : .loop false
 
     + .sequence run_println                                  # Sequence that can be called by the engine proxy
-    : .next test_std_io
+    : .step test_std_io
     : .loop false
 
     + .host testhost                                         # Host configured w/ a starting sequence

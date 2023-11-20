@@ -20,6 +20,8 @@ pub use project::Source;
 pub use project::Workspace;
 pub use project::RegisterWith;
 pub use project::CurrentDir;
+pub use project::EmptyWorkspace;
+pub use project::Dir;
 
 mod thunk;
 pub use thunk::*;

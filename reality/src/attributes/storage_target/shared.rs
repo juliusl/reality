@@ -149,6 +149,10 @@ impl StorageTarget for Shared {
             None
         }
     }
+
+    fn len(&self) -> usize {
+        self.resources.len()
+    }
 }
 
 /// Convert a borrow to a raw pointer,

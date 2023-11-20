@@ -1,37 +1,13 @@
 use std::fmt::Display;
 
-use reality::prelude::*;
+use reality::{prelude::*, attributes::Node};
 use serde::{Deserialize, Serialize};
 
-/// Common trait for engine node types,
-///
-pub trait Action {
-    /// Return the address of an action,
-    ///
-    fn address(&self) -> String;
-
-    /// Bind a thunk context to the action,
-    ///
-    /// **Note** This context has access to the compiled node this action corresponds to.
-    ///
-    fn bind(&mut self, context: ThunkContext);
-
-    /// Returns the current context,
-    ///
-    /// **Note** Should panic if currently unbound,
-    ///
-    fn context(&self) -> &ThunkContext;
-
-    /// Returns a mutable reference to the current context,
-    ///
-    /// **Note** Should panic if currently unbound,
-    ///
-    fn context_mut(&mut self) -> &mut ThunkContext;
-}
+use crate::prelude::Action;
 
 /// Struct containing address parameters and a notification handle,
 ///
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Address {
     /// Host setting of this address,
     ///
@@ -232,5 +208,21 @@ impl Action for HostedResource {
 
     fn context_mut(&mut self) -> &mut ThunkContext {
         self.binding.as_mut().expect("should be bound to an engine")
+    }
+
+    fn bind_node(&mut self, node: ResourceKey<Node>) {
+        self.node_rk = node;
+    }
+
+    fn node_rk(&self) -> ResourceKey<Node> {
+        self.node_rk
+    }
+
+    fn plugin_rk(&self) -> Option<ResourceKey<Attribute>> {
+        self.rk
+    }
+
+    fn bind_plugin(&mut self, plugin: ResourceKey<reality::attributes::Attribute>) {
+        self.rk = Some(plugin);
     }
 }
