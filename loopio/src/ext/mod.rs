@@ -48,7 +48,7 @@ impl Ext for ThunkContext {
     async fn engine_handle(&self) -> Option<EngineHandle> {
         if let Some(handle) = self.node()
             .await
-            .current_resource::<EngineHandle>(None) {
+            .current_resource::<EngineHandle>(ResourceKey::none()) {
             if let Ok(handle) = handle.sync().await {
                 Some(handle)
             } else {
@@ -62,7 +62,7 @@ impl Ext for ThunkContext {
     async fn get_comments(&self) -> Option<Comments> {
         self.node()
             .await
-            .current_resource(self.attribute.map(|a| a.transmute()))
+            .current_resource(self.attribute.transmute())
     }
 
     async fn on_notify_host(&self, host: &str) -> anyhow::Result<()> {
@@ -74,26 +74,26 @@ impl Ext for ThunkContext {
     }
 
     async fn notify_host(&self, host: &str, condition: &str) -> anyhow::Result<()> {
-        if let Some(host) = self.host(host).await {
-            if let Some(host_condition) =
-                host.current_resource::<HostCondition>(Some(ResourceKey::with_hash(condition)))
-            {
-                host_condition.notify();
-            }
-        }
+        // if let Some(host) = self.host(host).await {
+        //     if let Some(host_condition) =
+        //         host.current_resource::<HostCondition>(Some(ResourceKey::with_hash(condition)))
+        //     {
+        //         host_condition.notify();
+        //     }
+        // }
 
         Ok(())
     }
 
     async fn listen_host(&self, host: &str, condition: &str) -> Option<HostCondition> {
-        if let Some(host) = self.host(host).await {
-            if let Some(host_condition) =
-                host.current_resource::<HostCondition>(Some(ResourceKey::with_hash(condition)))
-            {
-                trace!("Found condition");
-                return Some(host_condition);
-            }
-        }
+        // if let Some(host) = self.host(host).await {
+        //     if let Some(host_condition) =
+        //         host.current_resource::<HostCondition>(Some(ResourceKey::with_hash(condition)))
+        //     {
+        //         trace!("Found condition");
+        //         return Some(host_condition);
+        //     }
+        // }
 
         None
     }

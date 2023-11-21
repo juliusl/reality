@@ -95,7 +95,7 @@ impl KvpExt for ThunkContext {
     where
         R: Send + Sync + 'static,
     {
-        let key = self.attribute.map(|s| s.transmute().branch(&key));
+        let key = self.attribute.transmute().branch(&key);
         self.__cached
             .resource::<R>(key)
             .is_some()
@@ -109,7 +109,7 @@ impl KvpExt for ThunkContext {
         R: Send + Sync + 'static,
     {
         self.__cached
-            .resource(Some(key))
+            .resource(key)
     }
 
     fn kv_get_mut<R>(
@@ -120,7 +120,7 @@ impl KvpExt for ThunkContext {
         R: Send + Sync + 'static,
     {
         self.__cached
-            .resource_mut(Some(key))
+            .resource_mut(key)
     }
 
     fn maybe_store_kv<R>(
@@ -154,7 +154,7 @@ impl KvpExt for ThunkContext {
     where
         R: Send + Sync + 'static,
     {
-        let key = self.attribute.map(|s| s.transmute().branch(&key));
+        let key = self.attribute.transmute().branch(&key);
         self.__cached
             .put_resource::<R>(value, key);
     }
@@ -165,10 +165,10 @@ impl KvpExt for ThunkContext {
     where
         R: Send + Sync + 'static,
     {
-        let key = self.attribute.map(|s| s.transmute().branch(&key));
+        let key = self.attribute.transmute().branch(&key);
         self.__cached
             .take_resource::<R>(key)
-            .map(|p| (key.expect("should be some"), *p))
+            .map(|p| (key.expect_not_root(), *p))
     }
 
     /// Fetch a kv pair by key,
@@ -183,10 +183,10 @@ impl KvpExt for ThunkContext {
     where
         R: Send + Sync + 'static,
     {
-        let key = self.attribute.map(|s| s.transmute().branch(&key));
+        let key = self.attribute.transmute().branch(&key);
         self.__cached
             .resource::<R>(key)
-            .map(|c| (key.expect("should be some"), c))
+            .map(|c| (key.expect_not_root(), c))
     }
 
     /// Fetch a mutable reference to a kv pair by key,
@@ -201,10 +201,10 @@ impl KvpExt for ThunkContext {
     where
         R: Send + Sync + 'static,
     {
-        let key = self.attribute.map(|s| s.transmute().branch(&key));
+        let key = self.attribute.transmute().branch(&key);
         self.__cached
             .resource_mut::<R>(key)
-            .map(|c| (key.expect("should be some"), c))
+            .map(|c| (key.expect_not_root(), c))
     }
 }
 
@@ -214,7 +214,7 @@ async fn test_tc_cache() {
     use uuid::Uuid;
 
     let mut tc = ThunkContext::default();
-    tc.attribute = Some(ResourceKey::default());
+    tc.attribute = ResourceKey::default();
 
     let (key, init_uuid) = tc.maybe_store_kv("hello-world", Uuid::new_v4());
     let __init_uuid = init_uuid.to_owned();

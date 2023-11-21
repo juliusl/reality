@@ -40,31 +40,31 @@ pub trait CacheExt {
 impl CacheExt for ThunkContext {
     fn cached<R: ToOwned<Owned = R> + Sync + Send + 'static>(&self) -> Option<R> {
         self.__cached
-            .current_resource::<R>(self.attribute.map(|a| a.transmute()))
+            .current_resource::<R>(self.attribute.transmute())
     }
 
     fn cached_ref<R: Sync + Send + 'static>(
         &self,
     ) -> Option<<Shared as StorageTarget>::BorrowResource<'_, R>> {
         self.__cached
-            .resource::<R>(self.attribute.map(|a| a.transmute()))
+            .resource::<R>(self.attribute.transmute())
     }
 
     fn cached_mut<R: Sync + Send + 'static>(
         &mut self,
     ) -> Option<<Shared as StorageTarget>::BorrowMutResource<'_, R>> {
         self.__cached
-            .resource_mut::<R>(self.attribute.map(|a| a.transmute()))
+            .resource_mut::<R>(self.attribute.transmute())
     }
 
     fn write_cache<R: Sync + Send + 'static>(&mut self, resource: R) {
         self.__cached
-            .put_resource(resource, self.attribute.map(|a| a.transmute()))
+            .put_resource(resource, self.attribute.transmute())
     }
 
     fn take_cache<R: Sync + Send + 'static>(&mut self) -> Option<Box<R>> {
         self.__cached
-            .take_resource(self.attribute.map(|a| a.transmute()))
+            .take_resource(self.attribute.transmute())
     }
 
     fn maybe_write_cache<R: Sync + Send + 'static>(
@@ -72,6 +72,6 @@ impl CacheExt for ThunkContext {
         resource: R,
     ) -> Option<<Shared as StorageTarget>::BorrowMutResource<'_, R>> {
         self.__cached
-            .maybe_put_resource(resource, self.attribute.map(|a| a.transmute()))
+            .maybe_put_resource(resource, self.attribute.transmute())
     }
 }

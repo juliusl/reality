@@ -99,7 +99,7 @@ impl PoemExt for ThunkContext {
     async fn take_response_parts(&mut self) -> Option<ResponseParts> {
         self.transient_mut()
             .await
-            .take_resource::<ResponseParts>(None)
+            .take_resource::<ResponseParts>(ResourceKey::none())
             .map(|b| *b)
     }
 
@@ -107,7 +107,7 @@ impl PoemExt for ThunkContext {
     async fn take_body(&mut self) -> Option<poem::Body> {
         self.transient_mut()
             .await
-            .take_resource::<poem::Body>(None)
+            .take_resource::<poem::Body>(ResourceKey::none())
             .map(|b| *b)
     }
 
@@ -137,24 +137,24 @@ impl PoemExt for ThunkContext {
     async fn set_response_body(&mut self, body: Body) {
         self.transient_mut()
             .await
-            .put_resource(body, Some(ResourceKey::with_hash("response")))
+            .put_resource(body, ResourceKey::with_hash("response"))
     }
 
     #[inline]
     async fn replace_header_map(&mut self, header_map: HeaderMap) {
-        self.transient_mut().await.put_resource(header_map, None)
+        self.transient_mut().await.put_resource(header_map, ResourceKey::none())
     }
 
     #[inline]
     async fn get_path_vars(&mut self) -> Option<PathVars> {
-        self.transient().await.current_resource::<PathVars>(None)
+        self.transient().await.current_resource::<PathVars>(ResourceKey::none())
     }
 
     #[inline]
     async fn take_request(&self) -> Option<PoemRequest> {
         self.transient_mut()
             .await
-            .take_resource::<PoemRequest>(None)
+            .take_resource::<PoemRequest>(ResourceKey::none())
             .map(|r| *r)
     }
 
@@ -234,7 +234,7 @@ async fn on_proxy(
             headers: req.headers().clone(),
             body: Some(body),
         },
-        None,
+        ResourceKey::none(),
     );
 
     if let Some(spawned) = resource.spawn() {
@@ -598,21 +598,21 @@ async fn configure_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
         let internal_host = Arc::new(internal_host);
         let internal_host = &internal_host;
 
-        if let Some(mut engine_proxy) = tc.scan_host_for::<EngineProxy>(host).await {
-            println!("Configuring reverse proxy for {}", init.alias.as_ref());
-            let config = || init.clone().decorate(on_forward_request);
-            // create_routes!(
-            //     move || { config().data(client.clone()).data(internal_host.clone()) },
-            //     tc,
-            //     engine_proxy,
-            //     [head, get, post, put, patch, delete]
-            // );
+        // if let Some(mut engine_proxy) = tc.scan_host_for::<EngineProxy>(host).await {
+        //     println!("Configuring reverse proxy for {}", init.alias.as_ref());
+        //     let config = || init.clone().decorate(on_forward_request);
+        //     // create_routes!(
+        //     //     move || { config().data(client.clone()).data(internal_host.clone()) },
+        //     //     tc,
+        //     //     engine_proxy,
+        //     //     [head, get, post, put, patch, delete]
+        //     // );
 
-            tc.transient_mut().await.put_resource(
-                engine_proxy,
-                Some(ResourceKey::with_hash(init.alias.to_string())),
-            );
-        }
+        //     tc.transient_mut().await.put_resource(
+        //         engine_proxy,
+        //         Some(ResourceKey::with_hash(init.alias.to_string())),
+        //     );
+        // }
     }
     Ok(())
 }

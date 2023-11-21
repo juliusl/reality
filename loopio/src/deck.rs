@@ -2,10 +2,13 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use reality::Attribute;
+use reality::HostedResource;
 use reality::ParsedBlock;
 use reality::ResourceKey;
 use serde::Deserialize;
 use serde::Serialize;
+
+use crate::prelude::Action;
 
 /// Deck is an index of resource keys to parsed metadata derived
 /// from the project of an engine compilation.
@@ -24,6 +27,22 @@ pub struct Deck {
     /// Node paths,
     ///
     node_paths: BTreeMap<NodePath, ResourceKey<Attribute>>,
+}
+
+impl Deck {
+    /// Returns doc headers,
+    /// 
+    pub fn doc_headers(&self, hr: &HostedResource)  -> Option<&Vec<String>> {
+        let key = Self::key(hr);
+        eprintln!("Deck key -- {:?}", key);
+        self.doc_headers.get(&key)
+    }
+
+    /// Returns a deck key from a hosted resource,
+    /// 
+    fn key(hr: &HostedResource) -> ResourceKey<Attribute> {
+        hr.node_rk().branch(hr.plugin_rk()).transmute()
+    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -112,7 +131,7 @@ impl From<&ParsedBlock> for Deck {
             deck.paths.insert(path.to_string(), rk.transmute());
         }
         for (path, rk) in value.resource_paths.iter().filter(|(f, _)| !f.is_empty()) {
-            deck.paths.insert(path.to_string(), rk.rk.unwrap_or_default());
+            deck.paths.insert(path.to_string(), rk.rk);
         }
 
         deck

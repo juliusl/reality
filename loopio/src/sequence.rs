@@ -64,9 +64,8 @@ async fn execute_sequence(tc: &mut ThunkContext) -> anyhow::Result<()> {
         let seq = seq.get_mut();
         tc.node_mut()
             .await
-            .put_resource(seq.clone(), tc.attribute.map(|a| a.transmute()));
+            .put_resource(seq.clone(), tc.attribute.transmute());
     }
-
     Ok(())
 }
 
@@ -345,8 +344,8 @@ impl Action for Sequence {
         self.plugin = plugin;
     }
 
-    fn plugin_rk(&self) -> Option<ResourceKey<reality::attributes::Attribute>> {
-        Some(self.plugin)
+    fn plugin_rk(&self) -> ResourceKey<reality::attributes::Attribute> {
+        self.plugin
     }
 }
 
@@ -385,9 +384,7 @@ impl Iterator for StepList {
 
 #[tokio::test]
 // #[tracing_test::traced_test]
-async fn test_seq() {
-    use crate::prelude::Instruction;
-
+async fn test_seq() -> anyhow::Result<()> {
     let mut workspace = Workspace::new();
     workspace.add_buffer(
         "demo.md",
@@ -437,16 +434,16 @@ async fn test_seq() {
     });
 
     let seq = eh.hosted_resource("engine://test").await.unwrap();
-    let tc = seq.spawn().unwrap().await.unwrap().unwrap();
-    let tc = tc.spawn_call().await.unwrap().unwrap();
-    tc.spawn_call().await.unwrap().unwrap();
-    seq.spawn().unwrap().await.unwrap().unwrap();
+    seq.spawn_call().await?;
+    seq.spawn_call().await?;
+    seq.spawn_call().await?;
+    seq.spawn_call().await?;
 
     // Tests that after calling the sequence several times, the counter has the expected value
     let testseq = eh.hosted_resource("test://b/t/demo.testseq").await.unwrap();
     let testseq = testseq.context().initialized::<TestSeq>().await;
     assert_eq!(testseq.counter, 5);
-    ()
+    Ok(())
 }
 
 #[derive(Reality, Default, Clone, Debug)]
@@ -463,7 +460,7 @@ async fn call_test_seq(tc: &mut ThunkContext) -> anyhow::Result<()> {
     eprintln!("{} {}", init.name, init.counter);
     tc.node()
         .await
-        .lazy_put_resource(init, tc.attribute.map(|a| a.transmute()));
+        .lazy_put_resource(init, tc.attribute.transmute());
 
     Ok(())
 }

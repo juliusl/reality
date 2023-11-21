@@ -13,6 +13,7 @@ use reality::prelude::*;
 use crate::prelude::Action;
 use crate::prelude::Address;
 use crate::prelude::Ext;
+use crate::sequence::Sequence;
 
 /// A Host contains a broadly shared storage context,
 ///
@@ -37,16 +38,12 @@ pub struct Host {
     pub action: Vec<Decorated<Address>>,
     /// Name of the action that "starts" this host,
     ///
-    #[reality(option_of=Decorated<String>)]
-    start: Option<Decorated<String>>,
-    /// Set of conditions,
-    ///
-    #[reality(set_of=Decorated<HostCondition>)]
-    condition: BTreeSet<Decorated<HostCondition>>,
+    #[reality(option_of=Decorated<Address>)]
+    pub start: Option<Decorated<Address>>,
     /// Set of events registered on this host,
     ///
     #[reality(set_of=Decorated<String>)]
-    event: BTreeSet<Decorated<String>>,
+    pub event: BTreeSet<Decorated<String>>,
     /// Binding to an engine,
     ///
     #[reality(ignore)]
@@ -59,23 +56,29 @@ pub struct Host {
     ///
     #[reality(ignore)]
     plugin: ResourceKey<reality::attributes::Attribute>,
+    /// Set of conditions,
+    ///
+    #[reality(ignore)]
+    condition: BTreeSet<HostCondition>,
 }
 
 async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let mut init = Interactive.create::<Host>(tc).await;
     init.bind(tc.clone());
-    // eprintln!("{:#?}", tc.decoration);
 
-    // if let Some(block) = tc.parsed_block().await {
-    //     if let Some(node) = block.nodes.get(&init.node) {
-    //         eprintln!("{:#?}", node);
-    //         if let Some(docs) = node.doc_headers.get(&init.node.transmute()) {
-    //             for d in docs {
-    //                 eprintln!("{d}");
-    //             }
-    //         }
-    //     }
-    // }
+    if let Some(docs) = tc.decoration.as_ref().and_then(|d| d.doc_headers.as_ref()) {
+        for d in docs {
+            eprintln!("{}", d);
+        }
+    }
+
+    let block = tc.parsed_block().await.expect("should have parsed block");
+
+    if let Some(node) = block.nodes.get(&init.node) {
+        for (_, d) in  node.doc_headers.iter() {
+            d.iter().for_each(|e| eprintln!("{}", e));
+        }
+    }
 
     for a in init.action.iter() {
         eprintln!("# Action -- {}", a.value().unwrap());
@@ -84,7 +87,6 @@ async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
         }
     }
 
-    let block = tc.parsed_block().await.expect("should have parsed block");
     eprintln!("# Paths");
     for (p, _) in block.paths.iter() {
         eprintln!(" - {p}");
@@ -92,11 +94,25 @@ async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
     eprintln!();
 
     eprintln!("# Resource paths");
-    for (p, _) in block.resource_paths.iter() {
+    for (p, r) in block.resource_paths.iter() {
         eprintln!(" - {p}");
+        eprintln!("\t {:#?}", r.decoration);
+        if let Some(d) = r.decoration.as_ref() {
+            if let Some(p) = d.comment_properties.as_ref() {
+                if let Some(cond) = p.get("notify").or(p.get("listen")) {
+                    let condition = HostCondition::new(cond);
+                    init.condition.insert(condition);
+                }
+            }
+        }
     }
     eprintln!();
 
+    eprintln!("# Events");
+    for c in init.event.iter() {
+        eprintln!("- {:#?}", c.value());
+    }
+    eprintln!();
     if init.start.is_some() {
         eprintln!("Start found.");
         init.start().await?;
@@ -110,7 +126,7 @@ async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
 impl Host {
     /// Bind this host to a storage target,
     ///
-    pub fn bind_storage(mut self, storage: AsyncStorageTarget<Shared>) -> Self {
+    pub fn with_storage(mut self, storage: AsyncStorageTarget<Shared>) -> Self {
         self.host_storage = Some(storage);
         self
     }
@@ -120,18 +136,7 @@ impl Host {
     /// Returns false if this condition is not registered w/ this host.
     ///
     pub fn set_condition(&self, condition: impl AsRef<str>) -> bool {
-        if let Some(condition) = self
-            .condition
-            .iter()
-            .filter_map(|c| c.value())
-            .find(|c| c.name == condition.as_ref())
-            .map(|c| c.notify.clone())
-        {
-            condition.clone().notify_waiters();
-            true
-        } else {
-            false
-        }
+        false
     }
 
     /// Starts this host,
@@ -143,18 +148,9 @@ impl Host {
                 .await
                 .expect("should be bound to an engine handle");
 
-            if let Some(start) = self.start.as_ref() {
-                let address = match (start.tag(), start.value()) {
-                    (None, Some(name)) => name.to_string(),
-                    (Some(tag), Some(name)) => {
-                        format!("{name}#{tag}")
-                    }
-                    _ => {
-                        unreachable!()
-                    }
-                };
-
-                engine.run(address).await
+            if let Some(start) = self.start.as_ref().and_then(|s| s.value()) {
+                let resource = engine.hosted_resource(start.to_string()).await?;
+                resource.spawn().unwrap().await?
             } else {
                 Err(anyhow::anyhow!("Start action is not set"))
             }
@@ -211,8 +207,8 @@ impl Action for Host {
         self.node
     }
 
-    fn plugin_rk(&self) -> Option<ResourceKey<reality::attributes::Attribute>> {
-        Some(self.plugin)
+    fn plugin_rk(&self) -> ResourceKey<reality::attributes::Attribute> {
+        self.plugin
     }
 }
 
@@ -233,8 +229,14 @@ pub struct HostCondition {
 }
 
 impl HostCondition {
+    /// Creates a new host condition,
+    /// 
     pub fn new(name: impl Into<String>) -> HostCondition {
-        HostCondition { name: name.into() , last_active: (AtomicU64::new(0), AtomicU64::new(0)), notify: Arc::new(Notify::new()) }
+        HostCondition { 
+            name: name.into() , 
+            last_active: (AtomicU64::new(0), AtomicU64::new(0)), 
+            notify: Arc::new(Notify::new()) 
+        }
     }
 
     /// Notify observers of this condition,
@@ -361,7 +363,7 @@ async fn test_host() {
     + .operation a
     |# test = test
     
-    <loopio.std.io.println>                 Hello World a
+    <start/loopio.std.io.println>                 Hello World a
     |# listen =     op_b_complete
 
     + .operation b
@@ -370,6 +372,7 @@ async fn test_host() {
 
     + .operation c
     <start/loopio.std.io.println>           Hello World c
+    |# notify = test_cond
 
     + .operation d
     <loopio.std.io.println>                 Hello World d
@@ -379,26 +382,33 @@ async fn test_host() {
     |# name = Test sequence
     
     # -- Operations on a step execute all at once
-    :  .step a, b, c
+    :  .step    c/start/loopio.std.io.println,
+    |           a/start/loopio.std.io.println
 
-    # -- If kind is set to once, this row only executes once if the sequence loops
-    : .step b, d,
-    |# kind = once
+    :  .step    b, d
+    |# kind     =   once
 
     # -- If this were set to true, then the sequence would automatically loop
     : .loop false
 
+    # -- # Demo host
+    # -- Placeholder text 
     + .host demo
     : .start        test
-    
-    : .action       c/start/loopio.std.io.println
-    |# help  =      Example of adding help documentation
-    |# route =      start_c
 
-    : .action       b
+    # -- # Example of setting up a notifier
+    : .action               c/start/loopio.std.io.println
+    |# help     =           Example of adding help documentation
+    |# notify   =           ob_b_complete
 
-    : .event        op_b_complete
-    |# description = Example of an event that can be listened to
+    # -- # Example of wiring up a listener
+    : .action               a/start/loopio.std.io.println
+    |# help     =           Example of adding help documentation
+    |# listen   =           ob_b_complete
+
+    # -- # Example of an event
+    : .event                op_b_complete
+    |# description  =       Example of an event that can be listened to
 
     ```
     "#,
@@ -406,16 +416,51 @@ async fn test_host() {
 
     let engine = crate::engine::Engine::builder().build();
     let engine = engine.compile(workspace).await;
+    eprintln!("{:#?}", engine);
+
     let block = engine.block().unwrap();
     let eh = engine.engine_handle();
     let deck = crate::deck::Deck::from(block);
     eprintln!("{:#?}", deck);
-    let _e = engine.spawn(|_, p| Some(p));
+    let _e = engine.spawn(|_, p| {
+        eprintln!("{:?}", p);
+        Some(p)
+    });
     if let Ok(hosted_resource) = eh.hosted_resource("demo://").await {
         eprintln!("Found hosted resource - {}", hosted_resource.address());
+        hosted_resource
+            .spawn()
+            .unwrap().await
+            .unwrap()
+            .unwrap();
+        hosted_resource
+            .spawn()
+            .unwrap().await
+            .unwrap()
+            .unwrap();
+    }
+    
+    if let Ok(hosted_resource) = eh.hosted_resource("demo://a/start/loopio.std.io.println").await {
+        eprintln!("{:#?}", hosted_resource.decoration);
 
-        hosted_resource.spawn().unwrap().await.unwrap().unwrap();
+        // eprintln!("Found hosted resource - {}", hosted_resource.address());
+        // hosted_resource
+        //     .spawn()
+        //     .unwrap().await
+        //     .unwrap()
+        //     .unwrap();
+
+        // hosted_resource
+        //     .spawn()
+        //     .unwrap().await
+        //     .unwrap()
+        //     .unwrap();
     }
 
+    if let Ok(h) = eh.hosted_resource("engine://test").await {
+        let seq = h.context().initialized::<Sequence>().await;
+
+        eprintln!("{:#?}", seq);
+    }
     ()
 }

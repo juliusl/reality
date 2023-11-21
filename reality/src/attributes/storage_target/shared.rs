@@ -9,6 +9,8 @@ use tokio::sync::RwLockWriteGuard;
 
 use crate::prelude::*;
 
+use super::target::StorageTargetKey;
+
 /// Shared thread-safe storage target using Arc and tokio::RwLock,
 ///
 #[derive(Clone, Default)]
@@ -36,7 +38,7 @@ impl StorageTarget for Shared {
     fn maybe_put_resource<T: Send + Sync + 'static>(
         &mut self,
         resource: T,
-        resource_key: Option<ResourceKey<T>>,
+        resource_key: StorageTargetKey<T>,
     ) -> Option<Self::BorrowMutResource<'_, T>> {
         let key = Self::key::<T>(resource_key);
 
@@ -49,7 +51,7 @@ impl StorageTarget for Shared {
 
     fn contains<T: Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey<T>>,
+        resource_key: StorageTargetKey<T>,
     ) -> bool {
         let key = Self::key::<T>(resource_key);
 
@@ -59,7 +61,7 @@ impl StorageTarget for Shared {
     fn put_resource<T: Send + Sync + 'static>(
         &mut self,
         resource: T,
-        resource_key: Option<ResourceKey<T>>,
+        resource_key: StorageTargetKey<T>,
     ) {
         let key = Self::key::<T>(resource_key);
 
@@ -69,7 +71,7 @@ impl StorageTarget for Shared {
 
     fn take_resource<T: Send + Sync + 'static>(
         &mut self,
-        resource_key: Option<ResourceKey<T>>,
+        resource_key: StorageTargetKey<T>,
     ) -> Option<Box<T>> {
         let key = Self::key::<T>(resource_key);
         let resource = self.resources.remove(&key);
@@ -107,7 +109,7 @@ impl StorageTarget for Shared {
 
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
-        resource_key: Option<ResourceKey<T>>,
+        resource_key: StorageTargetKey<T>,
     ) -> Option<Self::BorrowResource<'b, T>> {
         let key = Self::key::<T>(resource_key);
 
@@ -129,7 +131,7 @@ impl StorageTarget for Shared {
 
     fn resource_mut<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a mut self,
-        resource_key: Option<ResourceKey<T>>,
+        resource_key: StorageTargetKey<T>,
     ) -> Option<Self::BorrowMutResource<'b, T>> {
         let key = Self::key::<T>(resource_key);
 
@@ -170,7 +172,7 @@ fn from_ref_mut<T: ?Sized>(r: &mut T) -> *mut T {
 #[tokio::test]
 async fn test_complex() {
     let mut shared = Shared::default();
-    let resource_key = Some(ResourceKey::with_label("hello-complex"));
+    let resource_key = ResourceKey::with_hash("hello-complex");
     shared.put_resource(0u64, resource_key);
 
     borrow_mut!(shared, u64, "hello-complex", |r| => {
@@ -201,7 +203,7 @@ async fn test_async_dispatcher() {
     let shared = Shared::default().into_thread_safe();
 
     // Test initalizing a resource dispatcher and queueing dispatches
-    let mut dispatcher = shared.intialize_dispatcher::<(u64, u64)>(None).await;
+    let mut dispatcher = shared.intialize_dispatcher::<(u64, u64)>(ResourceKey::none()).await;
     dispatcher.queue_dispatch_mut(|(a, b)| {
         *a += 1;
         *b += 2;

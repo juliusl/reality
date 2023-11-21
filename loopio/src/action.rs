@@ -1,3 +1,7 @@
+use std::pin::Pin;
+
+use anyhow::anyhow;
+use futures_util::Future;
 use reality::HostedResource;
 use reality::ResourceKey;
 use reality::CallOutput;
@@ -35,7 +39,7 @@ pub trait Action {
 
     /// Returns the plugin fn resource key for this action,
     /// 
-    fn plugin_rk(&self) -> Option<ResourceKey<attributes::Attribute>>;
+    fn plugin_rk(&self) -> ResourceKey<attributes::Attribute>;
 
     /// Returns the current context,
     ///
@@ -58,6 +62,23 @@ pub trait Action {
         self.context().spawn(|mut tc| async move {
             <Self as CallAsync>::call(&mut tc).await?;
             Ok(tc)
+        })
+    }
+
+    /// Returns a future that contains the result of the action,
+    /// 
+    fn spawn_call(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<ThunkContext>> + '_>> {
+        Box::pin(async move {
+            let r = self.into_hosted_resource();
+            if let Some(s) = r.spawn() {
+                if let Ok(s) = s.await {
+                    s
+                } else {
+                    Err(anyhow!("Task could not join"))
+                }
+            } else {
+                Err(anyhow!("Did not spawn a a task"))
+            }
         })
     }
 

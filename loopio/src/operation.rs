@@ -18,7 +18,6 @@ use tracing::trace;
 use tracing::warn;
 
 use crate::prelude::Action;
-use crate::prelude::Instruction;
 use reality::prelude::*;
 
 /// Struct for a top-level node,
@@ -70,18 +69,13 @@ async fn debug_op(tc: &mut ThunkContext) -> anyhow::Result<()> {
             {
                 let node = tc.node().await;
                 let mut tc = tc.clone();
-                #[allow(unused_assignments)]
-                let mut previous = tc.clone();
-                if let Some(func) = node.current_resource::<ThunkFn>(Some(attr.transmute())) {
-                    previous = tc.clone();
-                    tc.attribute = Some(attr);
+                if let Some(func) = node.current_resource::<ThunkFn>(attr.transmute()) {
+                    tc.attribute = attr;
                     match (func)(tc.clone()) {
                         CallOutput::Spawn(Some(jh)) => {
                             tc = jh.await??;
                         }
-                        CallOutput::Skip | CallOutput::Spawn(None) => {
-                            tc = previous;
-                        }
+                        CallOutput::Skip | CallOutput::Spawn(None) => {}
                         CallOutput::Abort(err) => err?,
                     }
                 } else {
@@ -285,8 +279,8 @@ impl Action for Operation {
 
     fn bind_plugin(&mut self, _: ResourceKey<reality::attributes::Attribute>) {}
 
-    fn plugin_rk(&self) -> Option<ResourceKey<reality::attributes::Attribute>> {
-        None
+    fn plugin_rk(&self) -> ResourceKey<reality::attributes::Attribute> {
+        ResourceKey::none()
     }
 }
 

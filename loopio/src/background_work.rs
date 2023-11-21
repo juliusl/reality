@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use crate::host::HostCondition;
 use crate::prelude::Action;
 use crate::prelude::Address;
-use crate::prelude::EnableWireBus;
+
 use crate::prelude::EngineHandle;
 use crate::prelude::Ext;
 
@@ -46,7 +46,7 @@ async fn create_background_work_handle(tc: &mut ThunkContext) -> anyhow::Result<
     println!("Saving to transient {}", engine.is_some());
     _bh.tc
         .write_cache(engine.expect("should be bound to an engine"));
-    tc.transient_mut().await.put_resource(_bh, None);
+    tc.transient_mut().await.put_resource(_bh, ResourceKey::none());
     Ok(())
 }
 
@@ -286,9 +286,44 @@ where
         Box::pin(async move {
             // TODO: v3 -- with tower-support could add an additional dimension
             // 
-            <EnableWireBus as CallAsync>::call(&mut context).await?;
+           //  <EnableWireBus as CallAsync>::call(&mut context).await?;
             <P as CallAsync>::call(&mut context).await?;
             Ok(context)
         })
     }
+}
+
+
+struct ThunkWorker {
+    inner: Dispatcher<Shared, ThunkContext>
+}
+
+impl ThunkWorker {
+    pub fn dispatcher_mut(&mut self) -> &mut Dispatcher<Shared, ThunkContext> {
+        &mut self.inner
+    }
+}
+
+#[tokio::test]
+async fn test_worker() {
+    let shared = Shared::default().into_thread_safe();
+    let mut disp = shared.intialize_dispatcher::<ThunkContext>(ResourceKey::with_hash("test")).await;
+    task_mut!(disp, |tc| => { 
+        tc.write_cache(10usize);
+        async {
+            
+        }
+    });
+
+    disp.dispatch_all().await;
+
+    task_mut!(disp, |tc| => { 
+        assert_eq!(10usize, tc.cached::<usize>().unwrap_or(0));
+        eprintln!("called");
+        async {
+            
+        }
+    });
+    disp.dispatch_all().await;
+    ()
 }

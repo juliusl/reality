@@ -53,6 +53,7 @@ pub mod prelude {
     /// 
     pub(super) type DispatchOwnedTaskQueue<S> =  std::sync::Mutex<std::collections::VecDeque<OwnedTaskFn<S>>>;
 
+    pub use super::target::StorageTargetKey;
     pub use super::target::StorageTarget;
     pub use super::resource_key::ResourceKey;
     pub use super::resource_key::ResourceKeyHashBuilder;

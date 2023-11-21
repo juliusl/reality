@@ -41,7 +41,7 @@ pub trait Plugin: BlockObject<Shared> + CallAsync + Clone + Default {
             unsafe {
                 c.node_mut()
                     .await
-                    .put_resource(frame, c.attribute.map(|c| c.transmute()))
+                    .put_resource(frame, c.attribute.transmute())
             }
             Ok(c)
         }))

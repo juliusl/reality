@@ -61,13 +61,13 @@ async fn enable_wire_bus(tc: &mut ThunkContext) -> anyhow::Result<()> {
                 // Creates a new wire bus
                 path.context_mut().node_mut()
                     .await
-                    .put_resource(WireBus { frame }, attr.map(|a| a.transmute()));
+                    .put_resource(WireBus { frame }, attr.transmute());
 
                 // If enabled this will enable frame updates for the plugin,
                 if init.allow_frame_updates {
                     path.context_mut().node_mut().await.maybe_put_resource::<FrameUpdates>(
                         FrameUpdates::default(),
-                        attr.map(|a| a.transmute()),
+                        attr.transmute(),
                     );
                 }
             };

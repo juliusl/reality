@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use async_stream::stream;
 use futures_util::stream::BoxStream;
 use futures_util::Future;
@@ -10,10 +8,10 @@ use tracing::debug;
 use tracing::trace;
 use uuid::Uuid;
 
+use crate::StorageTargetKey;
 use crate::prelude::Latest;
 use crate::AsyncStorageTarget;
 use crate::Attribute;
-use crate::BlockObject;
 use crate::Decoration;
 use crate::Dispatcher;
 use crate::Frame;
@@ -33,9 +31,6 @@ use super::prelude::*;
 ///
 #[derive(Clone)]
 pub struct Context {
-    /// Map of host storages this context can access,
-    ///
-    pub hosts: BTreeMap<String, AsyncStorageTarget<Shared>>,
     /// Node storage mapping to this context,
     ///
     pub node: AsyncStorageTarget<Shared>,
@@ -47,7 +42,7 @@ pub struct Context {
     pub cancellation: tokio_util::sync::CancellationToken,
     /// Attribute for this context,
     ///
-    pub attribute: Option<ResourceKey<Attribute>>,
+    pub attribute: StorageTargetKey<Attribute>,
     /// If the context has been branched, this will be the Uuid assigned to the variant,
     ///
     pub variant_id: Option<Uuid>,
@@ -66,8 +61,7 @@ impl From<AsyncStorageTarget<Shared>> for Context {
         let handle = value.runtime.clone().expect("should have a runtime");
         Self {
             node: value,
-            hosts: BTreeMap::new(),
-            attribute: None,
+            attribute: ResourceKey::none(),
             transient: Shared::default().into_thread_safe_with(handle),
             cancellation: CancellationToken::new(),
             variant_id: None,
@@ -89,6 +83,7 @@ impl Context {
     pub fn new() -> Self {
         Self::from(Shared::default().into_thread_safe())
     }
+
     /// Returns the value of a property decoration if found,
     ///
     pub fn property(&self, name: impl AsRef<str>) -> Option<&String> {
@@ -101,7 +96,7 @@ impl Context {
     /// Returns the parsed block,
     /// 
     pub async fn parsed_block(&self) -> Option<ParsedBlock> {
-        self.node().await.current_resource::<ParsedBlock>(None)
+        self.node().await.current_resource::<ParsedBlock>(StorageTargetKey::none())
     }
 
     /// Creates a branched thunk context,
@@ -111,9 +106,10 @@ impl Context {
         let mut next = self.clone();
         // Create a variant for the type created here
         let variant_id = uuid::Uuid::new_v4();
-        if let Some(attr) = next.attribute.as_mut() {
-            *attr = attr.branch(variant_id);
-        }
+
+        let _next = next.attribute.branch(variant_id);
+        next.attribute = _next;
+
         next.variant_id = Some(variant_id);
         (variant_id, next)
     }
@@ -123,7 +119,7 @@ impl Context {
     pub async fn tag(&self) -> Option<Tag> {
         self.node()
             .await
-            .current_resource(self.attribute.map(|a| a.transmute()))
+            .current_resource(self.attribute.transmute())
     }
 
     /// Reset the transient storage,
@@ -136,42 +132,13 @@ impl Context {
     /// Sets the attribute for this context,
     ///
     pub fn set_attribute(&mut self, attribute: ResourceKey<Attribute>) {
-        self.attribute = Some(attribute);
+        self.attribute = attribute;
     }
 
     /// Get read access to source storage,
     ///
     pub async fn node(&self) -> tokio::sync::RwLockReadGuard<Shared> {
         self.node.storage.read().await
-    }
-
-    /// Get mutable access to host storage,
-    ///
-    /// # Safety
-    ///
-    /// Marked unsafe because will mutate the host storage. Host storage is shared by all contexts associated to a specific host.
-    ///
-    pub async unsafe fn host_mut(
-        &self,
-        name: impl AsRef<str>,
-    ) -> Option<tokio::sync::RwLockWriteGuard<Shared>> {
-        println!("Looking for {} in {:?}", name.as_ref(), self.hosts.keys());
-        if let Some(host) = self.hosts.get(name.as_ref()) {
-            Some(host.storage.write().await)
-        } else {
-            None
-        }
-    }
-
-    /// Get read access to host storage,
-    ///
-    pub async fn host(&self, name: impl AsRef<str>) -> Option<Shared> {
-        trace!("Looking for {} in {:?}", name.as_ref(), self.hosts.keys());
-        if let Some(host) = self.hosts.get(name.as_ref()) {
-            Some(host.storage.latest().await)
-        } else {
-            None
-        }
     }
 
     /// Get mutable access to source storage,
@@ -250,7 +217,7 @@ impl Context {
     pub async fn initialized<P: Plugin + Sync + Send + 'static>(&self) -> P {
         self.node()
             .await
-            .current_resource::<P>(self.attribute.map(|a| a.transmute()))
+            .current_resource::<P>(self.attribute.transmute())
             .unwrap_or_default()
     }
 
@@ -275,7 +242,7 @@ impl Context {
     pub async fn initialized_frame(&self) -> Frame {
         self.node()
             .await
-            .current_resource::<Frame>(self.attribute.map(|a| a.transmute()))
+            .current_resource::<Frame>(self.attribute.transmute())
             .unwrap_or_default()
     }
 
@@ -285,7 +252,7 @@ impl Context {
         &self,
     ) -> Dispatcher<Shared, T> {
         self.node
-            .intialize_dispatcher(self.attribute.map(|a| a.transmute()))
+            .intialize_dispatcher(self.attribute.transmute())
             .await
     }
 
@@ -300,10 +267,10 @@ impl Context {
     ) {
         let node = self.node().await;
         if let Some(resource) = {
-            node.current_resource::<P>(self.attribute.map(|a| a.transmute()))
+            node.current_resource::<P>(self.attribute.transmute())
                 .or_else(|| {
                     if include_root {
-                        node.current_resource::<P>(None)
+                        node.current_resource::<P>(ResourceKey::none())
                     } else {
                         None
                     }
@@ -320,7 +287,7 @@ impl Context {
         let next = self.initialized().await;
 
         self.__cached
-            .put_resource::<P>(next, self.attribute.map(|a| a.transmute()))
+            .put_resource::<P>(next, self.attribute.transmute())
     }
 
     /// Scans if a resource exists for the current context,
@@ -328,7 +295,7 @@ impl Context {
     pub async fn scan_node_for<P: ToOwned<Owned = P> + Sync + Send + 'static>(&self) -> Option<P> {
         self.node()
             .await
-            .current_resource::<P>(self.attribute.map(|a| a.transmute()))
+            .current_resource::<P>(self.attribute.transmute())
     }
 
     /// Scans the entire node for resources of type P,
@@ -339,7 +306,7 @@ impl Context {
             .stream_attributes()
             .fold(vec![], |mut acc, attr| async move {
                 let mut clone = self.clone();
-                clone.attribute = Some(attr);
+                clone.attribute = attr;
 
                 if let Some(init) = clone.scan_node_for::<P>().await {
                     acc.push(init);
@@ -361,7 +328,7 @@ impl Context {
         let mut acc = vec![];
         for attr in attrs {
             let mut clone = self.clone();
-            clone.attribute = Some(attr);
+            clone.attribute = attr;
 
             trace!("Scanning to take {:?}", &clone.attribute);
             if let Some(init) = clone.scan_take_node_for::<P>().await {
@@ -379,7 +346,7 @@ impl Context {
         unsafe {
             self.node_mut()
                 .await
-                .take_resource::<P>(self.attribute.map(|a| a.transmute()))
+                .take_resource::<P>(self.attribute.transmute())
                 .map(|p| *p)
         }
     }
@@ -396,35 +363,11 @@ impl Context {
                 .fold(vec![], |mut acc, m| async move { acc.push(m); acc }).await;
 
             for attr in attrs {
-                if let Some(init) = node.read().await.current_resource::<P>(Some(attr.transmute())) {
+                if let Some(init) = node.read().await.current_resource::<P>(attr.transmute()) {
                     yield init;
                 }
             }
         }.boxed()
-    }
-
-    /// Scans the host for resources of type P,
-    ///
-    pub async fn scan_host_for<P: Clone + Sync + Send + 'static>(
-        &self,
-        name: impl AsRef<str>,
-    ) -> Option<P> {
-        self.host(name.as_ref())
-            .await
-            .and_then(|h| h.current_resource::<P>(None))
-    }
-
-    /// Returns any extensions that may exist for this,
-    ///
-    pub async fn extension<
-        C: Clone + Send + Sync + 'static,
-        P: BlockObject<Shared> + Default + Clone + Sync + Send + 'static,
-    >(
-        &self,
-    ) -> Option<crate::Transform<C, P>> {
-        self.node()
-            .await
-            .current_resource::<crate::Transform<C, P>>(self.attribute.map(|a| a.transmute()))
     }
 
     /// Apply all thunks in attribute order,
@@ -468,11 +411,6 @@ impl Context {
                 debug!("Applying changes to node storage");
                 self.node_mut().await.drain_dispatch_queues();
             }
-
-            for (host_name, host) in self.hosts.iter_mut() {
-                debug!(host_name, "Applying changes to host storage");
-                host.storage.write().await.drain_dispatch_queues();
-            }
         }
 
         self.set_attribute(attr);
@@ -489,7 +427,7 @@ impl Context {
     ///
     pub async fn navigate(&self, path: impl AsRef<str>) -> Option<HostedResource> {
         let node = self.node().await;
-        if let Some(block) = node.resource::<ParsedBlock>(None) {
+        if let Some(block) = node.resource::<ParsedBlock>(ResourceKey::none()) {
             eprintln!("Looking for resource at: {}", path.as_ref());
             if let Some(hosted_resource) = block.find_resource(path.as_ref().to_string()) {
                 eprintln!("Found hosted resource: {:?}", hosted_resource);
@@ -505,7 +443,11 @@ impl Context {
     /// Schedules garbage collection of the variant,
     ///
     pub fn garbage_collect(&self) {
-        if let (Some(key), Some(_), Ok(storage)) = (
+        if self.attribute.is_none() {
+            return;
+        }
+
+        if let (key, Some(_), Ok(storage)) = (
             self.attribute,
             self.variant_id,
             self.node.storage.try_read(),
@@ -523,7 +465,7 @@ impl Context {
         let thunk = self
             .node()
             .await
-            .current_resource::<ThunkFn>(self.attribute.map(|a| a.transmute()));
+            .current_resource::<ThunkFn>(self.attribute.transmute());
         if let Some(thunk) = thunk {
             (thunk)(self.clone()).await
         } else {
@@ -537,7 +479,7 @@ impl Context {
         let thunk = self
             .node()
             .await
-            .current_resource::<EnableFrame>(self.attribute.map(|a| a.transmute()));
+            .current_resource::<EnableFrame>(self.attribute.transmute());
         if let Some(EnableFrame(thunk)) = thunk {
             (thunk)(self.clone()).await
         } else {
@@ -605,7 +547,7 @@ impl Interactive {
 
         p.sync(&tc);
         tc.decoration = tc
-            .fetch_kv::<Decoration>(tc.attribute.unwrap_or_default())
+            .fetch_kv::<Decoration>(tc.attribute)
             .map(|(_, deco)| deco.clone());
         p
     }
@@ -653,9 +595,8 @@ where
         let node = self.context.node().await;
 
         println!("Looking for updates {:?}", self.context.attribute);
-
         if let Some(packets) =
-            node.resource::<FrameUpdates>(self.context.attribute.map(|a| a.transmute()))
+            node.resource::<FrameUpdates>(self.context.attribute.transmute())
         {
             println!(
                 "Frame updates enabled, applying field packets, {}",
@@ -685,10 +626,10 @@ where
         // Index decorations into the current cache,
         {
             let node = self.context.node().await;
-            if let Some(parsed) = node.current_resource::<ParsedAttributes>(None) {
+            if let Some(parsed) = node.current_resource::<ParsedAttributes>(ResourceKey::none()) {
                 drop(node);
                 parsed
-                    .index_decorations(&self.context.attribute.unwrap_or_default(), self.context)
+                    .index_decorations(self.context.attribute, self.context)
                     .await;
             }
         }

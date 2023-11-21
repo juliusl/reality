@@ -1,11 +1,14 @@
 use core::slice;
 
 use std::collections::hash_map::DefaultHasher;
+use std::convert::Infallible;
 use std::hash::Hasher;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use serde::Serialize;
 use serde::Deserialize;
+
+use super::target::StorageTargetKey;
 
 /// Build a resource key,
 ///
@@ -54,6 +57,7 @@ pub struct ResourceKey<T: Send + Sync + 'static> {
     _t: PhantomData<T>,
 }
 
+
 impl<T: Send + Sync + 'static> Default for ResourceKey<T> {
     fn default() -> Self {
         Self::new()
@@ -61,6 +65,23 @@ impl<T: Send + Sync + 'static> Default for ResourceKey<T> {
 }
 
 impl<T: Send + Sync + 'static> ResourceKey<T> {
+    /// Empty resource key,
+    /// 
+    pub const fn none() -> ResourceKey<T> {
+        ResourceKey { data: 0, _t: PhantomData }
+    }
+
+    pub const fn is_none(&self) -> bool {
+        self.data == 0
+    }
+
+    pub const fn expect_not_root(self) -> Self {
+        if self.is_none() {
+            panic!("expected not root");
+        }
+        self
+    }
+
     /// Creates a new resource-key for a type,
     ///
     pub fn new() -> Self {
@@ -68,19 +89,6 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         let (sizes, flags) = Self::type_sizes();
 
         uuid::Uuid::from_fields(sizes, 0, flags.bits(), &type_key.to_ne_bytes()).into()
-    }
-
-    /// Creates a new resource-key deriving w/ associated label,
-    ///
-    pub fn with_label(label: &'static str) -> Self {
-        let key = label.as_ptr() as u64;
-
-        let type_key = Self::type_key();
-        let key = type_key ^ key;
-
-        let (sizes, flags) = Self::label_sizes(label);
-
-        uuid::Uuid::from_fields(sizes, 0, flags.bits(), &key.to_ne_bytes()).into()
     }
 
     /// Creates a new resource-key derived from hashable input,
@@ -214,23 +222,6 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         u64::from_ne_bytes(*uuid::Uuid::from_u128(self.data).as_fields().3)
     }
 
-    /// Returns the label sizes,
-    ///
-    fn label_sizes(label: &'static str) -> (u32, ResourceKeyFlags) {
-        let type_size = std::mem::size_of::<T>() as u32;
-        let label_len = label.len() as u32;
-
-        let sizes = type_size ^ label_len;
-        if sizes == 0 {
-            (
-                sizes,
-                ResourceKeyFlags::WITH_LABEL | ResourceKeyFlags::TYPE_SIZE_EQ_LABEL_LEN,
-            )
-        } else {
-            (sizes, ResourceKeyFlags::WITH_LABEL)
-        }
-    }
-
     /// Returns the type sizes,
     ///
     fn type_sizes() -> (u32, ResourceKeyFlags) {
@@ -293,13 +284,13 @@ impl<T: Send + Sync + 'static> From<uuid::Uuid> for ResourceKey<T> {
 }
 
 impl<T: Send + Sync + 'static> TryFrom<Option<&'static str>> for ResourceKey<T> {
-    type Error = Option<ResourceKey<T>>;
+    type Error = StorageTargetKey<T>;
 
     fn try_from(value: Option<&'static str>) -> Result<Self, Self::Error> {
         if let Some(value) = value {
-            Ok(ResourceKey::with_label(value))
+            Ok(ResourceKey::with_hash(value))
         } else {
-            Err(None)
+            Err(ResourceKey::none())
         }
     }
 }
@@ -363,7 +354,7 @@ fn test_resource_key() {
     println!("{:x}", std::ptr::addr_of!(id) as u64);
     println!("{:?}", std::any::type_name::<Test>().as_ptr());
 
-    let key = ResourceKey::<Test>::with_label("test_label");
+    let key = ResourceKey::<Test>::with_hash("test_label");
     let key_with_label = key.key();
     println!("{:?} {}", key.label(), key_with_label);
 

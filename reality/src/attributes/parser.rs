@@ -43,7 +43,7 @@ pub struct HostedResource {
     pub node_rk: ResourceKey<crate::attributes::Node>,
     /// The hosted resource key,
     ///
-    pub rk: Option<ResourceKey<Attribute>>,
+    pub rk: ResourceKey<Attribute>,
     /// Any decorations to add w/ this resource,
     ///
     pub decoration: Option<Decoration>,
@@ -131,7 +131,7 @@ impl ParsedBlock {
             .or_insert(HostedResource {
                 address: path,
                 node_rk: node,
-                rk: Some(resource),
+                rk: resource,
                 decoration,
                 binding: None,
             })
@@ -393,17 +393,17 @@ impl ParsedAttributes {
     /// Finds any parsed extras for a resource key,
     ///
     #[inline]
-    pub async fn index_decorations(&self, rk: &ResourceKey<Attribute>, tc: &mut ThunkContext) {
+    pub async fn index_decorations(&self, rk: ResourceKey<Attribute>, tc: &mut ThunkContext) {
         tc.store_kv(
             rk,
             Decoration {
-                comment_properties: self.comment_properties.get(rk).cloned(),
-                doc_headers: self.doc_headers.get(rk).cloned(),
+                comment_properties: self.comment_properties.get(&rk).cloned(),
+                doc_headers: self.doc_headers.get(&rk).cloned(),
             },
         );
 
         let mut props = vec![];
-        if let Some(properties) = self.properties.defined.get(rk) {
+        if let Some(properties) = self.properties.defined.get(&rk) {
             for prop in properties {
                 tc.store_kv(
                     prop,
@@ -420,7 +420,7 @@ impl ParsedAttributes {
         {
             let node = tc.node().await;
             for prop in props {
-                if let Some(fp) = node.current_resource::<FieldPacket>(Some(prop.transmute())) {
+                if let Some(fp) = node.current_resource::<FieldPacket>(prop.transmute()) {
                     packets.push((*prop, fp));
                 }
             }
@@ -515,7 +515,7 @@ impl<S: StorageTarget> AttributeParser<S> {
         &mut self,
         source: impl AsRef<str>,
     ) -> anyhow::Result<ResourceKey<T>> {
-        let mut parsed_key = None;
+        let mut parsed_key = ResourceKey::none();
 
         let idx = self.attributes.len();
         let key = ResourceKey::<Attribute>::with_hash(idx);
@@ -526,19 +526,16 @@ impl<S: StorageTarget> AttributeParser<S> {
             let init = source.as_ref().parse::<T>().map_err(|_| {
                 anyhow::anyhow!("Could not parse {} from {}", std::any::type_name::<T>(), source.as_ref())
             })?;
-            parsed_key = Some(key.transmute());
+            parsed_key = key.transmute();
             storage.lazy_put_resource(init, parsed_key);
             if let Some(tag) = self.tag() {
-                storage.lazy_put_resource(Tag(tag.to_string()), parsed_key.map(|k| k.transmute()));
+                storage.lazy_put_resource(Tag(tag.to_string()), parsed_key.transmute());
             }
         }
 
-        if parsed_key.is_some() {
+        if parsed_key.is_none() {
             self.attributes.push(key);
-        }
-
-        if let Some(parsed_key) = parsed_key {
-            Ok(parsed_key)
+            Ok(parsed_key.transmute())
         } else {
             Err(anyhow::anyhow!("Could not parsed attribute"))
         }
@@ -848,7 +845,7 @@ where
 
     fn completed(mut self: Box<Self>) {
         if let Some(storage) = self.storage() {
-            storage.lazy_put_resource(self.attributes.clone(), None);
+            storage.lazy_put_resource(self.attributes.clone(), ResourceKey::none());
         }
 
         if let Some(mut storage) = self.storage_mut() {

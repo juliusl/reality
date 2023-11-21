@@ -54,9 +54,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
         // If enabled, allows available field packets to be decoded,
         {
             let node = editing.node().await;
-            if let Some(bus) =
-                node.current_resource::<WireBus>(editing.attribute.map(|a| a.transmute()))
-            {
+            if let Some(bus) = node.current_resource::<WireBus>(editing.attribute.transmute()) {
                 info!("Found wire bus");
                 drop(node);
                 editing.maybe_write_cache(bus);
@@ -67,7 +65,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
         {
             let node = editing.node().await;
             if let Some(change_pipeline) =
-                node.current_resource::<FrameUpdates>(editing.attribute.map(|a| a.transmute()))
+                node.current_resource::<FrameUpdates>(editing.attribute.transmute())
             {
                 info!("Found change pipeline");
                 drop(node);
@@ -79,16 +77,16 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
         // Gets the current parsed attributes state of the target attribute,
         {
             let node = editing.node().await;
-            if let Some(parsed_attributes) = node.current_resource::<ParsedAttributes>(None) {
+            if let Some(parsed_attributes) =
+                node.current_resource::<ParsedAttributes>(loopio::prelude::ResourceKey::none())
+            {
                 info!("Found parsed attributes");
                 drop(node);
                 if editing.maybe_write_cache(parsed_attributes).is_some() {
                     if let Some(parsed) = editing.cached::<ParsedAttributes>() {
-                        parsed
-                            .index_decorations(&editing.attribute.unwrap(), editing)
-                            .await;
+                        parsed.index_decorations(editing.attribute, editing).await;
 
-                        editing.store_kv(&editing.attribute.unwrap(), recv);
+                        editing.store_kv(editing.attribute, recv);
                     }
                 }
             }
@@ -105,9 +103,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                 ui.window(format!("Frame Editor - {}", title))
                     .size([800.0, 600.0], imgui::Condition::Once)
                     .build(|| {
-                        if let Some(rk) = tc.attribute.as_ref().map(|r| r.key()) {
-                            ui.label_text("Resource Key", rk.to_string());
-                        }
+                        ui.label_text("Resource Key", tc.attribute.key().to_string());
 
                         // if ui.collapsing_header("DEBUG --", TreeNodeFlags::empty()) {
                         //     ui.text(debug);
@@ -342,7 +338,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                         println!("{:#?}", cache);
                                         tc.node_mut().await.put_resource::<FrameUpdates>(
                                             *cache,
-                                            tc.attribute.map(|a| a.transmute()),
+                                            tc.attribute.transmute(),
                                         );
                                     }
                                     Ok(tc)
@@ -543,16 +539,15 @@ impl FieldWidget {
 fn defined_properties_section(tc: &ThunkContext, ui: &imgui::Ui) {
     let mut render_properties = vec![];
     if let Some(parsed) = tc.cached_ref::<ParsedAttributes>() {
-        if let Some(rk) = tc.attribute.as_ref() {
-            render_properties.push(|| {
-                view_decorations(*rk, &tc, ui);
-                if let Some(defined) = parsed.properties.defined.get(rk) {
-                    for prop in defined.clone() {
-                        view_decorations(prop, &tc, ui);
-                    }
+        let rk = tc.attribute;
+        render_properties.push(|| {
+            view_decorations(rk, &tc, ui);
+            if let Some(defined) = parsed.properties.defined.get(&rk) {
+                for prop in defined.clone() {
+                    view_decorations(prop, &tc, ui);
                 }
-            });
-        }
+            }
+        });
 
         if ui.collapsing_header("Defined Properties", TreeNodeFlags::empty()) {
             for r in render_properties {
@@ -663,12 +658,10 @@ fn action_button(
         if panel_name == name {
             if !field.is_empty() {
                 if ui.button(field) {
-                    __tc.clone().spawn_call();
                     eprintln!("{} pressed", field);
                 }
             } else {
                 if ui.button("Start") {
-                    __tc.clone().spawn_call();
                     eprintln!("start pressed");
                 }
             }

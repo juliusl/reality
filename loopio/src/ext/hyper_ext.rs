@@ -14,7 +14,10 @@ use serde::Deserialize;
 use serde::Serialize;
 use tracing::warn;
 
+use crate::prelude::Action;
 use crate::prelude::EngineProxy;
+
+use super::Ext;
 
 /// Type-alias for a secure client,
 ///
@@ -65,7 +68,7 @@ pub trait HyperExt {
 ///
 macro_rules! do_request {
     ($source:ident, $request:ident, $client:ty) => {
-        if let Some(client) = $source.resource::<$client>(None) {
+        if let Some(client) = $source.resource::<$client>(ResourceKey::none()) {
             let response = client.request($request).await?;
             Ok(response)
         } else {
@@ -93,7 +96,7 @@ impl HyperExt for ThunkContext {
     async fn take_response(&mut self) -> Option<hyper::Response<hyper::Body>> {
         self.transient_mut()
             .await
-            .take_resource::<Response<Body>>(None)
+            .take_resource::<Response<Body>>(ResourceKey::none())
             .map(|r| *r)
     }
 
@@ -112,14 +115,23 @@ impl HyperExt for ThunkContext {
 
         let init = self.initialized::<EngineProxy>().await;
 
-        if let Some(mut transport) =
-            unsafe { self.host_mut(alias.scheme_str().unwrap_or_default()).await }
-        {
-            transport.put_resource(init, None);
+        // if let Some(eh) = self.engine_handle().await {
+        //     if let Ok(host) = eh
+        //         .hosted_resource(format!("{}://", alias.scheme_str().unwrap_or_default()))
+        //         .await
+        //     {
+        //         unsafe {
+        //             let host = host.context().node_mut().await;
+        //             host.put_resource(init, None);
 
-            let key = ResourceKey::<(Option<Scheme>, Option<String>, Option<u16>)>::with_hash(key);
-            transport.put_resource(value, Some(key));
-        }
+        //             let key =
+        //                 ResourceKey::<(Option<Scheme>, Option<String>, Option<u16>)>::with_hash(
+        //                     key,
+        //                 );
+        //             host.put_resource(value, Some(key));
+        //         }
+        //     }
+        // }
     }
 
     /// Lookup an alias for a host internall w/ the scheme/host of a uri being resolved,
@@ -128,45 +140,60 @@ impl HyperExt for ThunkContext {
     ///
     async fn internal_host_lookup(&mut self, resolve: &Uri) -> Option<Uri> {
         let key = (resolve.scheme(), resolve.host());
-        let key = ResourceKey::with_hash(key);
+        
+        if let Some(eh) = self.engine_handle().await {
+            let host = if let Ok(host) = eh
+                .hosted_resource(format!("{}://", resolve.scheme_str().unwrap_or_default()))
+                .await
+            {
+                let host = host.context().node().await;
 
-        let transport = self.host(resolve.scheme_str().unwrap_or_default()).await;
-        let alias = transport.and_then(|t| {
-            t.resource::<(Option<Scheme>, Option<String>, Option<u16>)>(Some(key))
-                .as_deref()
-                .cloned()
-        });
-        match alias {
-            Some(parts) => match parts {
-                (Some(scheme), Some(host), Some(port)) => Uri::builder()
-                    .scheme(scheme.clone())
-                    .authority(format!("{}:{}", host, port))
-                    .path_and_query(
-                        resolve
-                            .path_and_query()
-                            .cloned()
-                            .unwrap_or(PathAndQuery::from_static("/")),
-                    )
-                    .build()
-                    .ok(),
-                (Some(scheme), Some(host), None) => Uri::builder()
-                    .scheme(scheme.clone())
-                    .authority(host.as_str())
-                    .path_and_query(
-                        resolve
-                            .path_and_query()
-                            .cloned()
-                            .unwrap_or(PathAndQuery::from_static("/")),
-                    )
-                    .build()
-                    .ok(),
-                _ => None,
-            },
-            None => {
-                warn!("Did not find internal host for {:?}", resolve);
+                let key =
+                    ResourceKey::<(Option<Scheme>, Option<String>, Option<u16>)>::with_hash(key);
+                let alias = host
+                    .resource::<(Option<Scheme>, Option<String>, Option<u16>)>(key)
+                    .as_deref()
+                    .cloned();
+
+                match alias {
+                    Some(parts) => match parts {
+                        (Some(scheme), Some(host), Some(port)) => Uri::builder()
+                            .scheme(scheme.clone())
+                            .authority(format!("{}:{}", host, port))
+                            .path_and_query(
+                                resolve
+                                    .path_and_query()
+                                    .cloned()
+                                    .unwrap_or(PathAndQuery::from_static("/")),
+                            )
+                            .build()
+                            .ok(),
+                        (Some(scheme), Some(host), None) => Uri::builder()
+                            .scheme(scheme.clone())
+                            .authority(host.as_str())
+                            .path_and_query(
+                                resolve
+                                    .path_and_query()
+                                    .cloned()
+                                    .unwrap_or(PathAndQuery::from_static("/")),
+                            )
+                            .build()
+                            .ok(),
+                        _ => None,
+                    },
+                    None => {
+                        warn!("Did not find internal host for {:?}", resolve);
+                        None
+                    }
+                }
+            } else {
                 None
-            }
+            };
+
+            return host;
         }
+
+        None
     }
 }
 
@@ -189,13 +216,13 @@ impl std::ops::DerefMut for UriParam {
 
 impl AsRef<Uri> for UriParam {
     fn as_ref(&self) -> &Uri {
-        &self.0.0
+        &self.0 .0
     }
 }
 
 impl AsMut<Uri> for UriParam {
     fn as_mut(&mut self) -> &mut Uri {
-        &mut self.0.0
+        &mut self.0 .0
     }
 }
 
@@ -216,7 +243,7 @@ impl Default for UriParam {
 }
 
 #[derive(Reality, Deserialize, Serialize, Default, Debug, Clone)]
-#[reality(plugin, group="loopio.hyper")]
+#[reality(plugin, group = "loopio.hyper")]
 pub struct Request {
     /// Uri to make request to,
     ///
@@ -290,7 +317,7 @@ impl CallAsync for Request {
             .request(request, uri.scheme_str() == Some("https"))
             .await?;
 
-        context.transient_mut().await.put_resource(response, None);
+        context.transient_mut().await.put_resource(response, ResourceKey::none());
 
         Ok(())
     }

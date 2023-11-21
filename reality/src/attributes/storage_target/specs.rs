@@ -20,7 +20,7 @@ impl StorageTarget for World {
 
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
-        resource_key: Option<ResourceKey<T>>
+        resource_key: StorageTargetKey<T>
     ) -> Option<Self::BorrowResource<'b, T>> {
         if let Some(resource_key) = resource_key {
             self.try_fetch_by_id::<T>(ResourceId::new_with_dynamic_id::<T>(resource_key.key()))
@@ -31,7 +31,7 @@ impl StorageTarget for World {
 
     fn resource_mut<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a mut self,
-        resource_key: Option<ResourceKey<T>>
+        resource_key: StorageTargetKey<T>
     ) -> Option<Self::BorrowMutResource<'b, T>> {
         if let Some(resource_key) = resource_key {
             self.try_fetch_mut_by_id(ResourceId::new_with_dynamic_id::<T>(resource_key.key()))
@@ -43,7 +43,7 @@ impl StorageTarget for World {
     fn put_resource<T: Send + Sync + 'static>(
         &mut self, 
         resource: T, 
-        resource_key: Option<ResourceKey<T>>
+        resource_key: StorageTargetKey<T>
     ) {
         if let Some(resource_key) = resource_key {
             let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_key.key());
@@ -73,7 +73,7 @@ impl StorageTarget for World {
 
     fn take_resource<T: Send + Sync + 'static>(
         &mut self, 
-        resource_key: Option<ResourceKey<T>>
+        resource_key: StorageTargetKey<T>
     ) -> Option<Box<T>> {
         if let Some(resource_key) = resource_key {
             let resource_id = ResourceId::new_with_dynamic_id::<T>(resource_key.key());

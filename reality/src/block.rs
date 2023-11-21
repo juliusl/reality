@@ -7,6 +7,7 @@ use crate::AttributeParser;
 use crate::AttributeType;
 use crate::AttributeTypeParser;
 use crate::FieldPacket;
+use crate::ResourceKey;
 use crate::SetField;
 use crate::StorageTarget;
 use crate::ToFrame;
@@ -189,13 +190,13 @@ impl FromStr for Test {
 #[runmd::prelude::async_trait]
 impl<Storage: StorageTarget + Send + Sync + 'static> BlockObject<Storage> for Test {
     async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>) {
-        let dispatcher = storage.intialize_dispatcher::<()>(None).await;
+        let dispatcher = storage.intialize_dispatcher::<()>(ResourceKey::none()).await;
         let mut storage = storage.storage.write().await;
-        storage.put_resource(dispatcher, None);
+        storage.put_resource(dispatcher, ResourceKey::none());
     }
 
     async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>) {
-        let mut disp = storage.dispatcher::<u64>(None).await;
+        let mut disp = storage.dispatcher::<u64>(ResourceKey::none()).await;
         disp.dispatch_all().await;
     }
 
@@ -207,7 +208,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> BlockObject<Storage> for Te
 }
 
 impl ToFrame for Test {
-    fn to_frame(&self, key: Option<crate::ResourceKey<crate::Attribute>>) -> crate::Frame {
+    fn to_frame(&self, key: crate::ResourceKey<crate::Attribute>) -> crate::Frame {
         crate::Frame {
             fields: vec![],
             recv: self.receiver_packet(key),

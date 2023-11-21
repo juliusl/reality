@@ -88,11 +88,11 @@ pub struct FrameUpdates(pub Frame);
 pub trait ToFrame : AttributeType<Shared> {
     /// Returns the current type as a Frame,
     ///
-    fn to_frame(&self, key: Option<ResourceKey<Attribute>>) -> Frame;
+    fn to_frame(&self, key: ResourceKey<Attribute>) -> Frame;
 
     /// Returns the current type as a Frame w/ wire data set,
     /// 
-    fn to_wire_frame(&self, key: Option<ResourceKey<Attribute>>) -> Frame 
+    fn to_wire_frame(&self, key: ResourceKey<Attribute>) -> Frame 
     where
         Self: Sized + Serialize,
     {
@@ -103,7 +103,7 @@ pub trait ToFrame : AttributeType<Shared> {
 
     /// Returns an empty receiver packet,
     /// 
-    fn receiver_packet(&self, key: Option<ResourceKey<Attribute>>) -> FieldPacket 
+    fn receiver_packet(&self, key: ResourceKey<Attribute>) -> FieldPacket 
     where
         Self: Sized
     {
@@ -115,7 +115,7 @@ pub trait ToFrame : AttributeType<Shared> {
             field_offset: usize::MAX,
             field_name: Self::symbol().to_string(),
             owner_name: "self".to_string(),
-            attribute_hash: key.map(|k| k.data),
+            attribute_hash: if key.is_none() { None } else { Some(key.data) },
             op: 0,
         }
     }

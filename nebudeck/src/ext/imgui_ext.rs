@@ -4,6 +4,7 @@ use std::time::Instant;
 use imgui::Ui;
 use imgui_wgpu::RendererConfig;
 use imgui_winit_support::WinitPlatform;
+use loopio::engine::EnginePacket;
 use tokio::sync::RwLock;
 use tracing::error;
 use loopio::prelude::*;
@@ -29,7 +30,7 @@ pub mod wgpu {
 
 /// Wgpu system middleware that enables imgui plugins,
 ///
-pub struct ImguiMiddleware<T> {
+pub struct ImguiMiddleware {
     /// Handle to the compiled engine,
     ///
     engine: OnceCell<EngineHandle>,
@@ -63,12 +64,9 @@ pub struct ImguiMiddleware<T> {
     /// When this was last updated,
     ///
     __last_updated: Option<Instant>,
-    /// Unused,
-    ///
-    __t: PhantomData<T>,
 }
 
-impl<T: 'static> ImguiMiddleware<T> {
+impl ImguiMiddleware {
     pub const fn new() -> Self {
         Self {
             engine: OnceCell::new(),
@@ -82,7 +80,6 @@ impl<T: 'static> ImguiMiddleware<T> {
             __update_start: None,
             __last_updated: None,
             __aux_ui: vec![],
-            __t: PhantomData,
         }
     }
 
@@ -214,13 +211,13 @@ impl<T: 'static> ImguiMiddleware<T> {
     }
 }
 
-impl<T: 'static> Default for ImguiMiddleware<T> {
+impl Default for ImguiMiddleware {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: 'static> RenderPipelineMiddleware<T> for ImguiMiddleware<T> {
+impl RenderPipelineMiddleware for ImguiMiddleware {
     fn on_hardware(&mut self, hardware: &super::wgpu_ext::HardwareContext, window: &Window) {
         if let (Some(imgui_context), Some(platform)) =
             (self.context.get_mut(), self.platform.get_mut())
@@ -265,8 +262,8 @@ impl<T: 'static> RenderPipelineMiddleware<T> for ImguiMiddleware<T> {
     }
 }
 
-impl<T: 'static> DesktopApp<T> for ImguiMiddleware<T> {
-    fn before_event_loop(&mut self, _: &winit::window::Window, _: EventLoopProxy<T>) {
+impl DesktopApp for ImguiMiddleware {
+    fn before_event_loop(&mut self, _: &winit::window::Window, _: EventLoopProxy<EnginePacket>) {
         self.context
             .set(imgui::Context::create())
             .expect("should only be called once");
@@ -280,8 +277,8 @@ impl<T: 'static> DesktopApp<T> for ImguiMiddleware<T> {
 
     fn before_event(
         &mut self,
-        event: &winit::event::Event<T>,
-        context: &crate::desktop::DesktopContext<T>,
+        event: &winit::event::Event<EnginePacket>,
+        context: &crate::desktop::DesktopContext,
     ) {
         if let Some(imgui_context) = self.context.get_mut() {
             if let Some(platform) = self.platform.get_mut() {
@@ -300,14 +297,14 @@ impl<T: 'static> DesktopApp<T> for ImguiMiddleware<T> {
         self.update();
     }
 
-    fn on_user_event(&mut self, _user: &T, _context: &crate::desktop::DesktopContext<T>) {
+    fn on_user_event(&mut self, _user: &EnginePacket, _context: &crate::desktop::DesktopContext) {
         self.update();
     }
 
     fn on_window_redraw(
         &mut self,
         _: winit::window::WindowId,
-        context: &crate::desktop::DesktopContext<T>,
+        context: &crate::desktop::DesktopContext,
     ) {
         if let (Some(im_context), Some(platform)) =
             (self.context.get_mut(), self.platform.get_mut())
@@ -353,7 +350,7 @@ impl<T: 'static> DesktopApp<T> for ImguiMiddleware<T> {
     }
 }
 
-impl<T: 'static> ControlBus for ImguiMiddleware<T> {
+impl ControlBus for ImguiMiddleware {
     fn bind(&mut self, engine: EngineHandle) {
         // {
         //     // let stream = engine.scan_take_nodes::<UiNode>();
@@ -370,11 +367,11 @@ impl<T: 'static> ControlBus for ImguiMiddleware<T> {
     }
 }
 
-impl<T> ImguiMiddleware<T> {
+impl ImguiMiddleware {
     fn __middleware_tools(
         &mut self,
         _: winit::window::WindowId,
-        _: &crate::desktop::DesktopContext<T>,
+        _: &crate::desktop::DesktopContext,
         _ui: &Ui,
     ) {
     }
@@ -410,7 +407,7 @@ impl ImguiExt for ThunkContext {
         unsafe {
             self.node_mut()
                 .await
-                .put_resource(ui_node, self.attribute.map(|a| a.transmute()));
+                .put_resource(ui_node, self.attribute.transmute());
         };
     }
 
@@ -429,7 +426,7 @@ impl ImguiExt for ThunkContext {
         unsafe {
             self.node_mut()
                 .await
-                .put_resource(ui_node, self.attribute.map(|a| a.transmute()))
+                .put_resource(ui_node, self.attribute.transmute())
         };
     }
 }

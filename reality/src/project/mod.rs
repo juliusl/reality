@@ -83,7 +83,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
         let key = ResourceKey::with_hash(block_info);
 
         self.root
-            .put_resource::<BlockPlugin<Storage::Namespace>>(Arc::new(plugin), Some(key));
+            .put_resource::<BlockPlugin<Storage::Namespace>>(Arc::new(plugin), key);
     }
 
     /// Adds a node plugin,
@@ -99,7 +99,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
         let key = ResourceKey::with_hash(name);
 
         self.root
-            .put_resource::<NodePlugin<Storage::Namespace>>(Arc::new(plugin), Some(key));
+            .put_resource::<NodePlugin<Storage::Namespace>>(Arc::new(plugin), key);
     }
 
     /// Load a file into the project,
@@ -133,7 +133,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
         for (rk, s) in nodes.deref().iter() {
             let s = s.read().await;
             
-            if let Some(parsed) = s.current_resource::<ParsedAttributes>(None) {
+            if let Some(parsed) = s.current_resource::<ParsedAttributes>(ResourceKey::none()) {
                 block.nodes.insert(rk.transmute(), parsed);
              }
         }
@@ -193,7 +193,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Loading<Storage> {
         if let Some(provider) = self
             .0
             .root
-            .current_resource::<BlockPlugin<Storage::Namespace>>(Some(key))
+            .current_resource::<BlockPlugin<Storage::Namespace>>(key)
         {
             provider(&mut parser);
         }
@@ -214,7 +214,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Loading<Storage> {
         if let Some(node_plugin) = self
             .0
             .root
-            .current_resource::<NodePlugin<Storage::Namespace>>(Some(node_plugin_key))
+            .current_resource::<NodePlugin<Storage::Namespace>>(node_plugin_key)
         {
             node_plugin(input, tag, parser);
         }
@@ -448,13 +448,13 @@ async fn test_project_parser() {
         let node = node.read().await;
         println!("{:?}", k);
 
-        let attributes = node.resource::<ParsedAttributes>(None);
+        let attributes = node.resource::<ParsedAttributes>(ResourceKey::none());
 
         if let Some(attributes) = attributes {
             println!("{:#?}", attributes);
 
             for attr in attributes.parsed() {
-                let test = node.resource::<Test>(Some(attr.transmute()));
+                let test = node.resource::<Test>(attr.transmute());
                 println!("{:?}", test);
                 if let Some(test) = test {
                     let fields =
@@ -465,7 +465,7 @@ async fn test_project_parser() {
                         crate::FindField::find_field::<()>(&fields, "file")
                     );
                 }
-                let test = node.resource::<Test2>(Some(attr.transmute()));
+                let test = node.resource::<Test2>(attr.transmute());
                 println!("{:?}", test);
             }
         }

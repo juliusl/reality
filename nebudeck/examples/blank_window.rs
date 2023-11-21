@@ -8,7 +8,7 @@ use winit::window::WindowId;
 /// Minimal example for opening a blank window,
 ///
 fn main() -> anyhow::Result<()> {
-    let desktop = Desktop::<()>::new()?;
+    let desktop = Desktop::new()?;
 
     let engine = Engine::builder();
     BlankWindow.delegate(
@@ -27,7 +27,7 @@ impl ControlBus for BlankWindow {
     }
 }
 
-impl DesktopApp<()> for BlankWindow {
+impl DesktopApp for BlankWindow {
     fn configure_window(&self, window: winit::window::Window) -> winit::window::Window {
         // window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
         window.set_title("Blank Window");
@@ -38,7 +38,7 @@ impl DesktopApp<()> for BlankWindow {
         window
     }
 
-    fn on_window_redraw(&mut self, _: WindowId, desktop: &DesktopContext<()>) {
+    fn on_window_redraw(&mut self, _: WindowId, desktop: &DesktopContext) {
         let window = desktop.window;
         /// Copied from winit examples
         ///
@@ -115,7 +115,7 @@ impl DesktopApp<()> for BlankWindow {
         fill_window(window);
     }
 
-    fn after_event(&mut self, desktop: &DesktopContext<()>) {
+    fn after_event(&mut self, desktop: &DesktopContext) {
         // desktop.event_loop_target.set_control_flow(ControlFlow::Poll);
     }
 }

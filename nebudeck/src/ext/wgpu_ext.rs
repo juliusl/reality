@@ -1,6 +1,7 @@
 use super::prelude::*;
 
 use futures::executor::block_on;
+use loopio::engine::EnginePacket;
 use loopio::foreground::ForegroundEngine;
 use loopio::prelude::Engine;
 use loopio::prelude::EngineHandle;
@@ -63,13 +64,13 @@ macro_rules! define_wgpu_resource_management {
                 async fn [<set_ $suffix>](&mut self, instances: $ty) {
                     let mut transport = self.transient_mut().await;
 
-                    transport.put_resource(instances, None);
+                    transport.put_resource(instances, loopio::prelude::ResourceKey::none());
                 }
 
                 async fn [<take_ $suffix>](&mut self) -> Option<$ty> {
                     let mut transport = self.transient_mut().await;
 
-                    return transport.take_resource(None).map(|r| *r);
+                    return transport.take_resource(loopio::prelude::ResourceKey::none()).map(|r| *r);
                 }
             )*
         }
@@ -134,7 +135,7 @@ impl WgpuRenderExt for ThunkContext {
         if let Some(mut stages) = self
             .transient_mut()
             .await
-            .resource_mut::<RenderStages>(None)
+            .resource_mut::<RenderStages>(loopio::prelude::ResourceKey::none())
         {
             stages.deref_mut().stages.push(Box::new(stage));
         } else {
@@ -142,9 +143,9 @@ impl WgpuRenderExt for ThunkContext {
     }
 
     async fn render(&mut self) -> anyhow::Result<()> {
-        let render_pass = self.transient_mut().await.take_resource::<RenderPass>(None);
+        let render_pass = self.transient_mut().await.take_resource::<RenderPass>(loopio::prelude::ResourceKey::none());
 
-        if let Some(stages) = self.transient().await.resource::<RenderStages>(None) {
+        if let Some(stages) = self.transient().await.resource::<RenderStages>(loopio::prelude::ResourceKey::none()) {
             if let Some(mut render_pass) = render_pass {
                 for stage in stages.stages.iter() {
                     render_pass = stage(render_pass);
@@ -158,7 +159,7 @@ impl WgpuRenderExt for ThunkContext {
 
 /// This system enables access to the system's gpu devices,
 ///
-pub struct WgpuSystem<T: 'static> {
+pub struct WgpuSystem {
     /// Handle to the compiled engine,
     ///
     pub engine: OnceCell<EngineHandle>,
@@ -170,10 +171,10 @@ pub struct WgpuSystem<T: 'static> {
     pub staging_belt: OnceCell<StagingBelt>,
     /// Rendering and event loop middleware,
     ///
-    pub middleware: Vec<BoxedMiddleware<T>>,
+    pub middleware: Vec<BoxedMiddleware>,
 }
 
-impl<T: 'static> WgpuSystem<T> {
+impl WgpuSystem {
     /// Creates a new wgpu system,
     ///
     pub const fn new() -> Self {
@@ -187,7 +188,7 @@ impl<T: 'static> WgpuSystem<T> {
 
     /// Creates a new wgpu system w/ middleware,
     ///
-    pub const fn with(middleware: Vec<BoxedMiddleware<T>>) -> Self {
+    pub const fn with(middleware: Vec<BoxedMiddleware>) -> Self {
         WgpuSystem {
             engine: OnceCell::new(),
             hardware: OnceCell::new(),
@@ -200,7 +201,7 @@ impl<T: 'static> WgpuSystem<T> {
     ///
     pub fn add_middleware(
         &mut self,
-        middleware: impl RenderPipelineMiddleware<T> + Unpin + 'static,
+        middleware: impl RenderPipelineMiddleware + Unpin + 'static,
     ) {
         self.middleware.push(Box::pin(middleware));
     }
@@ -267,7 +268,7 @@ impl HardwareContext {
     }
 }
 
-impl<T: 'static> DesktopApp<T> for WgpuSystem<T> {
+impl DesktopApp for WgpuSystem {
     fn configure_window(
         &self,
         window: winit::window::Window,
@@ -290,7 +291,7 @@ impl<T: 'static> DesktopApp<T> for WgpuSystem<T> {
     fn before_event_loop(
         &mut self,
         window: &winit::window::Window,
-        event_loop_proxy: EventLoopProxy<T>,
+        event_loop_proxy: EventLoopProxy<EnginePacket>,
     ) {
         let hardware = self.hardware.get().expect("should exist just set");
         for middleware in self.middleware.iter_mut() {
@@ -301,8 +302,8 @@ impl<T: 'static> DesktopApp<T> for WgpuSystem<T> {
 
     fn before_event(
         &mut self,
-        event: &winit::event::Event<T>,
-        context: &crate::desktop::DesktopContext<T>,
+        event: &winit::event::Event<EnginePacket>,
+        context: &crate::desktop::DesktopContext,
     ) {
         for middleware in self.middleware.iter_mut() {
             middleware.before_event(event, context);
@@ -313,7 +314,7 @@ impl<T: 'static> DesktopApp<T> for WgpuSystem<T> {
         &mut self,
         window_id: winit::window::WindowId,
         event: &winit::event::WindowEvent,
-        context: &crate::desktop::DesktopContext<T>,
+        context: &crate::desktop::DesktopContext,
     ) {
         match &event {
             winit::event::WindowEvent::Resized(ref size) => {
@@ -337,7 +338,7 @@ impl<T: 'static> DesktopApp<T> for WgpuSystem<T> {
     fn on_window_redraw(
         &mut self,
         window_id: winit::window::WindowId,
-        context: &crate::desktop::DesktopContext<T>,
+        context: &crate::desktop::DesktopContext,
     ) {
         if let Some(hardware) = self.hardware.get_mut() {
             if let Ok(frame) = hardware.surface.get_current_texture() {
@@ -471,7 +472,7 @@ impl<T: 'static> DesktopApp<T> for WgpuSystem<T> {
     fn on_new_events(
         &mut self,
         start_cause: winit::event::StartCause,
-        context: &crate::desktop::DesktopContext<T>,
+        context: &crate::desktop::DesktopContext,
     ) {
         for middleware in self.middleware.iter_mut() {
             middleware.on_new_events(start_cause, context);
@@ -482,50 +483,50 @@ impl<T: 'static> DesktopApp<T> for WgpuSystem<T> {
         &mut self,
         window_id: winit::event::DeviceId,
         window_event: &winit::event::DeviceEvent,
-        context: &crate::desktop::DesktopContext<T>,
+        context: &crate::desktop::DesktopContext,
     ) {
         for middleware in self.middleware.iter_mut() {
             middleware.on_device_event(window_id, &window_event, context);
         }
     }
 
-    fn on_user_event(&mut self, user: &T, context: &crate::desktop::DesktopContext<T>) {
+    fn on_user_event(&mut self, user: &EnginePacket, context: &crate::desktop::DesktopContext) {
         for middleware in self.middleware.iter_mut() {
             middleware.on_user_event(user, context);
         }
     }
 
-    fn on_suspended(&mut self, context: &crate::desktop::DesktopContext<T>) {
+    fn on_suspended(&mut self, context: &crate::desktop::DesktopContext) {
         for middleware in self.middleware.iter_mut() {
             middleware.on_suspended(context);
         }
     }
 
-    fn on_resumed(&mut self, context: &crate::desktop::DesktopContext<T>) {
+    fn on_resumed(&mut self, context: &crate::desktop::DesktopContext) {
         for middleware in self.middleware.iter_mut() {
             middleware.on_resumed(context);
         }
     }
 
-    fn on_about_to_wait(&mut self, context: &crate::desktop::DesktopContext<T>) {
+    fn on_about_to_wait(&mut self, context: &crate::desktop::DesktopContext) {
         for middleware in self.middleware.iter_mut() {
             middleware.on_about_to_wait(context);
         }
     }
 
-    fn on_loop_exiting(&mut self, context: &crate::desktop::DesktopContext<T>) {
+    fn on_loop_exiting(&mut self, context: &crate::desktop::DesktopContext) {
         for middleware in self.middleware.iter_mut() {
             middleware.on_loop_exiting(context);
         }
     }
 
-    fn on_memory_warning(&mut self, context: &crate::desktop::DesktopContext<T>) {
+    fn on_memory_warning(&mut self, context: &crate::desktop::DesktopContext) {
         for middleware in self.middleware.iter_mut() {
             middleware.on_memory_warning(context);
         }
     }
 
-    fn after_event(&mut self, context: &crate::desktop::DesktopContext<T>) {
+    fn after_event(&mut self, context: &crate::desktop::DesktopContext) {
         for middleware in self.middleware.iter_mut() {
             middleware.after_event(context);
         }
@@ -534,15 +535,15 @@ impl<T: 'static> DesktopApp<T> for WgpuSystem<T> {
 
 /// Boxed render pipeline middleware,
 ///
-pub type BoxedMiddleware<T> = Pin<Box<dyn RenderPipelineMiddleware<T> + Unpin>>;
+pub type BoxedMiddleware= Pin<Box<dyn RenderPipelineMiddleware + Unpin>>;
 
 /// Trait that enables access to the rendering pipeline,
 ///
 #[allow(unused_variables)]
-pub trait RenderPipelineMiddleware<T: 'static>: DesktopApp<T> {
+pub trait RenderPipelineMiddleware: DesktopApp {
     /// Converts the middleware into it's generic form,
     ///
-    fn middleware(self) -> BoxedMiddleware<T>
+    fn middleware(self) -> BoxedMiddleware
     where
         Self: Sized + Unpin + 'static,
     {
@@ -612,7 +613,7 @@ pub trait RenderPipelineMiddleware<T: 'static>: DesktopApp<T> {
     }
 }
 
-impl<T: 'static> ControlBus for WgpuSystem<T> {
+impl ControlBus for WgpuSystem {
     fn bind(&mut self, engine: EngineHandle) {
         for middleware in self.middleware.iter_mut() {
             middleware.bind(engine.clone());

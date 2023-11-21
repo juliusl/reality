@@ -218,11 +218,11 @@ impl Action for HostedResource {
         self.node_rk
     }
 
-    fn plugin_rk(&self) -> Option<ResourceKey<Attribute>> {
+    fn plugin_rk(&self) -> ResourceKey<Attribute> {
         self.rk
     }
 
     fn bind_plugin(&mut self, plugin: ResourceKey<reality::attributes::Attribute>) {
-        self.rk = Some(plugin);
+        self.rk = plugin;
     }
 }

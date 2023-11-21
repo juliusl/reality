@@ -64,7 +64,7 @@ mod tests {
             println!(
                 "Initialized as -- {:?} {:?}",
                 _initialized,
-                tc.attribute.map(|a| a.key())
+                tc.attribute.key()
             );
 
             if tc.variant_id.is_some() {
@@ -85,7 +85,7 @@ mod tests {
             println!(
                 "Initialized as -- {:?} {:?}",
                 _initialized,
-                tc.attribute.map(|a| a.key())
+                tc.attribute.key()
             );
 
             if tc.variant_id.is_some() {

@@ -23,19 +23,19 @@ macro_rules! resource_owned {
     ($parser:ident, $ty:path, $key:literal)=> {
         $parser.storage().and_then(|s| {
             const KEY: &'static str = key;
-            s.resource::<$ty>(Some(ResourceKey::with_label(KEY)))
+            s.resource::<$ty>(ResourceKey::with_hash($key))
                 .map(|h| h.clone())
         })
     };
     ($parser:ident, $ty:path, $key:ident)=> {
         $parser.storage().and_then(|s| {
-            s.resource::<$ty>(Some(ResourceKey::with_hash($key)))
+            s.resource::<$ty>(ResourceKey::with_hash($key))
                 .map(|h| h.clone())
         })
     };
     ($parser:ident, $ty:path, $key:expr)=> {
         $parser.storage().and_then(|s| {
-            s.resource::<$ty>(Some(ResourceKey::with_hash($key)))
+            s.resource::<$ty>(ResourceKey::with_hash($key))
                 .map(|h| h.clone())
         })
     };

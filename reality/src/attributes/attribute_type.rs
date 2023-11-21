@@ -223,7 +223,7 @@ where
         };
 
         let tag = parser.tag().cloned();
-        let key = parser.attributes.last().map(|a| a.transmute::<Owner>());
+        let key = parser.attributes.last().map(|a| a.transmute::<Owner>()).unwrap_or(ResourceKey::none());
 
         let mut properties = vec![];
         match (parser.storage_mut(), parsed) {
@@ -251,22 +251,20 @@ where
             ) => {
                 type ParserError<T> = <T as FromStr>::Err;
 
-                if let Some(cb) = storage.callback_mut::<ParserError<T>>(label.try_into().ok()) {
+                if let Some(cb) = storage.callback_mut::<ParserError<T>>(label.try_into().unwrap_or(ResourceKey::none())) {
                     storage.lazy_callback_mut(cb, error)
-                } else if let Some(cb) = storage.callback::<ParserError<T>>(label.try_into().ok()) {
+                } else if let Some(cb) = storage.callback::<ParserError<T>>(label.try_into().unwrap_or(ResourceKey::none())) {
                     storage.lazy_callback(cb, error)
                 }
             }
             _ => {}
         }
 
-        if let Some(key) = key {
-            for (prop, mut empty_packet) in properties.drain(..) {
-                empty_packet.attribute_hash = Some(prop.data);
-                parser.attributes.define_property(key.transmute(), prop);
-                if let Some(mut storage) = parser.storage_mut() {
-                    storage.put_resource(empty_packet, Some(prop.transmute()));
-                }
+        for (prop, mut empty_packet) in properties.drain(..) {
+            empty_packet.attribute_hash = Some(prop.data);
+            parser.attributes.define_property(key.transmute(), prop);
+            if let Some(mut storage) = parser.storage_mut() {
+                storage.put_resource(empty_packet, prop.transmute());
             }
         }
     }
@@ -289,12 +287,12 @@ where
 
         // Get the current tag setting,
         let tag = parser.tag().cloned();
-        let key = parser.attributes.last().map(|a| a.transmute::<Owner>());
+        let key = parser.attributes.last().map(|a| a.transmute::<Owner>()).unwrap_or(ResourceKey::none());
 
         let mut properties = vec![];
         if let Some(mut storage) = parser.storage_mut() {
             // If set by parse, it must be set w/ a resource key set to None
-            let resource = { storage.take_resource::<T>(None) };
+            let resource = { storage.take_resource::<T>(ResourceKey::none()) };
 
             if let Some(resource) = resource {
                 borrow_mut!(storage, Owner, key, |owner| => {
@@ -304,13 +302,11 @@ where
             }
         }
 
-        if let Some(key) = key {
-            for (prop, mut empty_packet) in properties.drain(..) {
-                empty_packet.attribute_hash = Some(prop.data);
-                parser.attributes.define_property(key.transmute(), prop);
-                if let Some(mut storage) = parser.storage_mut() {
-                    storage.put_resource(empty_packet, Some(prop.transmute()));
-                }
+        for (prop, mut empty_packet) in properties.drain(..) {
+            empty_packet.attribute_hash = Some(prop.data);
+            parser.attributes.define_property(key.transmute(), prop);
+            if let Some(mut storage) = parser.storage_mut() {
+                storage.put_resource(empty_packet, prop.transmute());
             }
         }
     }
@@ -333,12 +329,12 @@ where
 
         // Get the current tag setting,
         let tag = parser.tag().cloned();
-        let key = parser.attributes.last().map(|a| a.transmute::<Owner>());
+        let key = parser.attributes.last().map(|a| a.transmute::<Owner>()).unwrap_or(ResourceKey::none());
 
         let mut properties = vec![];
         if let Some(mut storage) = parser.storage_mut() {
             // If set by parse, it must be set w/ a resource key set to None
-            let resource = { storage.take_resource::<T>(None) };
+            let resource = { storage.take_resource::<T>(ResourceKey::none()) };
 
             if let Some(resource) = resource {
                 borrow_mut!(storage, Owner, key, |owner| => {
@@ -348,13 +344,11 @@ where
             }
         }
 
-        if let Some(key) = key {
-            for (prop, mut empty_packet) in properties.drain(..) {
-                empty_packet.attribute_hash = Some(prop.data);
-                parser.attributes.define_property(key.transmute(), prop);
-                if let Some(mut storage) = parser.storage_mut() {
-                    storage.put_resource(empty_packet, Some(prop.transmute()));
-                }
+        for (prop, mut empty_packet) in properties.drain(..) {
+            empty_packet.attribute_hash = Some(prop.data);
+            parser.attributes.define_property(key.transmute(), prop);
+            if let Some(mut storage) = parser.storage_mut() {
+                storage.put_resource(empty_packet, prop.transmute());
             }
         }
     }

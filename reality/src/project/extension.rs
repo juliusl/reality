@@ -8,6 +8,7 @@ use crate::BlockObject;
 use crate::ResourceKey;
 use crate::Shared;
 use crate::StorageTarget;
+use crate::StorageTargetKey;
 use crate::ThunkContext;
 
 /// Type-alias for a middleware fn,
@@ -87,7 +88,7 @@ where
     controller: Option<C>,
     /// Resource-key for retrieving the underlying type,
     ///
-    resource_key: Option<ResourceKey<IntermediateTransform<C, T>>>,
+    resource_key: ResourceKey<IntermediateTransform<C, T>>,
     /// List of middleware to run before user middleware,
     ///
     before: Vec<Middleware<C, T>>,
@@ -221,10 +222,10 @@ where
 
     /// Returns a new extension,
     ///
-    pub fn new(controller: C, resource_key: Option<ResourceKey<T>>) -> Self {
+    pub fn new(controller: C, resource_key: StorageTargetKey<T>) -> Self {
         Transform {
             controller: Some(controller),
-            resource_key: resource_key.map(|r| r.transmute()),
+            resource_key: resource_key.transmute(),
             before: vec![],
             after: vec![],
             before_tasks: vec![],
@@ -365,7 +366,7 @@ mod tests {
         let time = tokio::time::Instant::now();
 
         let mut extension =
-            Transform::<(), crate::project::Test>::new((), Some(ResourceKey::with_hash("test")));
+            Transform::<(), crate::project::Test>::new((), ResourceKey::with_hash("test"));
         extension.add_before(move |_, c, t| {
             trace!("before called {:?}", time);
             Ok((c, t))

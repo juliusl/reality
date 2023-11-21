@@ -1,4 +1,5 @@
 use anyhow::Error;
+use reality::ResourceKey;
 use reality::StorageTarget;
 use tokio::task::JoinHandle;
 use tokio::task::JoinError;
@@ -98,7 +99,7 @@ impl ForegroundEngine {
         eh = runtime.block_on(async move {
             let tc = eh.run("engine://default").await.unwrap();
             let transient = tc.transient().await;
-            let handle = transient.current_resource::<BackgroundWorkEngineHandle>(None);
+            let handle = transient.current_resource::<BackgroundWorkEngineHandle>(ResourceKey::none());
             assert!(handle.is_some());
             eh.background_work = Some(handle.unwrap());
             eh

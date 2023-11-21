@@ -4,6 +4,8 @@ use crate::{Callback, CallbackMut, Handler};
 use std::ops::Deref;
 use std::ops::DerefMut;
 
+pub type StorageTargetKey<T> = ResourceKey<T>;
+
 /// Trait generalizing a storage target that can be used to initialize and store application resources,
 ///
 pub trait StorageTarget {
@@ -44,13 +46,13 @@ pub trait StorageTarget {
     {
         let resource_key = ResourceKey::<AsyncStorageTarget<Self::Namespace>>::with_hash(namespace);
 
-        if let Some(ns) = self.resource(Some(resource_key)) {
+        if let Some(ns) = self.resource(resource_key) {
             ns.clone()
         } else {
             let mut ns = Self::create_namespace();
             ns.enable_dispatching();
             let shared = ns.into_thread_safe();
-            self.lazy_put_resource(shared.clone(), Some(resource_key));
+            self.lazy_put_resource(shared.clone(), resource_key);
             shared
         }
     }
@@ -80,7 +82,7 @@ pub trait StorageTarget {
     /// 
     fn current_resource<T: ToOwned<Owned = T> + Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey<T>>,
+        resource_key: StorageTargetKey<T>,
     ) -> Option<T> {
         self.resource(resource_key).map(|r| r.to_owned())
     }
@@ -92,14 +94,14 @@ pub trait StorageTarget {
     fn maybe_put_resource<T: Send + Sync + 'static>(
         &mut self,
         _resource: T,
-        _resource_key: Option<ResourceKey<T>>,
+        _resource_key: StorageTargetKey<T>,
     ) -> Option<Self::BorrowMutResource<'_, T>> {
         unimplemented!()
     }
 
     fn contains<T: Send + Sync + 'static>(
         &self,
-        _resource_key: Option<ResourceKey<T>>,
+        _resource_key: StorageTargetKey<T>,
     ) -> bool {
         false
     }
@@ -111,14 +113,14 @@ pub trait StorageTarget {
     fn put_resource<T: Send + Sync + 'static>(
         &mut self,
         resource: T,
-        resource_key: Option<ResourceKey<T>>,
+        resource_key: StorageTargetKey<T>,
     );
 
     /// Take a resource from the storage target casting it back to it's original type,
     ///
     fn take_resource<T: Send + Sync + 'static>(
         &mut self,
-        resource_key: Option<ResourceKey<T>>,
+        resource_key: StorageTargetKey<T>,
     ) -> Option<Box<T>>;
 
     /// Get read-access to a resource owned by the storage target,
@@ -131,7 +133,7 @@ pub trait StorageTarget {
     ///
     fn resource<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a self,
-        resource_key: Option<ResourceKey<T>>,
+        resource_key: StorageTargetKey<T>,
     ) -> Option<Self::BorrowResource<'b, T>>;
 
     /// Get read/write access to a resource owned by the storage target,
@@ -144,20 +146,16 @@ pub trait StorageTarget {
     ///
     fn resource_mut<'a: 'b, 'b, T: Send + Sync + 'static>(
         &'a mut self,
-        resource_key: Option<ResourceKey<T>>,
+        resource_key: StorageTargetKey<T>,
     ) -> Option<Self::BorrowMutResource<'b, T>>;
 
     /// Returns a hashed key by Type and optional resource_id,
     ///
-    fn key<T: Send + Sync + 'static>(resource_key: Option<ResourceKey<T>>) -> u64
+    fn key<T: Send + Sync + 'static>(resource_key: StorageTargetKey<T>) -> u64
     where
         Self: Sized,
     {
-        if let Some(resource_key) = resource_key {
-            resource_key.key()
-        } else {
-            ResourceKey::<T>::new().key()
-        }
+        resource_key.key()
     }
 
     /// Enables built-in dispatch queues,
@@ -174,15 +172,15 @@ pub trait StorageTarget {
     where
         Self: 'static,
     {
-        self.put_resource(DispatchQueue::<Self>::default(), None);
-        self.put_resource(DispatchMutQueue::<Self>::default(), None);
+        self.put_resource(DispatchQueue::<Self>::default(), ResourceKey::none());
+        self.put_resource(DispatchMutQueue::<Self>::default(), ResourceKey::none());
     }
 
     /// Lazily initialize a resource that is `Default`,
     ///
     fn lazy_initialize_resource<T: Default + Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey<T>>,
+        resource_key: StorageTargetKey<T>,
     ) where
         Self: 'static,
     {
@@ -194,7 +192,7 @@ pub trait StorageTarget {
     fn lazy_put_resource<T: Send + Sync + 'static>(
         &self,
         resource: T,
-        resource_key: Option<ResourceKey<T>>,
+        resource_key: StorageTargetKey<T>,
     ) where
         Self: 'static,
     {
@@ -207,7 +205,7 @@ pub trait StorageTarget {
     where
         Self: 'static,
     {
-        if let Some(queue) = self.resource::<DispatchQueue<Self>>(None) {
+        if let Some(queue) = self.resource::<DispatchQueue<Self>>(ResourceKey::none()) {
             if let Ok(mut queue) = queue.lock() {
                 queue.push_back(Box::new(exec));
             }
@@ -220,7 +218,7 @@ pub trait StorageTarget {
     where
         Self: 'static,
     {
-        if let Some(queue) = self.resource::<DispatchMutQueue<Self>>(None) {
+        if let Some(queue) = self.resource::<DispatchMutQueue<Self>>(ResourceKey::none()) {
             if let Ok(mut queue) = queue.lock() {
                 queue.push_back(Box::new(exec));
             }
@@ -318,7 +316,7 @@ pub trait StorageTarget {
     ///
     fn add_callback<Arg: Send + Sync + 'static, H: Handler<Self, Arg>>(
         &mut self,
-        resource_key: Option<ResourceKey<Callback<Self, Arg>>>,
+        resource_key: StorageTargetKey<Callback<Self, Arg>>,
     ) where
         Self: Sized + 'static,
     {
@@ -331,7 +329,7 @@ pub trait StorageTarget {
     ///
     fn callback<Arg: Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey<Callback<Self, Arg>>>,
+        resource_key: StorageTargetKey<Callback<Self, Arg>>,
     ) -> Option<Callback<Self, Arg>>
     where
         Self: Sized + 'static,
@@ -345,7 +343,7 @@ pub trait StorageTarget {
     ///
     fn callback_mut<Arg: Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey<CallbackMut<Self, Arg>>>,
+        resource_key: StorageTargetKey<CallbackMut<Self, Arg>>,
     ) -> Option<CallbackMut<Self, Arg>>
     where
         Self: Sized + 'static,

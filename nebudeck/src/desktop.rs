@@ -1,6 +1,7 @@
 use std::process::exit;
 
 use loopio::engine::EngineBuilder;
+use loopio::engine::EnginePacket;
 use tracing::error;
 use tracing::info;
 
@@ -40,14 +41,14 @@ pub struct DevProject;
 impl DevProject {
     /// Creates a new project based on the current directory,
     /// 
-    pub fn current_project(self) -> (Desktop<()>, EngineBuilder) {
+    pub fn current_project(self) -> (Desktop, EngineBuilder) {
         self.open_project(CurrentDir.workspace())
     }
 
     /// Opens a project from a workspace,
     /// 
-    pub fn open_project(self, mut workspace: Workspace) -> (Desktop<()>, EngineBuilder) {
-        (Desktop::<()>::new().expect("should be able to create a new desktop app").with_title("Dev Project App").enable_engine_packet_listener(), {
+    pub fn open_project(self, mut workspace: Workspace) -> (Desktop, EngineBuilder) {
+        (Desktop::new().expect("should be able to create a new desktop app").with_title("Dev Project App").enable_engine_packet_listener(), {
             let mut engine = Engine::builder();
             engine.enable::<crate::widgets::FrameEditor>();
             engine.enable::<Placeholder>();
@@ -86,16 +87,14 @@ async fn placeholder(tc: &mut ThunkContext) -> anyhow::Result<()> {
 ///
 /// This controller can be used to build a desktop app.
 ///
-pub struct Desktop<T>
-where
-    T: 'static,
+pub struct Desktop
 {
     /// Winit event loop,
     ///
-    pub event_loop: std::cell::OnceCell<winit::event_loop::EventLoop<T>>,
+    pub event_loop: std::cell::OnceCell<winit::event_loop::EventLoop<EnginePacket>>,
     /// Event loop proxy,
     ///
-    pub event_loop_proxy: winit::event_loop::EventLoopProxy<T>,
+    pub event_loop_proxy: winit::event_loop::EventLoopProxy<EnginePacket>,
     /// If true, will enable the engine packet listener delegated
     /// to this controller.
     ///
@@ -112,10 +111,10 @@ where
     pub window_title: String,
 }
 
-impl<T: 'static> Desktop<T> {
+impl Desktop {
     /// Creates a new window,
     ///
-    pub fn new() -> anyhow::Result<Desktop<T>> {
+    pub fn new() -> anyhow::Result<Desktop> {
         #[cfg(feature = "desktop-vnext")]
         let event_loop = EventLoopBuilder::with_user_event().build()?;
 
@@ -161,7 +160,7 @@ impl<T: 'static> Desktop<T> {
 
     /// Starts the window event loop and creates a new Window,
     ///
-    pub fn open<D: DesktopApp<T> + 'static>(mut self, mut app: D) {
+    pub fn open<D: DesktopApp + 'static>(mut self, mut app: D) {
         if let Some(event_loop) = std::cell::OnceCell::take(&mut self.event_loop) {
             if let Ok(window) = winit::window::Window::new(&event_loop) {
                 window.set_inner_size(LogicalSize::new(self.starting_resolution.0, self.starting_resolution.1));
@@ -185,10 +184,10 @@ impl<T: 'static> Desktop<T> {
         }
     }
 
-    fn handle_event<D: DesktopApp<T> + 'static>(
-        event: Event<T>,
+    fn handle_event<D: DesktopApp + 'static>(
+        event: Event<EnginePacket>,
         window: &Window,
-        window_target: &EventLoopWindowTarget<T>,
+        window_target: &EventLoopWindowTarget<EnginePacket>,
         app: &mut D,
     ) {
         let desktop = DesktopContext {
@@ -281,7 +280,7 @@ impl<T: 'static> Desktop<T> {
     }
 }
 
-impl<T: 'static, A: DesktopApp<T> + 'static> Controller<A> for Desktop<T> {
+impl<A: DesktopApp + 'static> Controller<A> for Desktop {
     fn take_control(self, mut app: Box<A>, engine: ForegroundEngine) -> BackgroundWork {
         app.bind(engine.engine_handle());
 
@@ -292,19 +291,19 @@ impl<T: 'static, A: DesktopApp<T> + 'static> Controller<A> for Desktop<T> {
 
 /// Context during event loop w/ access to winit primitives,
 ///
-pub struct DesktopContext<'a, UserEvent: 'static> {
+pub struct DesktopContext<'a> {
     /// Winit Window handle,
     ///
     pub window: &'a Window,
     /// Winit event loop target handle,
     ///
-    pub event_loop_target: &'a EventLoopWindowTarget<UserEvent>,
+    pub event_loop_target: &'a EventLoopWindowTarget<EnginePacket>,
 }
 
 /// Winit based event loop handler for desktop apps,
 ///
 #[allow(unused_variables)]
-pub trait DesktopApp<T: 'static>: ControlBus {
+pub trait DesktopApp: ControlBus {
     /// Called to configure the window,
     ///
     fn configure_window(&self, window: Window) -> winit::window::Window {
@@ -315,15 +314,15 @@ pub trait DesktopApp<T: 'static>: ControlBus {
     ///
     /// Should be a reasonable place to initialize graphics pipeline,
     ///
-    fn before_event_loop(&mut self, window: &Window, event_proxy: EventLoopProxy<T>) {}
+    fn before_event_loop(&mut self, window: &Window, event_proxy: EventLoopProxy<EnginePacket>) {}
 
     /// Called before an event in the event loop is handled,
     ///
-    fn before_event(&mut self, event: &Event<T>, context: &DesktopContext<T>) {}
+    fn before_event(&mut self, event: &Event<EnginePacket>, context: &DesktopContext) {}
 
     /// Called on `winit::event::Event::NewEvents`,
     ///
-    fn on_new_events(&mut self, start_cause: StartCause, context: &DesktopContext<T>) {}
+    fn on_new_events(&mut self, start_cause: StartCause, context: &DesktopContext) {}
 
     /// Called on `winit::event::Event::WindowEvent`
     ///
@@ -331,13 +330,13 @@ pub trait DesktopApp<T: 'static>: ControlBus {
         &mut self,
         window_id: WindowId,
         event: &WindowEvent,
-        context: &DesktopContext<T>,
+        context: &DesktopContext,
     ) {
     }
 
     /// Called before `winit::event::Event::WindowEvent`
     ///
-    fn on_window_redraw(&mut self, window_id: WindowId, context: &DesktopContext<T>) {}
+    fn on_window_redraw(&mut self, window_id: WindowId, context: &DesktopContext) {}
 
     /// Called on `winit::event::Event::DeviceEvent`
     ///
@@ -345,35 +344,35 @@ pub trait DesktopApp<T: 'static>: ControlBus {
         &mut self,
         window_id: DeviceId,
         window_event: &DeviceEvent,
-        context: &DesktopContext<T>,
+        context: &DesktopContext,
     ) {
     }
 
     /// Called on `winit::event::Event::UserEvent`
     ///
-    fn on_user_event(&mut self, user: &T, context: &DesktopContext<T>) {}
+    fn on_user_event(&mut self, user: &EnginePacket, context: &DesktopContext) {}
 
     /// Called on `winit::event::Event::Suspended`
     ///
-    fn on_suspended(&mut self, context: &DesktopContext<T>) {}
+    fn on_suspended(&mut self, context: &DesktopContext) {}
 
     /// Called on `winit::event::Event::Resumed`
     ///
-    fn on_resumed(&mut self, context: &DesktopContext<T>) {}
+    fn on_resumed(&mut self, context: &DesktopContext) {}
 
     /// Called on `winit::event::Event::AboutToWait`
     ///
-    fn on_about_to_wait(&mut self, context: &DesktopContext<T>) {}
+    fn on_about_to_wait(&mut self, context: &DesktopContext) {}
 
     /// Called on `winit::event::Event::LoopExiting`
     ///
-    fn on_loop_exiting(&mut self, context: &DesktopContext<T>) {}
+    fn on_loop_exiting(&mut self, context: &DesktopContext) {}
 
     /// Called on `winit::event::Event::MemoryWarning`
     ///
-    fn on_memory_warning(&mut self, context: &DesktopContext<T>) {}
+    fn on_memory_warning(&mut self, context: &DesktopContext) {}
 
     /// Called after the event_loop event is handled,
     ///
-    fn after_event(&mut self, context: &DesktopContext<T>) {}
+    fn after_event(&mut self, context: &DesktopContext) {}
 }

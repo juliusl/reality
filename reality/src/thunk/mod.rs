@@ -13,6 +13,7 @@ pub mod prelude {
     pub use crate::AsyncStorageTarget;
     pub use crate::AttributeType;
     pub use crate::BlockObject;
+    use crate::ResourceKey;
     pub use super::context::Interactive;
     pub use super::context::NonInteractive;
     pub use crate::Shared;
@@ -71,12 +72,12 @@ pub mod prelude {
         fn parse(parser: &mut crate::AttributeParser<Shared>, content: impl AsRef<str>) {
             <P as AttributeType<Shared>>::parse(parser, content);
 
-            let key = parser.attributes.last();
+            let key = parser.attributes.last().cloned().unwrap_or(ResourceKey::none());
             if let Some(storage) = parser.storage() {
                 storage
-                    .lazy_put_resource::<ThunkFn>(<P as Plugin>::call, key.map(|k| k.transmute()));
+                    .lazy_put_resource::<ThunkFn>(<P as Plugin>::call, key.transmute());
                 storage
-                    .lazy_put_resource::<EnableFrame>(EnableFrame(<P as Plugin>::enable_frame), key.map(|k| k.transmute()));
+                    .lazy_put_resource::<EnableFrame>(EnableFrame(<P as Plugin>::enable_frame), key.transmute());
             }
         }
     }
@@ -120,7 +121,7 @@ pub mod prelude {
     where
         P: Plugin + Send + Sync + 'static,
     {
-        fn to_frame(&self, key: Option<crate::ResourceKey<crate::Attribute>>) -> crate::Frame {
+        fn to_frame(&self, key: crate::ResourceKey<crate::Attribute>) -> crate::Frame {
             crate::Frame {
                 fields: vec![],
                 recv: self.receiver_packet(key),

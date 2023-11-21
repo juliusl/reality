@@ -18,7 +18,6 @@ use tracing::warn;
 
 use crate::background_work::BackgroundWorkEngineHandle;
 use crate::host;
-use crate::operation;
 use crate::operation::Operation;
 use crate::prelude::Action;
 use crate::prelude::Address;
@@ -75,8 +74,8 @@ impl EngineBuilder {
         #[cfg(feature = "hyper-ext")]
         self.register_with(|p| {
             if let Some(s) = p.storage() {
-                s.lazy_put_resource(secure_client(), None);
-                s.lazy_put_resource(local_client(), None);
+                s.lazy_put_resource(secure_client(), ResourceKey::none());
+                s.lazy_put_resource(local_client(), ResourceKey::none());
             }
         });
 
@@ -148,7 +147,7 @@ impl reality::prelude::RegisterWith for EngineBuilder {
 pub struct Engine {
     /// Cancelled when the engine is dropped,
     ///
-    pub cancellation: CancellationToken,
+    cancellation: CancellationToken,
     /// Plugins to register w/ the Project
     ///
     plugins: Vec<reality::BlockPlugin<Shared>>,
@@ -165,7 +164,7 @@ pub struct Engine {
     sequences: BTreeMap<String, Sequence>,
     /// Current nodes,
     ///
-    pub nodes: HashMap<ResourceKey<reality::attributes::Node>, Arc<RwLock<Shared>>>,
+    nodes: HashMap<ResourceKey<reality::attributes::Node>, Arc<RwLock<Shared>>>,
     /// Engine handle that can be used to send packets to this engine,
     ///
     handle: EngineHandle,
@@ -180,7 +179,7 @@ pub struct Engine {
     workspace: Option<Workspace>,
     /// Pasred block,
     ///
-    pub block: Option<ParsedBlock>,
+    block: Option<ParsedBlock>,
     /// Internal hosted resources,
     ///
     __internal_resources: InternalResources,
@@ -188,10 +187,11 @@ pub struct Engine {
 
 impl Debug for Engine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // TODO -- Output easier to human parse initialization state
+
         f.debug_struct("Engine")
-            .field("hosts", &self.hosts)
-            .field("operations", &self.operations)
-            .field("sequences", &self.sequences)
+            .field("block", &self.block)
+            .field("__internal_resources", &self.__internal_resources)
             .finish()
     }
 }
@@ -290,7 +290,7 @@ impl Engine {
             if let Some(mut storage) = target.storage_mut() {
                 storage.drain_dispatch_queues();
                 let mut address = None;
-                if let Some(mut seq) = storage.resource_mut(Some(last.transmute::<T>())) {
+                if let Some(mut seq) = storage.resource_mut(last.transmute::<T>()) {
                     seq.bind_node(node.transmute());
                     T::set_identifiers(&mut seq, &name, tag.map(|t| t.to_string()).as_ref());
                     address = Some(Address::new(seq.address()));
@@ -298,15 +298,15 @@ impl Engine {
 
                 if let Some(address) = address {
                     eprintln!("Setting address {:?}", address);
-                    storage.put_resource(address, None);
+                    storage.put_resource(address, ResourceKey::none());
                 }
 
-                storage.put_resource::<ThunkFn>(<T as Plugin>::call, Some(last.transmute()));
+                storage.put_resource::<ThunkFn>(<T as Plugin>::call, last.transmute());
                 storage.put_resource::<EnableFrame>(
                     EnableFrame(<T as Plugin>::enable_frame),
-                    Some(last.transmute()),
+                    last.transmute(),
                 );
-                storage.put_resource(last.transmute::<T>(), None);
+                storage.put_resource(last.transmute::<T>(), ResourceKey::none());
             }
         }
     }
@@ -325,12 +325,6 @@ impl Engine {
                 .map(|r| r.handle().clone())
                 .expect("should have a runtime"),
         ));
-        context.hosts = self.hosts.iter().fold(BTreeMap::new(), |mut acc, h| {
-            if let Some(storage) = h.1.host_storage.clone() {
-                acc.insert(h.0.to_string(), storage);
-            }
-            acc
-        });
         context.cancellation = self.cancellation.child_token();
         context
     }
@@ -354,17 +348,17 @@ impl Engine {
 
                 if let Ok(address) = Address::from_str(&operation.address()) {
                     eprintln!("Adding address for operation -- {}", address);
-                    storage.put_resource(address, None);
+                    storage.put_resource(address, ResourceKey::none());
                 } else {
                     eprintln!("Could not add address for {}", (&operation.address()));
                 }
 
-                storage.put_resource::<ThunkFn>(<Operation as Plugin>::call, None);
+                storage.put_resource::<ThunkFn>(<Operation as Plugin>::call, ResourceKey::none());
                 storage.put_resource::<EnableFrame>(
                     EnableFrame(<Operation as Plugin>::enable_frame),
-                    None,
+                    ResourceKey::none(),
                 );
-                storage.put_resource(operation, None);
+                storage.put_resource(operation, ResourceKey::none());
             }
 
             for p in plugins.iter() {
@@ -388,14 +382,15 @@ impl Engine {
             // Extract hosts
             for (_, target) in nodes.iter() {
                 target.write().await.drain_dispatch_queues();
+
                 let storage = target.latest().await;
-                let hostkey = storage.current_resource::<ResourceKey<Host>>(None);
+                let hostkey = storage.current_resource::<ResourceKey<Host>>(ResourceKey::none()).unwrap_or(ResourceKey::none());
                 if let Some(_) = storage.current_resource::<Host>(hostkey) {
                     // Since new_context set the host map, earlier hosts are available to later hosts
                     let mut context = self
                         .new_context(Arc::new(tokio::sync::RwLock::new(storage)))
                         .await;
-                    context.attribute = hostkey.map(|s| s.transmute());
+                    context.attribute = hostkey.transmute();
 
                     let mut host = Interactive.create::<Host>(&mut context).await;
                     host.bind(context);
@@ -408,10 +403,8 @@ impl Engine {
                     {
                         host_actions.push((host.name.to_string(), a, dec));
                     }
+                    host.bind_plugin(hostkey.transmute());
 
-                    if let Some(hostkey) = hostkey {
-                        host.bind_plugin(hostkey.transmute());
-                    }
                     if let Some(previous) = self.hosts.insert(host.name.to_string(), host) {
                         warn!(address = previous.name, "Replacing host");
                     }
@@ -422,7 +415,7 @@ impl Engine {
             // Extract actions
             for (_, target) in nodes.iter() {
                 if let Some(mut operation) =
-                    target.latest().await.current_resource::<Operation>(None)
+                    target.latest().await.current_resource::<Operation>(ResourceKey::none())
                 {
                     operation.bind(self.new_context(target.clone()).await);
 
@@ -433,16 +426,14 @@ impl Engine {
                 target.write().await.drain_dispatch_queues();
 
                 let storage = target.latest().await;
-                let seqkey = storage.current_resource::<ResourceKey<Sequence>>(None);
+                let seqkey = storage.current_resource::<ResourceKey<Sequence>>(ResourceKey::none()).unwrap_or(ResourceKey::none());
                 if let Some(_) = storage.current_resource::<Sequence>(seqkey) {
                     let mut context = self.new_context(target.clone()).await;
-                    context.attribute = seqkey.map(|a| a.transmute());
+                    context.attribute = seqkey.transmute();
 
                     let mut sequence = Interactive.create::<Sequence>(&mut context).await;
                     sequence.bind(context);
-                    if let Some(seqkey) = seqkey {
-                        sequence.bind_plugin(seqkey.transmute());
-                    }
+                    sequence.bind_plugin(seqkey.transmute());
 
                     if let Some(previous) = self.sequences.insert(sequence.address(), sequence) {
                         info!(address = previous.address(), "Replacing sequence");
@@ -456,14 +447,14 @@ impl Engine {
                 target
                     .write()
                     .await
-                    .put_resource(self.engine_handle(), None);
+                    .put_resource(self.engine_handle(), ResourceKey::none());
             }
 
             // Add ParsedBlock to all nodes,
             if let Ok(mut block) = project.parsed_block().await {
                 // Bind all pending address to the block first
                 for (node, target) in nodes.iter() {
-                    if let Some(address) = target.read().await.resource::<Address>(None) {
+                    if let Some(address) = target.read().await.resource::<Address>(ResourceKey::none()) {
                         block.bind_node_to_path(node.transmute(), address.to_string());
                     }
                 }
@@ -477,51 +468,52 @@ impl Engine {
                         "Adding hosted resource --\n{:#?}",
                         deco
                     );
-                    eprintln!("Searching for node {}\n{:#?}", address.node_address(), block.paths);
+                    eprintln!(
+                        "Searching for node {}\n{:#?}",
+                        address.node_address(),
+                        block.paths
+                    );
                     if let Some(node) = block.paths.get(&address.node_address()) {
                         if let Some(node_storage) = nodes.get(&node.transmute()).cloned() {
-                            if let Some(resource) = block
+                            let resource = block
                                 .nodes
                                 .get(&node.transmute())
                                 .and_then(|n| {
                                     let addr = address.path();
                                     eprintln!("Searching for addr {}\n{:#?}", addr, n.paths);
-                                    n.paths.get(addr)
+                                    n.paths.get(addr).cloned()
                                 })
-                                .cloned()
-                            {
-                                let address = address.clone().with_host(host_name);
-                                let hosted_resource = block.bind_resource_path(
-                                    address.to_string(),
-                                    node.transmute(),
-                                    resource,
-                                    deco,
-                                );
+                                .unwrap_or(node.clone().transmute());
 
-                                let mut context = self.new_context(node_storage.clone()).await;
-                                context.set_attribute(resource);
-                                {
-                                    hosted_resource.bind(context);
-                                }
+                            let address = address.clone().with_host(host_name);
+                            let hosted_resource = block.bind_resource_path(
+                                address.to_string(),
+                                node.transmute(),
+                                resource.transmute(),
+                                deco,
+                            );
 
-                                self.__internal_resources.insert(
-                                    Address::from_str(hosted_resource.address().as_str()).unwrap(),
-                                    hosted_resource.clone(),
-                                );
-                            }
+                            let mut context = self.new_context(node_storage.clone()).await;
+                            context.set_attribute(resource);
+                            hosted_resource.bind(context);
+
+                            self.__internal_resources.insert(
+                                Address::from_str(hosted_resource.address().as_str()).unwrap(),
+                                hosted_resource.clone(),
+                            );
                         }
                     }
                 }
 
                 // Share the block w/ all nodes
                 for (_, target) in nodes.iter() {
-                    target.write().await.put_resource(block.clone(), None);
+                    target.write().await.put_resource(block.clone(), ResourceKey::none());
                 }
 
                 for (addr, host) in self.hosts.iter_mut() {
                     unsafe {
                         let mut node = host.context_mut().node_mut().await;
-                        node.put_resource(block.clone(), None);
+                        node.put_resource(block.clone(), ResourceKey::none());
                     }
 
                     self.__internal_resources.insert(
@@ -533,7 +525,7 @@ impl Engine {
                 for (addr, op) in self.operations.iter_mut() {
                     unsafe {
                         let mut node = op.context_mut().node_mut().await;
-                        node.put_resource(block.clone(), None);
+                        node.put_resource(block.clone(), ResourceKey::none());
                     }
                     self.__internal_resources
                         .insert(Address::from_str(addr).unwrap(), op.into_hosted_resource());
@@ -542,7 +534,7 @@ impl Engine {
                 for (addr, seq) in self.sequences.iter_mut() {
                     unsafe {
                         let mut node = seq.context_mut().node_mut().await;
-                        node.put_resource(block.clone(), None);
+                        node.put_resource(block.clone(), ResourceKey::none());
                     }
                     self.__internal_resources
                         .insert(Address::from_str(addr).unwrap(), seq.into_hosted_resource());
@@ -640,11 +632,8 @@ impl Engine {
                                     if let Some(tx) = tx.take() {
                                         let mut resource = resource.clone();
                                         unsafe {
-                                            let mut node = resource
-                                                .context_mut()
-                                                .node_mut()
-                                                .await;
-                                            node.put_resource(self.engine_handle(), None);
+                                            let mut node = resource.context_mut().node_mut().await;
+                                            node.put_resource(self.engine_handle(), ResourceKey::none());
                                             node.drain_dispatch_queues();
                                         }
 
@@ -668,7 +657,13 @@ impl Engine {
                                     );
                                 }
                             }
-                            Err(_) => {}
+                            Err(err) => {
+                                error!("{err}");
+                            }
+                        }
+
+                        if let Some(tx) = tx.take() {
+                            drop(tx);
                         }
                     }
                     EngineAction::Resource { address, mut tx } => {
@@ -681,11 +676,8 @@ impl Engine {
                                     if let Some(tx) = tx.take() {
                                         let mut resource = resource.clone();
                                         unsafe {
-                                            let mut node = resource
-                                                .context_mut()
-                                                .node_mut()
-                                                .await;
-                                            node.put_resource(self.engine_handle(), None);
+                                            let mut node = resource.context_mut().node_mut().await;
+                                            node.put_resource(self.engine_handle(), ResourceKey::none());
                                             node.drain_dispatch_queues();
                                         }
 
@@ -698,14 +690,12 @@ impl Engine {
                                         } else {
                                             error!("Could not find node storage for resource");
                                             if let Err(_) = tx.send(None) {
-                                                // TODO
                                                 eprintln!("Could not send spawn result");
                                             }
                                             continue;
                                         }
 
                                         if let Err(_) = tx.send(Some(resource)) {
-                                            // TODO
                                             eprintln!("Could not send spawn result");
                                         }
                                     }
@@ -721,7 +711,6 @@ impl Engine {
 
                         if let Some(tx) = tx.take() {
                             if let Err(_) = tx.send(None) {
-                                // TODO
                                 eprintln!("Could not send spawn result");
                             }
                         }
