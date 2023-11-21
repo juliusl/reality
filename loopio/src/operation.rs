@@ -45,7 +45,7 @@ pub struct Operation {
     /// Node attribute,
     ///
     #[reality(ignore)]
-    pub node: ResourceKey<reality::attributes::Node>,
+    node: ResourceKey<reality::attributes::Node>,
 }
 
 async fn debug_op(tc: &mut ThunkContext) -> anyhow::Result<()> {
@@ -85,7 +85,9 @@ async fn debug_op(tc: &mut ThunkContext) -> anyhow::Result<()> {
                         CallOutput::Abort(err) => err?,
                     }
                 } else {
-                    eprintln!("======== NO THUNK FN {:?}", attr);
+                    // TODO -- The expectation is that each of these attributes has a thunk fn
+                    // For now make this very loud to fix any edge cases
+                    eprintln!("ERROR!! ======== NO THUNK FN {:?}", attr);
                 }
 
                 Ok::<ThunkContext, anyhow::Error>(tc)
