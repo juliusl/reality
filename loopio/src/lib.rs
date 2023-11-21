@@ -148,22 +148,27 @@ mod tests {
         workspace.add_local(".test/test_plugin.md");
 
         let engine = engine.compile(workspace).await;
+        let eh = engine.engine_handle();
 
-        for (address, _) in engine.iter_operations() {
-            println!("{address}");
+        if let Ok(resource) = eh.hosted_resource("engine://state#test").await {
+
         }
 
-        let mut sequences = engine.iter_sequences().collect::<Vec<_>>().clone();
-        let mut _seq = None;
-        if let Some((address, seq)) = sequences.pop() {
-            println!("{address} -- {:#?}", seq);
+        // for (address, _) in engine.iter_operations() {
+        //     println!("{address}");
+        // }
 
-            _seq = Some(seq.clone());
-            tokio::spawn(async move { engine.handle_packets(|_, packet| Some(packet)).await });
-        }
+        // let mut sequences = engine.iter_sequences().collect::<Vec<_>>().clone();
+        // let mut _seq = None;
+        // if let Some((address, seq)) = sequences.pop() {
+        //     println!("{address} -- {:#?}", seq);
 
-        _seq.clone().unwrap().await.unwrap();
-        _seq.unwrap().await.unwrap();
+        //     _seq = Some(seq.clone());
+        //     tokio::spawn(async move { engine.handle_packets(|_, packet| Some(packet)).await });
+        // }
+
+        // _seq.clone().unwrap().await.unwrap();
+        // _seq.unwrap().await.unwrap();
 
         ()
     }

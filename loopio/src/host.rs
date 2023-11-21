@@ -1,13 +1,9 @@
-use reality::SetIdentifiers;
 use serde::Deserialize;
 use serde::Serialize;
-use tokio::sync::futures::Notified;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
-use std::time::Instant;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio::sync::Notify;
@@ -47,14 +43,14 @@ pub struct Host {
     ///
     #[reality(set_of=Decorated<HostCondition>)]
     condition: BTreeSet<Decorated<HostCondition>>,
+    /// Set of events registered on this host,
+    ///
+    #[reality(set_of=Decorated<String>)]
+    event: BTreeSet<Decorated<String>>,
     /// Binding to an engine,
     ///
     #[reality(ignore)]
     binding: Option<ThunkContext>,
-    /// Set of events registered on this host,
-    ///
-    #[reality(set_of=Decorated<String>)]
-    events: BTreeSet<Decorated<String>>,
     /// Node resource key,
     ///
     #[reality(ignore)]
@@ -399,6 +395,8 @@ async fn test_host() {
     |# help  =      Example of adding help documentation
     |# route =      start_c
 
+    : .action       b
+
     : .event        op_b_complete
     |# description = Example of an event that can be listened to
 
@@ -409,23 +407,15 @@ async fn test_host() {
     let engine = crate::engine::Engine::builder().build();
     let engine = engine.compile(workspace).await;
     let block = engine.block().unwrap();
-
+    let eh = engine.engine_handle();
     let deck = crate::deck::Deck::from(block);
     eprintln!("{:#?}", deck);
-    let host = engine.get_host("demo").await;
     let _e = engine.spawn(|_, p| Some(p));
+    if let Ok(hosted_resource) = eh.hosted_resource("demo://").await {
+        eprintln!("Found hosted resource - {}", hosted_resource.address());
 
-    if let Some(host) = host {
-        let action = host.into_call_output();
-
-        match action {
-            CallOutput::Spawn(Some(jh)) => {
-                jh.await.unwrap().unwrap();
-            },
-            _ => {
-
-            }
-        }
+        hosted_resource.spawn().unwrap().await.unwrap().unwrap();
     }
+
     ()
 }

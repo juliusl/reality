@@ -22,12 +22,12 @@ impl CurrentDir {
 }
 
 /// Constructs a workspace from a directory path,
-/// 
+///
 pub struct Dir(pub PathBuf);
 
 impl Dir {
     /// Scans the directory for .md and .runmd files and returns a workspace,
-    /// 
+    ///
     pub fn workspace(self) -> Workspace {
         let mut workspace = Empty.workspace();
 
@@ -63,11 +63,11 @@ fn read_dir(workspace: &mut Workspace, dir: impl AsRef<Path>) {
 }
 
 /// Returns an empty workspace,
-/// 
+///
 pub struct Empty;
 
 impl Empty {
-     /// Creates a new empty workspace,
+    /// Creates a new empty workspace,
     ///
     pub fn workspace(self) -> Workspace {
         Workspace::new()
@@ -139,7 +139,7 @@ impl Workspace {
     }
 
     /// Compiles the workspace w/ project,
-    /// 
+    ///
     pub async fn compile(&self, mut project: Project<Shared>) -> anyhow::Result<Self> {
         let mut compiled = self.clone();
 
@@ -158,5 +158,11 @@ impl Workspace {
 
         compiled.project = Some(project);
         Ok(compiled)
+    }
+
+    /// Returns an iterator over sources,
+    /// 
+    pub async fn iter_sources(&self) -> impl Iterator<Item = &Source> {
+        self.sources.iter()
     }
 }

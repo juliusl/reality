@@ -493,8 +493,9 @@ impl Context {
             eprintln!("Looking for resource at: {}", path.as_ref());
             if let Some(hosted_resource) = block.find_resource(path.as_ref().to_string()) {
                 eprintln!("Found hosted resource: {:?}", hosted_resource);
-
                 return Some(hosted_resource.clone());
+            } else {
+                eprintln!("Did not find resource at: {}\n{:#?}", path.as_ref(), block);
             }
         }
 

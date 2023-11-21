@@ -36,6 +36,11 @@ pub trait Ext {
     /// Listen for a condition from the host,
     /// 
     async fn listen_host(&self, host: &str, condition: &str) -> Option<HostCondition>;
+
+    /// If the decoration property "notify" is defined, notifies host on the condition
+    /// named there.
+    /// 
+    async fn on_notify_host(&self, host: &str) -> anyhow::Result<()>;
 }
 
 #[async_trait]
@@ -58,6 +63,14 @@ impl Ext for ThunkContext {
         self.node()
             .await
             .current_resource(self.attribute.map(|a| a.transmute()))
+    }
+
+    async fn on_notify_host(&self, host: &str) -> anyhow::Result<()> {
+        if let Some(notify) = self.property("notify") {
+            self.notify_host(host, notify)
+                .await?;
+        }
+        Ok(())
     }
 
     async fn notify_host(&self, host: &str, condition: &str) -> anyhow::Result<()> {
@@ -165,6 +178,9 @@ async fn receive_signal(tc: &mut ThunkContext) -> anyhow::Result<()> {
     eprintln!("Listening for signal {:?}", signal);
     if let Some(listener) = tc.listen_host(&signal.host, &signal.name).await {
         listener.listen().notified().await;
+        eprintln!("Got notification for {:?}", signal);
+    } else {
+        eprintln!("No condition found for {:?}", signal);
     }
     Ok(())
 }

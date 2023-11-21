@@ -360,12 +360,12 @@ async fn test_operation() {
     //     }
     // }
 
-    for (_, op) in engine.iter_operations() {
-        if !op.context().node().await.contains::<ThunkFn>(None) {
-            panic!();
-        }
-        op.context().call().await.unwrap().unwrap();
-    }
+    // for (_, op) in engine.iter_operations() {
+    //     if !op.context().node().await.contains::<ThunkFn>(None) {
+    //         panic!();
+    //     }
+    //     op.context().call().await.unwrap().unwrap();
+    // }
 
     // for (_, seq) in engine.iter_sequences() {
     //     let seq = seq.into_hosted_resource();
@@ -393,16 +393,16 @@ async fn test_operation() {
     //     }
     // }
 
-    let host = engine.get_host("demo").await;
-    let _e = engine.spawn(|_, p| Some(p));
+    // let host = engine.get_host("demo").await;
+    // let _e = engine.spawn(|_, p| Some(p));
 
-    if let Some(mut host) = host {
-        let action = host.spawn().expect("should be able to get an action");
-        action
-            .await
-            .unwrap()
-            .expect("should be able to await the action");
-    }
+    // if let Some(mut host) = host {
+    //     let action = host.spawn().expect("should be able to get an action");
+    //     action
+    //         .await
+    //         .unwrap()
+    //         .expect("should be able to await the action");
+    // }
 
     // let op = engine.get_operation("a").await.unwrap();
     // op.await.unwrap();

@@ -4,6 +4,7 @@ use std::task::Poll;
 use futures_util::FutureExt;
 use reality::prelude::*;
 use reality::SetIdentifiers;
+use tokio::pin;
 use tokio::task::JoinHandle;
 use tokio::task::JoinSet;
 use tracing::error;
@@ -54,7 +55,18 @@ async fn execute_sequence(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let mut seq = Interactive.create::<Sequence>(tc).await;
     seq.bind(tc.clone());
     seq.context_mut().attribute = tc.attribute;
-    seq.await?;
+
+    pin!(seq);
+
+    (&mut seq).await?;
+
+    unsafe {
+        let seq = seq.get_mut();
+        tc.node_mut()
+            .await
+            .put_resource(seq.clone(), tc.attribute.map(|a| a.transmute()));
+    }
+
     Ok(())
 }
 
@@ -374,22 +386,24 @@ impl Iterator for StepList {
 #[tokio::test]
 // #[tracing_test::traced_test]
 async fn test_seq() {
+    use crate::prelude::Instruction;
+
     let mut workspace = Workspace::new();
     workspace.add_buffer(
         "demo.md",
         r#"
     ```runmd
     + .operation a
-    <loopio.std.io.println>          Hello World a
+    <t/demo.testseq>          Hello World a
 
     + .operation b
-    <loopio.std.io.println>          Hello World b
+    <t/demo.testseq>          Hello World b
 
     + .operation c
-    <loopio.std.io.println>          Hello World c
+    <t/demo.testseq>          Hello World c
 
     + .operation d
-    <loopio.std.io.println>          Hello World d
+    <t/demo.testseq>          Hello World d
 
 
     # -- Test sequence decorations
@@ -405,15 +419,51 @@ async fn test_seq() {
 
     # -- If this were set to true, then the sequence would automatically loop
     : .loop false
+
+    + .host test
+    : .action   b/t/demo.testseq
     ```
     "#,
     );
 
-    let engine = crate::prelude::DefaultEngine.new();
-    let engine = engine.compile(workspace).await;
-    let mut seq = engine.get_sequence("test").await.unwrap();
-    let _e = engine.spawn(|_, p| Some(p));
+    let mut engine = crate::prelude::DefaultEngine.new();
+    engine.enable::<TestSeq>();
 
+    let engine = engine.compile(workspace).await;
+    let eh = engine.engine_handle();
+    let _e = engine.spawn(|_, p|{ 
+        // eprintln!("{:?}", p);
+        Some(p) 
+    });
+
+    let seq = eh.hosted_resource("engine://test").await.unwrap();
+    let tc = seq.spawn().unwrap().await.unwrap().unwrap();
+    let tc = tc.spawn_call().await.unwrap().unwrap();
+    tc.spawn_call().await.unwrap().unwrap();
     seq.spawn().unwrap().await.unwrap().unwrap();
+
+    // Tests that after calling the sequence several times, the counter has the expected value
+    let testseq = eh.hosted_resource("test://b/t/demo.testseq").await.unwrap();
+    let testseq = testseq.context().initialized::<TestSeq>().await;
+    assert_eq!(testseq.counter, 5);
     ()
+}
+
+#[derive(Reality, Default, Clone, Debug)]
+#[reality(call = call_test_seq, plugin, group = "demo")]
+struct TestSeq {
+    #[reality(derive_fromstr)]
+    name: String,
+    counter: usize,
+}
+
+async fn call_test_seq(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    let mut init = tc.initialized::<TestSeq>().await;
+    init.counter += 1;
+    eprintln!("{} {}", init.name, init.counter);
+    tc.node()
+        .await
+        .lazy_put_resource(init, tc.attribute.map(|a| a.transmute()));
+
+    Ok(())
 }

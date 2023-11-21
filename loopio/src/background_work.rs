@@ -12,7 +12,6 @@ use crate::prelude::Address;
 use crate::prelude::EnableWireBus;
 use crate::prelude::EngineHandle;
 use crate::prelude::Ext;
-use crate::prelude::WireBus;
 
 /// Background work container,
 ///
@@ -146,6 +145,8 @@ impl From<&ThunkContext> for BackgroundFuture {
 }
 
 impl BackgroundFuture {
+    /// Set the current address that's the target of this background future,
+    /// 
     pub fn set_address(&mut self, address: Address) {
         self.address = address;
     }

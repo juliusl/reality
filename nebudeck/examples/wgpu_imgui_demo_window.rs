@@ -20,27 +20,30 @@ fn main() -> anyhow::Result<()> {
         "test.md",
         r"
     ```runmd
+    # -- # Enable the wirebus on the demo frame editor
     + .operation debug_show_frame_editor
-    <loopio.enable-wirebus>                 demo://show_frame_editor/b/nebudeck.frame-editor             # Enables the wire-bus for attribute at specific path
+    <loopio.enable-wirebus>                 demo://show_frame_editor/b/nebudeck.frame-editor
     
     # -- Debug the frame editor w/ a frame editor
-    <nebudeck.frame-editor>                 demo://show_frame_editor/b/nebudeck.frame-editor             # Enables the frame editor for the frame editor
+    <nebudeck.frame-editor>                 demo://show_frame_editor/b/nebudeck.frame-editor
     |# title = Demo editor Demo editor 2
-
-    + .operation show_frame_editor                                                                      # Shows frame editor
+    
+    + .operation show_frame_editor
     |# help = Shows a frame editor example
 
-    <loopio.enable-wirebus>                 demo://call_test_2/a/demo.test2     # Enables the wire-bus for attribute at specific path
+    <loopio.enable-wirebus>                 demo://call_test_2/a/demo.test2
     : .allow_frame_updates                  true
 
     # -- # Demo: Customizable editor for editing and launching plugins
     # -- Also demonstrates the additional markup support
-    <b/nebudeck.frame-editor>               demo://call_test_2/a/demo.test2     # Enables the frame editor for an attribute at a specific path
+
+    <b/nebudeck.frame-editor>               demo://call_test_2/a/demo.test2
     |# title = Demo editor for test2
 
     # -- Example: Panel of customizable widgets
     # -- This example shows how to configure a customizable panel
-    :  test         .panel                  Test Panel                          # Custom panels can be constructed from runmd
+    
+    :  test         .panel                  Test Panel
     |# help         = This is an example help documentation
     
     # -- Example: Configuring a property edit widget for a property
@@ -78,7 +81,6 @@ fn main() -> anyhow::Result<()> {
 
     # -- # Example of an action to show a frame editor
     : .action   show_frame_editor/b/nebudeck.frame-editor
-        
     ```
     ");
     engine.enable::<Test>();

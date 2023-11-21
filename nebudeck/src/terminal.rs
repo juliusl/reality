@@ -15,7 +15,7 @@ use crate::Controller;
 pub struct Terminal;
 
 impl<T: TerminalApp> Controller<T> for Terminal {
-    fn take_control(self, app: Box<T>, engine: Engine) -> BackgroundWork {
+    fn take_control(self, app: Box<T>, engine: ForegroundEngine) -> BackgroundWork {
         let mut app: Box<dyn TerminalApp> = app;
         app.deref_mut().bind(engine.engine_handle());
 

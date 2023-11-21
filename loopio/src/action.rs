@@ -51,7 +51,7 @@ pub trait Action {
 
     /// Spawns the thunk attached to the current context for this action,
     /// 
-    fn spawn(&mut self) -> SpawnResult
+    fn spawn(&self) -> SpawnResult
     where
         Self: CallAsync
     {

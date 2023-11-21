@@ -225,6 +225,8 @@ impl ParsedAttributes {
     pub fn bind_last_to_path(&mut self, path: String) {
         if let Some(last) = self.attributes.last() {
             self.paths.insert(path, *last);
+        } else {
+            self.paths.insert(path, self.node);
         }
     }
 

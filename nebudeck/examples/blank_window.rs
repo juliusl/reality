@@ -10,7 +10,11 @@ use winit::window::WindowId;
 fn main() -> anyhow::Result<()> {
     let desktop = Desktop::<()>::new()?;
 
-    BlankWindow.delegate(desktop, Engine::new());
+    let engine = Engine::builder();
+    BlankWindow.delegate(
+        desktop, 
+        ForegroundEngine::new(engine)
+    );
 
     Ok(())
 }

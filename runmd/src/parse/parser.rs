@@ -178,6 +178,7 @@ impl Parser {
                     let node = node.deref_mut();
                     node.set_info(node_info.clone(), block_info.clone());
                     node.parsed_line(node_info.clone(), block_info.clone());
+                    node.assign_path(String::new());
                 }
                 self.current_node_idx = Some(node_info.idx);
                 self.graph.push(node);

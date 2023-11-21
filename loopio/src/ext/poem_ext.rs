@@ -3,17 +3,12 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use poem::delete;
 use poem::get;
-use poem::head;
 use poem::http::HeaderMap;
 use poem::http::*;
 use poem::listener::Acceptor;
 use poem::listener::Listener;
 use poem::listener::TcpListener;
-use poem::patch;
-use poem::post;
-use poem::put;
 use poem::web::Data;
 use poem::web::Path;
 use poem::Body;
@@ -24,17 +19,16 @@ use poem::IntoEndpoint;
 use poem::RequestBody;
 use poem::ResponseParts;
 use poem::Route;
+use poem::RouteMethod;
 use reality::prelude::*;
 use reality::CommaSeperatedStrings;
-use tokio_util::either::Either;
 use tracing::error;
 
 use crate::ext::*;
-use crate::operation::Operation;
 use crate::prelude::Action;
+use crate::prelude::Address;
 use crate::prelude::HyperExt;
 use crate::prelude::UriParam;
-use crate::sequence::Sequence;
 
 pub struct PoemRequest {
     pub path: Path<BTreeMap<String, String>>,
@@ -185,51 +179,22 @@ pub struct EngineProxy {
     ///
     #[reality(option_of=String)]
     alias: Option<String>,
-    /// Adds a route for a HEAD request,
     ///
-    #[reality(vec_of=Decorated<String>)]
-    head: Vec<Decorated<String>>,
-    /// Adds a route for a GET request,
     ///
-    #[reality(vec_of=Decorated<String>)]
-    get: Vec<Decorated<String>>,
-    /// Adds a route for a POST request,
-    ///
-    #[reality(vec_of=Decorated<String>)]
-    post: Vec<Decorated<String>>,
-    /// Adds a route for a PUT request,
-    ///
-    #[reality(vec_of=Decorated<String>)]
-    put: Vec<Decorated<String>>,
-    /// Adds a route for a DELETE request,
-    ///
-    #[reality(vec_of=Decorated<String>)]
-    delete: Vec<Decorated<String>>,
-    /// Adds a route for a PATCH request,
-    ///
-    #[reality(vec_of=Decorated<String>)]
-    patch: Vec<Decorated<String>>,
+    #[reality(map_of=Decorated<String>)]
+    path: BTreeMap<String, Decorated<String>>,
     /// Map of routes to the operations they map to,
     ///
-    #[reality(map_of=String)]
-    route: BTreeMap<String, String>,
-    /// Map of routes to fold into the proxy route,
-    ///
-    #[reality(ignore)]
-    #[serde(skip)]
-    routes: BTreeMap<String, poem::RouteMethod>,
+    #[reality(map_of=Decorated<Address>)]
+    route: BTreeMap<String, Decorated<Address>>,
 }
 
 impl Debug for EngineProxy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EngineProxy")
             .field("address", &self.address)
-            .field("head", &self.head)
-            .field("get", &self.get)
-            .field("post", &self.post)
-            .field("put", &self.put)
-            .field("delete", &self.delete)
-            .field("patch", &self.patch)
+            .field("alias", &self.alias)
+            .field("path", &self.path)
             .field("route", &self.route)
             .finish()
     }
@@ -240,14 +205,8 @@ impl Clone for EngineProxy {
         Self {
             address: self.address.clone(),
             alias: self.alias.clone(),
-            head: self.head.clone(),
-            get: self.get.clone(),
-            post: self.post.clone(),
-            put: self.put.clone(),
-            delete: self.delete.clone(),
-            patch: self.patch.clone(),
             route: self.route.clone(),
-            routes: BTreeMap::new(),
+            path: self.path.clone(),
         }
     }
 }
@@ -260,48 +219,31 @@ pub type PathVars = Path<BTreeMap<String, String>>;
 async fn on_proxy(
     req: &poem::Request,
     mut body: Body,
-    operation: Data<&Either<Operation, Sequence>>,
+    operation: Data<&HostedResource>,
 ) -> poem::Result<poem::Response> {
     let mut body = RequestBody::new(body);
     let path_vars = PathVars::from_request(req, &mut body).await?;
 
-    match *operation {
-        Either::Left(op) => {
-            let mut operation = op.clone();
-            let context = operation.context_mut();
-            context.reset();
+    let mut resource = operation.clone();
+    resource.context_mut().reset();
 
-            context.transient_mut().await.put_resource(
-                PoemRequest {
-                    path: path_vars,
-                    uri: req.uri().clone(),
-                    headers: req.headers().clone(),
-                    body: Some(body),
-                },
-                None,
-            );
+    resource.context_mut().transient_mut().await.put_resource(
+        PoemRequest {
+            path: path_vars,
+            uri: req.uri().clone(),
+            headers: req.headers().clone(),
+            body: Some(body),
+        },
+        None,
+    );
 
-            let mut context = operation.execute().await.map_err(|e| {
-                poem::Error::from_string(format!("{e}"), StatusCode::INTERNAL_SERVER_ERROR)
-            })?;
-
-            #[cfg(feature = "hyper-ext")]
-            match context.take_response().await {
-                Some(response) => Ok(response.into()),
-                None => Ok(poem::Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .finish()),
-            }
-
-            #[cfg(not(feature = "hyper-ext"))]
-            match (context.take_response_parts(), context.take_body()) {
-                (Some(parts), Some(body)) => Ok(poem::Response::from_parts(parts, body)),
-                _ => Ok(poem::Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .finish()),
-            }
-        }
-        Either::Right(_seq) => match _seq.clone().await {
+    if let Some(spawned) = resource.spawn() {
+        match spawned.await.map_err(|_| {
+            poem::Error::from_string(
+                "Hosted resource is unresponsive",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })? {
             Ok(mut context) => {
                 #[cfg(feature = "hyper-ext")]
                 match context.take_response().await {
@@ -319,121 +261,94 @@ async fn on_proxy(
                         .finish()),
                 }
             }
-            Err(err) => {
-                error!("{err}");
-                Ok(poem::Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .finish())
-            }
-        },
+            Err(err) => Err(poem::Error::from_string(
+                format!("{err}"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )),
+        }
+    } else {
+        Ok(poem::Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .finish())
     }
 }
-
-// macro_rules! create_routes {
-//     ($handler:ident, $ctx:ident, $rcv:ident, [$($ident:tt),*]) => {
-//         let engine_handle = $ctx.engine_handle().await;
-//         assert!(engine_handle.is_some());
-//         let engine_handle = engine_handle.unwrap();
-//         let operations = engine_handle.operations.clone();
-//         let sequences = engine_handle.sequences.clone();
-
-//         $(
-//             for (value, tag) in $rcv.$ident.iter().map(|g| (g.value(), g.tag())) {
-//                 match (value, tag) {
-//                     (Some(route), Some(op)) => {
-//                         let op = $rcv.route.get(op).cloned().unwrap_or_default();
-//                         if let Some(operation) = operations.get(&op).cloned()
-//                         {
-//                             if let Some(_route) = $rcv.routes.remove(route) {
-//                                 $rcv
-//                                     .routes
-//                                     .insert(route.to_string(), _route.$ident($handler.data(Either::<Operation, Sequence>::Left(operation))));
-//                             } else {
-//                                 $rcv
-//                                     .routes
-//                                     .insert(route.to_string(), $ident($handler.data(Either::<Operation, Sequence>::Left(operation))));
-//                             }
-//                         } else if let Some(sequence) = sequences.get(&op).cloned() {
-//                             if let Some(_route) = $rcv.routes.remove(route) {
-//                                 $rcv
-//                                     .routes
-//                                     .insert(route.to_string(), _route.$ident($handler.data(Either::<Operation, Sequence>::Right(sequence))));
-//                             } else {
-//                                 $rcv
-//                                     .routes
-//                                     .insert(route.to_string(), $ident($handler.data(Either::<Operation, Sequence>::Right(sequence))));
-//                             }
-//                         }
-//                     }
-//                     _ => {}
-//                 }
-//             }
-//         )*
-//     };
-//     ($handler:expr, $ctx:ident, $rcv:ident, [$($ident:tt),*]) => {
-//         let engine_handle = $ctx.engine_handle().await;
-//         assert!(engine_handle.is_some());
-//         let engine_handle = engine_handle.unwrap();
-//         let operations = engine_handle.operations.clone();
-//         let sequences = engine_handle.sequences.clone();
-
-//         $(
-//             for (value, tag) in $rcv.$ident.iter().map(|g| (g.value(), g.tag())) {
-//                 match (value, tag) {
-//                     (Some(route), Some(op)) => {
-//                         let op = $rcv.route.get(op).cloned().unwrap_or_default();
-//                         if let Some(_) = operations.get(&op).cloned()
-//                         {
-//                             if let Some(_route) = $rcv.routes.remove(route) {
-//                                 $rcv
-//                                     .routes
-//                                     .insert(route.to_string(), _route.$ident($handler()));
-//                             } else {
-//                                 $rcv
-//                                     .routes
-//                                     .insert(route.to_string(), $ident($handler()));
-//                             }
-//                         } else if let Some(_) = sequences.get(&op).cloned() {
-//                             if let Some(_route) = $rcv.routes.remove(route) {
-//                                 $rcv
-//                                     .routes
-//                                     .insert(route.to_string(), _route.$ident($handler()));
-//                             } else {
-//                                 $rcv
-//                                     .routes
-//                                     .insert(route.to_string(), $ident($handler()));
-//                             }
-//                         }
-//                     }
-//                     _ => {}
-//                 }
-//             }
-//         )*
-//     };
-// }
 
 /// Starts the engine proxy,
 ///
 async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
-    let mut initialized = context.initialized::<EngineProxy>().await;
-    assert!(
-        initialized.routes.is_empty(),
-        "Routes should only be initialized when the plugin is being run"
-    );
+    let initialized = Interactive.create::<EngineProxy>(context).await;
+    
+    // Find hosted resources to route to
+    let mut resources = BTreeMap::new();
+    for (setting, handler) in initialized.route.iter().filter_map(|(k, v)| {
+        if v.value().is_some() {
+            Some((k, v))
+        } else {
+            None
+        }
+    }) {
+        let address = handler.value().expect("should exist just checked");
+        if let Some(eh) = context.engine_handle().await {
+            match eh.hosted_resource(address.to_string()).await {
+                Ok(resource) => {
+                    trace!("Adding hosted resource for setting - {setting}");
+                    resources.insert(setting, resource);
+                }
+                Err(err) => {
+                    error!("Could not find hosted resource -- {err}");
+                }
+            }
+        } else {
+            error!("Did not have engine handle");
+        }
+    }
 
-    // Build routes for proxy server
-    // create_routes!(
-    //     on_proxy,
-    //     context,
-    //     initialized,
-    //     [head, get, post, put, patch, delete]
-    // );
-
+    // Create route handler
     let route = initialized
-        .routes
-        .into_iter()
-        .fold(Route::new(), |acc, (route, route_method)| {
-            acc.at(route, route_method)
+        .path
+        .iter()
+        .fold(Route::new(), |route, (setting, path)| {
+            let ep = |setting| {
+                if let Some(resource) = resources.get(&setting) {
+                    on_proxy.data(resource.clone())
+                } else {
+                    // TODO -- Create a "landing page hosted resource"
+                    on_proxy.data(HostedResource::default())
+                }
+            };
+
+            // Setting name
+            if let Some(methods) = path
+                .property("methods")
+                .and_then(|m| CommaSeperatedStrings::from_str(&m).ok())
+            {
+                // Parse the methods from decoration properties
+                let methods = methods
+                    .into_iter()
+                    .filter_map(|m| Method::from_str(&m).ok());
+                let route_method = methods.fold(RouteMethod::new(), move |route, m| match m {
+                    Method::GET => route.get(ep(setting)),
+                    Method::HEAD => route.head(ep(setting)),
+                    Method::OPTIONS => route.options(ep(setting)),
+                    Method::PUT => route.put(ep(setting)),
+                    Method::POST => route.post(ep(setting)),
+                    Method::PATCH => route.patch(ep(setting)),
+                    Method::DELETE => route.delete(ep(setting)),
+                    Method::CONNECT => route.connect(ep(setting)),
+                    Method::TRACE => route.trace(ep(setting)),
+                    _ => route,
+                });
+
+                if let Some(path) = path.value() {
+                    route.at(path, route_method)
+                } else {
+                    route
+                }
+            } else if let Some(path) = path.value() {
+                route.at(path, get(ep(setting)))
+            } else {
+                route
+            }
         });
 
     let listener = TcpListener::bind(&initialized.address)
@@ -460,17 +375,14 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
             .path_and_query("/")
             .build();
 
-        println!("Adding alias: {:?} -> {:?}", alias, replace_with);
+        eprintln!("Adding alias: {:?} -> {:?}", alias, replace_with);
         context
             .register_internal_host_alias(alias?, replace_with?)
             .await;
-
-        context
-            .notify_host(scheme.as_str(), "engine_proxy_started")
-            .await?;
+        context.on_notify_host(scheme.as_str()).await?;
     }
 
-    println!(
+    eprintln!(
         "listening on {:#?}",
         listener
             .local_addr()
@@ -581,32 +493,32 @@ pub struct ReverseProxy {
 async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = tc.initialized::<ReverseProxy>().await;
 
-    let mut routes = BTreeMap::new();
+    // // let mut routes = BTreeMap::new();
 
-    for host in init.forward.iter() {
-        let mut transient = tc.transient_mut().await;
-        let resource = transient
-            .take_resource::<EngineProxy>(Some(ResourceKey::with_hash(host.as_ref().to_string())));
-        eprintln!("Processing reverse proxy config for {}", host.as_ref(),);
-        if let Some(resource) = resource {
-            for (address, route_method) in resource.routes {
-                eprintln!("Forwarding route {}", address);
-                routes.insert(address, route_method);
-            }
-        }
-    }
+    // for host in init.forward.iter() {
+    //     let mut transient = tc.transient_mut().await;
+    //     let resource = transient
+    //         .take_resource::<EngineProxy>(Some(ResourceKey::with_hash(host.as_ref().to_string())));
+    //     eprintln!("Processing reverse proxy config for {}", host.as_ref(),);
+    //     // if let Some(resource) = resource {
+    //     //     for (address, route_method) in resource.routes {
+    //     //         eprintln!("Forwarding route {}", address);
+    //     //         routes.insert(address, route_method);
+    //     //     }
+    //     // }
+    // }
 
-    let mut route = Route::new();
-    for (address, _route) in routes {
-        route = route.at(address, _route);
-    }
+    // let mut route = Route::new();
+    // for (address, _route) in routes {
+    //     route = route.at(address, _route);
+    // }
 
-    let listener = TcpListener::bind(&init.address);
-    eprintln!("Listening to {}", init.address);
+    // let listener = TcpListener::bind(&init.address);
+    // eprintln!("Listening to {}", init.address);
 
-    poem::Server::new(listener)
-        .run_with_graceful_shutdown(route, tc.cancellation.child_token().cancelled(), None)
-        .await?;
+    // poem::Server::new(listener)
+    //     .run_with_graceful_shutdown(route, tc.cancellation.child_token().cancelled(), None)
+    //     .await?;
 
     Ok(())
 }

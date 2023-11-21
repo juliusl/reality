@@ -51,7 +51,7 @@ impl DevProject {
             let mut engine = Engine::builder();
             engine.enable::<crate::widgets::FrameEditor>();
             engine.enable::<Placeholder>();
-            workspace.add_buffer("dec_project_frame_editor.md", 
+            workspace.add_buffer("dev_project_frame_editor.md", 
             r#"
             ```runmd
             + .operation open_debug_window

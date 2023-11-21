@@ -1,7 +1,6 @@
     ```runmd
     + .operation test_std_io                                            # Tests std io utilities
-    <store/loopio.std>
-    <..io.println>          Hello World                                 # Prints a new line
+    <store/loopio.stdio.println>          Hello World                                 # Prints a new line
     | abc
     |   def
     |     ghi
@@ -20,17 +19,17 @@
 
     + .operation test_poem                                      # Tests poem utilities
     <loopio.poem.engine-proxy> localhost:0                      # Runs a local server that can start operations or sequences
-    |# notify = engine_proxy_started
+    |# notify = teshost://engine_proxy_started
     
     : .alias testhost://test-engine-proxy
     : test          .route test_std_io
     : test_2        .route run_println
     : test_handler  .route test_hyper
     : test_3        .route test_process
-    : test          .get /test
-    : test_2        .get /test2
-    : test_3        .get /test3
-    : test_handler  .get /test-handler/:name
+    : test          .path /test
+    : test_2        .path /test2
+    : test_3        .path /test3
+    : test_handler  .path /test-handler/:name
 
     + .operation start_reverse_proxy
     <loopio.receive-signal>                     engine_proxy_started

@@ -1,14 +1,17 @@
 use loopio::engine::Engine;
 use loopio::engine::EngineHandle;
+use loopio::foreground::ForegroundEngine;
 use nebudeck::ControlBus;
 use nebudeck::terminal::TerminalApp;
 use nebudeck::terminal::Terminal;
 /// Minimal example for starting a new terminal repl interaction,
 /// 
 fn main() {
+    let engine = Engine::builder();
+
     BlankRepl.delegate(
         Terminal::default(),
-        Engine::new(),
+        ForegroundEngine::new(engine),
     );
 }
 

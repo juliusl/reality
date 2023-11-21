@@ -46,7 +46,7 @@ pub struct EngineBuilder {
     ///
     pub(crate) runtime_builder: tokio::runtime::Builder,
     /// Workspace,
-    /// 
+    ///
     pub(crate) workspace: Workspace,
 }
 
@@ -88,13 +88,13 @@ impl EngineBuilder {
     }
 
     /// Sets a workspace,
-    /// 
+    ///
     pub fn set_workspace(&mut self, workspace: Workspace) {
         self.workspace = workspace;
     }
 
     /// Gets a mutable reference to the workspace,
-    /// 
+    ///
     pub fn workspace_mut(&mut self) -> &mut Workspace {
         &mut self.workspace
     }
@@ -477,12 +477,17 @@ impl Engine {
                         "Adding hosted resource --\n{:#?}",
                         deco
                     );
+                    eprintln!("Searching for node {}\n{:#?}", address.node_address(), block.paths);
                     if let Some(node) = block.paths.get(&address.node_address()) {
                         if let Some(node_storage) = nodes.get(&node.transmute()).cloned() {
                             if let Some(resource) = block
                                 .nodes
                                 .get(&node.transmute())
-                                .and_then(|n| n.paths.get(address.path()))
+                                .and_then(|n| {
+                                    let addr = address.path();
+                                    eprintln!("Searching for addr {}\n{:#?}", addr, n.paths);
+                                    n.paths.get(addr)
+                                })
                                 .cloned()
                             {
                                 let address = address.clone().with_host(host_name);
@@ -495,7 +500,14 @@ impl Engine {
 
                                 let mut context = self.new_context(node_storage.clone()).await;
                                 context.set_attribute(resource);
-                                hosted_resource.bind(context);
+                                {
+                                    hosted_resource.bind(context);
+                                }
+
+                                self.__internal_resources.insert(
+                                    Address::from_str(hosted_resource.address().as_str()).unwrap(),
+                                    hosted_resource.clone(),
+                                );
                             }
                         }
                     }
@@ -513,7 +525,7 @@ impl Engine {
                     }
 
                     self.__internal_resources.insert(
-                        Address::from_str(addr).unwrap(),
+                        Address::from_str(format!("{addr}://").as_str()).unwrap(),
                         host.into_hosted_resource(),
                     );
                 }
@@ -573,18 +585,6 @@ impl Engine {
         }
     }
 
-    /// Returns an iterator over operations,
-    ///
-    pub fn iter_operations(&self) -> impl Iterator<Item = (&String, &Operation)> {
-        self.operations.iter()
-    }
-
-    /// Returns an iterator over sequences,
-    ///
-    pub fn iter_sequences(&self) -> impl Iterator<Item = (&String, &Sequence)> {
-        self.sequences.iter()
-    }
-
     /// Returns the parsed block,
     ///
     pub fn block(&self) -> Option<&ParsedBlock> {
@@ -604,53 +604,6 @@ impl Engine {
     ///
     pub fn engine_handle(&self) -> EngineHandle {
         self.handle.clone()
-    }
-
-    /// Get host compiled by this engine,
-    ///
-    pub async fn get_host(&self, name: impl AsRef<str>) -> Option<host::Host> {
-        if let Some(mut host) = self.hosts.get(name.as_ref()).cloned() {
-            // TODO -- This is a bit wonky
-            // -- A little less wonky but still kind of weird
-            unsafe {
-                host.context_mut()
-                    .node_mut()
-                    .await
-                    .put_resource(self.engine_handle(), None);
-            }
-            Some(host)
-        } else {
-            None
-        }
-    }
-
-    pub async fn get_sequence(&self, name: impl AsRef<str>) -> Option<Sequence> {
-        if let Some(mut seq) = self.sequences.get(name.as_ref()).cloned() {
-            unsafe {
-                seq.context_mut()
-                    .node_mut()
-                    .await
-                    .put_resource(self.engine_handle(), None);
-            }
-            Some(seq)
-        } else {
-            None
-        }
-    }
-
-    pub async fn get_operation(&self, name: impl AsRef<str>) -> Option<operation::Operation> {
-        if let Some(mut operation) = self.operations.get(name.as_ref()).cloned() {
-            unsafe {
-                operation
-                    .context_mut()
-                    .node_mut()
-                    .await
-                    .put_resource(self.engine_handle(), None);
-            }
-            Some(operation)
-        } else {
-            None
-        }
     }
 
     /// Takes ownership of the engine and starts listening for packets,
@@ -687,11 +640,12 @@ impl Engine {
                                     if let Some(tx) = tx.take() {
                                         let mut resource = resource.clone();
                                         unsafe {
-                                            resource
+                                            let mut node = resource
                                                 .context_mut()
                                                 .node_mut()
-                                                .await
-                                                .put_resource(self.engine_handle(), None);
+                                                .await;
+                                            node.put_resource(self.engine_handle(), None);
+                                            node.drain_dispatch_queues();
                                         }
 
                                         resource.context_mut().write_cache(self.engine_handle());
@@ -715,6 +669,61 @@ impl Engine {
                                 }
                             }
                             Err(_) => {}
+                        }
+                    }
+                    EngineAction::Resource { address, mut tx } => {
+                        info!(address, "Looking up hosted resource");
+                        match Address::from_str(&address) {
+                            Ok(address) => {
+                                // Lookup from the internal resources for a plugin
+                                if let Some(resource) = self.__internal_resources.get(&address) {
+                                    trace!(address = resource.address(), "Found resource");
+                                    if let Some(tx) = tx.take() {
+                                        let mut resource = resource.clone();
+                                        unsafe {
+                                            let mut node = resource
+                                                .context_mut()
+                                                .node_mut()
+                                                .await;
+                                            node.put_resource(self.engine_handle(), None);
+                                            node.drain_dispatch_queues();
+                                        }
+
+                                        resource.context_mut().write_cache(self.engine_handle());
+
+                                        if let Some(node) = self.nodes.get(&resource.node_rk()) {
+                                            let mut tc = self.new_context(node.clone()).await;
+                                            tc.attribute = resource.plugin_rk();
+                                            resource.bind(tc);
+                                        } else {
+                                            error!("Could not find node storage for resource");
+                                            if let Err(_) = tx.send(None) {
+                                                // TODO
+                                                eprintln!("Could not send spawn result");
+                                            }
+                                            continue;
+                                        }
+
+                                        if let Err(_) = tx.send(Some(resource)) {
+                                            // TODO
+                                            eprintln!("Could not send spawn result");
+                                        }
+                                    }
+                                } else {
+                                    eprintln!(
+                                        "Did not find resource -- {:#?}\n{:#?}",
+                                        address, self.__internal_resources
+                                    );
+                                }
+                            }
+                            Err(_) => {}
+                        }
+
+                        if let Some(tx) = tx.take() {
+                            if let Err(_) = tx.send(None) {
+                                // TODO
+                                eprintln!("Could not send spawn result");
+                            }
                         }
                     }
                     EngineAction::Sync { mut tx } => {
@@ -785,6 +794,17 @@ enum EngineAction {
         #[serde(skip)]
         tx: Option<tokio::sync::oneshot::Sender<CallOutput>>,
     },
+    /// Retrieves a hosted resource,
+    ///
+    Resource {
+        /// Address of the hosted resource to retrieve,
+        ///
+        address: String,
+        /// Channel to transmit the hosted resource if found,
+        ///
+        #[serde(skip)]
+        tx: Option<tokio::sync::oneshot::Sender<Option<HostedResource>>>,
+    },
     /// Gets an updated engine handle,
     ///
     /// **TODO**: This could be used to swap out the internals?
@@ -802,6 +822,11 @@ impl Debug for EngineAction {
         match self {
             Self::Call { address, tx } => f
                 .debug_struct("Run")
+                .field("address", address)
+                .field("has_tx", &tx.is_some())
+                .finish(),
+            Self::Resource { address, tx } => f
+                .debug_struct("Resource")
                 .field("address", address)
                 .field("has_tx", &tx.is_some())
                 .finish(),
@@ -870,6 +895,32 @@ impl EngineHandle {
                 Err(anyhow!("Call was aborted"))
             }
             _ => Err(anyhow!("Call was skipped")),
+        }
+    }
+
+    /// Retrieves a hosted resource,
+    ///
+    pub async fn hosted_resource(
+        &self,
+        address: impl Into<String>,
+    ) -> anyhow::Result<HostedResource> {
+        let address = address.into();
+
+        trace!("Looking for {}", &address);
+        let (tx, rx) = tokio::sync::oneshot::channel::<Option<HostedResource>>();
+
+        let packet = EnginePacket {
+            action: EngineAction::Resource {
+                address: address.to_string(),
+                tx: Some(tx),
+            },
+        };
+
+        self.sender.send(packet)?;
+
+        match rx.await? {
+            Some(resource) => Ok(resource),
+            None => Err(anyhow::anyhow!("Could not find resource {address}")),
         }
     }
 
