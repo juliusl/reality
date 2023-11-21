@@ -5,7 +5,7 @@ macro_rules! borrow {
     (async $storage:ident $(,)? $ty:ty, $key:literal, |$var:ident| => $body:block )=> {
         {
             const KEY: &'static str = $key;
-            if let Some(resource) = $storage.storage.latest().await.resource::<$ty>(Some(ResourceKey::with_label(KEY))) {
+            if let Some(resource) = $storage.storage.read().await.resource::<$ty>(ResourceKey::with_hash(KEY)) {
                 #[allow(unused_mut)]
                 let mut monad = |$var: &$ty| $body;
 
@@ -15,7 +15,7 @@ macro_rules! borrow {
     };
     (async $storage:ident $(,)? $ty:ty, $key:ident, |$var:ident| => $body:block )=> {
         {
-            if let Some(resource) = $storage.storage.latest().await.resource::<$ty>(ResourceKey::with_hash($key)) {
+            if let Some(resource) = $storage.storage.read().await.resource::<$ty>(ResourceKey::with_hash($key)) {
                 #[allow(unused_mut)]
                 let mut monad = |$var: &$ty| $body;
 
@@ -25,7 +25,7 @@ macro_rules! borrow {
     };
     (async $storage:ident $(,)? $ty:ty, |$var:ident| => $body:block )=> {
         {
-            if let Some(resource) = $storage.storage.latest().await.resource::<$ty>(ResourceKey::root()) {
+            if let Some(resource) = $storage.storage.read().await.resource::<$ty>(ResourceKey::root()) {
                 #[allow(unused_mut)]
                 let mut monad = |$var: &$ty| $body;
 
@@ -137,8 +137,7 @@ macro_rules! borrow_mut {
 macro_rules! take {
     (async $storage:ident $(,)? $ty:ty, $key:literal)=> {
         {
-            const KEY: &'static str = $key;
-            $storage.storage.write().await.take_resource::<$ty>(ResourceKey::with_hash(KEY))
+            $storage.storage.write().await.take_resource::<$ty>(ResourceKey::with_hash($key))
         }
     };
     (async $storage:ident $(,)? $ty:ty, $key:ident)=> {
@@ -153,8 +152,7 @@ macro_rules! take {
     };
     ($storage:ident $(,)? $ty:ty, $key:literal)=> {
         {
-            const KEY: &'static str = $key;
-            $storage.take_resource::<$ty>(ResourceKey::with_hash(KEY))
+            $storage.take_resource::<$ty>(ResourceKey::with_hash($key))
         }
     };
     ($storage:ident $(,)? $ty:ty, $key:ident)=> {

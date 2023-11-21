@@ -467,7 +467,7 @@ impl StructData {
                     let mut packet = <Self as OnParseField<#offset, #ty>>::into_packet(self.#_name.clone());
                     packet.owner_name = std::any::type_name::<#name #ty_generics>().to_string();
                     packet.field_name = <Self as OnParseField<#offset, #ty>>::field_name().to_string();
-                    packet.attribute_hash = if key.is_none() { None } else { Some(key.data) };
+                    packet.attribute_hash = Some(key.data);
                     packet.into_wire::<#pty>()
                 }
             )

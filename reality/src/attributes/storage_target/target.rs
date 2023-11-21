@@ -155,7 +155,11 @@ pub trait StorageTarget {
     where
         Self: Sized,
     {
-        resource_key.key()
+        if resource_key.is_root() {
+            ResourceKey::<T>::new().key()
+        } else {
+            resource_key.key()
+        }
     }
 
     /// Enables built-in dispatch queues,

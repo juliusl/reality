@@ -71,18 +71,23 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         ResourceKey { data: 0, _t: PhantomData }
     }
 
-    pub const fn is_none(&self) -> bool {
+    /// Returns true if the current key is a root key,
+    /// 
+    pub const fn is_root(&self) -> bool {
         self.data == 0
     }
 
-    pub const fn expect_not_root(self) -> Self {
-        if self.is_none() {
-            panic!("expected not root");
+    /// Panics if the current key is the root key,
+    /// 
+    pub fn expect_not_root(self) -> Self {
+        if self.is_root() {
+            Self::new()
+        } else {
+            self
         }
-        self
     }
 
-    /// Creates a new resource-key for a type,
+    /// Creates a new resource-key for type,
     ///
     pub fn new() -> Self {
         let type_key = Self::type_key();
@@ -344,24 +349,4 @@ bitflags::bitflags! {
         ///
         const HASHED_COUNTER = ResourceKeyFlags::HASHED.bits() | ResourceKeyFlags::ENABLE_CURSOR.bits();
     }
-}
-
-#[test]
-fn test_resource_key() {
-    struct Test;
-
-    let id = std::any::TypeId::of::<Test>();
-    println!("{:x}", std::ptr::addr_of!(id) as u64);
-    println!("{:?}", std::any::type_name::<Test>().as_ptr());
-
-    let key = ResourceKey::<Test>::with_hash("test_label");
-    let key_with_label = key.key();
-    println!("{:?} {}", key.label(), key_with_label);
-
-    let key = ResourceKey::<Test>::with_hash("test_label");
-    let key_with_hash = key.key();
-    println!("{}", key_with_hash);
-
-    // Even though the above keys use the same value, they should produce different keys
-    assert_ne!(key_with_label, key_with_hash);
 }

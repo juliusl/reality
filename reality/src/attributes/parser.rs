@@ -515,8 +515,6 @@ impl<S: StorageTarget> AttributeParser<S> {
         &mut self,
         source: impl AsRef<str>,
     ) -> anyhow::Result<ResourceKey<T>> {
-        let mut parsed_key = ResourceKey::root();
-
         let idx = self.attributes.len();
         let key = ResourceKey::<Attribute>::with_hash(idx);
 
@@ -526,19 +524,14 @@ impl<S: StorageTarget> AttributeParser<S> {
             let init = source.as_ref().parse::<T>().map_err(|_| {
                 anyhow::anyhow!("Could not parse {} from {}", std::any::type_name::<T>(), source.as_ref())
             })?;
-            parsed_key = key.transmute();
-            storage.lazy_put_resource(init, parsed_key);
+            storage.lazy_put_resource(init, key.transmute());
             if let Some(tag) = self.tag() {
-                storage.lazy_put_resource(Tag(tag.to_string()), parsed_key.transmute());
+                storage.lazy_put_resource(Tag(tag.to_string()), key.transmute());
             }
         }
+        self.attributes.push(key);
 
-        if parsed_key.is_none() {
-            self.attributes.push(key);
-            Ok(parsed_key.transmute())
-        } else {
-            Err(anyhow::anyhow!("Could not parsed attribute"))
-        }
+        Ok(key.transmute())
     }
 
     /// Adds an object type to the parser,

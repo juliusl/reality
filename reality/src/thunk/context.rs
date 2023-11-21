@@ -443,7 +443,7 @@ impl Context {
     /// Schedules garbage collection of the variant,
     ///
     pub fn garbage_collect(&self) {
-        if self.attribute.is_none() {
+        if self.attribute.is_root() {
             return;
         }
 

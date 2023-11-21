@@ -115,7 +115,7 @@ pub trait ToFrame : AttributeType<Shared> {
             field_offset: usize::MAX,
             field_name: Self::symbol().to_string(),
             owner_name: "self".to_string(),
-            attribute_hash: if key.is_none() { None } else { Some(key.data) },
+            attribute_hash: Some(key.data),
             op: 0,
         }
     }
