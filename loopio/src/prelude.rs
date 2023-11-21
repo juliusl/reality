@@ -15,6 +15,8 @@ pub use crate::engine::EngineHandle;
 pub use crate::engine::DefaultEngine;
 pub use crate::foreground::ForegroundEngine;
 pub use crate::host::Host;
+pub use crate::sequence::Sequence;
+pub use crate::operation::Operation;
 pub use crate::address::Address;
 pub use crate::action::Action;
 pub use crate::spawned::*;

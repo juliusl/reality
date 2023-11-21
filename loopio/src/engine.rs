@@ -392,7 +392,7 @@ impl Engine {
                         .await;
                     context.attribute = hostkey.transmute();
 
-                    let mut host = Interactive.create::<Host>(&mut context).await;
+                    let mut host = Remote.create::<Host>(&mut context).await;
                     host.bind(context);
                     // Find actions defined by the host for adding to the parsed block later
                     for (dec, a) in host
@@ -431,7 +431,7 @@ impl Engine {
                     let mut context = self.new_context(target.clone()).await;
                     context.attribute = seqkey.transmute();
 
-                    let mut sequence = Interactive.create::<Sequence>(&mut context).await;
+                    let mut sequence = Remote.create::<Sequence>(&mut context).await;
                     sequence.bind(context);
                     sequence.bind_plugin(seqkey.transmute());
 

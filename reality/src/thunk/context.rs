@@ -71,6 +71,18 @@ impl From<AsyncStorageTarget<Shared>> for Context {
     }
 }
 
+impl AsRef<ThunkContext> for ThunkContext {
+    fn as_ref(&self) -> &ThunkContext {
+        self
+    }
+}
+
+impl AsMut<ThunkContext> for ThunkContext {
+    fn as_mut(&mut self) -> &mut ThunkContext {
+        self
+    }
+}
+
 impl Default for Context {
     fn default() -> Self {
         Self::new()
@@ -525,13 +537,14 @@ impl Context {
     }
 }
 
-/// Pointer struct for convenience calling plugin initializers,
-///
-pub struct Interactive;
+/// A Remote Plugin can depend on initialization of it's state from 
+/// remote and local dependencies.
+/// 
+pub struct Remote;
 
-impl Interactive {
-    /// Creates plugin P w/ enhancements,
-    ///
+impl Remote {
+    /// Creates plugin P w/ remote features enabled,
+    /// 
     pub async fn create<P>(self, tc: &mut ThunkContext) -> P
     where
         P: Plugin + Sync + Send + 'static,
@@ -553,13 +566,13 @@ impl Interactive {
     }
 }
 
-/// Pointer struct for convenience calling plugin initializers,
-///
-pub struct NonInteractive;
+/// A Local plugin can depend on local resources for it's initialization,
+/// 
+pub struct Local;
 
-impl NonInteractive {
-    /// Creates plugin P w/ enhancements,
-    ///
+impl Local {
+    /// Creates plugin local Plugin P,
+    /// 
     pub async fn create<P>(self, tc: &mut ThunkContext) -> P
     where
         P: Plugin + Sync + Send + 'static,
@@ -576,6 +589,8 @@ impl NonInteractive {
     }
 }
 
+/// Struct for initializing a plugin,
+/// 
 pub struct Initializer<'a, P>
 where
     P: Plugin + Sync + Send + 'static,

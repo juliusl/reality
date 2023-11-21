@@ -10,6 +10,7 @@ use tokio::sync::Notify;
 
 use reality::prelude::*;
 
+use crate::action::ActionExt;
 use crate::prelude::Action;
 use crate::prelude::Address;
 use crate::prelude::Ext;
@@ -63,7 +64,7 @@ pub struct Host {
 }
 
 async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let mut init = Interactive.create::<Host>(tc).await;
+    let mut init = Remote.create::<Host>(tc).await;
     init.bind(tc.clone());
 
     if let Some(docs) = tc.decoration.as_ref().and_then(|d| d.doc_headers.as_ref()) {
@@ -461,10 +462,9 @@ async fn test_host() {
         //     .unwrap();
     }
 
-    if let Ok(h) = eh.hosted_resource("engine://test").await {
-        let seq = h.context().initialized::<Sequence>().await;
-
-        eprintln!("{:#?}", seq);
+    if let Ok(mut h) = eh.hosted_resource("engine://test").await {
+        let seq = h.as_local_plugin::<Sequence>().await;
+        eprintln!("{:?}", seq.context().decoration);
     }
     ()
 }

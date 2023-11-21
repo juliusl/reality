@@ -52,7 +52,7 @@ pub struct Sequence {
 }
 
 async fn execute_sequence(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let mut seq = Interactive.create::<Sequence>(tc).await;
+    let mut seq = Remote.create::<Sequence>(tc).await;
     seq.bind(tc.clone());
     seq.context_mut().attribute = tc.attribute;
 

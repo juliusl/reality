@@ -181,7 +181,7 @@ struct Test2 {
 }
 
 async fn test_2(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let init = Interactive.create::<Test2>(tc).await;
+    let init = Remote.create::<Test2>(tc).await;
     println!("{:#?}", init);
     tc.print_debug_info();
 

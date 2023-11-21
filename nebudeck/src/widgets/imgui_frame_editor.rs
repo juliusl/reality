@@ -40,7 +40,7 @@ pub struct FrameEditor {
 }
 
 async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let mut init = Interactive.create::<FrameEditor>(tc).await;
+    let mut init = Remote.create::<FrameEditor>(tc).await;
 
     init.editor_name = init.editor_name.or(tc.property("title").cloned());
 

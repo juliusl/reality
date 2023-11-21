@@ -276,7 +276,7 @@ async fn on_proxy(
 /// Starts the engine proxy,
 ///
 async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
-    let initialized = Interactive.create::<EngineProxy>(context).await;
+    let initialized = Remote.create::<EngineProxy>(context).await;
     
     // Find hosted resources to route to
     let mut resources = BTreeMap::new();

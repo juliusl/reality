@@ -32,7 +32,7 @@ pub struct BackgroundWork {
 /// Creates a new background work resource,
 ///
 async fn create_background_work_handle(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let init = Interactive.create::<BackgroundWork>(tc).await;
+    let init = Remote.create::<BackgroundWork>(tc).await;
     println!("Creating background work handle");
     let (_, bh) = tc.maybe_store_kv::<BackgroundWorkEngineHandle>(
         init.address.to_string(),
@@ -240,6 +240,8 @@ impl BackgroundFuture {
 
     /// Blocks the current thread to surface the background task onto the current thread,
     /// 
+    /// **Note**: This must be called outside of the tokio-runtime.
+    /// 
     pub fn into_foreground(self) -> anyhow::Result<ThunkContext> {
         futures::executor::block_on(self.task())
     }
@@ -293,7 +295,6 @@ where
     }
 }
 
-
 struct ThunkWorker {
     inner: Dispatcher<Shared, ThunkContext>
 }
@@ -314,7 +315,6 @@ async fn test_worker() {
             
         }
     });
-
     disp.dispatch_all().await;
 
     task_mut!(disp, |tc| => { 

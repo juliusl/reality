@@ -14,8 +14,8 @@ pub mod prelude {
     pub use crate::AttributeType;
     pub use crate::BlockObject;
     use crate::ResourceKey;
-    pub use super::context::Interactive;
-    pub use super::context::NonInteractive;
+    pub use super::context::Remote;
+    pub use super::context::Local;
     pub use crate::Shared;
     pub use crate::StorageTarget;
     pub use crate::ToFrame;

@@ -5,6 +5,7 @@ use tracing::trace;
 
 use crate::host::HostCondition;
 use crate::engine::EngineHandle;
+use crate::prelude::{Action, Host};
 
 #[cfg(feature = "hyper-ext")]
 pub mod hyper_ext;
@@ -86,6 +87,15 @@ impl Ext for ThunkContext {
     }
 
     async fn listen_host(&self, host: &str, condition: &str) -> Option<HostCondition> {
+        if let Some(eh) = self.engine_handle().await {
+            if let Ok(host) = eh.hosted_resource(format!("{host}://")).await {
+                let host = host.context().initialized::<Host>().await;
+
+                
+            }
+        }
+        
+
         // if let Some(host) = self.host(host).await {
         //     if let Some(host_condition) =
         //         host.current_resource::<HostCondition>(Some(ResourceKey::with_hash(condition)))

@@ -1,14 +1,11 @@
 use std::pin::Pin;
 
 use anyhow::anyhow;
+use async_trait::async_trait;
 use futures_util::Future;
-use reality::HostedResource;
-use reality::ResourceKey;
-use reality::CallOutput;
-use reality::CallAsync;
-use reality::SpawnResult;
-use reality::ThunkContext;
 use reality::attributes;
+
+use crate::prelude::*;
 
 /// Common trait for engine node types,
 ///
@@ -31,7 +28,7 @@ pub trait Action {
     /// 
     /// **Note** If not set, then the default is the default plugin key.
     /// 
-    fn bind_plugin(&mut self, plugin: ResourceKey<reality::attributes::Attribute>);
+    fn bind_plugin(&mut self, plugin: ResourceKey<attributes::Attribute>);
 
     /// Returns the bound node resource key for this action,
     /// 
@@ -105,3 +102,47 @@ pub trait Action {
         )
     }
 }
+
+#[async_trait]
+pub trait ActionExt: Action + Send {
+    /// Returns the simple form of the plugin,
+    /// 
+    /// **Note** The simple form only initializes from runmd instructions.
+    /// 
+    #[inline]
+    async fn as_plugin<P>(&self) -> P 
+    where
+        P: Plugin
+    {
+        self.context().initialized::<P>().await
+    }
+
+    /// Returns the remote plugin form of the plugin,
+    /// 
+    #[inline]
+    async fn as_remote_plugin<P>(&mut self) -> P 
+    where
+        P: Plugin
+    {
+        Remote.create(self.context_mut()).await
+    }
+
+    /// Returns the local plugin form of the plugin,
+    /// 
+    #[inline]
+    async fn as_local_plugin<P>(&mut self) -> P 
+    where
+        P: Plugin
+    {
+        Local.create(self.context_mut()).await
+    }
+}
+
+#[async_trait]
+impl ActionExt for Host {}
+#[async_trait]
+impl ActionExt for Sequence {}
+#[async_trait]
+impl ActionExt for Operation {}
+#[async_trait]
+impl ActionExt for HostedResource {}
