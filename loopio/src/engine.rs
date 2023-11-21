@@ -603,9 +603,9 @@ impl Engine {
     pub fn spawn(
         self,
         middleware: impl Fn(&mut Engine, EnginePacket) -> Option<EnginePacket> + Send + Sync + 'static,
-    ) -> JoinHandle<anyhow::Result<Self>> {
+    ) -> (EngineHandle, JoinHandle<anyhow::Result<Self>>) {
         eprintln!("Starting engine packet listener");
-        tokio::spawn(self.handle_packets(middleware))
+        (self.engine_handle(), tokio::spawn(self.handle_packets(middleware)))
     }
 
     /// Starts handling engine packets,

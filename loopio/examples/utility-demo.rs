@@ -3,6 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bytes::BufMut;
 use bytes::BytesMut;
+use loopio::action::Action;
 use loopio::prelude::StdExt;
 use loopio::prelude::PoemExt;
 use loopio::engine::Engine;
@@ -26,13 +27,13 @@ async fn main() {
     let engine = engine.compile(workspace).await;
 
     // let mut host = engine.get_host("testhost").await.expect("should have host");
-    engine.spawn(|_, packet| {
+    let (eh, _) = engine.spawn(|_, packet| {
         println!("{:?}", packet);
         Some(packet)
     });
-    
-    // let task = host.spawn();
-    // task.unwrap().await.unwrap().unwrap();
+
+    let host = eh.hosted_resource("testhost://").await.unwrap();
+    let _task = host.spawn_call().await.unwrap();
     ()
 }
 

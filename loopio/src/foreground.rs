@@ -92,7 +92,7 @@ impl ForegroundEngine {
         let mut eh = engine.engine_handle();
 
         let __engine_listener = runtime.spawn(async move {
-            let pk = engine.spawn(|_, p| Some(p));
+            let (_, pk) = engine.spawn(|_, p| Some(p));
             pk.await
         });
 

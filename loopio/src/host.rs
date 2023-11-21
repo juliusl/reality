@@ -149,8 +149,11 @@ impl Host {
                 .expect("should be bound to an engine handle");
 
             if let Some(start) = self.start.as_ref().and_then(|s| s.value()) {
-                let resource = engine.hosted_resource(start.to_string()).await?;
-                resource.spawn().unwrap().await?
+                let mut resource = engine.hosted_resource(start.to_string()).await?;
+
+                resource.context_mut().write_cache(self.condition.clone());
+
+                resource.spawn_call().await
             } else {
                 Err(anyhow::anyhow!("Start action is not set"))
             }
@@ -409,7 +412,8 @@ async fn test_host() {
     # -- # Example of an event
     : .event                op_b_complete
     |# description  =       Example of an event that can be listened to
-
+    
+    
     ```
     "#,
     );

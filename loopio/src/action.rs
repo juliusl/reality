@@ -67,7 +67,10 @@ pub trait Action {
 
     /// Returns a future that contains the result of the action,
     /// 
-    fn spawn_call(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<ThunkContext>> + '_>> {
+    fn spawn_call(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<ThunkContext>> + Send + '_>> 
+    where
+        Self: Sync
+    {
         Box::pin(async move {
             let r = self.into_hosted_resource();
             if let Some(s) = r.spawn() {
