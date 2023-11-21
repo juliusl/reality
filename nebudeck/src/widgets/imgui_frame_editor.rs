@@ -78,7 +78,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
         {
             let node = editing.node().await;
             if let Some(parsed_attributes) =
-                node.current_resource::<ParsedAttributes>(loopio::prelude::ResourceKey::none())
+                node.current_resource::<ParsedAttributes>(loopio::prelude::ResourceKey::root())
             {
                 info!("Found parsed attributes");
                 drop(node);

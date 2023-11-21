@@ -74,8 +74,8 @@ impl EngineBuilder {
         #[cfg(feature = "hyper-ext")]
         self.register_with(|p| {
             if let Some(s) = p.storage() {
-                s.lazy_put_resource(secure_client(), ResourceKey::none());
-                s.lazy_put_resource(local_client(), ResourceKey::none());
+                s.lazy_put_resource(secure_client(), ResourceKey::root());
+                s.lazy_put_resource(local_client(), ResourceKey::root());
             }
         });
 
@@ -298,7 +298,7 @@ impl Engine {
 
                 if let Some(address) = address {
                     eprintln!("Setting address {:?}", address);
-                    storage.put_resource(address, ResourceKey::none());
+                    storage.put_resource(address, ResourceKey::root());
                 }
 
                 storage.put_resource::<ThunkFn>(<T as Plugin>::call, last.transmute());
@@ -306,7 +306,7 @@ impl Engine {
                     EnableFrame(<T as Plugin>::enable_frame),
                     last.transmute(),
                 );
-                storage.put_resource(last.transmute::<T>(), ResourceKey::none());
+                storage.put_resource(last.transmute::<T>(), ResourceKey::root());
             }
         }
     }
@@ -348,17 +348,17 @@ impl Engine {
 
                 if let Ok(address) = Address::from_str(&operation.address()) {
                     eprintln!("Adding address for operation -- {}", address);
-                    storage.put_resource(address, ResourceKey::none());
+                    storage.put_resource(address, ResourceKey::root());
                 } else {
                     eprintln!("Could not add address for {}", (&operation.address()));
                 }
 
-                storage.put_resource::<ThunkFn>(<Operation as Plugin>::call, ResourceKey::none());
+                storage.put_resource::<ThunkFn>(<Operation as Plugin>::call, ResourceKey::root());
                 storage.put_resource::<EnableFrame>(
                     EnableFrame(<Operation as Plugin>::enable_frame),
-                    ResourceKey::none(),
+                    ResourceKey::root(),
                 );
-                storage.put_resource(operation, ResourceKey::none());
+                storage.put_resource(operation, ResourceKey::root());
             }
 
             for p in plugins.iter() {
@@ -384,7 +384,7 @@ impl Engine {
                 target.write().await.drain_dispatch_queues();
 
                 let storage = target.latest().await;
-                let hostkey = storage.current_resource::<ResourceKey<Host>>(ResourceKey::none()).unwrap_or(ResourceKey::none());
+                let hostkey = storage.current_resource::<ResourceKey<Host>>(ResourceKey::root()).unwrap_or(ResourceKey::root());
                 if let Some(_) = storage.current_resource::<Host>(hostkey) {
                     // Since new_context set the host map, earlier hosts are available to later hosts
                     let mut context = self
@@ -415,7 +415,7 @@ impl Engine {
             // Extract actions
             for (_, target) in nodes.iter() {
                 if let Some(mut operation) =
-                    target.latest().await.current_resource::<Operation>(ResourceKey::none())
+                    target.latest().await.current_resource::<Operation>(ResourceKey::root())
                 {
                     operation.bind(self.new_context(target.clone()).await);
 
@@ -426,7 +426,7 @@ impl Engine {
                 target.write().await.drain_dispatch_queues();
 
                 let storage = target.latest().await;
-                let seqkey = storage.current_resource::<ResourceKey<Sequence>>(ResourceKey::none()).unwrap_or(ResourceKey::none());
+                let seqkey = storage.current_resource::<ResourceKey<Sequence>>(ResourceKey::root()).unwrap_or(ResourceKey::root());
                 if let Some(_) = storage.current_resource::<Sequence>(seqkey) {
                     let mut context = self.new_context(target.clone()).await;
                     context.attribute = seqkey.transmute();
@@ -447,14 +447,14 @@ impl Engine {
                 target
                     .write()
                     .await
-                    .put_resource(self.engine_handle(), ResourceKey::none());
+                    .put_resource(self.engine_handle(), ResourceKey::root());
             }
 
             // Add ParsedBlock to all nodes,
             if let Ok(mut block) = project.parsed_block().await {
                 // Bind all pending address to the block first
                 for (node, target) in nodes.iter() {
-                    if let Some(address) = target.read().await.resource::<Address>(ResourceKey::none()) {
+                    if let Some(address) = target.read().await.resource::<Address>(ResourceKey::root()) {
                         block.bind_node_to_path(node.transmute(), address.to_string());
                     }
                 }
@@ -507,13 +507,13 @@ impl Engine {
 
                 // Share the block w/ all nodes
                 for (_, target) in nodes.iter() {
-                    target.write().await.put_resource(block.clone(), ResourceKey::none());
+                    target.write().await.put_resource(block.clone(), ResourceKey::root());
                 }
 
                 for (addr, host) in self.hosts.iter_mut() {
                     unsafe {
                         let mut node = host.context_mut().node_mut().await;
-                        node.put_resource(block.clone(), ResourceKey::none());
+                        node.put_resource(block.clone(), ResourceKey::root());
                     }
 
                     self.__internal_resources.insert(
@@ -525,7 +525,7 @@ impl Engine {
                 for (addr, op) in self.operations.iter_mut() {
                     unsafe {
                         let mut node = op.context_mut().node_mut().await;
-                        node.put_resource(block.clone(), ResourceKey::none());
+                        node.put_resource(block.clone(), ResourceKey::root());
                     }
                     self.__internal_resources
                         .insert(Address::from_str(addr).unwrap(), op.into_hosted_resource());
@@ -534,7 +534,7 @@ impl Engine {
                 for (addr, seq) in self.sequences.iter_mut() {
                     unsafe {
                         let mut node = seq.context_mut().node_mut().await;
-                        node.put_resource(block.clone(), ResourceKey::none());
+                        node.put_resource(block.clone(), ResourceKey::root());
                     }
                     self.__internal_resources
                         .insert(Address::from_str(addr).unwrap(), seq.into_hosted_resource());
@@ -633,7 +633,7 @@ impl Engine {
                                         let mut resource = resource.clone();
                                         unsafe {
                                             let mut node = resource.context_mut().node_mut().await;
-                                            node.put_resource(self.engine_handle(), ResourceKey::none());
+                                            node.put_resource(self.engine_handle(), ResourceKey::root());
                                             node.drain_dispatch_queues();
                                         }
 
@@ -677,7 +677,7 @@ impl Engine {
                                         let mut resource = resource.clone();
                                         unsafe {
                                             let mut node = resource.context_mut().node_mut().await;
-                                            node.put_resource(self.engine_handle(), ResourceKey::none());
+                                            node.put_resource(self.engine_handle(), ResourceKey::root());
                                             node.drain_dispatch_queues();
                                         }
 

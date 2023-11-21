@@ -25,7 +25,7 @@ macro_rules! borrow {
     };
     (async $storage:ident $(,)? $ty:ty, |$var:ident| => $body:block )=> {
         {
-            if let Some(resource) = $storage.storage.latest().await.resource::<$ty>(ResourceKey::none()) {
+            if let Some(resource) = $storage.storage.latest().await.resource::<$ty>(ResourceKey::root()) {
                 #[allow(unused_mut)]
                 let mut monad = |$var: &$ty| $body;
 
@@ -122,7 +122,7 @@ macro_rules! borrow_mut {
     };
     ($storage:ident $(,)? $ty:ty, |$var:ident| => $body:block)=> {
         {
-            if let Some(mut resource) = $storage.resource_mut::<$ty>(ResourceKey::none()) {
+            if let Some(mut resource) = $storage.resource_mut::<$ty>(ResourceKey::root()) {
                 let mut monad = |$var: &mut $ty| $body;
 
                 monad(resource.deref_mut())
@@ -148,7 +148,7 @@ macro_rules! take {
     };
     (async $storage:ident $(,)? $ty:ty)=> {
         {
-            $storage.storage.write().await.take_resource::<$ty>(ResourceKey::none())
+            $storage.storage.write().await.take_resource::<$ty>(ResourceKey::root())
         }
     };
     ($storage:ident $(,)? $ty:ty, $key:literal)=> {
@@ -164,7 +164,7 @@ macro_rules! take {
     };
     ($storage:ident $(,)? $ty:ty, $key:literal)=> {
         {
-            $storage.take_resource::<$ty>(ResourceKey::none()) 
+            $storage.take_resource::<$ty>(ResourceKey::root()) 
         }
     };
 }

@@ -31,13 +31,13 @@ impl StdExt for ThunkContext {
     async fn find_file_text(&mut self, path: impl Into<PathBuf> + Send + Sync) -> Option<String> {
         self.transient()
             .await
-            .current_resource::<String>(path.into().to_str().map(ResourceKey::with_hash).unwrap_or(ResourceKey::none()))
+            .current_resource::<String>(path.into().to_str().map(ResourceKey::with_hash).unwrap_or(ResourceKey::root()))
     }
 
     async fn find_file(&mut self, path: impl Into<PathBuf> + Send + Sync) -> Option<Bytes> {
         self.transient()
             .await
-            .current_resource::<Bytes>(path.into().to_str().map(ResourceKey::with_hash).unwrap_or(ResourceKey::none()))
+            .current_resource::<Bytes>(path.into().to_str().map(ResourceKey::with_hash).unwrap_or(ResourceKey::root()))
     }
 
     async fn find_command_result(&self, program: &str) -> Option<CommandResult> {
@@ -102,7 +102,7 @@ impl CallAsync for ReadTextFile {
         context
             .transient_mut()
             .await
-            .put_resource(result, path.to_str().map(ResourceKey::with_hash).unwrap_or(ResourceKey::none()));
+            .put_resource(result, path.to_str().map(ResourceKey::with_hash).unwrap_or(ResourceKey::root()));
 
         Ok(())
     }
@@ -130,7 +130,7 @@ impl CallAsync for ReadFile {
 
         context.transient_mut().await.put_resource(
             Bytes::copy_from_slice(&result),
-            path.to_str().map(ResourceKey::with_hash).unwrap_or(ResourceKey::none()),
+            path.to_str().map(ResourceKey::with_hash).unwrap_or(ResourceKey::root()),
         );
 
         Ok(())

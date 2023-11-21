@@ -64,13 +64,13 @@ macro_rules! define_wgpu_resource_management {
                 async fn [<set_ $suffix>](&mut self, instances: $ty) {
                     let mut transport = self.transient_mut().await;
 
-                    transport.put_resource(instances, loopio::prelude::ResourceKey::none());
+                    transport.put_resource(instances, loopio::prelude::ResourceKey::root());
                 }
 
                 async fn [<take_ $suffix>](&mut self) -> Option<$ty> {
                     let mut transport = self.transient_mut().await;
 
-                    return transport.take_resource(loopio::prelude::ResourceKey::none()).map(|r| *r);
+                    return transport.take_resource(loopio::prelude::ResourceKey::root()).map(|r| *r);
                 }
             )*
         }
@@ -135,7 +135,7 @@ impl WgpuRenderExt for ThunkContext {
         if let Some(mut stages) = self
             .transient_mut()
             .await
-            .resource_mut::<RenderStages>(loopio::prelude::ResourceKey::none())
+            .resource_mut::<RenderStages>(loopio::prelude::ResourceKey::root())
         {
             stages.deref_mut().stages.push(Box::new(stage));
         } else {
@@ -143,9 +143,9 @@ impl WgpuRenderExt for ThunkContext {
     }
 
     async fn render(&mut self) -> anyhow::Result<()> {
-        let render_pass = self.transient_mut().await.take_resource::<RenderPass>(loopio::prelude::ResourceKey::none());
+        let render_pass = self.transient_mut().await.take_resource::<RenderPass>(loopio::prelude::ResourceKey::root());
 
-        if let Some(stages) = self.transient().await.resource::<RenderStages>(loopio::prelude::ResourceKey::none()) {
+        if let Some(stages) = self.transient().await.resource::<RenderStages>(loopio::prelude::ResourceKey::root()) {
             if let Some(mut render_pass) = render_pass {
                 for stage in stages.stages.iter() {
                     render_pass = stage(render_pass);

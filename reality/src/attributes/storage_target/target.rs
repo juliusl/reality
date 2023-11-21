@@ -172,8 +172,8 @@ pub trait StorageTarget {
     where
         Self: 'static,
     {
-        self.put_resource(DispatchQueue::<Self>::default(), ResourceKey::none());
-        self.put_resource(DispatchMutQueue::<Self>::default(), ResourceKey::none());
+        self.put_resource(DispatchQueue::<Self>::default(), ResourceKey::root());
+        self.put_resource(DispatchMutQueue::<Self>::default(), ResourceKey::root());
     }
 
     /// Lazily initialize a resource that is `Default`,
@@ -205,7 +205,7 @@ pub trait StorageTarget {
     where
         Self: 'static,
     {
-        if let Some(queue) = self.resource::<DispatchQueue<Self>>(ResourceKey::none()) {
+        if let Some(queue) = self.resource::<DispatchQueue<Self>>(ResourceKey::root()) {
             if let Ok(mut queue) = queue.lock() {
                 queue.push_back(Box::new(exec));
             }
@@ -218,7 +218,7 @@ pub trait StorageTarget {
     where
         Self: 'static,
     {
-        if let Some(queue) = self.resource::<DispatchMutQueue<Self>>(ResourceKey::none()) {
+        if let Some(queue) = self.resource::<DispatchMutQueue<Self>>(ResourceKey::root()) {
             if let Ok(mut queue) = queue.lock() {
                 queue.push_back(Box::new(exec));
             }

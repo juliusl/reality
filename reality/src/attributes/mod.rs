@@ -148,7 +148,7 @@ mod tests {
     where
         S: StorageTarget + Send + Sync + 'static,
     {
-        storage.intialize_dispatcher::<u64>(ResourceKey::none()).await;
+        storage.intialize_dispatcher::<u64>(ResourceKey::root()).await;
     }
 
     #[allow(dead_code)]
@@ -190,7 +190,7 @@ mod tests {
             .namespace("test_namespace")
             .expect("should be able to create");
 
-        let mut disp = ns.dispatcher::<Test<String>>(ResourceKey::none()).await;
+        let mut disp = ns.dispatcher::<Test<String>>(ResourceKey::root()).await;
 
         disp.queue_dispatch_mut(|t| {
             t.author = format!("test_v2_parser");
@@ -210,7 +210,7 @@ mod tests {
         });
         
         assert_eq!("hello-set-field", test.name.as_str());
-        let frames = test.to_frame(ResourceKey::none());
+        let frames = test.to_frame(ResourceKey::root());
      
         for frame in frames.fields {
             println!("{:?}", frame);

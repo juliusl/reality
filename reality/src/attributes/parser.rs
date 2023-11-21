@@ -515,7 +515,7 @@ impl<S: StorageTarget> AttributeParser<S> {
         &mut self,
         source: impl AsRef<str>,
     ) -> anyhow::Result<ResourceKey<T>> {
-        let mut parsed_key = ResourceKey::none();
+        let mut parsed_key = ResourceKey::root();
 
         let idx = self.attributes.len();
         let key = ResourceKey::<Attribute>::with_hash(idx);
@@ -845,7 +845,7 @@ where
 
     fn completed(mut self: Box<Self>) {
         if let Some(storage) = self.storage() {
-            storage.lazy_put_resource(self.attributes.clone(), ResourceKey::none());
+            storage.lazy_put_resource(self.attributes.clone(), ResourceKey::root());
         }
 
         if let Some(mut storage) = self.storage_mut() {

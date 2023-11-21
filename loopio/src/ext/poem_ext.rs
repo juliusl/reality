@@ -99,7 +99,7 @@ impl PoemExt for ThunkContext {
     async fn take_response_parts(&mut self) -> Option<ResponseParts> {
         self.transient_mut()
             .await
-            .take_resource::<ResponseParts>(ResourceKey::none())
+            .take_resource::<ResponseParts>(ResourceKey::root())
             .map(|b| *b)
     }
 
@@ -107,7 +107,7 @@ impl PoemExt for ThunkContext {
     async fn take_body(&mut self) -> Option<poem::Body> {
         self.transient_mut()
             .await
-            .take_resource::<poem::Body>(ResourceKey::none())
+            .take_resource::<poem::Body>(ResourceKey::root())
             .map(|b| *b)
     }
 
@@ -142,19 +142,19 @@ impl PoemExt for ThunkContext {
 
     #[inline]
     async fn replace_header_map(&mut self, header_map: HeaderMap) {
-        self.transient_mut().await.put_resource(header_map, ResourceKey::none())
+        self.transient_mut().await.put_resource(header_map, ResourceKey::root())
     }
 
     #[inline]
     async fn get_path_vars(&mut self) -> Option<PathVars> {
-        self.transient().await.current_resource::<PathVars>(ResourceKey::none())
+        self.transient().await.current_resource::<PathVars>(ResourceKey::root())
     }
 
     #[inline]
     async fn take_request(&self) -> Option<PoemRequest> {
         self.transient_mut()
             .await
-            .take_resource::<PoemRequest>(ResourceKey::none())
+            .take_resource::<PoemRequest>(ResourceKey::root())
             .map(|r| *r)
     }
 
@@ -234,7 +234,7 @@ async fn on_proxy(
             headers: req.headers().clone(),
             body: Some(body),
         },
-        ResourceKey::none(),
+        ResourceKey::root(),
     );
 
     if let Some(spawned) = resource.spawn() {

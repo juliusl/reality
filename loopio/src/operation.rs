@@ -280,7 +280,7 @@ impl Action for Operation {
     fn bind_plugin(&mut self, _: ResourceKey<reality::attributes::Attribute>) {}
 
     fn plugin_rk(&self) -> ResourceKey<reality::attributes::Attribute> {
-        ResourceKey::none()
+        ResourceKey::root()
     }
 }
 

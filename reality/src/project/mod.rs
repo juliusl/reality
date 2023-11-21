@@ -133,7 +133,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
         for (rk, s) in nodes.deref().iter() {
             let s = s.read().await;
             
-            if let Some(parsed) = s.current_resource::<ParsedAttributes>(ResourceKey::none()) {
+            if let Some(parsed) = s.current_resource::<ParsedAttributes>(ResourceKey::root()) {
                 block.nodes.insert(rk.transmute(), parsed);
              }
         }
@@ -448,7 +448,7 @@ async fn test_project_parser() {
         let node = node.read().await;
         println!("{:?}", k);
 
-        let attributes = node.resource::<ParsedAttributes>(ResourceKey::none());
+        let attributes = node.resource::<ParsedAttributes>(ResourceKey::root());
 
         if let Some(attributes) = attributes {
             println!("{:#?}", attributes);

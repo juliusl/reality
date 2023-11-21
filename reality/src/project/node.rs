@@ -22,7 +22,7 @@ impl<S: StorageTarget + ToOwned<Owned = S> + Send + Sync + 'static> Node<S> {
     ///
     pub fn stream_attributes(&self) -> impl Stream<Item = ResourceKey<Attribute>> + '_ {
         stream! {
-            let parsed = self.0.latest().await.current_resource::<ParsedAttributes>(ResourceKey::none());
+            let parsed = self.0.latest().await.current_resource::<ParsedAttributes>(ResourceKey::root());
             if let Some(parsed) =  parsed {
                 yield parsed.node;
 
@@ -39,7 +39,7 @@ impl<S: StorageTarget + ToOwned<Owned = S> + Send + Sync + 'static> AsyncStorage
     ///
     pub fn stream_attributes(&self) -> impl Stream<Item = ResourceKey<Attribute>> + '_ {
         stream! {
-            let parsed = self.storage.latest().await.current_resource::<ParsedAttributes>(ResourceKey::none());
+            let parsed = self.storage.latest().await.current_resource::<ParsedAttributes>(ResourceKey::root());
             if let Some(parsed) =  parsed {
                 yield parsed.node;
 
@@ -60,12 +60,12 @@ impl<S: StorageTarget + ToOwned<Owned = S> + Send + Sync + 'static> AsyncStorage
             .storage
             .latest()
             .await
-            .current_resource::<ParsedAttributes>(StorageTargetKey::none());
+            .current_resource::<ParsedAttributes>(StorageTargetKey::root());
 
         if let Some(parsed) = parsed {
-            parsed.resolve_path(path.as_ref()).map(|a| a.transmute()).unwrap_or(ResourceKey::none())
+            parsed.resolve_path(path.as_ref()).map(|a| a.transmute()).unwrap_or(ResourceKey::root())
         } else {
-            StorageTargetKey::<T>::none()
+            StorageTargetKey::<T>::root()
         }
     }
 }
@@ -75,7 +75,7 @@ impl Shared {
     ///
     pub fn stream_attributes(&self) -> impl Stream<Item = ResourceKey<Attribute>> + '_ {
         stream! {
-            let parsed = self.current_resource::<ParsedAttributes>(ResourceKey::none());
+            let parsed = self.current_resource::<ParsedAttributes>(ResourceKey::root());
             if let Some(parsed) =  parsed {
                 // yield parsed.node;
                 

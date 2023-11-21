@@ -99,7 +99,7 @@ impl ForegroundEngine {
         eh = runtime.block_on(async move {
             let tc = eh.run("engine://default").await.unwrap();
             let transient = tc.transient().await;
-            let handle = transient.current_resource::<BackgroundWorkEngineHandle>(ResourceKey::none());
+            let handle = transient.current_resource::<BackgroundWorkEngineHandle>(ResourceKey::root());
             assert!(handle.is_some());
             eh.background_work = Some(handle.unwrap());
             eh

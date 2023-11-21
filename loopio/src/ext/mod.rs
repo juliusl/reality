@@ -48,7 +48,7 @@ impl Ext for ThunkContext {
     async fn engine_handle(&self) -> Option<EngineHandle> {
         if let Some(handle) = self.node()
             .await
-            .current_resource::<EngineHandle>(ResourceKey::none()) {
+            .current_resource::<EngineHandle>(ResourceKey::root()) {
             if let Ok(handle) = handle.sync().await {
                 Some(handle)
             } else {

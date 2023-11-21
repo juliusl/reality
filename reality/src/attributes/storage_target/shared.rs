@@ -203,7 +203,7 @@ async fn test_async_dispatcher() {
     let shared = Shared::default().into_thread_safe();
 
     // Test initalizing a resource dispatcher and queueing dispatches
-    let mut dispatcher = shared.intialize_dispatcher::<(u64, u64)>(ResourceKey::none()).await;
+    let mut dispatcher = shared.intialize_dispatcher::<(u64, u64)>(ResourceKey::root()).await;
     dispatcher.queue_dispatch_mut(|(a, b)| {
         *a += 1;
         *b += 2;

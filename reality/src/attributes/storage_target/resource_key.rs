@@ -65,9 +65,9 @@ impl<T: Send + Sync + 'static> Default for ResourceKey<T> {
 }
 
 impl<T: Send + Sync + 'static> ResourceKey<T> {
-    /// Empty resource key,
+    /// Root resource key,
     /// 
-    pub const fn none() -> ResourceKey<T> {
+    pub const fn root() -> ResourceKey<T> {
         ResourceKey { data: 0, _t: PhantomData }
     }
 
@@ -290,7 +290,7 @@ impl<T: Send + Sync + 'static> TryFrom<Option<&'static str>> for ResourceKey<T> 
         if let Some(value) = value {
             Ok(ResourceKey::with_hash(value))
         } else {
-            Err(ResourceKey::none())
+            Err(ResourceKey::root())
         }
     }
 }

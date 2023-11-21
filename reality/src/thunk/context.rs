@@ -61,7 +61,7 @@ impl From<AsyncStorageTarget<Shared>> for Context {
         let handle = value.runtime.clone().expect("should have a runtime");
         Self {
             node: value,
-            attribute: ResourceKey::none(),
+            attribute: ResourceKey::root(),
             transient: Shared::default().into_thread_safe_with(handle),
             cancellation: CancellationToken::new(),
             variant_id: None,
@@ -96,7 +96,7 @@ impl Context {
     /// Returns the parsed block,
     /// 
     pub async fn parsed_block(&self) -> Option<ParsedBlock> {
-        self.node().await.current_resource::<ParsedBlock>(StorageTargetKey::none())
+        self.node().await.current_resource::<ParsedBlock>(StorageTargetKey::root())
     }
 
     /// Creates a branched thunk context,
@@ -270,7 +270,7 @@ impl Context {
             node.current_resource::<P>(self.attribute.transmute())
                 .or_else(|| {
                     if include_root {
-                        node.current_resource::<P>(ResourceKey::none())
+                        node.current_resource::<P>(ResourceKey::root())
                     } else {
                         None
                     }
@@ -427,7 +427,7 @@ impl Context {
     ///
     pub async fn navigate(&self, path: impl AsRef<str>) -> Option<HostedResource> {
         let node = self.node().await;
-        if let Some(block) = node.resource::<ParsedBlock>(ResourceKey::none()) {
+        if let Some(block) = node.resource::<ParsedBlock>(ResourceKey::root()) {
             eprintln!("Looking for resource at: {}", path.as_ref());
             if let Some(hosted_resource) = block.find_resource(path.as_ref().to_string()) {
                 eprintln!("Found hosted resource: {:?}", hosted_resource);
@@ -626,7 +626,7 @@ where
         // Index decorations into the current cache,
         {
             let node = self.context.node().await;
-            if let Some(parsed) = node.current_resource::<ParsedAttributes>(ResourceKey::none()) {
+            if let Some(parsed) = node.current_resource::<ParsedAttributes>(ResourceKey::root()) {
                 drop(node);
                 parsed
                     .index_decorations(self.context.attribute, self.context)

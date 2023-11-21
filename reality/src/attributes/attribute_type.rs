@@ -223,7 +223,7 @@ where
         };
 
         let tag = parser.tag().cloned();
-        let key = parser.attributes.last().map(|a| a.transmute::<Owner>()).unwrap_or(ResourceKey::none());
+        let key = parser.attributes.last().map(|a| a.transmute::<Owner>()).unwrap_or(ResourceKey::root());
 
         let mut properties = vec![];
         match (parser.storage_mut(), parsed) {
@@ -251,9 +251,9 @@ where
             ) => {
                 type ParserError<T> = <T as FromStr>::Err;
 
-                if let Some(cb) = storage.callback_mut::<ParserError<T>>(label.try_into().unwrap_or(ResourceKey::none())) {
+                if let Some(cb) = storage.callback_mut::<ParserError<T>>(label.try_into().unwrap_or(ResourceKey::root())) {
                     storage.lazy_callback_mut(cb, error)
-                } else if let Some(cb) = storage.callback::<ParserError<T>>(label.try_into().unwrap_or(ResourceKey::none())) {
+                } else if let Some(cb) = storage.callback::<ParserError<T>>(label.try_into().unwrap_or(ResourceKey::root())) {
                     storage.lazy_callback(cb, error)
                 }
             }
@@ -287,12 +287,12 @@ where
 
         // Get the current tag setting,
         let tag = parser.tag().cloned();
-        let key = parser.attributes.last().map(|a| a.transmute::<Owner>()).unwrap_or(ResourceKey::none());
+        let key = parser.attributes.last().map(|a| a.transmute::<Owner>()).unwrap_or(ResourceKey::root());
 
         let mut properties = vec![];
         if let Some(mut storage) = parser.storage_mut() {
             // If set by parse, it must be set w/ a resource key set to None
-            let resource = { storage.take_resource::<T>(ResourceKey::none()) };
+            let resource = { storage.take_resource::<T>(ResourceKey::root()) };
 
             if let Some(resource) = resource {
                 borrow_mut!(storage, Owner, key, |owner| => {
@@ -329,12 +329,12 @@ where
 
         // Get the current tag setting,
         let tag = parser.tag().cloned();
-        let key = parser.attributes.last().map(|a| a.transmute::<Owner>()).unwrap_or(ResourceKey::none());
+        let key = parser.attributes.last().map(|a| a.transmute::<Owner>()).unwrap_or(ResourceKey::root());
 
         let mut properties = vec![];
         if let Some(mut storage) = parser.storage_mut() {
             // If set by parse, it must be set w/ a resource key set to None
-            let resource = { storage.take_resource::<T>(ResourceKey::none()) };
+            let resource = { storage.take_resource::<T>(ResourceKey::root()) };
 
             if let Some(resource) = resource {
                 borrow_mut!(storage, Owner, key, |owner| => {

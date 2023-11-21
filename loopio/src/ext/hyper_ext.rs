@@ -68,7 +68,7 @@ pub trait HyperExt {
 ///
 macro_rules! do_request {
     ($source:ident, $request:ident, $client:ty) => {
-        if let Some(client) = $source.resource::<$client>(ResourceKey::none()) {
+        if let Some(client) = $source.resource::<$client>(ResourceKey::root()) {
             let response = client.request($request).await?;
             Ok(response)
         } else {
@@ -96,7 +96,7 @@ impl HyperExt for ThunkContext {
     async fn take_response(&mut self) -> Option<hyper::Response<hyper::Body>> {
         self.transient_mut()
             .await
-            .take_resource::<Response<Body>>(ResourceKey::none())
+            .take_resource::<Response<Body>>(ResourceKey::root())
             .map(|r| *r)
     }
 
@@ -317,7 +317,7 @@ impl CallAsync for Request {
             .request(request, uri.scheme_str() == Some("https"))
             .await?;
 
-        context.transient_mut().await.put_resource(response, ResourceKey::none());
+        context.transient_mut().await.put_resource(response, ResourceKey::root());
 
         Ok(())
     }

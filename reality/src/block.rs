@@ -190,13 +190,13 @@ impl FromStr for Test {
 #[runmd::prelude::async_trait]
 impl<Storage: StorageTarget + Send + Sync + 'static> BlockObject<Storage> for Test {
     async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>) {
-        let dispatcher = storage.intialize_dispatcher::<()>(ResourceKey::none()).await;
+        let dispatcher = storage.intialize_dispatcher::<()>(ResourceKey::root()).await;
         let mut storage = storage.storage.write().await;
-        storage.put_resource(dispatcher, ResourceKey::none());
+        storage.put_resource(dispatcher, ResourceKey::root());
     }
 
     async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>) {
-        let mut disp = storage.dispatcher::<u64>(ResourceKey::none()).await;
+        let mut disp = storage.dispatcher::<u64>(ResourceKey::root()).await;
         disp.dispatch_all().await;
     }
 
