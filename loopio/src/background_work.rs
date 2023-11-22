@@ -294,36 +294,3 @@ where
         })
     }
 }
-
-struct ThunkWorker {
-    inner: Dispatcher<Shared, ThunkContext>
-}
-
-impl ThunkWorker {
-    pub fn dispatcher_mut(&mut self) -> &mut Dispatcher<Shared, ThunkContext> {
-        &mut self.inner
-    }
-}
-
-#[tokio::test]
-async fn test_worker() {
-    let shared = Shared::default().into_thread_safe();
-    let mut disp = shared.intialize_dispatcher::<ThunkContext>(ResourceKey::with_hash("test")).await;
-    task_mut!(disp, |tc| => { 
-        tc.write_cache(10usize);
-        async {
-            
-        }
-    });
-    disp.dispatch_all().await;
-
-    task_mut!(disp, |tc| => { 
-        assert_eq!(10usize, tc.cached::<usize>().unwrap_or(0));
-        eprintln!("called");
-        async {
-            
-        }
-    });
-    disp.dispatch_all().await;
-    ()
-}

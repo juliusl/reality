@@ -6,7 +6,6 @@ pub mod prelude;
 pub mod sequence;
 pub mod address;
 pub mod action;
-pub mod spawned;
 pub mod deck;
 pub mod background_work;
 pub mod foreground;

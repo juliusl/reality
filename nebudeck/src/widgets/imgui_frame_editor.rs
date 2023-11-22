@@ -82,12 +82,11 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
             {
                 info!("Found parsed attributes");
                 drop(node);
-                if editing.maybe_write_cache(parsed_attributes).is_some() {
-                    if let Some(parsed) = editing.cached::<ParsedAttributes>() {
-                        parsed.index_decorations(editing.attribute, editing).await;
+                editing.maybe_write_cache(parsed_attributes);
 
-                        editing.store_kv(editing.attribute, recv);
-                    }
+                if let Some(parsed) = editing.cached::<ParsedAttributes>() {
+                    parsed.index_decorations(editing.attribute, editing).await;
+                    editing.store_kv(editing.attribute, recv);
                 }
             }
         }
@@ -298,7 +297,6 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                                     ui.text("Value is not initialized");
                                                 }
                                             }
-                                            _ => (),
                                         }
                                     } else if let Some((_, mut editor)) =
                                         tc.take_kv::<FieldWidget>(&edit)

@@ -82,9 +82,9 @@ impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
         disp
     }
 
-    /// Intializes the default value for T and enables dispatch queues,
+    /// Intializes the default value for T if it doesn't exist and enables dispatch queues,
     ///
-    pub async fn intialize_dispatcher<T: Default + Send + Sync + 'static>(
+    pub async fn maybe_intialize_dispatcher<T: Default + Send + Sync + 'static>(
         &self,
         resource_key: StorageTargetKey<T>,
     ) -> Dispatcher<S, T> {
@@ -98,7 +98,7 @@ impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
             .deref()
             .write()
             .await
-            .put_resource(T::default(), resource_key);
+            .maybe_put_resource(T::default(), resource_key);
 
         dispatcher
     }
@@ -381,6 +381,14 @@ macro_rules! dispatch_owned {
 impl<Storage: StorageTarget + Send + Sync, T: Send + Sync>
     Dispatcher<Storage, T>
 {
+    /// Returns true if no tasks are pending,
+    /// 
+    pub fn is_empty(&self) -> bool {
+        // TODO -- Need to get count from queues
+
+        self.tasks.is_empty()
+    }
+
     /// Returns true if the underlying resource exists,
     /// 
     pub async fn exists(&self) -> bool{

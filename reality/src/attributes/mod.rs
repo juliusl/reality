@@ -148,7 +148,7 @@ mod tests {
     where
         S: StorageTarget + Send + Sync + 'static,
     {
-        storage.intialize_dispatcher::<u64>(ResourceKey::root()).await;
+        storage.maybe_intialize_dispatcher::<u64>(ResourceKey::root()).await;
     }
 
     #[allow(dead_code)]

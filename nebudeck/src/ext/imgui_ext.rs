@@ -420,7 +420,7 @@ impl ImguiExt for ThunkContext {
     ) {
         let ui_node = UiTypeNode {
             show_ui: Some(Arc::new(show)),
-            dispatcher: self.initialized_dispatcher::<G>().await.transmute(),
+            dispatcher: self.dispatcher::<G>().await.transmute(),
         };
 
         unsafe {

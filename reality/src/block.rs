@@ -190,7 +190,7 @@ impl FromStr for Test {
 #[runmd::prelude::async_trait]
 impl<Storage: StorageTarget + Send + Sync + 'static> BlockObject<Storage> for Test {
     async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>) {
-        let dispatcher = storage.intialize_dispatcher::<()>(ResourceKey::root()).await;
+        let dispatcher = storage.maybe_intialize_dispatcher::<()>(ResourceKey::root()).await;
         let mut storage = storage.storage.write().await;
         storage.put_resource(dispatcher, ResourceKey::root());
     }

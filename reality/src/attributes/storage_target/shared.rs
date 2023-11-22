@@ -39,14 +39,14 @@ impl StorageTarget for Shared {
         &mut self,
         resource: T,
         resource_key: StorageTargetKey<T>,
-    ) -> Option<Self::BorrowMutResource<'_, T>> {
+    ) -> Self::BorrowMutResource<'_, T> {
         let key = Self::key::<T>(resource_key);
 
         if !self.resources.contains_key(&key) {
             self.put_resource(resource, resource_key);
         }
 
-        self.resource_mut(resource_key)
+        self.resource_mut(resource_key).expect("should exist")
     }
 
     fn contains<T: Send + Sync + 'static>(
@@ -202,7 +202,7 @@ async fn test_complex() {
 async fn test_async_dispatcher() {
     let shared = Shared::default().into_thread_safe();
     // Test initalizing a resource dispatcher and queueing dispatches
-    let mut dispatcher = shared.intialize_dispatcher::<(u64, u64)>(ResourceKey::new()).await;
+    let mut dispatcher = shared.maybe_intialize_dispatcher::<(u64, u64)>(ResourceKey::new()).await;
     dispatcher.queue_dispatch_mut(|(a, b)| {
         *a += 1;
         *b += 2;

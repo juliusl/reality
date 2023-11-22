@@ -3,12 +3,10 @@ use futures_util::stream::BoxStream;
 use futures_util::Future;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
-use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use tracing::trace;
 use uuid::Uuid;
 
-use crate::StorageTargetKey;
 use crate::prelude::Latest;
 use crate::AsyncStorageTarget;
 use crate::Attribute;
@@ -23,6 +21,7 @@ use crate::ParsedBlock;
 use crate::ResourceKey;
 use crate::Shared;
 use crate::StorageTarget;
+use crate::StorageTargetKey;
 use crate::Tag;
 
 use super::prelude::*;
@@ -59,14 +58,18 @@ pub struct Context {
 impl From<AsyncStorageTarget<Shared>> for Context {
     fn from(value: AsyncStorageTarget<Shared>) -> Self {
         let handle = value.runtime.clone().expect("should have a runtime");
+
+        let mut storage = value.storage.try_write().expect("should be idle so that it can be re-assembled");
+
+        let attribute = storage.take_resource(ResourceKey::root()).map(|a| *a).unwrap_or(ResourceKey::root());
         Self {
-            node: value,
-            attribute: ResourceKey::root(),
+            node: value.clone(),
+            attribute,
             transient: Shared::default().into_thread_safe_with(handle),
-            cancellation: CancellationToken::new(),
-            variant_id: None,
-            decoration: None,
-            __cached: Shared::default(),
+            cancellation: storage.take_resource(attribute.transmute()).map(|a| *a).unwrap_or_default(),
+            variant_id: storage.take_resource(attribute.transmute()).map(|a| *a).unwrap_or_default(),
+            decoration: storage.take_resource::<Decoration>(attribute.transmute()).map(|a| *a),
+            __cached: storage.take_resource(attribute.transmute()).map(|a| *a).unwrap_or_default(),
         }
     }
 }
@@ -91,7 +94,7 @@ impl Default for Context {
 
 impl Context {
     /// Returns a new blank thunk context,
-    /// 
+    ///
     pub fn new() -> Self {
         Self::from(Shared::default().into_thread_safe())
     }
@@ -106,9 +109,11 @@ impl Context {
     }
 
     /// Returns the parsed block,
-    /// 
+    ///
     pub async fn parsed_block(&self) -> Option<ParsedBlock> {
-        self.node().await.current_resource::<ParsedBlock>(StorageTargetKey::root())
+        self.node()
+            .await
+            .current_resource::<ParsedBlock>(StorageTargetKey::root())
     }
 
     /// Creates a branched thunk context,
@@ -187,7 +192,7 @@ impl Context {
         self.transient.storage.write().await
     }
 
-     /// Returns a readable reference to transient storage,
+    /// Returns a readable reference to transient storage,
     ///
     pub async fn transient_ref(&self) -> tokio::sync::RwLockReadGuard<Shared> {
         self.transient.storage.read().await
@@ -258,13 +263,13 @@ impl Context {
             .unwrap_or_default()
     }
 
-    /// Initializes and returns a dispatcher for resource T,
+    /// Returns a dispatcher for resource T,
     ///
-    pub async fn initialized_dispatcher<T: Default + Sync + Send + 'static>(
-        &self,
-    ) -> Dispatcher<Shared, T> {
+    /// **Note** Initializes a new dispatcher if one is not already present,
+    ///
+    pub async fn dispatcher<T: Default + Sync + Send + 'static>(&self) -> Dispatcher<Shared, T> {
         self.node
-            .intialize_dispatcher(self.attribute.transmute())
+            .maybe_intialize_dispatcher(self.attribute.transmute())
             .await
     }
 
@@ -379,7 +384,8 @@ impl Context {
                     yield init;
                 }
             }
-        }.boxed()
+        }
+        .boxed()
     }
 
     /// Apply all thunks in attribute order,
@@ -481,7 +487,14 @@ impl Context {
         if let Some(thunk) = thunk {
             (thunk)(self.clone()).await
         } else {
-            Err(anyhow::anyhow!("Did not execute thunk {:?}", self.attribute))
+            let contains = self
+            .node()
+            .await
+            .contains::<ThunkFn>(self.attribute.transmute());
+            Err(anyhow::anyhow!(
+                "Did not execute thunk {:?} {contains}",
+                self.attribute
+            ))
         }
     }
 
@@ -500,7 +513,7 @@ impl Context {
     }
 
     /// Prints out debug information on this thunk context,
-    /// 
+    ///
     pub fn print_debug_info(&self) {
         if let Some(doc_headers) = self
             .decoration
@@ -537,14 +550,14 @@ impl Context {
     }
 }
 
-/// A Remote Plugin can depend on initialization of it's state from 
+/// A Remote Plugin can depend on initialization of it's state from
 /// remote and local dependencies.
-/// 
+///
 pub struct Remote;
 
 impl Remote {
     /// Creates plugin P w/ remote features enabled,
-    /// 
+    ///
     pub async fn create<P>(self, tc: &mut ThunkContext) -> P
     where
         P: Plugin + Sync + Send + 'static,
@@ -567,12 +580,12 @@ impl Remote {
 }
 
 /// A Local plugin can depend on local resources for it's initialization,
-/// 
+///
 pub struct Local;
 
 impl Local {
     /// Creates plugin local Plugin P,
-    /// 
+    ///
     pub async fn create<P>(self, tc: &mut ThunkContext) -> P
     where
         P: Plugin + Sync + Send + 'static,
@@ -585,12 +598,15 @@ impl Local {
             .finish();
 
         plugin.sync(&tc);
+        tc.decoration = tc
+            .fetch_kv::<Decoration>(tc.attribute)
+            .map(|(_, deco)| deco.clone());
         plugin
     }
 }
 
 /// Struct for initializing a plugin,
-/// 
+///
 pub struct Initializer<'a, P>
 where
     P: Plugin + Sync + Send + 'static,
@@ -610,9 +626,7 @@ where
         let node = self.context.node().await;
 
         println!("Looking for updates {:?}", self.context.attribute);
-        if let Some(packets) =
-            node.resource::<FrameUpdates>(self.context.attribute.transmute())
-        {
+        if let Some(packets) = node.resource::<FrameUpdates>(self.context.attribute.transmute()) {
             println!(
                 "Frame updates enabled, applying field packets, {}",
                 packets.0.fields.len()

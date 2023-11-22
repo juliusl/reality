@@ -67,13 +67,8 @@ pub trait StorageTarget {
         self.len() == 0
     }
 
-    /// Put a resource in storage w/ key
-    ///
-    fn put_resource_at<T: Send + Sync + 'static>(&mut self, _key: ResourceKey<T>, _resource: T) {
-        // encode ident to a resource_id
-        // store addr as a key,
-    }
-
+    /// Returns true if a resource was removed,
+    /// 
     fn remove_resource_at(&mut self, _key: ResourceKey<Attribute>) -> bool {
         false
     }
@@ -95,10 +90,10 @@ pub trait StorageTarget {
         &mut self,
         _resource: T,
         _resource_key: StorageTargetKey<T>,
-    ) -> Option<Self::BorrowMutResource<'_, T>> {
-        unimplemented!()
-    }
+    ) -> Self::BorrowMutResource<'_, T>;
 
+    /// Returns true if a resource T is present in storage,
+    /// 
     fn contains<T: Send + Sync + 'static>(
         &self,
         _resource_key: StorageTargetKey<T>,
@@ -161,7 +156,6 @@ pub trait StorageTarget {
             resource_key.key()
         }
     }
-
     /// Enables built-in dispatch queues,
     ///
     /// -- **Note** --

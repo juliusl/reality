@@ -7,10 +7,12 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::ops::Deref;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use tracing::debug;
 use tracing::error;
 use tracing::info;
 use tracing::trace;
@@ -182,7 +184,10 @@ pub struct Engine {
     block: Option<ParsedBlock>,
     /// Internal hosted resources,
     ///
-    __internal_resources: InternalResources,
+    __internal_resources: HostedResourceMap,
+    /// Published nodes,
+    ///
+    __published: BTreeMap<Address, ThunkContext>,
 }
 
 impl Debug for Engine {
@@ -269,6 +274,7 @@ impl Engine {
             workspace: None,
             nodes: HashMap::new(),
             __internal_resources: BTreeMap::new(),
+            __published: BTreeMap::new(),
         }
     }
 
@@ -384,7 +390,9 @@ impl Engine {
                 target.write().await.drain_dispatch_queues();
 
                 let storage = target.latest().await;
-                let hostkey = storage.current_resource::<ResourceKey<Host>>(ResourceKey::root()).unwrap_or(ResourceKey::root());
+                let hostkey = storage
+                    .current_resource::<ResourceKey<Host>>(ResourceKey::root())
+                    .unwrap_or(ResourceKey::root());
                 if let Some(_) = storage.current_resource::<Host>(hostkey) {
                     // Since new_context set the host map, earlier hosts are available to later hosts
                     let mut context = self
@@ -414,8 +422,10 @@ impl Engine {
 
             // Extract actions
             for (_, target) in nodes.iter() {
-                if let Some(mut operation) =
-                    target.latest().await.current_resource::<Operation>(ResourceKey::root())
+                if let Some(mut operation) = target
+                    .latest()
+                    .await
+                    .current_resource::<Operation>(ResourceKey::root())
                 {
                     operation.bind(self.new_context(target.clone()).await);
 
@@ -426,7 +436,9 @@ impl Engine {
                 target.write().await.drain_dispatch_queues();
 
                 let storage = target.latest().await;
-                let seqkey = storage.current_resource::<ResourceKey<Sequence>>(ResourceKey::root()).unwrap_or(ResourceKey::root());
+                let seqkey = storage
+                    .current_resource::<ResourceKey<Sequence>>(ResourceKey::root())
+                    .unwrap_or(ResourceKey::root());
                 if let Some(_) = storage.current_resource::<Sequence>(seqkey) {
                     let mut context = self.new_context(target.clone()).await;
                     context.attribute = seqkey.transmute();
@@ -454,7 +466,9 @@ impl Engine {
             if let Ok(mut block) = project.parsed_block().await {
                 // Bind all pending address to the block first
                 for (node, target) in nodes.iter() {
-                    if let Some(address) = target.read().await.resource::<Address>(ResourceKey::root()) {
+                    if let Some(address) =
+                        target.read().await.resource::<Address>(ResourceKey::root())
+                    {
                         block.bind_node_to_path(node.transmute(), address.to_string());
                     }
                 }
@@ -507,7 +521,10 @@ impl Engine {
 
                 // Share the block w/ all nodes
                 for (_, target) in nodes.iter() {
-                    target.write().await.put_resource(block.clone(), ResourceKey::root());
+                    target
+                        .write()
+                        .await
+                        .put_resource(block.clone(), ResourceKey::root());
                 }
 
                 for (addr, host) in self.hosts.iter_mut() {
@@ -577,6 +594,44 @@ impl Engine {
         }
     }
 
+    /// Returns a hosted resource,
+    ///
+    /// First searches internal resources, and then published resources.
+    ///
+    pub async fn get_resource(&self, address: impl AsRef<str>) -> anyhow::Result<HostedResource> {
+        let address: Address = address.as_ref().parse()?;
+
+        if let Some(resource) = self.__internal_resources.get(&address).or(self
+            .__published
+            .get(&address)
+            .map(|tc| tc.into_hosted_resource())
+            .as_ref())
+        {
+            let mut resource = resource.clone();
+
+            if let Some(node) = self.nodes.get(&resource.node_rk()) {
+                let mut tc = self.new_context(node.clone()).await;
+                tc.attribute = resource.plugin_rk();
+                resource.bind(tc);
+            } else {
+                // This could be a published resource, which means the node would not exist on engine start up
+                debug!("Node resource not found");
+            }
+
+            // Drain dispatch queues
+            unsafe {
+                let mut node = resource.context_mut().node_mut().await;
+                node.put_resource(self.engine_handle(), ResourceKey::root());
+                node.drain_dispatch_queues();
+            }
+
+            resource.context_mut().write_cache(self.engine_handle());
+            Ok(resource)
+        } else {
+            Err(anyhow!("Could not find resource: {}", address))
+        }
+    }
+
     /// Returns the parsed block,
     ///
     pub fn block(&self) -> Option<&ParsedBlock> {
@@ -605,7 +660,10 @@ impl Engine {
         middleware: impl Fn(&mut Engine, EnginePacket) -> Option<EnginePacket> + Send + Sync + 'static,
     ) -> (EngineHandle, JoinHandle<anyhow::Result<Self>>) {
         eprintln!("Starting engine packet listener");
-        (self.engine_handle(), tokio::spawn(self.handle_packets(middleware)))
+        (
+            self.engine_handle(),
+            tokio::spawn(self.handle_packets(middleware)),
+        )
     }
 
     /// Starts handling engine packets,
@@ -624,94 +682,53 @@ impl Engine {
                 match packet.action {
                     EngineAction::Call { address, mut tx } => {
                         info!(address, "Looking up hosted resource");
-                        match Address::from_str(&address) {
-                            Ok(address) => {
-                                // Lookup from the internal resources for a plugin
-                                if let Some(resource) = self.__internal_resources.get(&address) {
-                                    trace!(address = resource.address(), "Found resource");
-                                    if let Some(tx) = tx.take() {
-                                        let mut resource = resource.clone();
-                                        unsafe {
-                                            let mut node = resource.context_mut().node_mut().await;
-                                            node.put_resource(self.engine_handle(), ResourceKey::root());
-                                            node.drain_dispatch_queues();
-                                        }
-
-                                        resource.context_mut().write_cache(self.engine_handle());
-
-                                        if let Some(node) = self.nodes.get(&resource.node_rk()) {
-                                            let mut tc = self.new_context(node.clone()).await;
-                                            tc.attribute = resource.plugin_rk();
-                                            resource.bind(tc);
-                                        }
-
-                                        if let Err(_) = tx.send(resource.spawn().into()) {
-                                            // TODO
-                                            eprintln!("Could not send spawn result");
-                                        }
-                                    }
-                                } else {
-                                    eprintln!(
-                                        "Did not find resource -- {:#?}\n{:#?}",
-                                        address, self.__internal_resources
-                                    );
-                                }
-                            }
-                            Err(err) => {
-                                error!("{err}");
-                            }
-                        }
-
                         if let Some(tx) = tx.take() {
-                            drop(tx);
+                            if let Ok(resource) = self.get_resource(address).await {
+                                if let Err(_) = tx.send(resource.into_call_output()) {
+                                    error!("Could not call resource");
+                                }
+                            } else {
+                                drop(tx);
+                            }
                         }
                     }
                     EngineAction::Resource { address, mut tx } => {
                         info!(address, "Looking up hosted resource");
-                        match Address::from_str(&address) {
-                            Ok(address) => {
-                                // Lookup from the internal resources for a plugin
-                                if let Some(resource) = self.__internal_resources.get(&address) {
-                                    trace!(address = resource.address(), "Found resource");
-                                    if let Some(tx) = tx.take() {
-                                        let mut resource = resource.clone();
-                                        unsafe {
-                                            let mut node = resource.context_mut().node_mut().await;
-                                            node.put_resource(self.engine_handle(), ResourceKey::root());
-                                            node.drain_dispatch_queues();
-                                        }
-
-                                        resource.context_mut().write_cache(self.engine_handle());
-
-                                        if let Some(node) = self.nodes.get(&resource.node_rk()) {
-                                            let mut tc = self.new_context(node.clone()).await;
-                                            tc.attribute = resource.plugin_rk();
-                                            resource.bind(tc);
-                                        } else {
-                                            error!("Could not find node storage for resource");
-                                            if let Err(_) = tx.send(None) {
-                                                eprintln!("Could not send spawn result");
-                                            }
-                                            continue;
-                                        }
-
-                                        if let Err(_) = tx.send(Some(resource)) {
-                                            eprintln!("Could not send spawn result");
-                                        }
-                                    }
-                                } else {
-                                    eprintln!(
-                                        "Did not find resource -- {:#?}\n{:#?}",
-                                        address, self.__internal_resources
-                                    );
-                                }
-                            }
-                            Err(_) => {}
-                        }
 
                         if let Some(tx) = tx.take() {
+                            if let Ok(resource) = self.get_resource(address).await {
+                                if let Err(_) = tx.send(Some(resource)) {
+                                    error!("Could not call resource");
+                                }
+                                continue;
+                            }
+
                             if let Err(_) = tx.send(None) {
                                 eprintln!("Could not send spawn result");
+                            }
+                        }
+                    }
+                    EngineAction::Publish { context, mut tx } => {
+                        if let Some(tx) = tx.take() {
+                            let address = context.address();
+
+                            info!(address, "Looking up hosted resource");
+                            if let Ok(address) = address.parse::<Address>() {
+                                if !self.__internal_resources.contains_key(&address) {
+                                    self.__published.insert(address.clone(), context);
+
+                                    if let Err(_) = tx.send(Ok(address)) {
+                                        error!("Could not publish resource");
+                                    }
+                                } else {
+                                    if let Err(_) = tx.send(Err(anyhow!("Could not publish {address}, already occupied"))) {
+                                        error!("Could not publish resource");
+                                    }
+                                }
+                            } else {
+                                if let Err(_) = tx.send(Err(anyhow!("Could not parse {address}"))) {
+                                    error!("Could not publish resource");
+                                }
                             }
                         }
                     }
@@ -741,7 +758,7 @@ impl Engine {
 
 /// Type alias for internal hosted resources,
 ///
-type InternalResources = BTreeMap<Address, HostedResource>;
+type HostedResourceMap = BTreeMap<Address, HostedResource>;
 
 impl Default for Engine {
     fn default() -> Self {
@@ -794,6 +811,18 @@ enum EngineAction {
         #[serde(skip)]
         tx: Option<tokio::sync::oneshot::Sender<Option<HostedResource>>>,
     },
+    /// Publishes a new thunk context as a node,
+    ///
+    Publish {
+        /// Address to publish the transient storage to,
+        ///
+        #[serde(skip)]
+        context: ThunkContext,
+        ///
+        ///
+        #[serde(skip)]
+        tx: Option<tokio::sync::oneshot::Sender<anyhow::Result<Address>>>,
+    },
     /// Gets an updated engine handle,
     ///
     /// **TODO**: This could be used to swap out the internals?
@@ -824,6 +853,7 @@ impl Debug for EngineAction {
                 .field("has_tx", &tx.is_some())
                 .finish(),
             Self::Shutdown(arg0) => f.debug_tuple("Shutdown").field(arg0).finish(),
+            Self::Publish { .. } => f.debug_struct("Publish").finish(),
         }
     }
 }
@@ -911,6 +941,24 @@ impl EngineHandle {
             Some(resource) => Ok(resource),
             None => Err(anyhow::anyhow!("Could not find resource {address}")),
         }
+    }
+
+    /// Publish a resource on the engine,
+    ///
+    pub async fn publish(&self, context: ThunkContext) -> anyhow::Result<Address> {
+        trace!("Trying to publish {}", &context.address());
+        let (tx, rx) = tokio::sync::oneshot::channel::<anyhow::Result<Address>>();
+
+        let packet = EnginePacket {
+            action: EngineAction::Publish {
+                context,
+                tx: Some(tx),
+            },
+        };
+
+        self.sender.send(packet)?;
+
+        rx.await?
     }
 
     /// Sends a signal for the engine to shutdown,

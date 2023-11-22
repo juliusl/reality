@@ -193,21 +193,6 @@ impl Operation {
             Err(anyhow::anyhow!("Task is not spawned"))
         }
     }
-
-    /// Navigates a path to a thunk context,
-    ///
-    pub async fn navigate(&self, path: impl AsRef<str>) -> anyhow::Result<ThunkContext> {
-        if let Some(tc) = self.context.as_ref() {
-            if let Some(tc) = tc.navigate(path.as_ref()).await {
-                let tc = tc.context().call().await?;
-                if let Some(tc) = tc {
-                    return Ok(tc);
-                }
-            }
-        }
-
-        Err(anyhow!("Could not find path: {}", path.as_ref()))
-    }
 }
 
 impl Future for Operation {

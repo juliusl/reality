@@ -4,6 +4,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use futures_util::Future;
 use reality::attributes;
+use uuid::Uuid;
 
 use crate::prelude::*;
 
@@ -21,21 +22,21 @@ pub trait Action {
     fn bind(&mut self, context: ThunkContext);
 
     /// Binds the node attribute's resource key to this action,
-    /// 
+    ///
     fn bind_node(&mut self, node: ResourceKey<attributes::Node>);
 
     /// Binds a plugin to this action's plugin resource key,
-    /// 
+    ///
     /// **Note** If not set, then the default is the default plugin key.
-    /// 
+    ///
     fn bind_plugin(&mut self, plugin: ResourceKey<attributes::Attribute>);
 
     /// Returns the bound node resource key for this action,
-    /// 
+    ///
     fn node_rk(&self) -> ResourceKey<attributes::Node>;
 
     /// Returns the plugin fn resource key for this action,
-    /// 
+    ///
     fn plugin_rk(&self) -> ResourceKey<attributes::Attribute>;
 
     /// Returns the current context,
@@ -51,10 +52,10 @@ pub trait Action {
     fn context_mut(&mut self) -> &mut ThunkContext;
 
     /// Spawns the thunk attached to the current context for this action,
-    /// 
+    ///
     fn spawn(&self) -> SpawnResult
     where
-        Self: CallAsync
+        Self: CallAsync,
     {
         self.context().spawn(|mut tc| async move {
             <Self as CallAsync>::call(&mut tc).await?;
@@ -63,10 +64,10 @@ pub trait Action {
     }
 
     /// Returns a future that contains the result of the action,
-    /// 
-    fn spawn_call(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<ThunkContext>> + Send + '_>> 
+    ///
+    fn spawn_call(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<ThunkContext>> + Send + '_>>
     where
-        Self: Sync
+        Self: Sync,
     {
         Box::pin(async move {
             let r = self.into_hosted_resource();
@@ -83,58 +84,70 @@ pub trait Action {
     }
 
     /// Convert the action into a generic hosted resource,
-    /// 
+    ///
     fn into_hosted_resource(&self) -> HostedResource {
-        HostedResource { 
+        HostedResource {
             address: self.address(),
             node_rk: self.node_rk(),
-            rk: self.context().attribute,
-            decoration: self.context().decoration.clone(), 
-            binding: Some(self.context().clone()), 
+            rk: self.plugin_rk(),
+            decoration: self.context().decoration.clone(),
+            binding: Some(self.context().clone()),
         }
     }
 
     /// Converts a pointer to the hosted resource into call output,
-    /// 
+    ///
     fn into_call_output(&self) -> CallOutput {
-        CallOutput::Spawn(
-            self.into_hosted_resource().spawn()
-        )
+        CallOutput::Spawn(self.into_hosted_resource().spawn())
     }
 }
 
 #[async_trait]
-pub trait ActionExt: Action + Send {
+pub trait ActionExt: Action + Send + Sync {
     /// Returns the simple form of the plugin,
-    /// 
+    ///
     /// **Note** The simple form only initializes from runmd instructions.
-    /// 
+    ///
     #[inline]
-    async fn as_plugin<P>(&self) -> P 
+    async fn as_plugin<P>(&self) -> P
     where
-        P: Plugin
+        P: Plugin,
     {
         self.context().initialized::<P>().await
     }
 
     /// Returns the remote plugin form of the plugin,
-    /// 
+    ///
     #[inline]
-    async fn as_remote_plugin<P>(&mut self) -> P 
+    async fn as_remote_plugin<P>(&mut self) -> P
     where
-        P: Plugin
+        P: Plugin,
     {
         Remote.create(self.context_mut()).await
     }
 
     /// Returns the local plugin form of the plugin,
-    /// 
+    ///
     #[inline]
-    async fn as_local_plugin<P>(&mut self) -> P 
+    async fn as_local_plugin<P>(&mut self) -> P
     where
-        P: Plugin
+        P: Plugin,
     {
         Local.create(self.context_mut()).await
+    }
+
+    /// Returns as a dispatcher for some resource R,
+    ///
+    /// **Note** -- Dispatches any pending messages before returning the dispatcher.
+    ///
+    #[inline]
+    async fn as_dispatch<R>(&self) -> Dispatcher<Shared, R>
+    where
+        R: Default + Send + Sync + 'static,
+    {
+        let mut disp = self.context().dispatcher::<R>().await;
+        disp.dispatch_all().await;
+        disp
     }
 }
 
@@ -146,3 +159,141 @@ impl ActionExt for Sequence {}
 impl ActionExt for Operation {}
 #[async_trait]
 impl ActionExt for HostedResource {}
+
+impl Action for ThunkContext {
+    fn address(&self) -> String {
+        self.property("address")
+            .map(|s| s.to_string())
+            .unwrap_or(self.variant_id.unwrap_or(Uuid::new_v4()).to_string())
+    }
+
+    fn bind(&mut self, context: ThunkContext) {
+        *self = context;
+    }
+
+    fn bind_node(&mut self, node: ResourceKey<attributes::Node>) {
+        self.write_cache(node)
+    }
+
+    fn bind_plugin(&mut self, plugin: ResourceKey<attributes::Attribute>) {
+        self.attribute = plugin;
+    }
+
+    fn node_rk(&self) -> ResourceKey<attributes::Node> {
+        self.cached().unwrap_or_default()
+    }
+
+    fn plugin_rk(&self) -> ResourceKey<attributes::Attribute> {
+        self.attribute
+    }
+
+    fn context(&self) -> &ThunkContext {
+        self
+    }
+
+    fn context_mut(&mut self) -> &mut ThunkContext {
+        self
+    }
+}
+
+#[async_trait]
+impl ActionExt for ThunkContext {}
+
+#[tokio::test]
+async fn test_thunk_context_action() {
+    let (uuid, mut tc) = ThunkContext::new().branch();
+    let rk = ResourceKey::with_hash("test");
+    tc.bind_plugin(rk);
+
+    unsafe {
+        let mut node = tc.node_mut().await;
+        node.put_resource::<ThunkFn>(
+            |tc| {
+                CallOutput::Spawn(tc.spawn(|tc| async move {
+                    eprintln!("hello world");
+                    Ok(tc)
+                }))
+            },
+            rk.transmute(),
+        );
+    }
+
+    let r = tc.into_hosted_resource();
+    assert_eq!(r.address(), uuid.to_string());
+    assert_eq!(r.plugin_rk(), rk);
+    let _ = r.spawn_call().await.unwrap(); // Will panic if the thunk fn was not called
+    ()
+}
+
+#[tokio::test]
+#[tracing_test::traced_test]
+async fn test_custom_action() {
+    let mut builder = Engine::builder();
+    builder.enable::<CustomAction>();
+
+    builder.workspace_mut().add_buffer(
+        "test-custom-action.md",
+        r#"
+    ```runmd
+    + .operation a
+    <test.customaction>     test_action
+    |# address      =       test://custom-action
+    ```
+    "#,
+    );
+
+    let _engine = builder.compile().await;
+
+    eprintln!("{:#?}", _engine);
+
+    eprintln!("{:#?}", _engine.block());
+    let (eh, _) = _engine.spawn(|_, p| Some(p));
+    
+    let _tc = eh.run("engine://a").await.unwrap();
+
+    let addr = eh.publish(_tc.transient.into()).await.unwrap();
+    eprintln!("{addr}");
+
+    let ca = eh.hosted_resource(addr.to_string()).await.unwrap();
+    let _ = ca.spawn_call().await;
+
+    ()
+}
+
+#[derive(Reality, Default, Clone)]
+#[reality(call = custom_action, plugin, group = "test")]
+pub struct CustomAction {
+    #[reality(derive_fromstr)]
+    name: String,
+}
+
+/// Example of bootstrapping resources,
+/// 
+async fn custom_action(_tc: &mut ThunkContext) -> anyhow::Result<()> {
+    eprintln!("custom action init");
+    let _ = Local.create::<CustomAction>(_tc).await;
+
+    let mut transient = _tc.transient_mut().await;
+
+    if let Some(deco) = _tc.decoration.as_ref() {
+        eprintln!("{:#?}", deco);
+        transient.put_resource(
+            deco.clone(),
+            _tc.attribute.transmute()
+        );
+    }
+
+    transient.put_resource::<ThunkFn>(
+        |tc| {
+            CallOutput::Spawn(tc.spawn(|tc| async move {
+                eprintln!("hello world {:?}", tc.decoration);
+                Ok(tc)
+            }))
+        },
+        _tc.attribute.transmute(),
+    );
+
+    transient.put_resource(_tc.attribute, ResourceKey::root());
+
+    Ok(())
+}

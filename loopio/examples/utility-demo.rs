@@ -47,8 +47,7 @@ struct Test {
 #[async_trait]
 impl CallAsync for Test {
     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
-        context.enable_flexbuffer().await;
-        {
+        context.enable_flexbuffer().await; {
             let mut total_buf = BytesMut::new();
             context.write_flexbuffer(|b| {
                 b.start_map().push("name", "jello");
@@ -74,7 +73,10 @@ impl CallAsync for Test {
 
         let content = context.find_file_text("loopio/examples/test.txt").await;
         println!("{:?}", content);
-        assert_eq!(initialized.expect.as_str(), content.unwrap_or_default());
+        assert_eq!(
+            initialized.expect.as_str(), 
+            content.unwrap_or_default()
+        );
 
         if let Some(result) = context.find_command_result("ls").await {
             println!("{}", String::from_utf8(result.output)?);
@@ -115,4 +117,8 @@ impl CallAsync for Echo {
 fn test_symbols() {
     println!("{}", <Test as AttributeType<Shared>>::symbol());
     println!("{}", <loopio::prelude::Process as AttributeType<Shared>>::symbol())
+}
+
+async fn bootstrap(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    Ok(())
 }

@@ -3,7 +3,7 @@ use std::fmt::Display;
 use reality::{prelude::*, attributes::Node};
 use serde::{Deserialize, Serialize};
 
-use crate::{prelude::{Action, Host}, sequence::Sequence, operation::Operation};
+use crate::prelude::Action;
 
 /// Struct containing address parameters and a notification handle,
 ///
