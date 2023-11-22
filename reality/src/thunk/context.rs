@@ -298,6 +298,12 @@ impl Context {
         }
     }
 
+    /// Returns a clone of the current cache,
+    /// 
+    pub fn clone_cache(&self) -> Shared {
+        self.__cached.clone()
+    }
+
     /// Caches the plugin P,
     ///
     pub async fn cache<P: Plugin + Sync + Send + 'static>(&mut self) {

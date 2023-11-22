@@ -162,52 +162,34 @@ impl ImguiMiddleware {
 
     /// Update any ui nodes,
     ///
-    /// TODO: Make this called more lazily
-    ///
     pub fn update(&mut self) {
-        // if let Some(engine) = self.engine.get_mut() {
-        //     if !engine.is_running() {
-        //         if let Some(last_updated) = self.__last_updated.as_ref() {
-        //             // TODO: Can remove when it's on demand
-        //             if last_updated.elapsed().as_secs() <= 10 {
-        //                 return;
-        //             }
-        //             self.__last_updated.take();
-        //         }
-
-        //         if let Some(started) = engine.spawn(|mut e| {
-        //             tokio::spawn(async move {
-        //                 let nodes = {
-        //                     let nodes = e.scan_take_nodes::<UiNode>();
-        //                     pin_mut!(nodes);
-
-        //                     nodes.collect::<Vec<_>>().await
-        //                 };
-
-        //                 if !nodes.is_empty() {
-        //                     let e = &mut e;
-        //                     e.cache.put_resource(nodes, None);
-        //                 }
-
-        //                 Ok(e)
-        //             })
-        //         }) {
-        //             self.__update_start = Some(started);
-        //         }
-        //     } else if let Some(true) = engine.is_finished() {
-        //         if let Some(_wait_for_finish) = self.__update_start.take() {
-        //             if let Ok(mut r) = engine.wait_for_finish(_wait_for_finish) {
-        //                 if let Some(nodes) = r.cache.take_resource::<Vec<UiNode>>(None) {
-        //                     // TODO -- Should clear?
-        //                     self.ui_nodes.clear();
-
-        //                     self.ui_nodes.extend(*nodes);
-        //                 }
-        //                 self.__last_updated = Some(Instant::now());
-        //             }
-        //         }
-        //     }
-        // }
+        if let Some(eh) = self.engine.get_mut() {
+            if let Some(bg) = eh.background() {
+                if let Ok(mut scanner) = bg.call("engine://scan-ui-nodes") {
+                    match scanner.status() {
+                        loopio::background_work::CallStatus::Pending => {
+                            if let Ok(_fg) = scanner.into_foreground() {
+                                let s = _fg.transient.storage.clone();
+                                if let Ok(mut s) = s.try_write() {
+                                    if let Some(nodes) = s.take_resource::<Vec<UiNode>>(ResourceKey::root()) {
+                                        self.ui_nodes.extend(*nodes);
+                                    }
+                                };
+                            }
+                        },
+                        _ => {
+                            let listen = scanner.listen();
+                            match listen.status() {
+                                loopio::background_work::CallStatus::Enabled => todo!(),
+                                loopio::background_work::CallStatus::Disabled => todo!(),
+                                loopio::background_work::CallStatus::Running => todo!(),
+                                loopio::background_work::CallStatus::Pending => todo!(),
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

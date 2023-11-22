@@ -185,14 +185,16 @@ impl BackgroundFuture {
     ///
     pub fn listen(&mut self) -> BackgroundFuture {
         let address = self.address.clone().with_tag("listen");
+
         let (_, bg) = self.tc.maybe_store_kv(
             &address.to_string(),
             BackgroundFuture {
-                address,
+                address: address.clone(),
                 tc: self.tc.clone(),
                 cancellation: self.tc.cancellation.child_token(),
             },
         );
+
         bg.deref().clone()
     }
 

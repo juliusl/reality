@@ -228,35 +228,35 @@ async fn test_thunk_context_action() {
 #[tokio::test]
 #[tracing_test::traced_test]
 async fn test_custom_action() {
-    let mut builder = Engine::builder();
-    builder.enable::<CustomAction>();
-
-    builder.workspace_mut().add_buffer(
-        "test-custom-action.md",
-        r#"
-    ```runmd
-    + .operation a
-    <test.customaction>     test_action
-    |# address      =       test://custom-action
-    ```
-    "#,
-    );
+    let builder = define_engine(&[
+        |mut eb| {
+            eb.enable::<CustomAction>();
+        
+            eb.workspace_mut().add_buffer(
+                "test-custom-action.md",
+                r#"
+            ```runmd
+            + .operation a
+            <test.customaction>     test_action
+            |# address      =       test://custom-action
+            ```
+            "#,
+            );
+            eb
+        }
+    ]);
 
     let _engine = builder.compile().await;
-
     eprintln!("{:#?}", _engine);
-
     eprintln!("{:#?}", _engine.block());
-    let (eh, _) = _engine.spawn(|_, p| Some(p));
-    
-    let _tc = eh.run("engine://a").await.unwrap();
 
+    let (eh, _) = _engine.spawn(|_, p| Some(p));
+    let _tc = eh.run("engine://a").await.unwrap();
     let addr = eh.publish(_tc.transient.into()).await.unwrap();
     eprintln!("{addr}");
 
     let ca = eh.hosted_resource(addr.to_string()).await.unwrap();
     let _ = ca.spawn_call().await;
-
     ()
 }
 
@@ -273,8 +273,16 @@ async fn custom_action(_tc: &mut ThunkContext) -> anyhow::Result<()> {
     eprintln!("custom action init");
     let _ = Local.create::<CustomAction>(_tc).await;
 
+    _tc.store_kv::<ThunkFn>("test 123", |tc| {
+        CallOutput::Spawn(tc.spawn(|tc| async move {
+            eprintln!("test 123");
+            Ok(tc)
+        }))
+    });
+
     let mut transient = _tc.transient_mut().await;
 
+    // Get decorations
     if let Some(deco) = _tc.decoration.as_ref() {
         eprintln!("{:#?}", deco);
         transient.put_resource(
@@ -283,17 +291,34 @@ async fn custom_action(_tc: &mut ThunkContext) -> anyhow::Result<()> {
         );
     }
 
+    // Add a new entrypoint for the resource
     transient.put_resource::<ThunkFn>(
         |tc| {
             CallOutput::Spawn(tc.spawn(|tc| async move {
+                assert!(tc.kv_contains::<ThunkFn>("test 123"));
+
                 eprintln!("hello world {:?}", tc.decoration);
+
+                if let Some((_, t)) = tc.fetch_kv::<ThunkFn>("test 123") {
+                    if let Ok(Some(tc)) = t(tc.clone()).await {
+                        return Ok(tc);
+                    }
+                }
+
                 Ok(tc)
             }))
         },
         _tc.attribute.transmute(),
     );
 
-    transient.put_resource(_tc.attribute, ResourceKey::root());
+    // Clone the cache,
+    transient.put_resource(_tc.clone_cache(), _tc.attribute.transmute());
 
+    // Set the default attribute key
+    transient.put_resource(_tc.attribute, ResourceKey::root());
+    Ok(())
+}
+
+async fn __publish_local_action(_tc: &mut ThunkContext) -> anyhow::Result<()> {
     Ok(())
 }

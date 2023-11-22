@@ -50,7 +50,7 @@ fn main() -> anyhow::Result<()> {
     # -- This is an example of editing a text value
     : test          .edit                   test_value
     |# title        = Test edit
-    |# widget       = text
+    |# widget       = input_text
     |# help         = This is some example help documentation.
     
     # -- Example: Runs the plugin w/ the edited settings

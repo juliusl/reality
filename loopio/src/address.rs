@@ -21,6 +21,9 @@ pub struct Address {
     /// Tag value of this address,
     ///
     tag: Option<String>,
+    /// Filter value of this address,
+    /// 
+    filter: Option<String>,
 }
 
 impl Address {
@@ -32,6 +35,7 @@ impl Address {
             node,
             tag: None,
             path: String::new(),
+            filter: None,
         }
     }
 
@@ -53,6 +57,13 @@ impl Address {
     ///
     pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
         self.tag = Some(tag.into());
+        self
+    }
+
+    /// Sets the filter paramter of this address,
+    /// 
+    pub fn with_filter(mut self, filter: impl Into<String>) -> Self {
+        self.filter = Some(filter.into());
         self
     }
 
@@ -102,6 +113,18 @@ impl Address {
     pub fn path(&self) -> &str {
         self.path.trim_start_matches('/')
     }
+    
+    /// TODO: Use the resource key to build paths to fields?
+    /// 
+    fn apply_filter(&self) -> anyhow::Result<()>{
+        if let Some(filter) = self.filter.as_ref() {
+            let filter = url::form_urlencoded::parse(filter.as_bytes());
+            for (k, v) in filter {
+                eprintln!("{k}: {v}");
+            }
+        }
+        Ok(())
+    }
 }
 
 impl FromStr for Address {
@@ -115,19 +138,26 @@ impl FromStr for Address {
             path: &str,
             node: Option<&str>,
             tag: Option<&str>,
+            filter: Option<&str>,
         ) -> anyhow::Result<Address> {
-            match (node, tag) {
-                (None, _) if path == "" => {
+            match (node, tag, filter) {
+                (None, _, _) if path == "" => { // Node address
                     Ok(Address::new(String::new()).with_host(host))
                 },
-                (None, _) => {
-                    Err(anyhow::anyhow!("Address cannot be constructed without a bound engine action -- {host} :// {path} {:?} {:?}", node, tag))
+                (None, _, _) => {
+                    Err(anyhow::anyhow!("Address cannot be constructed without a bound engine action -- {host} :// {path} {:?} {:?} {:?}", node, tag, filter))
                 },
-                (Some(node), None) => {
+                (Some(node), None, None) => {
                     Ok(Address::new(node.to_string()).with_host(host).with_path(path))
                 },
-                (Some(node), Some(tag)) => {
+                (Some(node), Some(tag), None) => {
                     Ok(Address::new(node.to_string()).with_host(host).with_path(path).with_tag(tag))
+                },
+                (Some(node), None, Some(filter)) => {
+                    Ok(Address::new(node.to_string()).with_host(host).with_path(path).with_filter(filter))
+                },
+                (Some(node), Some(tag), Some(filter)) => {
+                    Ok(Address::new(node.to_string()).with_host(host).with_path(path).with_tag(tag).with_filter(filter))
                 },
             }
         }
@@ -138,6 +168,7 @@ impl FromStr for Address {
                 url.path(),
                 url.host_str(),
                 url.fragment(),
+                url.query(),
             )?),
             Err(url::ParseError::RelativeUrlWithoutBase) => {
                 match url::Url::parse(format!("engine://{s}").as_str()) {
@@ -146,6 +177,7 @@ impl FromStr for Address {
                         url.path(),
                         url.host_str(),
                         url.fragment(),
+                        url.query(),
                     )?),
                     Err(err) => Err(anyhow::anyhow!("Could not parse address: {err}")),
                 }
@@ -173,6 +205,17 @@ fn test_address_from_str() {
     assert_eq!(address.tag, Some("test".to_string()));
     assert_eq!(address.node, "show_demo_window".to_string());
     assert_eq!(address.path, "/a/loopio.test".to_string());
+
+
+    let address =
+        Address::from_str("test://show_demo_window/a/loopio.test?type_name=core::alloc::String#test").expect("should be valid");
+    assert_eq!(address.host, Some("test".to_string()));
+    assert_eq!(address.tag, Some("test".to_string()));
+    assert_eq!(address.node, "show_demo_window".to_string());
+    assert_eq!(address.path, "/a/loopio.test".to_string());
+    assert_eq!(address.filter, Some("type_name=core::alloc::String".to_string()));
+
+    address.apply_filter().unwrap();
 }
 
 impl Display for Address {
@@ -184,6 +227,10 @@ impl Display for Address {
         write!(f, "{}", self.node)?;
 
         write!(f, "{}", self.path)?;
+
+        if let Some(filter) = self.filter.as_ref() {
+            write!(f, "?{}", filter)?;
+        }
 
         if let Some(tag) = self.tag.as_ref() {
             write!(f, "#{}", tag)?;

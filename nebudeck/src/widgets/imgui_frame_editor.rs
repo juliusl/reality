@@ -435,7 +435,7 @@ impl EditorWidgetTable {
         };
 
         // Simple UI fields
-        table.register("text", |widget, tc, ui| {
+        table.register("input_text", |widget, tc, ui| {
             if let Some(field) = widget.field_map.get(&widget.field) {
                 let mut changes = vec![];
 
@@ -494,6 +494,87 @@ impl EditorWidgetTable {
                         .wire_data
                         .as_ref()
                         .and_then(|d| bincode::deserialize::<String>(&d).ok())
+                    {
+                        tc.store_kv(&p.field_name, (s.to_string(), s, p.clone()));
+                    } else {
+                        ui.text("Unable to read field as a String");
+                        ui.text(format!("{:#?}", p));
+                        ui.text(format!("{:#?}", widget));
+                    }
+                }
+
+                if !changes.is_empty() {
+                    tc.spawn(|mut tc| async move {
+                        if let Some(mut updates) = tc.cached_mut::<FrameUpdates>() {
+                            for change in changes {
+                                updates.0.fields.push(change);
+                            }
+                        }
+                        Ok(tc)
+                    });
+                }
+            }
+        });
+
+        table.register("input_float", |widget, tc, ui| {
+            if let Some(field) = widget.field_map.get(&widget.field) {
+                let mut changes = vec![];
+
+                // Iterate through each discovered packet,
+                for p in field.iter() {
+                    if let Some((f, mut field)) =
+                        tc.fetch_mut_kv::<(f32, f32, FieldPacket)>(&p.field_name)
+                    {
+                        // Display any doc headers before this
+                        for d in &widget.doc_headers {
+                            ui.text(d);
+                        }
+
+                        // Enables text editing input
+                        ui.input_float(&widget.title, &mut field.1).build();
+
+                        // Modification actions
+                        if field.0 != field.1 {
+                            ui.text("Value has changed");
+                            ui.same_line();
+                            if ui.button("Reset") {
+                                field.1 = field.0;
+                            }
+
+                            ui.same_line();
+                            if ui.button("Save Changes") {
+                                field.0 = field.1;
+                                if let (mut field, Ok(wire)) =
+                                    (field.2.clone(), bincode::serialize(&field.0))
+                                {
+                                    field.wire_data = Some(wire);
+                                    changes.push(field);
+                                }
+                            }
+                        }
+
+                        // Show the help popup
+                        let key = format!("help_popup##{}", f.key());
+                        if let Some(help) = widget.help.as_ref() {
+                            ui.popup(&key, || {
+                                ui.text(help);
+                            });
+                            ui.same_line();
+                            ui.text("(?)");
+                            if ui.is_item_hovered() {
+                                ui.open_popup(&key);
+                            }
+                        }
+
+                        ui.new_line();
+                        ui.separator();
+                        continue;
+                    }
+
+                    if let Some(s) = p
+                        .wire_data
+                        .as_ref()
+                        .and_then(|d| bincode::deserialize::<f32>(&d).ok())
                     {
                         tc.store_kv(&p.field_name, (s.to_string(), s, p.clone()));
                     } else {
