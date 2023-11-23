@@ -1,22 +1,26 @@
 use anyhow::anyhow;
-use host::Host;
-use reality::prelude::*;
-use reality::RwLock;
 use serde::Deserialize;
 use serde::Serialize;
+
+use host::Host;
+
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::ops::Deref;
 use std::sync::Arc;
+
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+
 use tracing::debug;
 use tracing::error;
 use tracing::info;
 use tracing::trace;
 use tracing::warn;
+
+use reality::RwLock;
+use reality::prelude::*;
 
 use crate::background_work::BackgroundWorkEngineHandle;
 use crate::host;
@@ -714,7 +718,7 @@ impl Engine {
 
                             info!(address, "Looking up hosted resource");
                             if let Ok(address) = address.parse::<Address>() {
-                                if !self.__internal_resources.contains_key(&address) {
+                                if !self.__internal_resources.contains_key(&address) && !self.__published.contains_key(&address) {
                                     self.__published.insert(address.clone(), context);
 
                                     if let Err(_) = tx.send(Ok(address)) {

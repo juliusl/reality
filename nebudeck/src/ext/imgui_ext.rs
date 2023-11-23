@@ -131,8 +131,8 @@ impl ImguiMiddleware {
                                 }
                             }
 
-                            if let Ok(_bg) = bg.listen(&address) {
-                            }
+                            // if let Ok(_bg) = bg.listen(&address) {
+                            // }
                         }
                     });
             }
@@ -178,13 +178,13 @@ impl ImguiMiddleware {
                             }
                         },
                         _ => {
-                            let listen = scanner.listen();
-                            match listen.status() {
-                                loopio::background_work::CallStatus::Enabled => todo!(),
-                                loopio::background_work::CallStatus::Disabled => todo!(),
-                                loopio::background_work::CallStatus::Running => todo!(),
-                                loopio::background_work::CallStatus::Pending => todo!(),
-                            }
+                            // let listen = scanner.listen();
+                            // match listen.status() {
+                            //     loopio::background_work::CallStatus::Enabled => todo!(),
+                            //     loopio::background_work::CallStatus::Disabled => todo!(),
+                            //     loopio::background_work::CallStatus::Running => todo!(),
+                            //     loopio::background_work::CallStatus::Pending => todo!(),
+                            // }
                         }
                     }
                 }

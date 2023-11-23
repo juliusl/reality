@@ -56,6 +56,13 @@ async fn execute_sequence(tc: &mut ThunkContext) -> anyhow::Result<()> {
     seq.bind(tc.clone());
     seq.context_mut().attribute = tc.attribute;
 
+    // 
+    // A sequence trackes what it has already called w/ the StepList
+    // When restoring the list any "once" steps are filtered out.
+    // 
+    // In order to make changes that way, we need to pin the sequence before calling it, so that we can persist
+    // the result afterwards.
+    // 
     pin!(seq);
 
     (&mut seq).await?;
