@@ -8,8 +8,6 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tracing::trace;
 
-use crate::ThunkContext;
-
 use super::prelude::*;
 use super::target::StorageTargetKey;
 

@@ -1,15 +1,15 @@
+use anyhow::anyhow;
 use std::ops::Deref;
 use std::pin::Pin;
-use anyhow::anyhow;
+use std::sync::OnceLock;
 
 use reality::prelude::*;
 use tokio::select;
 use tokio_util::sync::CancellationToken;
 
 use crate::host::HostCondition;
-use crate::prelude::Action;
-use crate::prelude::Address;
 
+use crate::prelude::Address;
 use crate::prelude::EngineHandle;
 use crate::prelude::Ext;
 
@@ -46,7 +46,9 @@ async fn create_background_work_handle(tc: &mut ThunkContext) -> anyhow::Result<
     println!("Saving to transient {}", engine.is_some());
     _bh.tc
         .write_cache(engine.expect("should be bound to an engine"));
-    tc.transient_mut().await.put_resource(_bh, ResourceKey::root());
+    tc.transient_mut()
+        .await
+        .put_resource(_bh, ResourceKey::root());
     Ok(())
 }
 
@@ -76,21 +78,24 @@ pub enum CallStatus {
 }
 
 /// Enumeration of event statuses retrieved by this background work,
-/// 
+///
 #[derive(Debug, Clone)]
 pub enum EventStatus {
     /// Host condition,
-    /// 
+    ///
     HostCondition(HostCondition),
     /// No activity for the event has been seen,
-    /// 
+    ///
     None,
 }
 
 impl BackgroundWorkEngineHandle {
     /// Calls an plugin by address and returns the current status,
     ///
-    pub fn call(&mut self, address: impl AsRef<str>) -> anyhow::Result<BackgroundFuture> {
+    pub fn call(
+        &mut self,
+        address: impl AsRef<str>,
+    ) -> anyhow::Result<<Shared as StorageTarget>::BorrowMutResource<'_, BackgroundFuture>> {
         let (_rk, bg) = self.tc.maybe_store_kv(
             address.as_ref(),
             BackgroundFuture {
@@ -100,7 +105,7 @@ impl BackgroundWorkEngineHandle {
             },
         );
 
-        Ok(bg.clone())
+        Ok(bg)
     }
 
     /// Listens for an event,
@@ -117,6 +122,22 @@ impl BackgroundWorkEngineHandle {
 
         Ok(bg.listen())
     }
+
+    pub fn worker<P>(&mut self, plugin: P) -> anyhow::Result<<Shared as StorageTarget>::BorrowMutResource<'_, BackgroundWorker<P>>> 
+    where
+        P: Plugin
+    {
+        let (_rk, bg) = self.tc.maybe_store_kv(
+            P::symbol(),
+            BackgroundWorker {
+                inner: OnceLock::new(),
+            },
+        );
+
+        bg.inner.set(plugin).map_err(|_| anyhow!("existing plugin has not been handled yet"))?;
+
+        Ok(bg)
+    }
 }
 
 /// API for managing background tasks,
@@ -130,8 +151,20 @@ pub struct BackgroundFuture {
     ///
     tc: ThunkContext,
     /// Cancellation token,
-    /// 
+    ///
     cancellation: CancellationToken,
+}
+
+impl AsRef<ThunkContext> for BackgroundFuture {
+    fn as_ref(&self) -> &ThunkContext {
+        &self.tc
+    }
+}
+
+impl AsMut<ThunkContext> for BackgroundFuture {
+    fn as_mut(&mut self) -> &mut ThunkContext {
+        &mut self.tc
+    }
 }
 
 impl From<&ThunkContext> for BackgroundFuture {
@@ -145,12 +178,6 @@ impl From<&ThunkContext> for BackgroundFuture {
 }
 
 impl BackgroundFuture {
-    /// Set the current address that's the target of this background future,
-    /// 
-    pub fn set_address(&mut self, address: Address) {
-        self.address = address;
-    }
-
     /// Spawns the future if enabled otherwise returns the current state,
     ///
     pub fn spawn(&mut self) -> CallStatus {
@@ -159,18 +186,17 @@ impl BackgroundFuture {
                 println!("Spawning from background future {}", self.address);
                 let address = self.address.to_string();
                 let handle = self.tc.node.runtime.clone().unwrap();
-                
+
                 self.cancellation = self.tc.cancellation.child_token();
                 let cancel = self.cancellation.clone();
-                let call_output =
-                    CallOutput::Spawn(Some(handle.spawn(async move { 
-                        select! {
-                            result = eh.run(address) => result,
-                            _ = cancel.cancelled() => {
-                                Err(anyhow!("Call was cancelled"))
-                            }
+                let call_output = CallOutput::Spawn(Some(handle.spawn(async move {
+                    select! {
+                        result = eh.run(address) => result,
+                        _ = cancel.cancelled() => {
+                            Err(anyhow!("Call was cancelled"))
                         }
-                    })));
+                    }
+                })));
                 self.tc.store_kv(&self.address.to_string(), call_output);
                 CallStatus::Running
             } else {
@@ -215,13 +241,14 @@ impl BackgroundFuture {
                 },
                 CallOutput::Abort(_) => CallStatus::Pending,
                 CallOutput::Skip => CallStatus::Disabled,
+                CallOutput::Update(_) => CallStatus::Pending,
             }
         } else {
             CallStatus::Enabled
         }
     }
 
-    pub async fn task(mut self) -> anyhow::Result<ThunkContext> {
+    pub async fn task(&mut self) -> anyhow::Result<ThunkContext> {
         let address = self.address.clone();
         if let Some((_, call)) = self.tc.take_kv::<CallOutput>(&address.to_string()) {
             match call {
@@ -241,23 +268,24 @@ impl BackgroundFuture {
     }
 
     /// Blocks the current thread to surface the background task onto the current thread,
-    /// 
+    ///
     /// **Note**: This must be called outside of the tokio-runtime.
-    /// 
-    pub fn into_foreground(self) -> anyhow::Result<ThunkContext> {
+    ///
+    pub fn into_foreground(&mut self) -> anyhow::Result<ThunkContext> {
         futures::executor::block_on(self.task())
     }
 
     /// Cancels the current running background future,
-    /// 
+    ///
     pub fn cancel(&self) {
         self.cancellation.cancel();
     }
 
     /// Returns the current status for an address,
-    /// 
+    ///
     pub fn event_status(&mut self) -> EventStatus {
-        if let Some((_, event_status)) = self.tc.fetch_kv::<EventStatus>(&self.address.to_string()) {
+        if let Some((_, event_status)) = self.tc.fetch_kv::<EventStatus>(&self.address.to_string())
+        {
             event_status.clone()
         } else {
             EventStatus::None
@@ -265,16 +293,16 @@ impl BackgroundFuture {
     }
 }
 
-pub struct BackgroundWorker<P> 
+pub struct BackgroundWorker<P>
 where
-    P: Plugin
+    P: Plugin,
 {
-    inner: P
+    inner: OnceLock<P>,
 }
 
-impl<P> tower::Service<ThunkContext> for BackgroundWorker<P> 
+impl<P> tower::Service<ThunkContext> for BackgroundWorker<P>
 where
-    P: Action + Plugin
+    P: Plugin,
 {
     type Response = ThunkContext;
 
@@ -282,15 +310,26 @@ where
 
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
 
-    fn poll_ready(&mut self, cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
-        todo!()
+    fn poll_ready(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        if self.inner.get().is_some() {
+            std::task::Poll::Ready(Ok(()))
+        } else {
+            cx.waker().wake_by_ref();
+            std::task::Poll::Pending
+        }
     }
 
     fn call(&mut self, mut context: ThunkContext) -> Self::Future {
+        let inner = self.inner.take().expect("should be initialized if being called");
+
         Box::pin(async move {
-            // TODO: v3 -- with tower-support could add an additional dimension
-            // 
-           //  <EnableWireBus as CallAsync>::call(&mut context).await?;
+            let mut s = context.node.storage.write().await;
+            s.put_resource(inner, context.attribute.transmute());
+            drop(s);
+
             <P as CallAsync>::call(&mut context).await?;
             Ok(context)
         })

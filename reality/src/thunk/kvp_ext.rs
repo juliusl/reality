@@ -145,7 +145,7 @@ impl KvpExt for ThunkContext {
             self.store_kv(&key, value);
         }
 
-        self.fetch_mut_kv(&key).expect("should exist")
+        self.fetch_mut_kv(&key).expect("should only be accessed once per context")
     }
 
     /// Store a resource by key in cache,

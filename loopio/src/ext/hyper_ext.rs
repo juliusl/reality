@@ -200,6 +200,12 @@ impl HyperExt for ThunkContext {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct UriParam(hyper_serde::Serde<Uri>);
 
+impl PartialEq for UriParam {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
 impl std::ops::Deref for UriParam {
     type Target = Uri;
 
@@ -242,7 +248,7 @@ impl Default for UriParam {
     }
 }
 
-#[derive(Reality, Deserialize, Serialize, Default, Debug, Clone)]
+#[derive(Reality, Deserialize, Serialize, Default, PartialEq, Debug, Clone)]
 #[reality(plugin, group = "loopio.hyper")]
 pub struct Request {
     /// Uri to make request to,

@@ -1,41 +1,43 @@
 mod attribute;
 mod attribute_type;
-mod parser;
-mod storage_target;
 mod decorated;
 mod decoration;
+mod fields;
+mod parser;
+mod storage_target;
 mod visit;
 
 pub mod prelude {
     pub(super) use std::str::FromStr;
 
-    pub use super::decoration::Decoration;
     pub use super::attribute::Attribute;
-    pub use super::attribute::Property;
     pub use super::attribute::Node;
+    pub use super::attribute::Property;
     pub use super::attribute_type::*;
-    pub use super::parser::AttributeParser;
-    pub use super::parser::ParsedAttributes;
-    pub use super::parser::ParsedBlock;
-    pub use super::parser::HostedResource;
-    pub use super::parser::Comments;
-    pub use super::parser::Tag;
-    pub use super::parser::Properties;
-    pub use super::storage_target::prelude::*;
+    pub use super::decorated::CommaSeperatedStrings;
     pub use super::decorated::Decorated;
     pub use super::decorated::Delimitted;
-    pub use super::decorated::CommaSeperatedStrings;
+    pub use super::decoration::Decoration;
+    pub use super::fields::*;
+    pub use super::parser::AttributeParser;
+    pub use super::parser::Comments;
+    pub use super::parser::HostedResource;
+    pub use super::parser::ParsedAttributes;
+    pub use super::parser::ParsedBlock;
+    pub use super::parser::Properties;
+    pub use super::parser::Tag;
+    pub use super::storage_target::prelude::*;
     pub use super::visit::Field;
     pub use super::visit::FieldMut;
     pub use super::visit::FieldOwned;
-    pub use super::visit::SetField;
-    pub use super::visit::Visit;
-    pub use super::visit::VisitMut;
-    pub use super::visit::ToFrame;
     pub use super::visit::FieldPacket;
     pub use super::visit::FieldPacketType;
     pub use super::visit::Frame;
     pub use super::visit::FrameUpdates;
+    pub use super::visit::SetField;
+    pub use super::visit::ToFrame;
+    pub use super::visit::Visit;
+    pub use super::visit::VisitMut;
 
     /// Returns fields for an attribute type,
     ///
@@ -89,25 +91,27 @@ pub mod prelude {
         }
     }
 }
+
 pub use prelude::*;
 
 mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
+    use crate::prelude::Pack;
     use crate::BlockObject;
-    use reality_derive::Reality;
-    use serde::{Serialize, Deserialize};
     use async_trait::async_trait;
+    use reality_derive::Reality;
+    use serde::{Deserialize, Serialize};
 
     /// Tests derive macro expansion
     ///
-    #[derive(Reality, Serialize, Deserialize, Debug, Default)]
+    #[derive(Reality, Clone, Serialize, Deserialize, Debug, Default)]
     #[reality(
         rename = "test",
-        load=on_load
+        load=on_load,
     )]
-    pub struct Test<T: Serialize + Send + Sync + 'static> {
+    pub struct Test {
         /// Name for test,
         ///
         #[reality(parse=on_name)]
@@ -135,10 +139,6 @@ mod tests {
         ///
         #[reality(attribute_type)]
         _test2: Test2,
-        /// Ignored,
-        ///
-        #[reality(ignore)]
-        _value: T,
     }
 
     /// Called when loading this object,
@@ -148,17 +148,23 @@ mod tests {
     where
         S: StorageTarget + Send + Sync + 'static,
     {
-        storage.maybe_intialize_dispatcher::<u64>(ResourceKey::root()).await;
+        storage
+            .maybe_intialize_dispatcher::<u64>(ResourceKey::root())
+            .await;
     }
 
     #[allow(dead_code)]
-    fn on_name<T: Serialize + Send + Sync>(test: &mut Test<T>, value: String, _tag: Option<&String>) {
+    fn on_name(
+        test: &mut Test,
+        value: String,
+        _tag: Option<&String>,
+    ) {
         test.name = value;
         test._description = Decorated::default();
         test._test2 = Test2 {};
     }
 
-    impl<T: Serialize + Send + Sync + 'static> FromStr for Test<T> {
+    impl FromStr for Test {
         type Err = anyhow::Error;
 
         fn from_str(_s: &str) -> Result<Self, Self::Err> {
@@ -166,7 +172,7 @@ mod tests {
         }
     }
 
-    #[derive(Serialize, Deserialize, Clone, Default, Debug)]
+    #[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Default, Debug)]
     pub struct Test2 {}
 
     impl<S: StorageTarget + Send + Sync + 'static> AttributeType<S> for Test2 {
@@ -190,7 +196,7 @@ mod tests {
             .namespace("test_namespace")
             .expect("should be able to create");
 
-        let mut disp = ns.dispatcher::<Test<String>>(ResourceKey::root()).await;
+        let mut disp = ns.dispatcher::<Test>(ResourceKey::root()).await;
 
         disp.queue_dispatch_mut(|t| {
             t.author = format!("test_v2_parser");
@@ -199,21 +205,41 @@ mod tests {
 
     #[test]
     fn test_visit() {
-        let mut test = Test::<String>::default();
-        let fields = <Test<String> as VisitMut<BTreeMap<String, String>>>::visit_mut(&mut test);
+        let mut test = Test::default();
+
+        let fields = <Test as VisitMut<BTreeMap<String, String>>>::visit_mut(&mut test);
         println!("{:#?}", fields);
         test.set_field(FieldOwned {
-            owner: std::any::type_name::<Test<String>>().to_string(),
+            owner: std::any::type_name::<Test>().to_string(),
             name: "name".to_string(),
             offset: 0,
             value: String::from("hello-set-field"),
         });
-        
+
         assert_eq!("hello-set-field", test.name.as_str());
         let frames = test.to_frame(ResourceKey::root());
-     
+
         for frame in frames.fields {
             println!("{:?}", frame);
         }
+
+        let vtest = VirtualTest::new(test);
+
+        let _listener = vtest.listen();
+
+        let tx = vtest.name.start_tx();
+
+        let tx_result = tx.next(|f| {
+            Ok(f)
+        }).finish();
+
+        match tx_result {
+            Ok(_next) => {
+            },
+            Err(_) => todo!(),
+        }
+
+        // listener.changed().await.unwrap();
+        // let _vtest = listener.borrow_and_update();
     }
 }

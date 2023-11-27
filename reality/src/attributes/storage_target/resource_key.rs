@@ -1,7 +1,6 @@
 use core::slice;
 
 use std::collections::hash_map::DefaultHasher;
-use std::convert::Infallible;
 use std::hash::Hasher;
 use std::hash::Hash;
 use std::marker::PhantomData;
@@ -79,9 +78,9 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
 
     /// Panics if the current key is the root key,
     /// 
-    pub fn expect_not_root(self) -> Self {
+    pub const fn expect_not_root(self) -> Self {
         if self.is_root() {
-            Self::new()
+            panic!("Should not be root key")
         } else {
             self
         }

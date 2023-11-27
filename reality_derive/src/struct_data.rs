@@ -12,13 +12,16 @@ use syn::ImplGenerics;
 use syn::LitStr;
 use syn::Path;
 use syn::Token;
+use syn::Type;
 use syn::TypeGenerics;
+use syn::Visibility;
 use syn::WhereClause;
 use syn::parse::Parse;
 use syn::parse2;
 use syn::Data;
 use syn::DeriveInput;
 use syn::FieldsNamed;
+use syn::spanned::Spanned;
 
 use crate::struct_field::StructField;
 
@@ -36,6 +39,7 @@ pub(crate) struct StructData {
     /// Span of the struct being derived,
     /// 
     span: Span,
+    vis: Visibility,
     /// Name of the struct,
     ///
     name: Ident,
@@ -49,22 +53,25 @@ pub(crate) struct StructData {
     ext: bool,
     /// Reality attribute, rename option
     /// 
-    reality_rename: Option<LitStr>,
+    rename: Option<LitStr>,
     /// Reality attribute, on_load fn path,
     /// 
-    reality_on_load: Option<Path>,
+    on_load: Option<Path>,
     /// Reality attribute, on_unload fn path,
     /// 
-    reality_on_unload: Option<Path>,
+    on_unload: Option<Path>,
     /// Reality attribute, on_completed fn path,
     /// 
-    reality_on_completed: Option<Path>,
+    on_completed: Option<Path>,
     /// Group name,
     /// 
     group: Option<LitStr>,
     /// CallAsync fn,
     /// 
     call: Option<Ident>,
+    /// Replace thee
+    /// 
+    replace: Option<Type>,
 }
 
 impl Parse for StructData {
@@ -82,6 +89,7 @@ impl Parse for StructData {
         let mut ext = false;
         let mut enum_flags = false;
         let mut call = None;
+        let mut replace = None;
 
         for attr in derive_input.attrs.iter() {
             if attr.path().is_ident("reality") {
@@ -127,6 +135,12 @@ impl Parse for StructData {
                     if meta.path.is_ident("enum_flags") {
                         enum_flags = true;
                     }
+
+                    if meta.path.is_ident("replace") {
+                        meta.input.parse::<Token![=]>()?;
+                        replace = meta.input.parse::<Type>().ok();
+                    }
+                    
                     Ok(())
                 })?;
             }
@@ -186,13 +200,15 @@ impl Parse for StructData {
                 group,
                 generics: derive_input.generics,
                 fields,
-                reality_rename,
-                reality_on_load,
-                reality_on_unload,
-                reality_on_completed,
+                rename: reality_rename,
+                on_load: reality_on_load,
+                on_unload: reality_on_unload,
+                on_completed: reality_on_completed,
                 plugin,
                 ext,
                 call,
+                replace,
+                vis: derive_input.vis,
             })
         }
     }
@@ -344,7 +360,7 @@ impl StructData {
 
         //  Implementation for fields parsers,
         // 
-        let fields_on_parse_impl = self.fields.iter().map(|f| {
+        let fields_on_parse_impl = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
             let field_ident = f.field_name_lit_str();
             let ty = f.field_ty();
             let absolute_ty = &f.ty;
@@ -390,32 +406,258 @@ impl StructData {
             }
         });
 
-        quote_spanned! {self.span=> 
-            impl #impl_generics AttributeType<S> for #ident #ty_generics #where_clause {
-                fn symbol() -> &'static str {
-                    #symbol
+        let field_helpers_impl = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
+            let name = &f.name;
+            let field_ident = f.field_name_lit_str();
+            let ty = f.field_ty();
+            let absolute_ty = &f.ty;
+            let offset = &f.offset;
+
+            // Callback to use
+            let get_fn = f.render_get_fn();
+            let get_mut_fn = f.render_get_mut_fn();
+            let get_ref_helper_fn_ident = format_ident!("__get_field_offset_{}_ref", offset);
+            let get_mut_helper_fn_ident = format_ident!("__get_field_offset_{}_mut", offset);
+            let set_helper_fn_ident = format_ident!("__set_field_offset_{}", offset);
+            let push_helper_fn_ident = format_ident!("__push_field_offset_{}", offset);
+            let insert_entry_helper_fn_ident = format_ident!("__insert_entry_field_offset_{}", offset);
+            let take_helper_fn_ident = format_ident!("__take_field_offset_{}", offset);
+
+            let push_helper_impl = f.vec_of.as_ref().map(|f| {
+                quote_spanned!(f.span()=> 
+                    fn #push_helper_fn_ident(&mut self, value: #ty) -> bool {
+                        self.#name.push(value);
+                        true
+                    }
+                )
+            }).unwrap_or(
+                quote!(
+                    fn #push_helper_fn_ident(&mut self, _: #ty) -> bool {
+                        // no-op
+                        false
+                    }
+            ));
+
+            let insert_entry_helper_impl = f.map_of.as_ref().map(|f| {
+                quote_spanned!(f.span()=> 
+                    fn #insert_entry_helper_fn_ident(&mut self, key: impl Into<String>, value: #ty) -> bool {
+                        self.#name.insert(key.into(), value).is_none()
+                    }
+                )
+            }).unwrap_or(
+                quote!(
+                    fn #insert_entry_helper_fn_ident(&mut self, _: impl Into<String>, _: #ty) -> bool {
+                        // no-op;
+                        false
+                    }
+            ));
+
+
+            let set_helper = f.variant.as_ref().map(|(variant, enum_ty)| {
+                quote_spanned!(f.span=> 
+                    let changed = if let #enum_ty::#variant { #name, .. } = &self {
+                        #name != &value
+                    } else {
+                        false
+                    };
+
+                    if let #enum_ty::#variant { #name, .. } = self {
+                        *#name = value;
+                        changed
+                    } else {
+                        false
+                    }
+                )
+            }).unwrap_or(quote_spanned!(f.span=>  
+                let changed = &self.#name != &value;
+                self.#name = value;
+                changed
+            ));
+
+            let take_helper = f.variant.as_ref().map(|(variant, enum_ty)| {
+                quote_spanned!(f.span=> 
+                    if let #enum_ty::#variant { #name, .. } = self {
+                        #name
+                    } else {
+                        unreachable!("Generated code is incorrect")
+                    }
+                )
+            }).unwrap_or(quote_spanned!(f.span=> self.#name));
+            
+
+            quote_spanned! {f.span=>
+                fn #get_ref_helper_fn_ident(&self) -> (&str, &#absolute_ty) {
+                    (#field_ident, #get_fn)
                 }
 
-                fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
-                    let mut enable = parser.parse_attribute::<Self>(content.as_ref());
+                fn #get_mut_helper_fn_ident(&mut self) -> (&str, &mut #absolute_ty) {
+                    (#field_ident, #get_mut_fn)
+                }
 
-                    if enable.is_ok() {
-                        #(#fields)*
+                fn #set_helper_fn_ident(&mut self, value: #absolute_ty) -> bool {
+                    #set_helper
+                }
+
+                fn #take_helper_fn_ident(self) -> #absolute_ty {
+                    #take_helper
+                }
+
+                #push_helper_impl
+                #insert_entry_helper_impl
+            }
+        });
+
+        let vtable_field_helpers_impl = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
+            let ty = f.field_ty();
+            let absolute_ty = &f.ty;
+            let offset = &f.offset;
+
+            let get_ref_helper_fn_ident = format_ident!("__get_field_offset_{}_ref", offset);
+            let get_mut_helper_fn_ident = format_ident!("__get_field_offset_{}_mut", offset);
+            let set_helper_fn_ident = format_ident!("__set_field_offset_{}", offset);
+            let push_helper_fn_ident = format_ident!("__push_field_offset_{}", offset);
+            let insert_entry_helper_fn_ident = format_ident!("__insert_entry_field_offset_{}", offset);
+            let take_helper_fn_ident = format_ident!("__take_field_offset_{}", offset);
+            let vtable_helper_fn_ident = format_ident!("__field_offset_{}_vtable", offset);
+
+            quote_spanned! {f.span=>
+                fn #vtable_helper_fn_ident() -> &'static FieldVTable<#ident, #ty, #absolute_ty>
+                #where_clause
+                {
+                    static #vtable_helper_fn_ident: std::sync::OnceLock<FieldVTable<#ident, #ty, #absolute_ty>> = std::sync::OnceLock::new();
+
+                    #vtable_helper_fn_ident.get_or_init(|| FieldVTable::new(
+                        Self::#get_ref_helper_fn_ident,
+                        Self::#get_mut_helper_fn_ident,
+                        Self::#set_helper_fn_ident,
+                        Self::#push_helper_fn_ident,
+                        Self::#insert_entry_helper_fn_ident,
+                        Self::#take_helper_fn_ident
+                    ))
+                }
+            }
+        });
+
+
+        let vtable_field_impl = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
+            let name = &f.name;
+            let ty = f.field_ty();
+            let absolute_ty = &f.ty;
+
+            quote_spanned! {f.span=>
+                pub #name: FieldRef<#ident #ty_generics, #ty, #absolute_ty>,
+            }
+        });
+
+        let vtable_field_new_impl = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
+            let name = &f.name;
+            let offset = f.offset;
+            let vtable_helper_fn_ident = format_ident!("__field_offset_{}_vtable", offset);
+            quote_spanned! {f.span=>
+                #name: FieldRef::new(
+                    owner.clone(),
+                    #ident::#vtable_helper_fn_ident(),
+                ),
+            }
+        });
+
+        let virtual_ident = format_ident!("Virtual{}", ident);
+        let _virtual_plugin_ident = format_ident!("call_virtual_{}", ident.to_string().to_lowercase());
+
+        let virt_vis = &self.vis;
+        let virtual_ref = quote_spanned!(self.span=>
+            /// Virtual interface over plugin,
+            /// 
+            #[derive(Reality)]
+            #[reality(replace = #ident )]
+            #virt_vis struct #virtual_ident {
+                owner: std::sync::Arc<tokio::sync::watch::Sender<#ident>>,
+                #(#vtable_field_impl)*
+            }
+
+            impl #virtual_ident {
+                /// Creates a new virtual receiver for plugin,
+                /// 
+                pub fn new(init: #ident) -> Self {
+                    let (owner, rx) = tokio::sync::watch::channel(init);
+                    let owner = std::sync::Arc::new(owner);
+                    Self {
+                        owner: owner.clone(),
+                        #(#vtable_field_new_impl)*
                     }
+                }
+
+                /// Returns a receiver to listen for possible modifications of the owner,
+                /// 
+                pub fn listen(&self) -> tokio::sync::watch::Receiver<#ident> {
+                    self.owner.subscribe()
+                }
+
+                pub fn to_owned(&self) -> #ident {
+                    self.owner.subscribe().borrow().to_owned()
                 }
             }
 
-            #(#fields_on_parse_impl)*
+            // async fn #virtual_plugin_ident(tc: &mut ThunkContext) -> anyhow::Result<()> {
+            //     let plugin = Remote.create::<#ident>(tc).await;
+            //     let (_, virt) = tc.maybe_write_cache(#virtual_ident::new(plugin));
+            //     Ok(())
+            // }
+        );
 
-            #visit_impl
+        //
+        // ^ -- TODO -- Create a local action that gets the latest, creates a new hosted resource, publishes, starts, and then collects
+        //
+
+        if let Some(replace) = self.replace.as_ref() {
+            quote_spanned! {self.span=> 
+                impl #impl_generics AttributeType<S> for #ident #ty_generics #where_clause {
+                    fn symbol() -> &'static str {
+                        #symbol
+                    }
+    
+                    fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
+                        <#replace as AttributeType<S>>::parse(parser, content)
+                    }
+                }
+            }
+        } else {
+            quote_spanned! {self.span=> 
+                impl #impl_generics AttributeType<S> for #ident #ty_generics #where_clause {
+                    fn symbol() -> &'static str {
+                        #symbol
+                    }
+    
+                    fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
+                        let mut enable = parser.parse_attribute::<Self>(content.as_ref());
+    
+                        if enable.is_ok() {
+                            #(#fields)*
+                        }
+                    }
+                }
+
+                impl #original_impl_generics #ident #ty_generics #where_clause {
+                    #(#field_helpers_impl)*
+
+                    #(#vtable_field_helpers_impl)*
+                }
+
+                #virtual_ref
+
+                #(#fields_on_parse_impl)*
+    
+                #visit_impl
+            }
         }
+
     }
 
     /// Get the attribute ty symbol,
     /// 
     fn attr_symbol(&self, ident: &Ident) -> TokenStream {
         let group = self.group.as_ref().map(|g| quote_spanned!(self.span=> #g)).unwrap_or(quote_spanned!(self.span=> std::env!("CARGO_PKG_NAME")));
-        let name = self.reality_rename.clone().unwrap_or(
+        let name = self.rename.clone().unwrap_or(
             LitStr::new(ident.to_string().to_lowercase().as_str(), self.span)
         );
         
@@ -439,25 +681,25 @@ impl StructData {
 
         let (impl_generics, _, where_clause) = &generics.split_for_impl();
 
-        let on_load = self.reality_on_load.clone().map(|p| quote!(#p(storage).await;)).unwrap_or_default();
-        let on_unload = self.reality_on_unload.clone().map(|p| quote!(#p(storage).await;)).unwrap_or_default();
-        let on_completed = self.reality_on_completed.clone().map(|p| quote!(#p(storage))).unwrap_or(quote!(None));
+        let on_load = self.on_load.clone().map(|p| quote!(#p(storage).await;)).unwrap_or_default();
+        let on_unload = self.on_unload.clone().map(|p| quote!(#p(storage).await;)).unwrap_or_default();
+        let on_completed = self.on_completed.clone().map(|p| quote!(#p(storage))).unwrap_or(quote!(None));
 
-        let ext = self.fields.iter().filter(|f| f.ext).map(|f| {
+        let ext = self.fields.iter().filter(|f| f.ext && self.replace.is_none()).map(|f| {
             let ty = f.field_ty();
             quote_spanned!(f.span=>
                 _parser.with_object_type::<Thunk<#ty>>();
             )
         });
 
-        let plugins = self.fields.iter().filter(|f| f.plugin).map(|f| {
+        let plugins = self.fields.iter().filter(|f| f.plugin && self.replace.is_none()).map(|f| {
             let ty = f.field_ty();
             quote_spanned!(f.span=>
                 #ty::register(host); 
             )
         });
 
-        let to_frame = self.fields.iter().filter(|f| !f.ignore && !f.not_wire).map(|f| {
+        let to_frame = self.fields.iter().filter(|f| !f.ignore && !f.not_wire && self.replace.is_none()).map(|f| {
             let offset = f.offset; 
             let ty = f.field_ty();
             let pty = &f.ty;
@@ -474,7 +716,7 @@ impl StructData {
         });
 
         let synchronizable = self.fields.iter()
-            .filter(|f| !f.ignore && f.is_decorated)
+            .filter(|f| !f.ignore && f.is_decorated && self.replace.is_none())
             .map(|f| {
                 let name = &f.name;
 
@@ -579,6 +821,12 @@ impl StructData {
             quote!()
         };
 
+
+        let mut from_shared = None;
+        if !self.fields.iter().any(|f| f.variant.is_some()) {
+            from_shared = Some(self.clone().from_shared());
+        }
+
         let object_type_trait = quote_spanned!(self.span=>
             #[async_trait]
             impl #impl_generics BlockObject<Storage> for #name #ty_generics #where_clause {
@@ -609,6 +857,7 @@ impl StructData {
             #plugin
             #call
             #unit_from_str
+            #from_shared
         );
 
 
@@ -622,7 +871,7 @@ impl StructData {
     fn object_ty_api(self) -> TokenStream {
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
         let name = &self.name;
-        let fields = self.fields.iter().filter(|f| !f.ignore && !f.not_wire).map(|f| {
+        let fields = self.fields.iter().filter(|f| !f.ignore && !f.not_wire && self.replace.is_none()).map(|f| {
             let ty = &f.ty;
             let name = f.field_name_lit_str();
             let offset = f.offset;
@@ -651,6 +900,69 @@ impl StructData {
                 }
             }
         )
+    }
+
+    fn from_shared(self) -> TokenStream {
+        let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
+        let name = &self.name;
+        let fields = self.fields.iter().filter(|f| !f.ignore && self.replace.is_none()).map(|f| {
+            let name = &f.name;
+            let name_lit = f.field_name_lit_str();
+
+            let _final = if f.option_of.is_some() {
+                quote!()
+            } else {
+                quote!(.unwrap_or(self.#name))
+            };
+
+            quote_spanned!(f.span=>
+                self.#name = value.take_resource(ResourceKey::<Self>::new().branch(#name_lit).transmute()).map(|a| *a)#_final;
+            )
+        });
+
+        let _fields = self.fields.iter().filter(|f| !f.ignore && self.replace.is_none()).map(|f| {
+            let name = &f.name;
+            let name_lit = f.field_name_lit_str();
+
+            let _final = if f.option_of.is_some() {
+                quote!()
+            } else {
+                quote!(.unwrap_or_default())
+            };
+
+            quote_spanned!(f.span=>
+                storage.put_resource(self.#name, ResourceKey::<Self>::new().branch(#name_lit).transmute())
+            )
+        });
+
+        if !self.fields.is_empty() {
+            quote_spanned!(self.span=>
+                impl #impl_generics Pack for #name #ty_generics #where_clause {
+                    /// Packs the receiver into storage,
+                    /// 
+                    fn pack<S>(self, storage: &mut S) 
+                    where
+                        S: StorageTarget
+                    {
+                        #(#_fields);*
+                    }
+
+                    /// Unpacks self from Shared,
+                    /// 
+                    /// The default value for a field will be used if not stored.
+                    /// 
+                    fn unpack<S>(mut self, mut value: &mut S) -> Self 
+                    where
+                        S: StorageTarget
+                    {
+                        #(#fields)*
+                        self
+                    }
+                }
+            )
+        } else {
+            quote!()
+        }
     }
 }
 

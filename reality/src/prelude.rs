@@ -26,6 +26,7 @@ pub use crate::Dir;
 pub use crate::CurrentDir;
 pub use crate::EmptyWorkspace;
 pub use crate::Shared;
+pub use crate::Pack;
 pub use crate::Node;
 pub use crate::Transform;
 pub use crate::ResourceKey;
@@ -45,6 +46,8 @@ pub use crate::RegisterWith;
 pub use crate::SetIdentifiers;
 pub use crate::HostedResource;
 pub use crate::CacheExt;
+pub use crate::FieldRef;
+pub use crate::FieldVTable;
 
 /*
     Macros for working w/ a storage target

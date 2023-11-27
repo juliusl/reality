@@ -13,6 +13,7 @@ pub mod prelude {
     pub use crate::AsyncStorageTarget;
     pub use crate::AttributeType;
     pub use crate::BlockObject;
+    pub use super::plugin::Pack;
     use crate::ResourceKey;
     pub use super::context::Remote;
     pub use super::context::Local;
@@ -155,6 +156,10 @@ pub mod prelude {
                     Err(err) => std::task::Poll::Ready(Err(anyhow::anyhow!("{err}"))),
                 },
                 CallOutput::Skip => std::task::Poll::Ready(Ok(None)),
+                CallOutput::Update(tc) => {
+
+                    std::task::Poll::Ready(Ok(tc.take()))
+                },
             }
         }
     }

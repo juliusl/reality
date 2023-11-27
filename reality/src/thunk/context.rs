@@ -59,17 +59,34 @@ impl From<AsyncStorageTarget<Shared>> for Context {
     fn from(value: AsyncStorageTarget<Shared>) -> Self {
         let handle = value.runtime.clone().expect("should have a runtime");
 
-        let mut storage = value.storage.try_write().expect("should be idle so that it can be re-assembled");
+        let mut storage = value
+            .storage
+            .try_write()
+            .expect("should be idle so that it can be re-assembled");
 
-        let attribute = storage.take_resource(ResourceKey::root()).map(|a| *a).unwrap_or(ResourceKey::root());
+        let attribute = storage
+            .take_resource(ResourceKey::root())
+            .map(|a| *a)
+            .unwrap_or(ResourceKey::root());
         Self {
             node: value.clone(),
             attribute,
             transient: Shared::default().into_thread_safe_with(handle),
-            cancellation: storage.take_resource(attribute.transmute()).map(|a| *a).unwrap_or_default(),
-            variant_id: storage.take_resource(attribute.transmute()).map(|a| *a).unwrap_or_default(),
-            decoration: storage.take_resource::<Decoration>(attribute.transmute()).map(|a| *a),
-            __cached: storage.take_resource(attribute.transmute()).map(|a| *a).unwrap_or_default(),
+            cancellation: storage
+                .take_resource(attribute.transmute())
+                .map(|a| *a)
+                .unwrap_or_default(),
+            variant_id: storage
+                .take_resource(attribute.transmute())
+                .map(|a| *a)
+                .unwrap_or_default(),
+            decoration: storage
+                .take_resource::<Decoration>(attribute.transmute())
+                .map(|a| *a),
+            __cached: storage
+                .take_resource(attribute.transmute())
+                .map(|a| *a)
+                .unwrap_or_default(),
         }
     }
 }
@@ -97,6 +114,15 @@ impl Context {
     ///
     pub fn new() -> Self {
         Self::from(Shared::default().into_thread_safe())
+    }
+
+    /// Unpacks some resource from cached storage,
+    /// 
+    pub fn unpack<T>(&mut self) -> Option<T>
+    where
+        T: Pack + Sync + Send + Clone + 'static,
+    {
+        self.cached::<T>().map(|c| c.unpack(&mut self.__cached))
     }
 
     /// Returns the value of a property decoration if found,
@@ -227,6 +253,12 @@ impl Context {
         CallOutput::Abort(Err(error.into()))
     }
 
+    /// Convenience for `PluginOutput::Skip`
+    ///
+    pub fn update(self) -> CallOutput {
+        CallOutput::Update(Some(self))
+    }
+
     /// Retrieves the initialized state of the plugin,
     ///
     /// **Note**: This is the state that was evaluated at the start of the application, when the runmd was parsed.
@@ -299,7 +331,7 @@ impl Context {
     }
 
     /// Returns a clone of the current cache,
-    /// 
+    ///
     pub fn clone_cache(&self) -> Shared {
         self.__cached.clone()
     }
@@ -494,9 +526,9 @@ impl Context {
             (thunk)(self.clone()).await
         } else {
             let contains = self
-            .node()
-            .await
-            .contains::<ThunkFn>(self.attribute.transmute());
+                .node()
+                .await
+                .contains::<ThunkFn>(self.attribute.transmute());
             Err(anyhow::anyhow!(
                 "Did not execute thunk {:?} {contains}",
                 self.attribute

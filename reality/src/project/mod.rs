@@ -22,9 +22,9 @@ use serde::Serialize;
 pub use source::Source;
 
 mod workspace;
+pub use workspace::CurrentDir;
 pub use workspace::Dir;
 pub use workspace::Empty as EmptyWorkspace;
-pub use workspace::CurrentDir;
 pub use workspace::Workspace;
 
 mod host;
@@ -129,13 +129,17 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
     pub async fn parsed_block(&self) -> anyhow::Result<ParsedBlock> {
         let nodes = self.nodes.read().await;
 
-        let mut block = ParsedBlock { nodes: HashMap::new(), paths: BTreeMap::new(), resource_paths: BTreeMap::new() };
+        let mut block = ParsedBlock {
+            nodes: HashMap::new(),
+            paths: BTreeMap::new(),
+            resource_paths: BTreeMap::new(),
+        };
         for (rk, s) in nodes.deref().iter() {
             let s = s.read().await;
-            
+
             if let Some(parsed) = s.current_resource::<ParsedAttributes>(ResourceKey::root()) {
                 block.nodes.insert(rk.transmute(), parsed);
-             }
+            }
         }
 
         Ok(block)
@@ -280,14 +284,14 @@ mod reality {
     pub use crate::*;
 }
 
-#[derive(Debug, Serialize, Reality)]
+#[derive(Debug, Default, Serialize, Clone, Reality)]
 #[reality(group = "reality")]
 struct Test {
     name: String,
     file: PathBuf,
 }
 
-#[derive(Debug, Serialize, Deserialize, Reality)]
+#[derive(Debug, Serialize, Deserialize, Clone, Reality)]
 #[reality(group = "reality")]
 struct Test2 {
     name: String,
@@ -296,15 +300,15 @@ struct Test2 {
     test3: Test3,
 }
 
-#[derive(Reality, Serialize, Deserialize, Debug)]
+#[derive(Reality, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 enum Test3 {
-    A { 
+    A {
         #[reality(not_wire)]
-        a: String 
+        a: String,
     },
-    _B { 
+    _B {
         #[reality(not_wire)]
-        b: String 
+        b: String,
     },
 }
 

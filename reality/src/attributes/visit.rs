@@ -380,6 +380,8 @@ where
 
 #[allow(unused_imports)]
 mod tests {
+    use std::sync::OnceLock;
+
     use super::FieldMut;
     use crate::prelude::*;
 
@@ -393,7 +395,7 @@ mod tests {
     use async_trait::async_trait;
     use serde::Serialize;
 
-    #[derive(Reality, Serialize, Default)]
+    #[derive(Reality, Clone, Serialize, Default)]
     struct Test {
         #[reality(derive_fromstr)]
         name: String,
@@ -419,6 +421,7 @@ mod tests {
                 *value = String::from("hello-world-2");
             }
         }
+
         assert_eq!("hello-world", test.name.as_str());
         assert_eq!("hello-world-2", test.other.as_str());
     }

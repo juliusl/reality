@@ -1,12 +1,21 @@
+use std::sync::OnceLock;
 use std::time::Instant;
 
+use anyhow::anyhow;
+use imgui::InputTextCallbackHandler;
+use imgui::Ui;
+use loopio::action::RemoteAction;
+use loopio::action::TryCallExt;
 use loopio::foreground::ForegroundEngine;
 use loopio::prelude::*;
 use nebudeck::desktop::*;
 use nebudeck::ext::imgui_ext::ImguiExt;
 use nebudeck::ext::imgui_ext::ImguiMiddleware;
+use nebudeck::ext::imgui_ext::UiNode;
 use nebudeck::ext::WgpuSystem;
 use nebudeck::ext::*;
+use nebudeck::widgets::UiDisplayMut;
+use nebudeck::widgets::UiFormatter;
 use nebudeck::ControlBus;
 
 /// Demonstrates how to build on top of the WgpuSystem Desktop App implementation,
@@ -67,6 +76,9 @@ fn main() -> anyhow::Result<()> {
 
     + .operation setup
     <demo.test> hello world
+    <demo.processwizard>      cargo
+    |# address = test://process_wizard
+    : .arg --help
 
     + .sequence start_demo
     : .once show_frame_editor
@@ -75,6 +87,8 @@ fn main() -> anyhow::Result<()> {
     + .host demo
     : .start    start_demo
 
+    : .action   demo_proc/democmd/loopio.std.process
+
     # -- # Example of a host action title
     : .action   call_test_2/a/demo.test2
     |# help = Indexes a path to a plugin
@@ -82,9 +96,10 @@ fn main() -> anyhow::Result<()> {
     # -- # Example of an action to show a frame editor
     : .action   show_frame_editor/b/nebudeck.frame-editor
     ```
-    ");
+    ",
+    );
     engine.enable::<Test>();
-    engine.enable::<Test2>();
+    engine.enable::<ProcessWizard>();
 
     let foreground = ForegroundEngine::new(engine);
 
@@ -100,91 +115,133 @@ fn main() -> anyhow::Result<()> {
 }
 
 #[derive(Reality, Debug, Clone, Default)]
-#[reality(call = test_ui, plugin, group = "demo")]
+#[reality(call = test, plugin, group = "demo")]
 struct Test {
-    #[reality(derive_fromstr)]
-    name: String,
-    value_str: String,
-}
-
-async fn test_ui(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    // Must cache before adding the node, otherwise the cache will not have the value
-    tc.cache::<Test>().await;
-    tc.find_and_cache::<EngineHandle>(true).await;
-    tc.find_and_cache::<ParsedAttributes>(true).await;
-
-    println!("Adding ui node {:?}", tc.attribute);
-    tc.add_ui_node(|__tc, ui| {
-        ui.window("test").build(|| {
-            ui.text(format!("{:?}", Instant::now()));
-            ui.text(format!("{:?}", __tc.attribute));
-            if let Some(test) = __tc.cached::<Test>() {
-                ui.text(test.name);
-
-                if let Some(_eh) = __tc.cached_mut::<EngineHandle>() {
-                    ui.text("Operations:");
-                    ui.popup("test_popup", || {
-                        ui.text("finished");
-                    });
-
-                    // for (idx, (op, __op)) in eh.operations.iter_mut().enumerate() {
-                    //     ui.text(op);
-                    //     if !__op.is_running() {
-                    //         if ui.button(format!("start##{}", idx)) {
-                    //             __op.spawn();
-                    //         }
-                    //     } else {
-                    //         ui.text("Running");
-                    //         if __op.is_finished() {
-                    //             if let Ok(_) = __op.block_result() {
-                    //                 ui.open_popup("test_popup");
-                    //             }
-                    //         }
-                    //     }
-                    // }
-                }
-
-                if let Some(parsed) = __tc.cached::<ParsedAttributes>() {
-                    ui.label_text(
-                        "Number of parsed attributes",
-                        parsed.attributes.len().to_string(),
-                    );
-
-                    let defined_properties = parsed
-                        .properties
-                        .defined
-                        .iter()
-                        .fold(0, |acc, d| acc + d.1.len());
-                    ui.label_text(
-                        "Number of properties defined",
-                        defined_properties.to_string(),
-                    );
-                }
-            } else {
-                ui.text("Not found");
-            }
-        });
-        false
-    })
-    .await;
-
-    Ok(())
-}
-
-#[derive(Reality, Debug, Clone, Default)]
-#[reality(call = test_2, plugin, group = "demo")]
-struct Test2 {
     #[reality(derive_fromstr)]
     name: String,
     test_value: String,
     test_not_str: usize,
 }
 
-async fn test_2(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let init = Remote.create::<Test2>(tc).await;
+async fn test(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    let init = Remote.create::<Test>(tc).await;
     println!("{:#?}", init);
     tc.print_debug_info();
+
+    let mut storage = tc.transient.storage.write().await;
+    init.pack::<Shared>(&mut storage);
 
     Ok(())
 }
 
+#[derive(Reality, Debug, Default, Clone)]
+#[reality(call = process_wizard, replace=Process, plugin, group = "demo")]
+struct ProcessWizard;
+
+impl ProcessWizard {
+    async fn edit_program_name(mut tc: ThunkContext) -> anyhow::Result<ThunkContext> {
+        eprintln!("Creating process wizard");
+        let process = Remote.create::<Process>(&mut tc).await;
+
+        eprintln!("{:?}", process);
+        tc.write_cache(process);
+
+        tc.push_ui_node(|ui| {
+            if let Err(err) = ProcessWizard.fmt(ui) {
+                ui.imgui.text(format!("{err}"));
+            }
+            true
+        });
+
+        Ok(tc)
+    }
+}
+
+async fn process_wizard(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    if let Some(eh) = tc.engine_handle().await {
+        // Build a remote action
+        let init = RemoteAction.build::<Process>(tc).await;
+
+        // Bind a task that defines the UI node and dependencies
+        let init = init.bind_task("edit_program_name", ProcessWizard::edit_program_name);
+
+        // Publish the remote action as a hosted resource
+        let mut _a = init.publish(eh.clone()).await?;
+
+        let mut _a = eh.hosted_resource(_a.to_string()).await?;
+
+        // Call the hosted resource
+        if let Some(_tc) = _a.try_call("edit_program_name").await? {
+            if let Some(nodes) = _tc
+                .transient
+                .storage
+                .write()
+                .await
+                .take_resource::<Vec<UiNode>>(_tc.attribute.transmute())
+            {
+                // Transfer transient storage resources over to the current context
+                tc.transient
+                    .storage
+                    .write()
+                    .await
+                    .put_resource(*nodes, ResourceKey::root());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+impl UiDisplayMut for ProcessWizard {
+    fn fmt(&mut self, ui: &mut UiFormatter<'_>) -> anyhow::Result<()> {
+        ui.show_with_all(|mut eh, tc, ui| {
+            let _attr = tc.attribute.clone();
+
+            if let Some(mut cached) = tc.cached_mut::<Process>() {
+                let virt_proc = VirtualProcess::new(cached.clone());
+                let tx = virt_proc.program.start_tx();
+
+                if let Ok(next) = tx
+                    .next(|n| {
+                        if n.edit_value(|program| {
+                            let prev = program.clone();
+                            ui.input_text("program", program).build();
+                            prev.as_str() != program.as_str()
+                        }) {
+                            Ok(n)
+                        } else {
+                            Err(anyhow!("No changes"))
+                        }
+                    })
+                    .finish() {
+                        next.view_value(|r| {
+                            eprintln!("Change -- {:?} {r}", Instant::now());
+                            cached.program = r.to_string();
+                        });
+                    }
+
+                if let Some(_bg) = eh.background() {
+                    if ui.button("Run") {}
+                }
+            }
+        });
+
+        Ok(())
+    }
+}
+
+struct _InputText;
+
+impl InputTextCallbackHandler for _InputText {
+    fn char_filter(&mut self, c: char) -> Option<char> {
+        Some(c)
+    }
+
+    fn on_completion(&mut self, _: imgui::TextCallbackData) {}
+
+    fn on_edit(&mut self, _: imgui::TextCallbackData) {}
+
+    fn on_history(&mut self, _: imgui::HistoryDirection, _: imgui::TextCallbackData) {}
+
+    fn on_always(&mut self, _: imgui::TextCallbackData) {}
+}

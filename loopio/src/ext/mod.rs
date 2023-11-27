@@ -175,7 +175,7 @@ async fn send_signal(tc: &mut ThunkContext) -> anyhow::Result<()> {
     tc.notify_host(&signal.host, &signal.name).await
 }
 
-#[derive(Reality, Serialize, Deserialize, Debug, Default, Clone)]
+#[derive(Reality, Serialize, Deserialize, PartialEq, PartialOrd, Debug, Default, Clone)]
 #[reality(plugin, call = receive_signal, rename = "receive-signal", group = "loopio")]
 pub struct ReceiveSignal {
     #[reality(derive_fromstr)]

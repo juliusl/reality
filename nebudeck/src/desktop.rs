@@ -77,10 +77,6 @@ pub struct Placeholder {
 
 async fn placeholder(tc: &mut ThunkContext) -> anyhow::Result<()> {
     tc.print_debug_info();
-    tc.add_ui_node(|tc, ui| {
-        
-        true
-    }).await;
     Ok(())
 }
 /// This controller provides access to winit Windowing system and event loop,

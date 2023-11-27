@@ -14,6 +14,7 @@ pub use crate::ext::wire_ext::*;
 pub use crate::engine::Engine;
 pub use crate::engine::EngineHandle;
 pub use crate::engine::DefaultEngine;
+pub use crate::engine::Published;
 pub use crate::foreground::ForegroundEngine;
 pub use crate::host::Host;
 pub use crate::sequence::Sequence;

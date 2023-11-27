@@ -19,14 +19,16 @@ use tracing::info;
 use tracing::trace;
 use tracing::warn;
 
-use reality::RwLock;
 use reality::prelude::*;
+use reality::RwLock;
 
 use crate::background_work::BackgroundWorkEngineHandle;
 use crate::host;
 use crate::operation::Operation;
 use crate::prelude::Action;
 use crate::prelude::Address;
+use crate::prelude::EngineBuildMiddleware;
+use crate::prelude::Ext;
 use crate::sequence::Sequence;
 
 #[cfg(feature = "hyper-ext")]
@@ -56,6 +58,14 @@ pub struct EngineBuilder {
 }
 
 impl EngineBuilder {
+    pub fn define(self, middleware: &[EngineBuildMiddleware]) -> EngineBuilder {
+        let engine_builder = Engine::builder();
+
+        let engine_builder = middleware.iter().fold(engine_builder, |eb, f| f(eb));
+
+        engine_builder
+    }
+
     /// Creates a new engine builder,
     ///
     pub fn new(runtime_builder: tokio::runtime::Builder) -> Self {
@@ -700,7 +710,30 @@ impl Engine {
                         info!(address, "Looking up hosted resource");
 
                         if let Some(tx) = tx.take() {
-                            if let Ok(resource) = self.get_resource(address).await {
+                            if let Ok(mut resource) = self.get_resource(address).await {
+                                let mut published = self
+                                    .__published
+                                    .iter()
+                                    .map(|(a, _)| a.to_string())
+                                    .collect::<Vec<_>>();
+                                published.append(
+                                    &mut self
+                                        .__internal_resources
+                                        .iter()
+                                        .map(|(a, _)| a.to_string())
+                                        .collect::<Vec<_>>(),
+                                );
+
+                                let published = Published {
+                                    label: String::new(),
+                                    resources: published
+                                        .iter()
+                                        .filter_map(|a| Decorated::from_str(&a).ok())
+                                        .collect(),
+                                };
+
+                                resource.context_mut().write_cache(published);
+
                                 if let Err(_) = tx.send(Some(resource)) {
                                     error!("Could not call resource");
                                 }
@@ -718,14 +751,18 @@ impl Engine {
 
                             info!(address, "Looking up hosted resource");
                             if let Ok(address) = address.parse::<Address>() {
-                                if !self.__internal_resources.contains_key(&address) && !self.__published.contains_key(&address) {
+                                if !self.__internal_resources.contains_key(&address)
+                                    && !self.__published.contains_key(&address)
+                                {
                                     self.__published.insert(address.clone(), context);
 
                                     if let Err(_) = tx.send(Ok(address)) {
                                         error!("Could not publish resource");
                                     }
                                 } else {
-                                    if let Err(_) = tx.send(Err(anyhow!("Could not publish {address}, already occupied"))) {
+                                    if let Err(_) = tx.send(Err(anyhow!(
+                                        "Could not publish {address}, already occupied"
+                                    ))) {
                                         error!("Could not publish resource");
                                     }
                                 }
@@ -758,6 +795,41 @@ impl Engine {
 
         Ok(self)
     }
+}
+
+/// List of all published addresses hosted on an engine,
+///
+#[derive(Reality, Default, Clone, Debug)]
+#[reality(call = build_published, plugin)]
+pub struct Published {
+    /// Label for this list,
+    ///
+    #[reality(derive_fromstr)]
+    pub label: String,
+    /// List of resources that have been published,
+    ///
+    #[reality(vec_of=Decorated<Address>)]
+    pub resources: Vec<Decorated<Address>>,
+}
+
+async fn build_published(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    let eh = tc.engine_handle().await;
+
+    if let Some(eh) = eh {
+        let mut _a = eh.hosted_resource("engine://").await?;
+
+        if let Some(published) = _a.context().cached::<Published>() {
+            published.clone().pack(tc.transient.storage.write().await.deref_mut());
+
+            tc.transient
+                .storage
+                .write()
+                .await
+                .put_resource(published.clone(), ResourceKey::root());
+        };
+    }
+
+    Ok(())
 }
 
 /// Type alias for internal hosted resources,
@@ -829,7 +901,6 @@ enum EngineAction {
     },
     /// Gets an updated engine handle,
     ///
-    /// **TODO**: This could be used to swap out the internals?
     Sync {
         #[serde(skip)]
         tx: Option<tokio::sync::oneshot::Sender<EngineHandle>>,
@@ -858,6 +929,8 @@ impl Debug for EngineAction {
                 .finish(),
             Self::Shutdown(arg0) => f.debug_tuple("Shutdown").field(arg0).finish(),
             Self::Publish { .. } => f.debug_struct("Publish").finish(),
+            #[allow(unreachable_patterns)]
+            _ => Ok(()),
         }
     }
 }

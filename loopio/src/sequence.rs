@@ -275,10 +275,10 @@ impl std::future::Future for Sequence {
 
 /// A step is an operation address to execute on an engine,
 ///
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct Step(pub String, pub StepType);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub enum StepType {
     /// Indicates that the step should only execute once,
     ///

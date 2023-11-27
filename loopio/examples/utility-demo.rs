@@ -118,7 +118,3 @@ fn test_symbols() {
     println!("{}", <Test as AttributeType<Shared>>::symbol());
     println!("{}", <loopio::prelude::Process as AttributeType<Shared>>::symbol())
 }
-
-async fn bootstrap(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    Ok(())
-}

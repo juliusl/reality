@@ -34,7 +34,7 @@ impl WireBus {
 
 /// Plugin to enable the wire bus on an attribute,
 ///
-#[derive(Reality, Serialize, Deserialize, Default, Clone)]
+#[derive(Reality, Serialize, Deserialize, PartialEq, Default, Clone)]
 #[reality(call=enable_wire_bus, plugin, rename = "enable-wirebus")]
 pub struct EnableWireBus {
     /// Path to the attribute,

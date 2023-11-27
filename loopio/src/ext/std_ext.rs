@@ -49,7 +49,7 @@ impl StdExt for ThunkContext {
 
 /// Set of plugins for std.io,
 ///
-#[derive(Reality, Deserialize, Serialize, Clone, Default)]
+#[derive(Reality, Deserialize, Serialize, PartialEq, Clone, Default)]
 #[reality(plugin, group = "loopio", rename = "std.io")]
 pub struct Stdio {
     /// Version to use for this ext,
@@ -79,7 +79,7 @@ impl CallAsync for Stdio {
 
 /// Plugin for reading a file path into transient storage,
 ///
-#[derive(Reality, Serialize, Deserialize, Clone, Default)]
+#[derive(Reality, Serialize, Deserialize, PartialEq, PartialOrd, Clone, Default)]
 #[reality(plugin, rename = "io.read-text-file", group = "loopio.std")]
 pub struct ReadTextFile {
     /// Path to read string from,
@@ -110,7 +110,7 @@ impl CallAsync for ReadTextFile {
 
 /// Plugin for reading a file path into transient storage,
 ///
-#[derive(Reality, Serialize, Deserialize, Clone, Default)]
+#[derive(Reality, Serialize, Deserialize, PartialEq, Clone, Default)]
 #[reality(plugin, rename = "io.read-file", group = "loopio.std")]
 pub struct ReadFile {
     /// Path to read string from,
@@ -139,7 +139,7 @@ impl CallAsync for ReadFile {
 
 /// Plugin for reading a file path into transient storage,
 ///
-#[derive(Reality, Serialize, Deserialize, Clone, Default)]
+#[derive(Reality, Serialize, Deserialize, PartialEq, Clone, Default)]
 #[reality(plugin, rename = "io.println", group = "loopio.std")]
 pub struct Println {
     /// Path to read string from,
@@ -159,24 +159,24 @@ impl CallAsync for Println {
 
 /// Process plugin,
 ///
-#[derive(Reality, Serialize, Deserialize, Clone, Default)]
+#[derive(Reality, Serialize, Debug, PartialEq, PartialOrd, Deserialize, Clone, Default)]
 #[reality(plugin, call = start_process, group = "loopio.std")]
 pub struct Process {
     /// Name of the program,
     /// 
     #[reality(derive_fromstr)]
-    program: String,
+    pub program: String,
     /// Environment variables the process will have access to
     /// 
     #[reality(map_of=String)]
-    env: BTreeMap<String, String>,
+    pub env: BTreeMap<String, String>,
     /// List of arguments to add to the process,
     /// 
     #[reality(vec_of=String)]
-    arg: Vec<String>,
+    pub arg: Vec<String>,
     /// If true, the process output will be stored
     /// 
-    piped: bool,
+    pub piped: bool,
 }
 
 async fn start_process(tc: &mut ThunkContext) -> anyhow::Result<()> {

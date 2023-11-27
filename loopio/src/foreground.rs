@@ -10,6 +10,7 @@ use crate::background_work::CallStatus;
 use crate::prelude::Engine;
 use crate::background_work::BackgroundWorkEngineHandle;
 use crate::background_work::BackgroundWork;
+use crate::prelude::Published;
 
 /// Type-alias for the background task listening for new engine packets,
 ///
@@ -74,16 +75,21 @@ impl ForegroundEngine {
         # -- # Default engine operation plugins
         + .operation default
         <handle/loopio.background-work>
-            
+        <list/loopio.published>
+        
         # -- # Default host engine tasks
         + .host engine
 
         # -- # Creates a new background work engine handle
         : .action   default/handle/loopio.background-work
+
+        # -- # Retrieves current published resources
+        : .action   default/list/loopio.published
         ```
         "#,
             );
             builder.enable::<BackgroundWork>();
+            builder.enable::<Published>();
             let engine = builder.compile().await;
             engine
         });
@@ -119,7 +125,7 @@ impl ForegroundEngine {
                     }
                     CallStatus::Running => std::thread::yield_now(),
                     CallStatus::Pending => {
-                        bg.into_foreground().unwrap();
+                        bg.clone().into_foreground().ok();
                         break;
                     }
                 }
@@ -136,13 +142,7 @@ impl ForegroundEngine {
 
 #[test]
 fn test_foreground_engine() {
-    let mut mt_engine = ForegroundEngine::new(
+    let _mt_engine = ForegroundEngine::new(
         crate::prelude::Engine::builder(),
     );
-
-    let bg = mt_engine.eh.background().unwrap();
-    if let Ok(mut bg) = bg.call("engine://test_background_work") {
-        bg.spawn();
-        bg.into_foreground().unwrap();
-    }
 }

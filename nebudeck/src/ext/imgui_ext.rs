@@ -1,19 +1,21 @@
-use std::cell::OnceCell;
-use std::sync::Arc;
-use std::time::Instant;
 use imgui::Ui;
 use imgui_wgpu::RendererConfig;
 use imgui_winit_support::WinitPlatform;
-use loopio::engine::EnginePacket;
+use loopio::action::TryCallExt;
+use loopio::engine::{EnginePacket, Published};
+use loopio::prelude::*;
+use std::cell::OnceCell;
+use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::error;
-use loopio::prelude::*;
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
 
+use super::wgpu_ext::RenderPipelineMiddleware;
 use crate::desktop::DesktopApp;
 use crate::ControlBus;
-use super::wgpu_ext::RenderPipelineMiddleware;
+use crate::widgets::{UiFormatter, UiDisplayMut};
 
 pub mod winit {
     #[cfg(feature = "desktop-vnext")]
@@ -64,6 +66,9 @@ pub struct ImguiMiddleware {
     /// When this was last updated,
     ///
     __last_updated: Option<Instant>,
+    /// Published paths,
+    ///
+    pub published: Option<Published>,
 }
 
 impl ImguiMiddleware {
@@ -80,6 +85,7 @@ impl ImguiMiddleware {
             __update_start: None,
             __last_updated: None,
             __aux_ui: vec![],
+            published: None,
         }
     }
 
@@ -93,7 +99,7 @@ impl ImguiMiddleware {
     /// Enables the aux widget demo window,
     ///
     pub fn enable_aux_demo_window(self) -> Self {
-        self.with_aux_node(|handle, ui| {
+        self.with_aux_node(|handle, imgui, ui| {
             if let Some(bg) = handle.background() {
                 const ADDRESS_INPUT: &'static str = "Address_Input";
 
@@ -103,36 +109,63 @@ impl ImguiMiddleware {
                     .size([800.0, 600.0], imgui::Condition::Once)
                     .build(|| {
                         let mut __address = None;
-                        if let Some((_, mut address)) = bg.tc.fetch_mut_kv::<String>(ADDRESS_INPUT) {
+
+                        if let Some((_, mut address)) = bg.tc.fetch_mut_kv::<String>(ADDRESS_INPUT)
+                        {
                             if ui.input_text("Address", &mut address).build() {}
                             __address = Some(address.to_string());
+                            if let Some(published) = imgui.published.as_ref() {
+                                for a in published.resources.iter().filter_map(|a| a.value()) {
+                                    if ui.button(format!("set##{}", a)) {
+                                        *address = a.to_string();
+                                    }
+                                    ui.same_line();
+                                    ui.text(a.to_string());
+                                }
+                            }
                         }
 
                         if let Some(address) = __address.take() {
-                            if let Ok(mut bg) = bg.call(address.as_str()) {
-                                match bg.status() {
+                            if let Ok(mut _bg) = bg.call(address.as_str()) {
+                                match _bg.status() {
                                     loopio::background_work::CallStatus::Enabled => {
                                         if ui.button("Start") {
-                                            bg.spawn();
+                                            let status = _bg.spawn();
+                                            eprintln!("Started {:?}", status);
                                         }
                                     }
                                     loopio::background_work::CallStatus::Disabled => {
-                                        ui.disabled(true, || {
-                                            if ui.button("Start") {
-                                            }
-                                        })
-                                    },
+                                        ui.disabled(true, || if ui.button("Start") {})
+                                    }
                                     loopio::background_work::CallStatus::Running => {
                                         ui.text("Running");
-                                    },
+                                    }
                                     loopio::background_work::CallStatus::Pending => {
-                                        bg.into_foreground().unwrap();
-                                    },
+                                        ui.text("Pending");
+                                        let __tc = _bg.into_foreground().unwrap();
+                                        eprintln!(
+                                            "Background work finished {}",
+                                            __tc.transient
+                                                .storage
+                                                .try_read()
+                                                .map(|t| t
+                                                    .contains::<Vec<UiNode>>(ResourceKey::root()))
+                                                .unwrap_or_default()
+                                        );
+
+                                        if let Some(mut _nodes) = __tc
+                                            .transient
+                                            .storage
+                                            .clone()
+                                            .try_write()
+                                            .expect("should be the owner")
+                                            .take_resource::<Vec<UiNode>>(ResourceKey::root())
+                                        {
+                                            imgui.ui_nodes.append(&mut _nodes);
+                                        }
+                                    }
                                 }
                             }
-
-                            // if let Ok(_bg) = bg.listen(&address) {
-                            // }
                         }
                     });
             }
@@ -151,7 +184,7 @@ impl ImguiMiddleware {
     ///
     pub fn with_aux_node(
         mut self,
-        aux_ui: impl FnMut(&mut EngineHandle, &Ui) -> bool + Send + Sync + 'static,
+        aux_ui: impl FnMut(&mut EngineHandle, &mut ImguiMiddleware, &Ui) -> bool + Send + Sync + 'static,
     ) -> Self {
         self.__aux_ui.push(AuxUiNode {
             engine_handle: None,
@@ -160,36 +193,25 @@ impl ImguiMiddleware {
         self
     }
 
-    /// Update any ui nodes,
-    ///
-    pub fn update(&mut self) {
-        if let Some(eh) = self.engine.get_mut() {
-            if let Some(bg) = eh.background() {
-                if let Ok(mut scanner) = bg.call("engine://scan-ui-nodes") {
-                    match scanner.status() {
-                        loopio::background_work::CallStatus::Pending => {
-                            if let Ok(_fg) = scanner.into_foreground() {
-                                let s = _fg.transient.storage.clone();
-                                if let Ok(mut s) = s.try_write() {
-                                    if let Some(nodes) = s.take_resource::<Vec<UiNode>>(ResourceKey::root()) {
-                                        self.ui_nodes.extend(*nodes);
-                                    }
-                                };
-                            }
-                        },
-                        _ => {
-                            // let listen = scanner.listen();
-                            // match listen.status() {
-                            //     loopio::background_work::CallStatus::Enabled => todo!(),
-                            //     loopio::background_work::CallStatus::Disabled => todo!(),
-                            //     loopio::background_work::CallStatus::Running => todo!(),
-                            //     loopio::background_work::CallStatus::Pending => todo!(),
-                            // }
-                        }
-                    }
-                }
+    fn show_aux_nodes(&mut self, ui: &Ui) {
+        let mut nodes: Vec<AuxUiNode> = self.__aux_ui.drain(..).collect();
+
+        for auxnode in nodes.iter_mut() {
+            if auxnode.engine_handle.is_none() {
+                auxnode.engine_handle = Some(
+                    self.engine
+                        .get()
+                        .cloned()
+                        .expect("should have an engine handle by this point"),
+                );
+            }
+
+            if !auxnode.show(self, &ui) {
+                // TODO -- "Close the node"
             }
         }
+
+        self.__aux_ui = nodes.drain(..).collect();
     }
 }
 
@@ -274,22 +296,17 @@ impl DesktopApp for ImguiMiddleware {
 
             self.last_frame = Some(now);
         }
-
-        // TOOD: This could be placed on a better handler to reduce overhead
-        self.update();
     }
 
-    fn on_user_event(&mut self, _user: &EnginePacket, _context: &crate::desktop::DesktopContext) {
-        self.update();
-    }
+    fn on_user_event(&mut self, _user: &EnginePacket, _context: &crate::desktop::DesktopContext) {}
 
     fn on_window_redraw(
         &mut self,
         _: winit::window::WindowId,
         context: &crate::desktop::DesktopContext,
     ) {
-        if let (Some(im_context), Some(platform)) =
-            (self.context.get_mut(), self.platform.get_mut())
+        if let (Some(mut im_context), Some(mut platform)) =
+            (self.context.take(), self.platform.take())
         {
             let io = im_context.io_mut();
             if let Ok(_) = platform.prepare_frame(io, context.window) {
@@ -299,35 +316,28 @@ impl DesktopApp for ImguiMiddleware {
                     ui.show_demo_window(open_demo_window);
                 }
 
-                for uinode in self.ui_nodes.iter_mut() {
-                    if !uinode.show(&ui) {
-                        // TODO -- "Close the node"
-                    }
-                }
+                let mut formatter = UiFormatter {
+                    imgui: ui,
+                    #[cfg(feature = "terminal")]
+                    subcommand: None,
+                    tc: None,
+                    disp: None,
+                    eh: self.engine.get().cloned().expect("should be bound to an engine"),
+                };
 
-                for auxnode in self.__aux_ui.iter_mut() {
-                    if auxnode.engine_handle.is_none() {
-                        auxnode.engine_handle = Some(
-                            self.engine
-                                .get()
-                                .cloned()
-                                .expect("should have an engine handle by this point"),
-                        );
-                    }
-
-                    if !auxnode.show(&ui) {
-                        // TODO -- "Close the node"
-                    }
-                }
-
-                for ui_type_node in self.ui_type_nodes.iter_mut() {
-                    if !ui_type_node.show(&ui) {
-                        // TODO -- "Close the node"
-                    }
+                if let Err(err) = self.fmt(&mut formatter) {
+                    ui.text(format!("{err}"));
                 }
 
                 platform.prepare_render(&ui, context.window);
             }
+
+            self.context
+                .set(im_context)
+                .expect("should have taken in the same function");
+            self.platform
+                .set(platform)
+                .expect("should have taken in the same function");
         }
     }
 }
@@ -361,14 +371,22 @@ impl ImguiMiddleware {
 
 #[async_trait]
 pub trait ImguiExt {
-    async fn add_ui_node(
+    /// Pushes a new ui node to transient storage,
+    /// 
+    /// **Note** When this fn is called it will take a snapshot of the current context.
+    /// 
+    fn push_ui_node(
         &self,
-        show: impl for<'a, 'b> Fn(&'a mut ThunkContext, &'b Ui) -> bool + Send + Sync + 'static,
+        show: impl for<'a, 'b> Fn(&'a mut UiFormatter<'_>) -> bool + Send + Sync + 'static,
     );
 
-    async fn add_ui_type_node<G: Default + Send + Sync + 'static>(
+    /// Pushes a new ui type node to transient storage,
+    /// 
+    /// **Note** When this fn is called it will take a snapshot of the current context.
+    /// 
+    async fn push_ui_type_node<G: Default + Send + Sync + 'static>(
         &self,
-        show: impl for<'a, 'b> Fn(&'a mut Dispatcher<Shared, Attribute>, &'b Ui) -> bool
+        show: impl for<'a, 'b> Fn(&'a mut UiFormatter<'b>) -> bool
             + Send
             + Sync
             + 'static,
@@ -377,54 +395,52 @@ pub trait ImguiExt {
 
 #[async_trait]
 impl ImguiExt for ThunkContext {
-    async fn add_ui_node(
+    fn push_ui_node(
         &self,
-        show: impl for<'a, 'b> Fn(&'a mut ThunkContext, &'b Ui) -> bool + Send + Sync + 'static,
+        show: impl for<'a, 'b> Fn(&'a mut UiFormatter<'_>) -> bool + Send + Sync + 'static,
     ) {
-        let ui_node = UiNode {
-            show_ui: Some(Arc::new(show)),
-            context: self.clone(),
-        };
+        let mut storage = self
+            .transient
+            .storage
+            .try_write()
+            .expect("should only be called during transient code");
 
-        unsafe {
-            self.node_mut()
-                .await
-                .put_resource(ui_node, self.attribute.transmute());
-        };
+        let mut nodes = storage.maybe_put_resource(vec![], self.attribute.transmute());
+        nodes.push(UiNode {
+            show_ui_node: Some(Arc::new(show)),
+            context: self.clone(),
+        });
     }
 
-    async fn add_ui_type_node<G: Default + Send + Sync + 'static>(
+    async fn push_ui_type_node<G: Default + Send + Sync + 'static>(
         &self,
-        show: impl for<'a, 'b> Fn(&'a mut Dispatcher<Shared, Attribute>, &'b Ui) -> bool
+        show: impl for<'a, 'b> Fn(&'a mut UiFormatter<'b>) -> bool
             + Send
             + Sync
             + 'static,
     ) {
-        let ui_node = UiTypeNode {
-            show_ui: Some(Arc::new(show)),
-            dispatcher: self.dispatcher::<G>().await.transmute(),
-        };
+        let mut storage = self
+            .transient
+            .storage
+            .try_write()
+            .expect("should only be called during transient code");
 
-        unsafe {
-            self.node_mut()
-                .await
-                .put_resource(ui_node, self.attribute.transmute())
-        };
+        let mut nodes = storage.maybe_put_resource(vec![], self.attribute.transmute());
+        nodes.push(UiTypeNode {
+            show_ui_node: Some(Arc::new(show)),
+            dispatcher: self.dispatcher::<G>().await.transmute(),
+        });
     }
 }
 
-/// Type-alias for a dispatcher based UI signature,
-///
-pub type ShowTypeUi =
-    Arc<dyn Fn(&mut Dispatcher<Shared, Attribute>, &Ui) -> bool + Sync + Send + 'static>;
-
-/// Type-alias for a plugin-based UI function signature,
-///
-pub type ShowUi = Arc<dyn Fn(&mut ThunkContext, &Ui) -> bool + Sync + Send + 'static>;
-
 /// Type-alias for an engine handle based UI function signature,
 ///
-pub type AuxUi = Arc<RwLock<dyn FnMut(&mut EngineHandle, &Ui) -> bool + Sync + Send + 'static>>;
+pub type AuxUi = Arc<
+    RwLock<dyn FnMut(&mut EngineHandle, &mut ImguiMiddleware, &Ui) -> bool + Sync + Send + 'static>,
+>;
+
+pub type ShowUiNode =
+    Arc<dyn for<'frame> Fn(&mut UiFormatter<'frame>) -> bool + Sync + Send + 'static>;
 
 /// UI Node contains a rendering function w/ a thunk context,
 ///
@@ -433,21 +449,9 @@ pub struct UiTypeNode {
     /// Dispatcher for this ui node,
     ///
     pub dispatcher: Dispatcher<Shared, Attribute>,
-    /// Function to show ui,
+    /// Function to show ui node,
     ///
-    pub show_ui: Option<ShowTypeUi>,
-}
-
-impl UiTypeNode {
-    /// Shows the ui,
-    ///
-    pub fn show(&mut self, ui: &Ui) -> bool {
-        if let Some(show) = self.show_ui.as_ref() {
-            show(&mut self.dispatcher, ui)
-        } else {
-            false
-        }
-    }
+    pub show_ui_node: Option<ShowUiNode>,
 }
 
 /// UI Node contains a rendering function w/ a thunk context,
@@ -457,13 +461,14 @@ pub struct UiNode {
     /// Dispatcher for this ui node,
     ///
     pub context: ThunkContext,
-    /// Function to show ui,
+    /// Funtion to show ui node,
     ///
-    pub show_ui: Option<ShowUi>,
+    pub show_ui_node: Option<ShowUiNode>,
 }
 
 /// Auxilary UI node, containing a rendering function w/ engine handle,
 ///
+#[derive(Clone)]
 pub struct AuxUiNode {
     /// Engine handle,
     ///
@@ -473,26 +478,14 @@ pub struct AuxUiNode {
     pub show_ui: AuxUi,
 }
 
-impl UiNode {
-    /// Shows the ui attached to a node,
-    ///
-    pub fn show(&mut self, ui: &Ui) -> bool {
-        if let Some(show) = self.show_ui.as_ref() {
-            show(&mut self.context, ui)
-        } else {
-            false
-        }
-    }
-}
-
 impl AuxUiNode {
     /// Shows the ui attached to a node,
     ///
-    pub fn show(&mut self, ui: &Ui) -> bool {
+    pub fn show(&mut self, imgui: &mut ImguiMiddleware, ui: &Ui) -> bool {
         if let (Some(handle), Ok(mut show)) =
             (self.engine_handle.as_mut(), self.show_ui.try_write())
         {
-            show(handle, ui)
+            show(handle, imgui, ui)
         } else {
             false
         }
@@ -503,11 +496,140 @@ impl AuxUiNode {
     /// **Note** When created an aux ui node receives it's own engine handle. This allows
     /// passing a handle directly, such as the middleware's handle.
     ///
-    pub fn show_with(&mut self, engine_handle: &mut EngineHandle, ui: &Ui) -> bool {
+    pub fn show_with(
+        &mut self,
+        engine_handle: &mut EngineHandle,
+        imgui: &mut ImguiMiddleware,
+        ui: &Ui,
+    ) -> bool {
         if let Ok(mut show) = self.show_ui.try_write() {
-            show(engine_handle, ui)
+            show(engine_handle, imgui, ui)
         } else {
             false
         }
+    }
+}
+
+/// Plugin for adding ui components provided by a hosted resource,
+///
+#[derive(Reality, Default, Debug, Clone)]
+#[reality(call=add_ui_component, plugin, rename="add-ui")]
+pub struct AddUiComponent {
+    /// Address of the hosted resource providing a ui node,
+    ///
+    #[reality(derive_fromstr)]
+    pub address: Address,
+    /// List of thunk names that return a ui node,
+    ///
+    #[reality(vec_of=Decorated<String>)]
+    pub node: Vec<Decorated<String>>,
+}
+
+async fn add_ui_component(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    if let Some(eh) = tc.engine_handle().await {
+        let c = tc.initialized::<AddUiComponent>().await;
+
+        let a = eh.hosted_resource(c.address.to_string()).await?;
+
+        let mut nodes: Vec<UiNode> = vec![];
+        for n in c.node.iter() {
+            if let Some(t) = n.value() {
+                // Call the hosted resource
+
+                if let Some(_tc) = a.try_call(&t).await? {
+                    if let Some(mut _nodes) = _tc
+                        .transient
+                        .storage
+                        .write()
+                        .await
+                        .take_resource::<Vec<UiNode>>(_tc.attribute.transmute())
+                    {
+                        nodes.append(&mut *_nodes);
+                    }
+                }
+            }
+        }
+        // Transfer transient storage resources over to the current context
+
+        tc.transient
+            .storage
+            .write()
+            .await
+            .put_resource(nodes, ResourceKey::root());
+    }
+
+    Ok(())
+}
+
+
+impl UiDisplayMut for UiNode {
+    fn fmt(&mut self, ui: &mut UiFormatter<'_>) -> anyhow::Result<()> {
+        let _ui = &ui.imgui;
+
+        if let Some(show_ui_node) = self.show_ui_node.as_ref() {
+            show_ui_node(ui);
+            Ok(())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl UiDisplayMut for UiTypeNode {
+    fn fmt(&mut self, ui: &mut UiFormatter<'_>) -> anyhow::Result<()> {
+        let _ui = &ui.imgui;
+
+        if let Some(show_ui_node) = self.show_ui_node.as_ref() {
+            show_ui_node(ui);
+            Ok(())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl UiDisplayMut for ImguiMiddleware {
+    fn fmt(&mut self, ui: &mut UiFormatter<'_>) -> anyhow::Result<()> {
+        self.show_aux_nodes(&ui.imgui);
+
+        if let Some(eh) = self.engine.get_mut() {
+            if let Some(bg) = eh.background() {
+                // Render ui nodes
+                for ui_node in self.ui_nodes.iter_mut() {
+                    ui.tc = Some(ui_node.context.clone());
+                    ui_node.fmt(ui)?;
+                }
+                ui.tc = None;
+
+                // Render ui-type nodes
+                for ui_type_node in self.ui_type_nodes.iter_mut() {
+                    ui.disp = Some(ui_type_node.dispatcher.clone());
+                    ui_type_node.fmt(ui)?;
+                }
+                ui.disp = None;
+
+                // Initialize list of published resources on start-up
+                if let Ok(mut _bg) = bg.call("engine://default/list/loopio.published") {
+                    match _bg.status() {
+                        loopio::background_work::CallStatus::Enabled => {
+                            // TODO -- This is a change signal
+                            if self.published.is_none() {
+                                _bg.spawn();
+                            }
+                        }
+                        loopio::background_work::CallStatus::Pending => {
+                            let mut __tc = _bg.into_foreground().unwrap();
+
+                            if let Ok(mut storage) = __tc.transient.clone().storage.try_write() {
+                                self.published = Some(Published::default().unpack(storage.deref_mut()));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }

@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::BlockObject;
 use crate::ResourceKey;
+use crate::ThunkContext;
 use crate::Visit;
 use crate::VisitMut;
 
@@ -356,7 +357,7 @@ where
 
 /// Helper trait for constructing concrete callback types,
 ///
-pub trait Handler<S: StorageTarget + 'static, Arg: Send + Sync + 'static> {
+pub trait Handler<S: StorageTarget, Arg: Send + Sync + 'static> {
     /// Handler function w/ a mutable reference to storage,
     ///
     fn handle_mut(storage: &mut S, arg: Arg);

@@ -116,7 +116,7 @@ impl Address {
     
     /// TODO: Use the resource key to build paths to fields?
     /// 
-    fn apply_filter(&self) -> anyhow::Result<()>{
+    fn _apply_filter(&self) -> anyhow::Result<()>{
         if let Some(filter) = self.filter.as_ref() {
             let filter = url::form_urlencoded::parse(filter.as_bytes());
             for (k, v) in filter {
@@ -214,8 +214,7 @@ fn test_address_from_str() {
     assert_eq!(address.node, "show_demo_window".to_string());
     assert_eq!(address.path, "/a/loopio.test".to_string());
     assert_eq!(address.filter, Some("type_name=core::alloc::String".to_string()));
-
-    address.apply_filter().unwrap();
+    address._apply_filter().unwrap();
 }
 
 impl Display for Address {

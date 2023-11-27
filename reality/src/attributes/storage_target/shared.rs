@@ -20,6 +20,14 @@ pub struct Shared {
     resources: HashMap<u64, Arc<RwLock<Box<dyn Send + Sync + 'static>>>>,
 }
 
+impl Shared {
+    /// Unpack a stored type,
+    /// 
+    pub fn unpack<T: for<'a> From<&'a mut Shared>>(&mut self) -> T {
+        T::from(self)
+    }
+}
+
 impl StorageTarget for Shared {
     type BorrowResource<'a, T: Send + Sync + 'static> = RwLockReadGuard<'a, T>;
 
@@ -49,10 +57,7 @@ impl StorageTarget for Shared {
         self.resource_mut(resource_key).expect("should exist")
     }
 
-    fn contains<T: Send + Sync + 'static>(
-        &self,
-        resource_key: StorageTargetKey<T>,
-    ) -> bool {
+    fn contains<T: Send + Sync + 'static>(&self, resource_key: StorageTargetKey<T>) -> bool {
         let key = Self::key::<T>(resource_key);
 
         self.resources.contains_key(&key)
@@ -178,7 +183,7 @@ async fn test_complex() {
     borrow_mut!(shared, u64, "hello-complex", |r| => {
         *r += 2;
     });
-   
+
     borrow!(shared, u64, "hello-complex", |r| => {
         println!("{r}");
     });
@@ -202,7 +207,9 @@ async fn test_complex() {
 async fn test_async_dispatcher() {
     let shared = Shared::default().into_thread_safe();
     // Test initalizing a resource dispatcher and queueing dispatches
-    let mut dispatcher = shared.maybe_intialize_dispatcher::<(u64, u64)>(ResourceKey::new()).await;
+    let mut dispatcher = shared
+        .maybe_intialize_dispatcher::<(u64, u64)>(ResourceKey::new())
+        .await;
     dispatcher.queue_dispatch_mut(|(a, b)| {
         *a += 1;
         *b += 2;
@@ -221,7 +228,7 @@ async fn test_async_dispatcher() {
         async move { tokio::time::sleep(std::time::Duration::from_millis(a + b)).await; }
     });
 
-    // Note that since this is a dispatch_mut, it will be executed before any non-mut dispatches, even though they are 
+    // Note that since this is a dispatch_mut, it will be executed before any non-mut dispatches, even though they are
     // queued prior to this dispatch.
     task_mut!(dispatcher |tuple| => {
         tuple.0 += 3;

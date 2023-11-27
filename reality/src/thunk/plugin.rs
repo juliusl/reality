@@ -48,8 +48,23 @@ pub trait Plugin: BlockObject<Shared> + CallAsync + Clone + Default {
     }
 
     /// Sync values from context,
-    /// 
+    ///
     #[allow(unused_variables)]
-    fn sync(&mut self, context: &ThunkContext) {
-    }
+    fn sync(&mut self, context: &ThunkContext) {}
+}
+
+pub trait Pack {
+    /// Packs the receiver into storage,
+    ///
+    fn pack<S>(self, storage: &mut S)
+    where
+        S: StorageTarget;
+
+    /// Unpacks self from Shared,
+    ///
+    /// The default value for a field will be used if not stored.
+    ///
+    fn unpack<S>(self, value: &mut S) -> Self
+    where
+        S: StorageTarget;
 }

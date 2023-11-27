@@ -10,11 +10,9 @@ use tokio::sync::Notify;
 
 use reality::prelude::*;
 
-use crate::action::ActionExt;
 use crate::prelude::Action;
 use crate::prelude::Address;
 use crate::prelude::Ext;
-use crate::sequence::Sequence;
 
 /// A Host contains a broadly shared storage context,
 ///
@@ -136,7 +134,7 @@ impl Host {
     ///
     /// Returns false if this condition is not registered w/ this host.
     ///
-    pub fn set_condition(&self, condition: impl AsRef<str>) -> bool {
+    pub fn set_condition(&self, _condition: impl AsRef<str>) -> bool {
         false
     }
 
@@ -463,7 +461,7 @@ async fn test_host() {
     }
 
     if let Ok(mut h) = eh.hosted_resource("engine://test").await {
-        let seq = h.as_local_plugin::<Sequence>().await;
+        let seq = crate::action::ActionExt::as_local_plugin::<crate::prelude::Sequence>(&mut h).await;
         eprintln!("{:?}", seq.context().decoration);
     }
     ()

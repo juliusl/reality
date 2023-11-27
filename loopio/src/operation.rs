@@ -75,8 +75,9 @@ async fn debug_op(tc: &mut ThunkContext) -> anyhow::Result<()> {
                         CallOutput::Spawn(Some(jh)) => {
                             tc = jh.await??;
                         }
-                        CallOutput::Skip | CallOutput::Spawn(None) => {}
+                        CallOutput::Update(Some(update)) => tc = update,
                         CallOutput::Abort(err) => err?,
+                        CallOutput::Skip | CallOutput::Spawn(None) | CallOutput::Update(None) => {}
                     }
                 } else {
                     // TODO -- The expectation is that each of these attributes has a thunk fn
@@ -326,7 +327,7 @@ async fn test_operation() {
     );
 
     let engine = crate::engine::Engine::builder().build();
-    let engine = engine.compile(workspace).await;
+    let _engine = engine.compile(workspace).await;
 
     // let block = engine.block.clone().unwrap_or_default();
     // for (n, node_storage) in engine.nodes.iter() {

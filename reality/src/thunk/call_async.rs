@@ -26,10 +26,13 @@ pub enum CallOutput {
     /// If a join-handle was successfully created, then it will be polled to completion and the result will be passed to the next plugin.
     ///
     Spawn(SpawnResult),
+    /// The context has an update,
+    /// 
+    Update(Option<ThunkContext>),
     /// The plugin has decided to abort further execution,
     ///
     Abort(anyhow::Result<()>),
-    ///
+    /// This call should be skipped,
     ///
     Skip,
 }

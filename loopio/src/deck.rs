@@ -23,7 +23,7 @@ pub struct Deck {
     properties: HashMap<ResourceKey<Attribute>, BTreeMap<String, String>>,
     /// Paths,
     ///
-    paths: BTreeMap<String, ResourceKey<Attribute>>,
+    pub paths: BTreeMap<String, ResourceKey<Attribute>>,
     /// Node paths,
     ///
     node_paths: BTreeMap<NodePath, ResourceKey<Attribute>>,

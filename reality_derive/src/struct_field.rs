@@ -531,10 +531,6 @@ impl Parse for StructField {
         let ty = input.parse::<Type>()?;
 
         for attribute in attributes {
-            if attribute.path().is_ident("skip") {
-                ignore = true;
-            }
-
             // #[reality(ignore, rename = "SOME_NAME")]
             if attribute.path().is_ident("reality") {
                 attribute.parse_nested_meta(|meta| {

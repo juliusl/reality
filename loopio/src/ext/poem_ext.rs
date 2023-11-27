@@ -168,7 +168,7 @@ impl PoemExt for ThunkContext {
 ///
 /// Routes requests to a specific engine operation,
 ///
-#[derive(Reality, Serialize, Deserialize, Default)]
+#[derive(Reality, Serialize, Deserialize, PartialEq, PartialOrd, Default)]
 #[reality(plugin, call = start_engine_proxy, rename = "engine-proxy", group = "loopio.poem")]
 pub struct EngineProxy {
     /// Address to host the proxy on,
@@ -399,7 +399,7 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
 
 /// Reverse proxy config,
 ///
-#[derive(Reality, Serialize, Deserialize, Clone, Default)]
+#[derive(Reality, Serialize, Deserialize, Clone, PartialEq,  Default)]
 #[reality(plugin, call = configure_reverse_proxy, rename = "reverse-proxy-config", group = "loopio.poem")]
 pub struct ReverseProxyConfig {
     /// Alias this config is for,
@@ -477,7 +477,7 @@ impl ReverseProxyConfig {
 
 /// Reverse proxy plugin,
 ///
-#[derive(Reality, Serialize, Deserialize, Default)]
+#[derive(Reality, Serialize, Deserialize, PartialEq, Default)]
 #[reality(plugin, call = start_reverse_proxy, rename = "reverse-proxy", group = "loopio.poem")]
 pub struct ReverseProxy {
     /// Address to host the proxy on,
@@ -491,7 +491,7 @@ pub struct ReverseProxy {
 }
 
 async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let init = tc.initialized::<ReverseProxy>().await;
+    let _init = tc.initialized::<ReverseProxy>().await;
 
     // // let mut routes = BTreeMap::new();
 
@@ -588,15 +588,15 @@ async fn on_forward_request(
 async fn configure_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = tc.initialized::<ReverseProxyConfig>().await;
 
-    if let (Some(host), Some(internal_host)) = (
+    if let (Some(_host), Some(internal_host)) = (
         init.alias.as_ref().scheme_str(),
         tc.internal_host_lookup(init.alias.as_ref()).await,
     ) {
         let client = Arc::new(hyper_ext::local_client());
-        let client = &client;
+        let _client = &client;
 
         let internal_host = Arc::new(internal_host);
-        let internal_host = &internal_host;
+        let _internal_host = &internal_host;
 
         // if let Some(mut engine_proxy) = tc.scan_host_for::<EngineProxy>(host).await {
         //     println!("Configuring reverse proxy for {}", init.alias.as_ref());

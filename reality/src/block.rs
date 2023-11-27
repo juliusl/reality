@@ -1,13 +1,7 @@
-use std::str::FromStr;
-
-use reality_derive::AttributeType;
-
 use crate::AsyncStorageTarget;
-use crate::AttributeParser;
 use crate::AttributeType;
 use crate::AttributeTypeParser;
 use crate::FieldPacket;
-use crate::ResourceKey;
 use crate::SetField;
 use crate::StorageTarget;
 use crate::ToFrame;
@@ -72,6 +66,12 @@ where
         AttributeTypeParser::new::<Self>()
     }
 
+    /// Returns an empty handler for this block object,
+    ///
+    fn handler() -> BlockObjectHandler<Storage::Namespace> {
+        BlockObjectHandler::<Storage::Namespace>::new::<Storage, Self>()
+    }
+
     /// Called when the block object is being loaded into it's namespace,
     ///
     async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>);
@@ -85,12 +85,6 @@ where
     fn on_completed(
         storage: AsyncStorageTarget<Storage::Namespace>,
     ) -> Option<AsyncStorageTarget<Storage::Namespace>>;
-
-    /// Returns an empty handler for this block object,
-    ///
-    fn handler() -> BlockObjectHandler<Storage::Namespace> {
-        BlockObjectHandler::<Storage::Namespace>::new::<Storage, Self>()
-    }
 }
 
 /// Type-alias for a block object event fn,
@@ -173,51 +167,5 @@ where {
         if let Some(namespace) = self.namespace.clone() {
             (self.on_unload)(namespace).await
         }
-    }
-}
-
-#[derive(AttributeType)]
-struct Test {}
-
-impl FromStr for Test {
-    type Err = ();
-
-    fn from_str(_: &str) -> Result<Self, Self::Err> {
-        todo!()
-    }
-}
-
-#[runmd::prelude::async_trait]
-impl<Storage: StorageTarget + Send + Sync + 'static> BlockObject<Storage> for Test {
-    async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>) {
-        let dispatcher = storage.maybe_intialize_dispatcher::<()>(ResourceKey::root()).await;
-        let mut storage = storage.storage.write().await;
-        storage.put_resource(dispatcher, ResourceKey::root());
-    }
-
-    async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>) {
-        let mut disp = storage.dispatcher::<u64>(ResourceKey::root()).await;
-        disp.dispatch_all().await;
-    }
-
-    fn on_completed(
-        storage: AsyncStorageTarget<Storage::Namespace>,
-    ) -> Option<AsyncStorageTarget<Storage::Namespace>> {
-        Some(storage)
-    }
-}
-
-impl ToFrame for Test {
-    fn to_frame(&self, key: crate::ResourceKey<crate::Attribute>) -> crate::Frame {
-        crate::Frame {
-            fields: vec![],
-            recv: self.receiver_packet(key),
-        }
-    }
-}
-
-impl SetField<FieldPacket> for Test {
-    fn set_field(&mut self, _: crate::FieldOwned<FieldPacket>) -> bool {
-        false
     }
 }

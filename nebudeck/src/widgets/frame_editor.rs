@@ -91,8 +91,9 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
             }
         }
 
-        editing
-            .add_ui_node(move |tc, ui| {
+        editing.push_ui_node(move |_ui| {
+            let ui = &_ui.imgui;
+            if let Some(tc) = _ui.tc.as_mut() {
                 let mut init = tc.cached::<FrameEditor>().unwrap();
                 let title = init
                     .editor_name
@@ -192,7 +193,6 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                             let mut render = vec![];
                             for (idx, q) in queued.0.fields.iter().enumerate() {
                                 let FieldPacket {
-                                    data,
                                     wire_data,
                                     data_type_name,
                                     data_type_size,
@@ -214,10 +214,6 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                         "attribute hash",
                                         format!("{:?}", attribute_hash),
                                     );
-
-                                    if let Some(_) = data {
-                                        ui.text("Has data");
-                                    }
 
                                     if let Some(bin) = wire_data {
                                         ui.text("Has binary data");
@@ -346,10 +342,10 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                             }
                         }
                     });
+            }
 
-                true
-            })
-            .await;
+            true
+        });
     }
 
     Ok(())

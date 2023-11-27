@@ -3,7 +3,6 @@ use super::prelude::*;
 use futures::executor::block_on;
 use loopio::engine::EnginePacket;
 use loopio::foreground::ForegroundEngine;
-use loopio::prelude::Engine;
 use loopio::prelude::EngineHandle;
 use loopio::prelude::StorageTarget;
 use loopio::prelude::ThunkContext;

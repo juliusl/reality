@@ -149,7 +149,7 @@ mod tests {
         let engine = engine.compile(workspace).await;
         let eh = engine.engine_handle();
 
-        if let Ok(resource) = eh.hosted_resource("engine://state#test").await {
+        if let Ok(_resource) = eh.hosted_resource("engine://state#test").await {
 
         }
 

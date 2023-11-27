@@ -130,7 +130,7 @@ impl<T: FromStr + Send + Sync + 'static> FromStr for Decorated<T> {
 ///
 pub type CommaSeperatedStrings = Delimitted<',', String>;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, PartialOrd)]
 pub struct Delimitted<const DELIM: char, T: FromStr + Send + Sync + 'static> {
     value: String,
     cursor: usize,

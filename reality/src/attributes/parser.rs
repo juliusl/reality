@@ -52,6 +52,12 @@ pub struct HostedResource {
     pub binding: Option<ThunkContext>,
 }
 
+impl AsRef<ThunkContext> for HostedResource {
+    fn as_ref(&self) -> &ThunkContext {
+        self.binding.as_ref().expect("should be bound to a context")
+    }
+}
+
 #[async_trait]
 impl CallAsync for HostedResource {
     async fn call(tc: &mut ThunkContext) -> anyhow::Result<()> {
