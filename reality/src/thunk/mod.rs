@@ -9,6 +9,7 @@ pub mod prelude {
     pub use super::cache_ext::*;
     pub use super::call_async::*;
     pub use super::context::Context as ThunkContext;
+    pub use super::plugin::NewFn;
     pub use super::plugin::Plugin;
     pub use crate::AsyncStorageTarget;
     pub use crate::AttributeType;
@@ -36,13 +37,24 @@ pub mod prelude {
     #[derive(Clone)]
     pub struct EnableFrame(pub ThunkFn);
 
+    /// Wrapper struct for the enable_virtual fn,
+    /// 
+    #[derive(Clone)]
+    pub struct EnableVirtual(pub ThunkFn);
+
     /// Pointer-struct for normalizing plugin types,
     ///
     pub struct Thunk<P>(pub PhantomData<P>)
     where
         P: Plugin + Default + Send + Sync + 'static;
 
-    impl<P> Plugin for Thunk<P> where P: Plugin + Send + Sync + 'static {}
+    impl<P, In> Plugin for Thunk<P> 
+    where 
+        P: Plugin<Virtual = In> + Send + Sync + 'static,
+        In: CallAsync + ToOwned<Owned = P> + NewFn<Inner = P> + Send + Sync
+    {
+        type Virtual = P::Virtual;
+    }
 
     impl<P> Clone for Thunk<P>
     where
@@ -79,6 +91,8 @@ pub mod prelude {
                     .lazy_put_resource::<ThunkFn>(<P as Plugin>::call, key.transmute());
                 storage
                     .lazy_put_resource::<EnableFrame>(EnableFrame(<P as Plugin>::enable_frame), key.transmute());
+                storage
+                    .lazy_put_resource::<EnableVirtual>(EnableVirtual(<P as Plugin>::enable_virtual), key.transmute());
             }
         }
     }

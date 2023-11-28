@@ -200,12 +200,12 @@ impl UiDisplayMut for ProcessWizard {
             if let Some(mut cached) = tc.cached_mut::<Process>() {
                 let virt_proc = VirtualProcess::new(cached.clone());
                 let tx = virt_proc.program.start_tx();
-
+                
                 if let Ok(next) = tx
                     .next(|n| {
-                        if n.edit_value(|program| {
+                        if n.edit_value(|field, program| {
                             let prev = program.clone();
-                            ui.input_text("program", program).build();
+                            ui.input_text(field, program).build();
                             prev.as_str() != program.as_str()
                         }) {
                             Ok(n)
@@ -228,6 +228,14 @@ impl UiDisplayMut for ProcessWizard {
 
         Ok(())
     }
+}
+
+#[derive(Reality, Default, Clone)]
+#[reality(replace = VirtualProcess, call = init_command, plugin)]
+pub struct UiProcess;
+
+async fn init_command(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    Ok(())
 }
 
 struct _InputText;

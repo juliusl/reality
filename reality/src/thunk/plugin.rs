@@ -6,9 +6,16 @@ use super::prelude::CallAsync;
 use super::prelude::CallOutput;
 use super::prelude::ThunkContext;
 
+pub trait NewFn {
+    type Inner;
+    fn new(plugin: Self::Inner) -> Self;
+}
+
 /// Allows users to export logic as a simple fn,
 ///
 pub trait Plugin: BlockObject<Shared> + CallAsync + Clone + Default {
+    type Virtual: CallAsync + Send + Sync + ToOwned + NewFn;
+
     /// Called when an event executes,
     ///
     /// Returning PluginOutput determines the behavior of the Event.
@@ -26,6 +33,15 @@ pub trait Plugin: BlockObject<Shared> + CallAsync + Clone + Default {
 
         CallOutput::Spawn(context.spawn(|mut c| async {
             <Self as CallAsync>::call(&mut c).await?;
+            Ok(c)
+        }))
+    }
+
+    /// Enables virtual mode for this plugin,
+    /// 
+    fn enable_virtual(context: ThunkContext) -> CallOutput {
+        CallOutput::Spawn(context.spawn(|mut c| async {
+            <Self::Virtual as CallAsync>::call(&mut c).await?;
             Ok(c)
         }))
     }

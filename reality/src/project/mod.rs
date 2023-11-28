@@ -4,7 +4,9 @@ use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::Attribute;
 use crate::AttributeParser;
+use crate::ParsedAttributes;
 use crate::ParsedBlock;
 use crate::ResourceKey;
 use crate::ResourceKeyHashBuilder;
@@ -17,6 +19,8 @@ mod extension;
 pub use extension::Transform;
 
 mod source;
+use runmd::prelude::BlockInfo;
+use runmd::prelude::NodeInfo;
 use serde::Deserialize;
 use serde::Serialize;
 pub use source::Source;
@@ -268,211 +272,213 @@ impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::NodeProvide
         }
     }
 }
+mod tests {
+    use super::*;
 
-use std::convert::Infallible;
-use std::path::PathBuf;
-use std::str::FromStr;
-
-use crate::AsyncStorageTarget;
-use crate::AttributeType;
-use crate::BlockObject;
-use crate::OnParseField;
-use reality::prelude::*;
-use runmd::prelude::{BlockInfo, NodeInfo};
-
-mod reality {
-    pub use crate::*;
-}
-
-#[derive(Debug, Default, Serialize, Clone, Reality)]
-#[reality(group = "reality")]
-struct Test {
-    name: String,
-    file: PathBuf,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Reality)]
-#[reality(group = "reality")]
-struct Test2 {
-    name: String,
-    file: PathBuf,
-    #[reality(attribute_type=Test3, not_wire)]
-    test3: Test3,
-}
-
-#[derive(Reality, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-enum Test3 {
-    A {
-        #[reality(not_wire)]
-        a: String,
-    },
-    _B {
-        #[reality(not_wire)]
-        b: String,
-    },
-}
-
-impl FromStr for Test3 {
-    type Err = Infallible;
-
-    fn from_str(_s: &str) -> Result<Self, Self::Err> {
-        Ok(Test3::A { a: String::new() })
+    use std::convert::Infallible;
+    use std::path::PathBuf;
+    use std::str::FromStr;
+    
+    use crate::AsyncStorageTarget;
+    use crate::AttributeType;
+    use crate::BlockObject;
+    use crate::OnParseField;
+    use reality::prelude::*;
+    
+    mod reality {
+        pub use crate::*;
     }
-}
-
-use async_trait::async_trait;
-
-#[derive(Reality, Serialize, Default, Clone, Debug)]
-#[reality(plugin, call = test_call)]
-pub struct Test4;
-
-pub async fn test_call(_: &mut ThunkContext) -> anyhow::Result<()> {
-    Ok(())
-}
-
-#[test]
-fn test() {
-    let _test = Test3::A { a: String::new() };
-}
-impl Test3 {
-    fn __test1(&self) -> &String {
-        struct _Test {
+    
+    #[derive(Debug, Default, Serialize, Clone, Reality)]
+    #[reality(group = "reality")]
+    pub struct Test {
+        pub name: String,
+        pub file: PathBuf,
+    }
+    
+    #[derive(Debug, Serialize, Deserialize, Clone, Reality)]
+    #[reality(group = "reality")]
+    pub struct Test2 {
+        name: String,
+        file: PathBuf,
+        #[reality(attribute_type=Test3, not_wire)]
+        test3: Test3,
+    }
+    
+    #[derive(Reality, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+    pub enum Test3 {
+        A {
+            #[reality(not_wire)]
             a: String,
+        },
+        _B {
+            #[reality(not_wire)]
+            b: String,
+        },
+    }
+    
+    impl FromStr for Test3 {
+        type Err = Infallible;
+    
+        fn from_str(_s: &str) -> Result<Self, Self::Err> {
+            Ok(Test3::A { a: String::new() })
         }
-
-        let _test = Test3::A {
-            a: Default::default(),
-        };
-
-        if let Test3::A { a } = self {
-            a
-        } else {
-            unreachable!()
-        }
     }
-}
-
-// impl FromStr for Test3 {
-//     type Err = anyhow::Error;
-
-//     fn from_str(s: &str) -> Result<Self, Self::Err> {
-//         match s {
-//             "a" => {
-//                 Ok(Test3::A { a: s.to_string() })
-//             },
-//             "b" => {
-//                 Ok(Test3::B { b: s.to_string() })
-//             },
-//             _ => {
-//                 Err(anyhow::anyhow!("unrecognized input"))
-//             }
-//         }
-//     }
-// }
-
-impl FromStr for Test {
-    type Err = Infallible;
-
-    fn from_str(_: &str) -> Result<Self, Self::Err> {
-        Ok(Test {
-            name: String::new(),
-            file: PathBuf::from(""),
-        })
+    
+    use async_trait::async_trait;
+    
+    #[derive(Reality, Serialize, Default, Clone, Debug)]
+    #[reality(plugin, call = test_call)]
+    pub struct Test4;
+    
+    pub async fn test_call(_: &mut ThunkContext) -> anyhow::Result<()> {
+        Ok(())
     }
-}
-
-impl FromStr for Test2 {
-    type Err = Infallible;
-
-    fn from_str(_: &str) -> Result<Self, Self::Err> {
-        Ok(Test2 {
-            name: String::new(),
-            file: PathBuf::from(""),
-            test3: Test3::A { a: String::new() },
-        })
+    
+    #[test]
+    fn test() {
+        let _test = Test3::A { a: String::new() };
     }
-}
-
-#[tokio::test]
-async fn test_project_parser() {
-    let mut project = Project::new(crate::Shared::default());
-
-    project.add_node_plugin("test", |_, _, parser| {
-        parser.with_object_type::<Test>();
-        parser.with_object_type::<Test2>();
-        parser.with_object_type::<Test3>();
-    });
-
-    tokio::fs::create_dir_all(".test").await.unwrap();
-
-    tokio::fs::write(
-        ".test/v2v2test.md",
-        r#"
-        # Test document
-
-        This is a test of embedded runmd blocks.
-
-        ```runmd
-        + .test
-        <app/reality.test>
-        : .name Hello World 2
-        : .file .test/test-1.md
-        </reality.test>
-        : .name World Hello
-        </reality.test2>
-        : .name World Hello3
-
-        + .test
-        <a/reality.test>
-        : .name Hello World 3
-        : .file .test/test-2.md
-        ```
-
-        ```runmd
-        + .test
-        <b/reality.test>
-        : .name Hello World 2
-        : .file .test/test-3.md
-
-        + .test
-        <c/reality.test>
-        : .name Hello World 3
-        : .file .test/test-4.md
-        ```
-        "#,
-    )
-    .await
-    .unwrap();
-
-    let mut _project = project.load_file(".test/v2v2test.md").await.unwrap();
-
-    println!("{:#?}", _project.nodes.read().await.keys());
-
-    for (k, node) in _project.nodes.write().await.iter_mut() {
-        let node = node.read().await;
-        println!("{:?}", k);
-
-        let attributes = node.resource::<ParsedAttributes>(ResourceKey::root());
-
-        if let Some(attributes) = attributes {
-            println!("{:#?}", attributes);
-
-            for attr in attributes.parsed() {
-                let test = node.resource::<Test>(attr.transmute());
-                println!("{:?}", test);
-                if let Some(test) = test {
-                    let fields =
-                        crate::visitor::<crate::Shared, PathBuf>(std::ops::Deref::deref(&test));
-                    println!("{:#?}", fields);
-                    println!(
-                        "Find field: {:#?}",
-                        crate::FindField::find_field::<()>(&fields, "file")
-                    );
-                }
-                let test = node.resource::<Test2>(attr.transmute());
-                println!("{:?}", test);
+    impl Test3 {
+        fn __test1(&self) -> &String {
+            struct _Test {
+                a: String,
+            }
+    
+            let _test = Test3::A {
+                a: Default::default(),
+            };
+    
+            if let Test3::A { a } = self {
+                a
+            } else {
+                unreachable!()
             }
         }
     }
-    ()
+    
+    // impl FromStr for Test3 {
+    //     type Err = anyhow::Error;
+    
+    //     fn from_str(s: &str) -> Result<Self, Self::Err> {
+    //         match s {
+    //             "a" => {
+    //                 Ok(Test3::A { a: s.to_string() })
+    //             },
+    //             "b" => {
+    //                 Ok(Test3::B { b: s.to_string() })
+    //             },
+    //             _ => {
+    //                 Err(anyhow::anyhow!("unrecognized input"))
+    //             }
+    //         }
+    //     }
+    // }
+    
+    impl FromStr for Test {
+        type Err = Infallible;
+    
+        fn from_str(_: &str) -> Result<Self, Self::Err> {
+            Ok(Test {
+                name: String::new(),
+                file: PathBuf::from(""),
+            })
+        }
+    }
+    
+    impl FromStr for Test2 {
+        type Err = Infallible;
+    
+        fn from_str(_: &str) -> Result<Self, Self::Err> {
+            Ok(Test2 {
+                name: String::new(),
+                file: PathBuf::from(""),
+                test3: Test3::A { a: String::new() },
+            })
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_project_parser() {
+        let mut project = Project::new(crate::Shared::default());
+    
+        project.add_node_plugin("test", |_, _, parser| {
+            parser.with_object_type::<Test>();
+            parser.with_object_type::<Test2>();
+            parser.with_object_type::<Test3>();
+        });
+    
+        tokio::fs::create_dir_all(".test").await.unwrap();
+    
+        tokio::fs::write(
+            ".test/v2v2test.md",
+            r#"
+            # Test document
+    
+            This is a test of embedded runmd blocks.
+    
+            ```runmd
+            + .test
+            <app/reality.test>
+            : .name Hello World 2
+            : .file .test/test-1.md
+            </reality.test>
+            : .name World Hello
+            </reality.test2>
+            : .name World Hello3
+    
+            + .test
+            <a/reality.test>
+            : .name Hello World 3
+            : .file .test/test-2.md
+            ```
+    
+            ```runmd
+            + .test
+            <b/reality.test>
+            : .name Hello World 2
+            : .file .test/test-3.md
+    
+            + .test
+            <c/reality.test>
+            : .name Hello World 3
+            : .file .test/test-4.md
+            ```
+            "#,
+        )
+        .await
+        .unwrap();
+    
+        let mut _project = project.load_file(".test/v2v2test.md").await.unwrap();
+    
+        println!("{:#?}", _project.nodes.read().await.keys());
+    
+        for (k, node) in _project.nodes.write().await.iter_mut() {
+            let node = node.read().await;
+            println!("{:?}", k);
+    
+            let attributes = node.resource::<ParsedAttributes>(ResourceKey::root());
+    
+            if let Some(attributes) = attributes {
+                println!("{:#?}", attributes);
+    
+                for attr in attributes.parsed() {
+                    let test = node.resource::<Test>(attr.transmute());
+                    println!("{:?}", test);
+                    if let Some(test) = test {
+                        let fields =
+                            crate::visitor::<crate::Shared, PathBuf>(std::ops::Deref::deref(&test));
+                        println!("{:#?}", fields);
+                        println!(
+                            "Find field: {:#?}",
+                            crate::FindField::find_field::<()>(&fields, "file")
+                        );
+                    }
+                    let test = node.resource::<Test2>(attr.transmute());
+                    println!("{:?}", test);
+                }
+            }
+        }
+        ()
+    }
 }

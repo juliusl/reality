@@ -562,14 +562,13 @@ impl StructData {
         });
 
         let virtual_ident = format_ident!("Virtual{}", ident);
-        let _virtual_plugin_ident = format_ident!("call_virtual_{}", ident.to_string().to_lowercase());
-
         let virt_vis = &self.vis;
+
         let virtual_ref = quote_spanned!(self.span=>
             /// Virtual interface over plugin,
             /// 
             #[derive(Reality)]
-            #[reality(replace = #ident )]
+            #[reality(replace = #ident)]
             #virt_vis struct #virtual_ident {
                 owner: std::sync::Arc<tokio::sync::watch::Sender<#ident>>,
                 #(#vtable_field_impl)*
@@ -578,7 +577,7 @@ impl StructData {
             impl #virtual_ident {
                 /// Creates a new virtual receiver for plugin,
                 /// 
-                pub fn new(init: #ident) -> Self {
+                pub fn __new(init: #ident) -> Self {
                     let (owner, rx) = tokio::sync::watch::channel(init);
                     let owner = std::sync::Arc::new(owner);
                     Self {
@@ -587,22 +586,46 @@ impl StructData {
                     }
                 }
 
+                /// Returns a sender that can send changes outside of field references,
+                /// 
+                pub fn owner(&self) -> std::sync::Arc<tokio::sync::watch::Sender<#ident>> {
+                    self.owner.clone()
+                }
+
                 /// Returns a receiver to listen for possible modifications of the owner,
                 /// 
                 pub fn listen(&self) -> tokio::sync::watch::Receiver<#ident> {
                     self.owner.subscribe()
                 }
 
-                pub fn to_owned(&self) -> #ident {
+                /// Returns the current state of the owner as an owned reference,
+                /// 
+                pub fn current(&self) -> #ident {
                     self.owner.subscribe().borrow().to_owned()
                 }
             }
 
-            // async fn #virtual_plugin_ident(tc: &mut ThunkContext) -> anyhow::Result<()> {
-            //     let plugin = Remote.create::<#ident>(tc).await;
-            //     let (_, virt) = tc.maybe_write_cache(#virtual_ident::new(plugin));
-            //     Ok(())
-            // }
+            impl NewFn for #virtual_ident {
+                type Inner = #ident;
+
+                fn new(value: Self::Inner) -> Self {
+                    #virtual_ident::__new(value)
+                }
+            }
+
+            impl ToOwned for #virtual_ident {
+                type Owned = #ident;
+
+                fn to_owned(&self) -> Self::Owned {
+                    self.current()
+                }
+            }
+
+            impl std::borrow::Borrow<#virtual_ident> for #ident {
+                fn borrow(&self) -> &#virtual_ident {
+                    unreachable!("This wouldn't make sense since the virtual type is less current than the actual type")
+                }
+            }
         );
 
         //
@@ -763,14 +786,69 @@ impl StructData {
                 }
             });
         
+        let init_virt_plugin = if self.replace.is_none() {
+            let ident = &self.name;
+            let virtual_ident = format_ident!("Virtual{}", ident);
+
+            Some(quote_spanned!(self.span=>
+                #[async_trait]
+                impl CallAsync for #virtual_ident {
+                    /// Initialize virtual mode for the plugin,
+                    /// 
+                    async fn call(tc: &mut ThunkContext) -> anyhow::Result<()> {
+                        let plugin = Remote.create::<#ident>(tc).await;
+                        let virtual_port = plugin.to_virtual();
+                        let rx = virtual_port.listen();
+
+                        unsafe {
+                            let mut node = tc.node_mut().await; 
+                            node.maybe_put_resource(virtual_port.owner(), tc.attribute.transmute());
+
+                            let (virtual_port, virtual_rx) = tokio::sync::watch::channel(virtual_port);
+                            node.maybe_put_resource(std::sync::Arc::new(virtual_port), tc.attribute.transmute());
+                            node.maybe_put_resource(rx, tc.attribute.transmute());
+                            node.maybe_put_resource(virtual_rx, tc.attribute.transmute());
+                        }
+        
+                        Ok(())
+                    }
+                }
+
+                impl #_impl_generics #name #ty_generics #where_clause {
+                    pub fn to_virtual(self) -> #virtual_ident {
+                        #virtual_ident::new(self)
+                    }
+                }
+
+                impl #_impl_generics From<#name #ty_generics> for #virtual_ident #where_clause {
+                    fn from(value: #name #ty_generics) -> #virtual_ident {
+                        #virtual_ident::new(value)
+                    }
+                }
+            ))
+        } else {
+            None
+        };
+
         let plugin = if self.plugin {
+            let ident = &self.name;
+            let virtual_ident = if let Some(replace) = self.replace.as_ref() { 
+                format_ident!("Virtual{}", replace.to_token_stream().to_string().trim_start_matches("Virtual"))
+             } else {  
+                format_ident!("Virtual{}", ident)
+            };
+
             quote!(
             impl #_impl_generics Plugin for #name #ty_generics #where_clause  {
+                type Virtual = #virtual_ident;
+
                 #[allow(unused_variables)]
                 fn sync(&mut self, context: &ThunkContext) {
                     #(#synchronizable)*
                 }
             }
+
+            #init_virt_plugin
 
             impl #_impl_generics #name #ty_generics #where_clause  {
                 pub fn register(mut host: &mut impl RegisterWith) {

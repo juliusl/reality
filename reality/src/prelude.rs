@@ -48,6 +48,7 @@ pub use crate::HostedResource;
 pub use crate::CacheExt;
 pub use crate::FieldRef;
 pub use crate::FieldVTable;
+pub use crate::NewFn;
 
 /*
     Macros for working w/ a storage target

@@ -1,9 +1,12 @@
 use anyhow::anyhow;
+use futures_util::pin_mut;
+use futures_util::StreamExt;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
+use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio::sync::Notify;
@@ -13,6 +16,7 @@ use reality::prelude::*;
 use crate::prelude::Action;
 use crate::prelude::Address;
 use crate::prelude::Ext;
+use crate::prelude::VirtualBusExt;
 
 /// A Host contains a broadly shared storage context,
 ///
@@ -427,37 +431,88 @@ async fn test_host() {
         hosted_resource.spawn().unwrap().await.unwrap().unwrap();
         hosted_resource.spawn().unwrap().await.unwrap().unwrap();
 
-        let host = hosted_resource.context().initialized::<Host>().await;
-        let virtual_host = VirtualHost::new(host);
+        if let Ok(Some(tc)) = hosted_resource.context().enable_virtual().await {
+            let node = tc.node().await;
+            let virtual_host = node
+                .current_resource::<Arc<tokio::sync::watch::Sender<VirtualHost>>>(tc.attribute.transmute())
+                .expect("should be enabled")
+                .clone();
+            drop(node);
+            let eh = eh.clone();
 
-        let mut listener = virtual_host.listen();
+            // Receiver
+            let listener = tokio::spawn(async move {
+                if let Ok(hosted_resource) = eh
+                    .hosted_resource("demo://a/start/loopio.std.io.println")
+                    .await
+                {
+                    eprintln!("{:#?}", hosted_resource.decoration);
 
-        let listener = tokio::spawn(async move {
-            listener.changed().await.unwrap();
-            eprintln!("Host was modified");
-        });
+                    let mut stream = hosted_resource
+                        .context()
+                        .virtual_bus("demo://".parse::<Address>().unwrap())
+                        .await
+                        .wait_for::<Host>()
+                        .await
+                        .select(|h| &h.name)
+                        .filter(|h| h.is_committed());
 
-        let tx = virtual_host.event.start_tx();
+                    let stream = &mut stream;
 
-        if let Ok(_) = tx
-            .next(|host| {
-                if host.edit_value(|v| {
-                    for event in v.iter().filter_map(|v| v.value()) {
-                        eprintln!("Found event - {}", event.name);
+                    pin_mut!(stream);
+
+                    eprintln!("waiting for committed");
+                    let name_committed = stream.next().await;
+
+                    if let Some(next) = name_committed {
+                        next.0.view_value(|v| {
+                            eprintln!("!!!Name was committed!!! {:?}", v);
+                        });
                     }
-                    true
-                }) {
-                    Ok(host)
-                } else {
-                    Err(anyhow!("No changes detected"))
+
+                    eprintln!("Found hosted resource - {}", hosted_resource.address());
+                    hosted_resource.spawn().unwrap().await.unwrap().unwrap();
+                    hosted_resource.spawn().unwrap().await.unwrap().unwrap();
                 }
-            })
-            .finish()
-        {
-            listener.await.unwrap();
-        } else {
-            panic!("Expecting the listener to be released");
+                eprintln!("Host was modified");
+            });
+
+            // Transmitter
+            let tx = virtual_host.clone().borrow().name.clone().start_tx();
+            if let Ok(_) = tx.next(|host| Ok(host)).finish() {
+                // Get a reference to the bus
+                let mut commit = hosted_resource
+                    .context()
+                    .virtual_bus("demo://".parse::<Address>().unwrap())
+                    .await;
+
+                // Create a new commit
+                let commit = commit.commit::<Host>().await;
+
+                // Write a change to the virtual reference
+                // TODO -- improve api ergo, deref mut is to owned so need to figure out how to mutate inner
+                // field ref
+                commit.write_to_virtual(|virt: &mut VirtualHost| {
+                    virt.name.commit();
+                    eprintln!("Committed --");
+                    true
+                });
+
+                listener.await.unwrap();
+
+                let mut node = hosted_resource.context().node.storage.write().await;
+                node.put_resource(virtual_host, hosted_resource.plugin_rk().transmute());
+
+            } else {
+                panic!("Expecting the listener to be released");
+            }
         }
+    }
+
+    if let Ok(mut h) = eh.hosted_resource("engine://test").await {
+        let seq =
+            crate::action::ActionExt::as_local_plugin::<crate::prelude::Sequence>(&mut h).await;
+        eprintln!("{:?}", seq.context().decoration);
     }
 
     if let Ok(hosted_resource) = eh
@@ -465,6 +520,25 @@ async fn test_host() {
         .await
     {
         eprintln!("{:#?}", hosted_resource.decoration);
+
+        // let mut stream = hosted_resource
+        //     .context()
+        //     .virtual_bus("demo://".parse::<Address>().unwrap())
+        //     .await
+        //     .wait_for::<Host>()
+        //     .await
+        //     .select(|h| &h.name)
+        //     .filter(|h| h.is_committed());
+
+        // let stream = &mut stream;
+
+        // pin_mut!(stream);
+
+        // while let Some(next) = stream.next().await {
+        //     next.0.view_value(|v| {
+        //         eprintln!("{:?}", v);
+        //     });
+        // }
 
         // eprintln!("Found hosted resource - {}", hosted_resource.address());
         // hosted_resource
@@ -478,12 +552,6 @@ async fn test_host() {
         //     .unwrap().await
         //     .unwrap()
         //     .unwrap();
-    }
-
-    if let Ok(mut h) = eh.hosted_resource("engine://test").await {
-        let seq =
-            crate::action::ActionExt::as_local_plugin::<crate::prelude::Sequence>(&mut h).await;
-        eprintln!("{:?}", seq.context().decoration);
     }
     ()
 }

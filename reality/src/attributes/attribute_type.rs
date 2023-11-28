@@ -9,7 +9,6 @@ use serde::Serialize;
 
 use crate::BlockObject;
 use crate::ResourceKey;
-use crate::ThunkContext;
 use crate::Visit;
 use crate::VisitMut;
 
@@ -177,7 +176,7 @@ where
     _storage: PhantomData<S>,
 }
 
-/// Parseable AttributeType,
+/// Parseable BlockObject,
 ///
 /// Applies the attribute type's parse fn, and then queues removal and transfer to the owning type,
 ///

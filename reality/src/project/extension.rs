@@ -366,7 +366,7 @@ mod tests {
         let time = tokio::time::Instant::now();
 
         let mut extension =
-            Transform::<(), crate::project::Test>::new((), ResourceKey::with_hash("test"));
+            Transform::<(), crate::project::tests::Test>::new((), ResourceKey::with_hash("test"));
         extension.add_before(move |_, c, t| {
             trace!("before called {:?}", time);
             Ok((c, t))
@@ -379,7 +379,7 @@ mod tests {
         let _ = extension
             .run(
                 &mut target,
-                crate::project::Test {
+                crate::project::tests::Test {
                     name: "hello-world".to_string(),
                     file: "test".into(),
                 },

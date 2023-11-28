@@ -1,28 +1,43 @@
 use std::sync::Arc;
 
 /// Field ref is a shared reference to an owner and includes a v-table for accessing fields on the owner,
-/// 
+///
 /// This is used by the derive library to create "Virtual" representations of Reality objects.
-/// 
-/// A "Virtual" representation can have listeners and applies changes in a serialized manner. The "Virtual" type 
-/// is mainly useful in tooling contexts when state is going to be mutated outside of the initialized state interpreted by 
+///
+/// A "Virtual" representation can have listeners and applies changes in a serialized manner. The "Virtual" type
+/// is mainly useful in tooling contexts when state is going to be mutated outside of the initialized state interpreted by
 /// `runmd`` blocks, or for managing runtime dependencies between nodes.
-/// 
+///
 /// # TODO -- Intention
-/// For example, if a reverse-proxy node needs to wait for an engine proxy to start before it can forward traffic, 
-/// then it would be useful for the reverse-proxy to "listen" to the engine-proxy's state. The virtual representation can be used 
+/// For example, if a reverse-proxy node needs to wait for an engine proxy to start before it can forward traffic,
+/// then it would be useful for the reverse-proxy to "listen" to the engine-proxy's state. The virtual representation can be used
 /// to create a bridge between the two-nodes through the ThunkContext.
-/// 
+///
 pub struct FieldRef<Owner = (), Value = (), ProjectedValue = ()>
 where
     Owner: 'static,
     Value: 'static,
     ProjectedValue: 'static,
 {
+    /// Field condition,
+    ///
+    condition: FieldCondition,
+    /// Reference to the owner,
+    ///
     owner: Arc<tokio::sync::watch::Sender<Owner>>,
     /// Field vtable for accessing the underlying field,
     ///
     table: &'static FieldVTable<Owner, Value, ProjectedValue>,
+}
+
+impl<Owner, Value, ProjectedValue> Clone for FieldRef<Owner, Value, ProjectedValue> {
+    fn clone(&self) -> Self {
+        Self {
+            condition: self.condition.clone(),
+            owner: self.owner.clone(),
+            table: self.table,
+        }
+    }
 }
 
 impl FieldRef {
@@ -32,12 +47,50 @@ impl FieldRef {
         owner: Arc<tokio::sync::watch::Sender<Owner>>,
         table: &'static FieldVTable<Owner, Value, ProjectedValue>,
     ) -> FieldRef<Owner, Value, ProjectedValue> {
-        FieldRef::<Owner, Value, ProjectedValue> { owner, table }
+        FieldRef::<Owner, Value, ProjectedValue> {
+            condition: FieldCondition::Default,
+            owner,
+            table,
+        }
     }
 }
 
+/// Enumeration of conditions that fields can be in,
+///
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FieldCondition {
+    /// Default means that the field's value is the default, this indicates
+    /// it was not configured by any initial instructions.
+    ///
+    #[default]
+    Default,
+    /// (TODO) -- To implement this, need to somehow map the defined from the ParsedBlock back to the virtual ref.
+    ///
+    /// Initial means that the field has been configured by a runmd instruction and is in it's
+    /// initial state.
+    ///
+    Initial,
+    /// Pending means that the value has changed from the initial value but hasn't been committed
+    /// by the owner yet.
+    ///
+    /// This condition is only useful in the context of multiple field tx steps in order
+    /// to determine if an earlier stage is communicating that the value has is in a pending state.
+    ///
+    /// This condition is set automatically by .finish(), if the result .is_ok().
+    ///
+    Pending,
+    /// Committed means that the owner acknowledges this field as being a value that
+    /// it wishes to use. This implies the field has been validated by the owner, and external
+    /// watchers can now use the value for this field.
+    ///
+    /// Committing a field should never be required by the owner, however if the owner wishes
+    /// to share it's values w/ other types to consume it must commit the field before sharing.
+    ///
+    Committed,
+}
+
 /// Transaction struct for applying changes to a field in a serialized manner,
-/// 
+///
 pub struct FieldTx<Owner: 'static, Value: 'static, ProjectedValue: 'static> {
     /// Current field state,
     ///
@@ -63,6 +116,7 @@ impl<Owner, Value, ProjectedValue> FieldTx<Owner, Value, ProjectedValue> {
         let current = self.current.take().unwrap();
 
         let next = next(FieldRef {
+            condition: current.condition,
             owner: current.owner,
             table: current.table,
         });
@@ -73,23 +127,27 @@ impl<Owner, Value, ProjectedValue> FieldTx<Owner, Value, ProjectedValue> {
         }
     }
 
-    /// Processes the next action,
+    /// Finishes the transaction and puts the current field in the pending state if an updated
+    /// field will be returned,
     ///
     #[inline]
     pub fn finish(self) -> anyhow::Result<FieldRef<Owner, Value, ProjectedValue>> {
         /*
-        TODO: Insert tower integegration here? 
+        TODO: Insert tower integegration here?
          */
-        self.next
+        self.next.map(|mut n| {
+            n.pending();
+            n
+        })
     }
 }
 
 impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
     /// Creates a new transaction for editing the field,
-    /// 
+    ///
     /// When finish() is called if a change was made, then Ok(T) will be returned w/ new state,
     /// otherwise there is no change.
-    /// 
+    ///
     #[inline]
     pub fn start_tx(self) -> FieldTx<Owner, Value, ProjectedValue> {
         FieldTx {
@@ -99,7 +157,7 @@ impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
     }
 
     /// Set a value for a field,
-    /// 
+    ///
     /// Returns true if the owner was modified.
     ///
     #[inline]
@@ -114,7 +172,7 @@ impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
     }
 
     /// If applicable, pushes a value for a field,
-    /// 
+    ///
     /// Returns true if the owner was modified.
     ///
     #[inline]
@@ -129,7 +187,7 @@ impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
     }
 
     /// If applicable, inserts a value w/ a key for a field,
-    /// 
+    ///
     /// Returns true if the owner was modified.
     ///
     #[inline]
@@ -146,7 +204,7 @@ impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
     /// Views the current value,
     ///
     /// Borrows the current value and calls view. The view fn is a mutable fn, so it can mutate values outside of the scope.
-    /// 
+    ///
     pub fn view_value(&self, mut view: impl FnMut(&ProjectedValue)) {
         let mut owner = self.owner.subscribe();
 
@@ -162,27 +220,79 @@ impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
     }
 
     /// Manually, gets a mutable reference to the underlying value,
-    /// 
+    ///
     /// **Note** If true is passed from edit, then listeners will be notified of a change even if a change was not made.
-    /// 
-    /// This is unlike set, push, and insert_entry, where the previous value is compared to the new value.
-    /// 
-    #[inline]
-    pub fn edit_value(&self, mut edit: impl FnMut(&mut ProjectedValue) -> bool) -> bool {
+    ///
+    /// **See** `tokio::sync::watch::Sender<T>` documentation
+    ///
+    pub fn edit_value(&self, mut edit: impl FnMut(&str, &mut ProjectedValue) -> bool) -> bool {
         self.owner.send_if_modified(|owner| {
-            let value = if let Some(adapter) = self.table.get_mut.adapter_ref_mut.as_ref() {
-                adapter(self.table.get_mut.root, owner).1
+            let (field, value) = if let Some(adapter) = self.table.get_mut.adapter_ref_mut.as_ref()
+            {
+                adapter(self.table.get_mut.root, owner)
             } else {
-                (self.table.get_mut.root)(owner).1
+                (self.table.get_mut.root)(owner)
             };
 
-            edit(value)
+            edit(field, value)
         })
+    }
+
+    /// Put the field in the "pending" condition,
+    ///
+    /// Automatically called during a field tx on .finish(), if the tx result is_ok().
+    ///
+    /// Can be called manually in the case of a multi-stage pipeline in order to communicate to subsequent stages
+    /// that the value has changed.
+    ///
+    #[inline]
+    pub fn pending(&mut self) {
+        self.condition = FieldCondition::Pending;
+        // self
+    }
+
+    /// Put the field in the "committed" condition,
+    ///
+    /// This indicates to consumers that the owner considers this field validated and in use by the
+    /// owner.
+    ///
+    #[inline]
+    pub fn commit(&mut self) {
+        self.condition = FieldCondition::Committed;
+        // self
+    }
+
+    /// Returns true if the field condition is currently FieldCondition::Committed,
+    ///
+    #[inline]
+    pub fn is_committed(&self) -> bool {
+        matches!(self.condition, FieldCondition::Committed)
+    }
+
+    /// Returns true if the field condition is currently FieldCondition::Pending,
+    ///
+    #[inline]
+    pub fn is_pending(&self) -> bool {
+        matches!(self.condition, FieldCondition::Pending)
+    }
+
+    /// Returns true if the field condition is currently FieldCondition::Initial,
+    ///
+    #[inline]
+    pub fn is_initial(&self) -> bool {
+        matches!(self.condition, FieldCondition::Initial)
+    }
+
+    /// Returns true if the field condition is currently FieldCondition::Default,
+    ///
+    #[inline]
+    pub fn is_default(&self) -> bool {
+        matches!(self.condition, FieldCondition::Default)
     }
 }
 
 /// V-Table containing functions for handling fields from the owning type,
-/// 
+///
 pub struct FieldVTable<Owner, Value, ProjectedValue> {
     /// Returns a reference to the projected value and field name,
     ///
@@ -190,6 +300,9 @@ pub struct FieldVTable<Owner, Value, ProjectedValue> {
     /// Returns a mutable reference to a projected value and a field name,
     ///
     get_mut: AdapterRef<fn(&mut Owner) -> (&str, &mut ProjectedValue), Owner, ProjectedValue>,
+    /// Takes a value from the owner,
+    ///
+    take: AdapterRef<fn(Owner) -> ProjectedValue, Owner, ProjectedValue>,
     /// Sets the value for a field,
     ///
     set: AdapterRef<fn(&mut Owner, ProjectedValue) -> bool, Owner, ProjectedValue>,
@@ -199,9 +312,6 @@ pub struct FieldVTable<Owner, Value, ProjectedValue> {
     /// If applicable, inserts a value with a key to a field,
     ///
     insert_entry: AdapterRef<fn(&mut Owner, String, Value) -> bool, Owner, Value>,
-    /// Takes a value from the owner,
-    ///
-    take: AdapterRef<fn(Owner) -> ProjectedValue, Owner, ProjectedValue>,
 }
 
 impl<Owner, Value, ProjectedValue> Clone for FieldVTable<Owner, Value, ProjectedValue> {

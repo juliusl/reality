@@ -326,6 +326,10 @@ impl Engine {
                     EnableFrame(<T as Plugin>::enable_frame),
                     last.transmute(),
                 );
+                storage.put_resource::<EnableVirtual>(
+                    EnableVirtual(<T as Plugin>::enable_virtual),
+                    last.transmute(),
+                );
                 storage.put_resource(last.transmute::<T>(), ResourceKey::root());
             }
         }
@@ -376,6 +380,10 @@ impl Engine {
                 storage.put_resource::<ThunkFn>(<Operation as Plugin>::call, ResourceKey::root());
                 storage.put_resource::<EnableFrame>(
                     EnableFrame(<Operation as Plugin>::enable_frame),
+                    ResourceKey::root(),
+                );
+                storage.put_resource::<EnableVirtual>(
+                    EnableVirtual(<Operation as Plugin>::enable_virtual),
                     ResourceKey::root(),
                 );
                 storage.put_resource(operation, ResourceKey::root());

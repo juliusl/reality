@@ -3,6 +3,7 @@ use futures_util::stream::BoxStream;
 use futures_util::Future;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
+use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use tracing::trace;
 use uuid::Uuid;
@@ -59,34 +60,41 @@ impl From<AsyncStorageTarget<Shared>> for Context {
     fn from(value: AsyncStorageTarget<Shared>) -> Self {
         let handle = value.runtime.clone().expect("should have a runtime");
 
-        let mut storage = value
-            .storage
-            .try_write()
-            .expect("should be idle so that it can be re-assembled");
-
-        let attribute = storage
-            .take_resource(ResourceKey::root())
-            .map(|a| *a)
-            .unwrap_or(ResourceKey::root());
-        Self {
-            node: value.clone(),
-            attribute,
-            transient: Shared::default().into_thread_safe_with(handle),
-            cancellation: storage
-                .take_resource(attribute.transmute())
+        if let Ok(mut storage) = value.storage.try_write() {
+            let attribute = storage
+                .take_resource(ResourceKey::root())
                 .map(|a| *a)
-                .unwrap_or_default(),
-            variant_id: storage
-                .take_resource(attribute.transmute())
-                .map(|a| *a)
-                .unwrap_or_default(),
-            decoration: storage
-                .take_resource::<Decoration>(attribute.transmute())
-                .map(|a| *a),
-            __cached: storage
-                .take_resource(attribute.transmute())
-                .map(|a| *a)
-                .unwrap_or_default(),
+                .unwrap_or(ResourceKey::root());
+            Self {
+                node: value.clone(),
+                attribute,
+                transient: Shared::default().into_thread_safe_with(handle),
+                cancellation: storage
+                    .take_resource(attribute.transmute())
+                    .map(|a| *a)
+                    .unwrap_or_default(),
+                variant_id: storage
+                    .take_resource(attribute.transmute())
+                    .map(|a| *a)
+                    .unwrap_or_default(),
+                decoration: storage
+                    .take_resource::<Decoration>(attribute.transmute())
+                    .map(|a| *a),
+                __cached: storage
+                    .take_resource(attribute.transmute())
+                    .map(|a| *a)
+                    .unwrap_or_default(),
+            }
+        } else {
+            Self {
+                node: value.clone(),
+                attribute: ResourceKey::root(),
+                transient: Shared::default().into_thread_safe_with(handle),
+                cancellation: CancellationToken::new(),
+                variant_id: None,
+                decoration: None,
+                __cached: Shared::default(),
+            }
         }
     }
 }
@@ -117,7 +125,7 @@ impl Context {
     }
 
     /// Unpacks some resource from cached storage,
-    /// 
+    ///
     pub fn unpack<T>(&mut self) -> Option<T>
     where
         T: Pack + Sync + Send + Clone + 'static,
@@ -371,6 +379,37 @@ impl Context {
             .await
     }
 
+    /// Finds and returns a thunk context w/ a resource P stored in the node storage,
+    ///
+    /// **Note** Returns the last plugin found.
+    ///
+    pub async fn find_node_context<P: ToOwned<Owned = P> + Sync + Send + 'static>(
+        &self,
+    ) -> Option<ThunkContext> {
+        let mut attrs = self
+            .node()
+            .await
+            .stream_attributes()
+            .fold(vec![], |mut acc, attr| async move {
+                let mut clone = self.clone();
+                clone.attribute = attr;
+
+                if let Some(_) = clone.scan_node_for::<P>().await {
+                    acc.push(attr);
+                }
+                acc
+            })
+            .await;
+
+        if let Some(found) = attrs.pop() {
+            let mut tc = self.clone();
+            tc.attribute = found;
+            Some(tc)
+        } else {
+            None
+        }
+    }
+
     /// Scan and take resourrces of type P from node storage,
     ///
     pub async fn scan_take_node<P: Sync + Send + 'static>(&self) -> Vec<P> {
@@ -544,6 +583,20 @@ impl Context {
             .await
             .current_resource::<EnableFrame>(self.attribute.transmute());
         if let Some(EnableFrame(thunk)) = thunk {
+            (thunk)(self.clone()).await
+        } else {
+            Err(anyhow::anyhow!("Did not execute thunk"))
+        }
+    }
+
+    /// Calls the enable virtual thunk fn related to this context,
+    ///
+    pub async fn enable_virtual(&self) -> anyhow::Result<Option<Context>> {
+        let thunk = self
+            .node()
+            .await
+            .current_resource::<EnableVirtual>(self.attribute.transmute());
+        if let Some(EnableVirtual(thunk)) = thunk {
             (thunk)(self.clone()).await
         } else {
             Err(anyhow::anyhow!("Did not execute thunk"))

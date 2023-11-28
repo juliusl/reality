@@ -98,7 +98,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
-    use crate::prelude::Pack;
+    use crate::prelude::*;
     use crate::BlockObject;
     use async_trait::async_trait;
     use reality_derive::Reality;
