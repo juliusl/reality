@@ -1,9 +1,9 @@
+use anyhow::anyhow;
 use serde::Deserialize;
 use serde::Serialize;
-use std::collections::BTreeSet;
 use std::fmt::Debug;
-use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio::sync::Notify;
@@ -17,20 +17,12 @@ use crate::prelude::Ext;
 /// A Host contains a broadly shared storage context,
 ///
 #[derive(Reality, Default, Clone)]
-#[reality(call = debug, plugin)]
+#[reality(call = debug, plugin, unload=on_unload)]
 pub struct Host {
     /// Name for this host,
     ///
     #[reality(derive_fromstr)]
-    pub name: String,
-    /// (unused) Tag for this host,
-    ///
-    #[reality(ignore)]
-    pub _tag: Option<String>,
-    /// Host storage provided by this host,
-    ///
-    #[reality(ignore)]
-    pub host_storage: Option<AsyncStorageTarget<Shared>>,
+    pub name: Decorated<String>,
     /// List of actions to register w/ this host,
     ///
     #[reality(vec_of=Decorated<Address>)]
@@ -39,10 +31,10 @@ pub struct Host {
     ///
     #[reality(option_of=Decorated<Address>)]
     pub start: Option<Decorated<Address>>,
-    /// Set of events registered on this host,
+    /// List of events managed by this host,
     ///
-    #[reality(set_of=Decorated<String>)]
-    pub event: BTreeSet<Decorated<String>>,
+    #[reality(vec_of=Decorated<HostEvent>)]
+    pub event: Vec<Decorated<HostEvent>>,
     /// Binding to an engine,
     ///
     #[reality(ignore)]
@@ -55,10 +47,22 @@ pub struct Host {
     ///
     #[reality(ignore)]
     plugin: ResourceKey<reality::attributes::Attribute>,
-    /// Set of conditions,
-    ///
-    #[reality(ignore)]
-    condition: BTreeSet<HostCondition>,
+}
+
+async fn on_unload<S: StorageTarget>(storage: AsyncStorageTarget<S>) {
+    let storage = storage.storage.read().await;
+
+    eprintln!("on unload being called");
+    if let Some(init) = storage.resource::<Host>(ResourceKey::root()) {
+        let _v_proxy = VirtualHost::new(init.to_owned());
+
+        _v_proxy.name.view_value(|v| {
+            eprintln!("{:?}", v);
+        });
+    } else {
+        eprintln!("did not find initialized resource");
+    }
+    ()
 }
 
 async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
@@ -74,7 +78,7 @@ async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let block = tc.parsed_block().await.expect("should have parsed block");
 
     if let Some(node) = block.nodes.get(&init.node) {
-        for (_, d) in  node.doc_headers.iter() {
+        for (_, d) in node.doc_headers.iter() {
             d.iter().for_each(|e| eprintln!("{}", e));
         }
     }
@@ -92,26 +96,6 @@ async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
     }
     eprintln!();
 
-    eprintln!("# Resource paths");
-    for (p, r) in block.resource_paths.iter() {
-        eprintln!(" - {p}");
-        eprintln!("\t {:#?}", r.decoration);
-        if let Some(d) = r.decoration.as_ref() {
-            if let Some(p) = d.comment_properties.as_ref() {
-                if let Some(cond) = p.get("notify").or(p.get("listen")) {
-                    let condition = HostCondition::new(cond);
-                    init.condition.insert(condition);
-                }
-            }
-        }
-    }
-    eprintln!();
-
-    eprintln!("# Events");
-    for c in init.event.iter() {
-        eprintln!("- {:#?}", c.value());
-    }
-    eprintln!();
     if init.start.is_some() {
         eprintln!("Start found.");
         init.start().await?;
@@ -123,13 +107,6 @@ async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
 }
 
 impl Host {
-    /// Bind this host to a storage target,
-    ///
-    pub fn with_storage(mut self, storage: AsyncStorageTarget<Shared>) -> Self {
-        self.host_storage = Some(storage);
-        self
-    }
-
     /// Returns true if a condition has been signaled,
     ///
     /// Returns false if this condition is not registered w/ this host.
@@ -150,7 +127,7 @@ impl Host {
             if let Some(start) = self.start.as_ref().and_then(|s| s.value()) {
                 let mut resource = engine.hosted_resource(start.to_string()).await?;
 
-                resource.context_mut().write_cache(self.condition.clone());
+                resource.context_mut().write_cache(self.event.clone());
 
                 resource.spawn_call().await
             } else {
@@ -166,7 +143,6 @@ impl Debug for Host {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Host")
             .field("name", &self.name)
-            .field("_tag", &self._tag)
             .field("start", &self.start)
             .field("action", &self.action)
             .finish()
@@ -175,50 +151,61 @@ impl Debug for Host {
 
 impl SetIdentifiers for Host {
     fn set_identifiers(&mut self, name: &str, tag: Option<&String>) {
-        self.name = name.to_string();
-        self._tag = tag.cloned();
+        self.name.value = Some(name.to_string());
+        self.name.tag = tag.cloned();
     }
 }
 
 impl Action for Host {
+    #[inline]
     fn address(&self) -> String {
-        format!("{}://", self.name)
+        format!(
+            "{}://",
+            self.name.value().unwrap_or(&String::from("engine"))
+        )
     }
 
+    #[inline]
     fn context(&self) -> &ThunkContext {
         self.binding.as_ref().expect("should be bound to an engine")
     }
 
+    #[inline]
     fn context_mut(&mut self) -> &mut ThunkContext {
         self.binding.as_mut().expect("should be bound to an engine")
     }
 
+    #[inline]
     fn bind(&mut self, context: ThunkContext) {
         self.binding = Some(context);
     }
 
+    #[inline]
     fn bind_node(&mut self, node: ResourceKey<reality::attributes::Node>) {
         self.node = node;
     }
 
+    #[inline]
     fn bind_plugin(&mut self, plugin: ResourceKey<reality::attributes::Attribute>) {
         self.plugin = plugin;
     }
 
+    #[inline]
     fn node_rk(&self) -> ResourceKey<reality::attributes::Node> {
         self.node
     }
 
+    #[inline]
     fn plugin_rk(&self) -> ResourceKey<reality::attributes::Attribute> {
         self.plugin
     }
 }
 
-/// A condition specified on the host,
+/// An event managed by the host,
 ///
 #[derive(Serialize, Deserialize, Debug)]
-pub struct HostCondition {
-    /// Name of the condition
+pub struct HostEvent {
+    /// Name of the event
     ///
     name: String,
     /// Last active unix timestamp of this condition,
@@ -230,48 +217,55 @@ pub struct HostCondition {
     notify: Arc<Notify>,
 }
 
-impl HostCondition {
+impl HostEvent {
     /// Creates a new host condition,
-    /// 
-    pub fn new(name: impl Into<String>) -> HostCondition {
-        HostCondition { 
-            name: name.into() , 
-            last_active: (AtomicU64::new(0), AtomicU64::new(0)), 
-            notify: Arc::new(Notify::new()) 
+    ///
+    pub fn new(name: impl Into<String>) -> HostEvent {
+        HostEvent {
+            name: name.into(),
+            last_active: (AtomicU64::new(0), AtomicU64::new(0)),
+            notify: Arc::new(Notify::new()),
         }
     }
 
     /// Notify observers of this condition,
     ///
     pub fn notify(&self) {
-        let HostCondition { notify, .. } = self.clone();
-        let (lo, hi) = uuid::Uuid::from_u128(SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis())
-            .as_u64_pair();
+        let HostEvent { notify, .. } = self.clone();
+        let (lo, hi) = uuid::Uuid::from_u128(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        )
+        .as_u64_pair();
 
         let (_lo, _hi) = &self.last_active;
-        let rlo = _lo.fetch_update(std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst, |last| { 
-            if last != lo {
-                Some(lo)
-            } else {
-                None
-            }
-        });
-        let rhi = _hi.fetch_update(std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst, |last| {
-            if last != hi {
-                Some(hi)
-            } else {
-                None
-            }
-        });
+        let rlo = _lo.fetch_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |last| {
+                if last != lo {
+                    Some(lo)
+                } else {
+                    None
+                }
+            },
+        );
+        let rhi = _hi.fetch_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |last| {
+                if last != hi {
+                    Some(hi)
+                } else {
+                    None
+                }
+            },
+        );
 
         match (rlo, rhi) {
-            (Ok(_l), Ok(_r)) |
-            (Ok(_l), Err(_r)) |
-            (Err(_l), Ok(_r))|
-            (Err(_l), Err(_r)) => {
+            (Ok(_l), Ok(_r)) | (Ok(_l), Err(_r)) | (Err(_l), Ok(_r)) | (Err(_l), Err(_r)) => {
                 notify.notify_waiters();
             }
         }
@@ -282,36 +276,36 @@ impl HostCondition {
     /// returns when the condition has completed
     ///
     pub fn listen(&self) -> Arc<Notify> {
-        let HostCondition { notify, .. } = self.clone();
+        let HostEvent { notify, .. } = self.clone();
         notify.clone()
     }
 
     /// Pings any listeners,
-    /// 
+    ///
     pub fn ping(&self) -> Option<u128> {
         None
     }
 }
 
-impl Ord for HostCondition {
+impl Ord for HostEvent {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.name.cmp(&other.name)
     }
 }
 
-impl PartialOrd for HostCondition {
+impl PartialOrd for HostEvent {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl PartialEq for HostCondition {
+impl PartialEq for HostEvent {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
 }
 
-impl Clone for HostCondition {
+impl Clone for HostEvent {
     fn clone(&self) -> Self {
         Self {
             name: self.name.clone(),
@@ -321,13 +315,13 @@ impl Clone for HostCondition {
     }
 }
 
-impl Eq for HostCondition {}
+impl Eq for HostEvent {}
 
-impl FromStr for HostCondition {
+impl FromStr for HostEvent {
     type Err = std::convert::Infallible;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(HostCondition {
+        Ok(HostEvent {
             name: s.to_string(),
             notify: Arc::new(Notify::new()),
             last_active: (AtomicU64::new(0), AtomicU64::new(0)),
@@ -337,17 +331,16 @@ impl FromStr for HostCondition {
 
 #[tokio::test]
 async fn test_host_condition() {
-    let condition = HostCondition::new("test_host_condition");
+    let condition = HostEvent::new("test_host_condition");
     let cond = condition.clone();
     let notified_a = cond.listen();
     let notified_a = notified_a.notified();
     let notified_b = cond.listen();
     let notified_b = notified_b.notified();
 
-    tokio::spawn(async move { 
+    tokio::spawn(async move {
         condition.notify();
     });
-    
     notified_a.await;
     notified_b.await;
     ()
@@ -419,31 +412,58 @@ async fn test_host() {
 
     let engine = crate::engine::Engine::builder().build();
     let engine = engine.compile(workspace).await;
-    eprintln!("{:#?}", engine);
+    // eprintln!("{:#?}", engine);
 
     let block = engine.block().unwrap();
     let eh = engine.engine_handle();
     let deck = crate::deck::Deck::from(block);
-    eprintln!("{:#?}", deck);
+    // eprintln!("{:#?}", deck);
     let _e = engine.spawn(|_, p| {
         eprintln!("{:?}", p);
         Some(p)
     });
     if let Ok(hosted_resource) = eh.hosted_resource("demo://").await {
         eprintln!("Found hosted resource - {}", hosted_resource.address());
-        hosted_resource
-            .spawn()
-            .unwrap().await
-            .unwrap()
-            .unwrap();
-        hosted_resource
-            .spawn()
-            .unwrap().await
-            .unwrap()
-            .unwrap();
+        hosted_resource.spawn().unwrap().await.unwrap().unwrap();
+        hosted_resource.spawn().unwrap().await.unwrap().unwrap();
+
+        let host = hosted_resource.context().initialized::<Host>().await;
+        let virtual_host = VirtualHost::new(host);
+
+        let mut listener = virtual_host.listen();
+
+        let listener = tokio::spawn(async move {
+            listener.changed().await.unwrap();
+            eprintln!("Host was modified");
+        });
+
+        let tx = virtual_host.event.start_tx();
+
+        if let Ok(_) = tx
+            .next(|host| {
+                if host.edit_value(|v| {
+                    for event in v.iter().filter_map(|v| v.value()) {
+                        eprintln!("Found event - {}", event.name);
+                    }
+                    true
+                }) {
+                    Ok(host)
+                } else {
+                    Err(anyhow!("No changes detected"))
+                }
+            })
+            .finish()
+        {
+            listener.await.unwrap();
+        } else {
+            panic!("Expecting the listener to be released");
+        }
     }
-    
-    if let Ok(hosted_resource) = eh.hosted_resource("demo://a/start/loopio.std.io.println").await {
+
+    if let Ok(hosted_resource) = eh
+        .hosted_resource("demo://a/start/loopio.std.io.println")
+        .await
+    {
         eprintln!("{:#?}", hosted_resource.decoration);
 
         // eprintln!("Found hosted resource - {}", hosted_resource.address());
@@ -461,7 +481,8 @@ async fn test_host() {
     }
 
     if let Ok(mut h) = eh.hosted_resource("engine://test").await {
-        let seq = crate::action::ActionExt::as_local_plugin::<crate::prelude::Sequence>(&mut h).await;
+        let seq =
+            crate::action::ActionExt::as_local_plugin::<crate::prelude::Sequence>(&mut h).await;
         eprintln!("{:?}", seq.context().decoration);
     }
     ()

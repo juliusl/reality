@@ -1,9 +1,9 @@
 use std::fmt::Display;
 
-use reality::{prelude::*, attributes::Node};
-use serde::{Deserialize, Serialize};
+use reality::prelude::*;
+use serde::Serialize;
+use serde::Deserialize;
 
-use crate::prelude::Action;
 
 /// Struct containing address parameters and a notification handle,
 ///
@@ -65,28 +65,6 @@ impl Address {
     pub fn with_filter(mut self, filter: impl Into<String>) -> Self {
         self.filter = Some(filter.into());
         self
-    }
-
-    /// Returns true if the parent and path match,
-    ///
-    /// If parent is None, then only the path is checked. If path is Some, then both the parent and path
-    /// must match.
-    ///
-    /// "Matching" means that the assigned path ends w/ the search parameter.
-    ///
-    /// For example, an address of "loopio.println", would match a path search parameter of "println".
-    ///
-    pub fn matches(
-        &self,
-        node: impl AsRef<str>,
-        path: impl AsRef<str>,
-        host: Option<&str>,
-        tag: Option<&str>,
-    ) -> bool {
-        self.node == node.as_ref()
-            && self.path == path.as_ref()
-            && self.host.as_ref().map(String::as_str) == host
-            && self.tag.as_ref().map(String::as_str) == tag
     }
 
     /// Returns the node address,
@@ -236,39 +214,5 @@ impl Display for Address {
         }
 
         Ok(())
-    }
-}
-
-impl Action for HostedResource {
-    fn address(&self) -> String {
-        self.address.to_string()
-    }
-
-    fn bind(&mut self, context: ThunkContext) {
-        self.binding = Some(context);
-    }
-
-    fn context(&self) -> &ThunkContext {
-        self.binding.as_ref().expect("should be bound to an engine")
-    }
-
-    fn context_mut(&mut self) -> &mut ThunkContext {
-        self.binding.as_mut().expect("should be bound to an engine")
-    }
-
-    fn bind_node(&mut self, node: ResourceKey<Node>) {
-        self.node_rk = node;
-    }
-
-    fn node_rk(&self) -> ResourceKey<Node> {
-        self.node_rk
-    }
-
-    fn plugin_rk(&self) -> ResourceKey<Attribute> {
-        self.rk
-    }
-
-    fn bind_plugin(&mut self, plugin: ResourceKey<reality::attributes::Attribute>) {
-        self.rk = plugin;
     }
 }

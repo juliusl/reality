@@ -1,10 +1,18 @@
 use std::sync::Arc;
 
-/// Wrapper struct over a field table,
-///
-/// Provides a field api. The reource key aet can be used to map into the
-/// metadata cache.
-///
+/// Field ref is a shared reference to an owner and includes a v-table for accessing fields on the owner,
+/// 
+/// This is used by the derive library to create "Virtual" representations of Reality objects.
+/// 
+/// A "Virtual" representation can have listeners and applies changes in a serialized manner. The "Virtual" type 
+/// is mainly useful in tooling contexts when state is going to be mutated outside of the initialized state interpreted by 
+/// `runmd`` blocks, or for managing runtime dependencies between nodes.
+/// 
+/// # TODO -- Intention
+/// For example, if a reverse-proxy node needs to wait for an engine proxy to start before it can forward traffic, 
+/// then it would be useful for the reverse-proxy to "listen" to the engine-proxy's state. The virtual representation can be used 
+/// to create a bridge between the two-nodes through the ThunkContext.
+/// 
 pub struct FieldRef<Owner = (), Value = (), ProjectedValue = ()>
 where
     Owner: 'static,
@@ -28,8 +36,8 @@ impl FieldRef {
     }
 }
 
-/// Field transaction
-///
+/// Transaction struct for applying changes to a field in a serialized manner,
+/// 
 pub struct FieldTx<Owner: 'static, Value: 'static, ProjectedValue: 'static> {
     /// Current field state,
     ///
@@ -67,6 +75,7 @@ impl<Owner, Value, ProjectedValue> FieldTx<Owner, Value, ProjectedValue> {
 
     /// Processes the next action,
     ///
+    #[inline]
     pub fn finish(self) -> anyhow::Result<FieldRef<Owner, Value, ProjectedValue>> {
         /*
         TODO: Insert tower integegration here? 
@@ -76,8 +85,12 @@ impl<Owner, Value, ProjectedValue> FieldTx<Owner, Value, ProjectedValue> {
 }
 
 impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
-    /// Returns a new transaction w/ an initial owner,
-    ///
+    /// Creates a new transaction for editing the field,
+    /// 
+    /// When finish() is called if a change was made, then Ok(T) will be returned w/ new state,
+    /// otherwise there is no change.
+    /// 
+    #[inline]
     pub fn start_tx(self) -> FieldTx<Owner, Value, ProjectedValue> {
         FieldTx {
             current: Some(self),
@@ -86,7 +99,10 @@ impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
     }
 
     /// Set a value for a field,
+    /// 
+    /// Returns true if the owner was modified.
     ///
+    #[inline]
     pub fn set(&mut self, value: impl Into<ProjectedValue>) -> bool {
         self.owner.send_if_modified(|owner| {
             if let Some(adapter) = self.table.set.adapter.as_ref() {
@@ -98,7 +114,10 @@ impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
     }
 
     /// If applicable, pushes a value for a field,
+    /// 
+    /// Returns true if the owner was modified.
     ///
+    #[inline]
     pub fn push(&mut self, value: Value) -> bool {
         self.owner.send_if_modified(|owner| {
             if let Some(adapter) = self.table.push.adapter.as_ref() {
@@ -110,7 +129,10 @@ impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
     }
 
     /// If applicable, inserts a value w/ a key for a field,
+    /// 
+    /// Returns true if the owner was modified.
     ///
+    #[inline]
     pub fn insert_entry(&mut self, key: String, value: Value) -> bool {
         self.owner.send_if_modified(|owner| {
             if let Some(adapter) = self.table.insert_entry.adapter.as_ref() {
@@ -123,6 +145,8 @@ impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
 
     /// Views the current value,
     ///
+    /// Borrows the current value and calls view. The view fn is a mutable fn, so it can mutate values outside of the scope.
+    /// 
     pub fn view_value(&self, mut view: impl FnMut(&ProjectedValue)) {
         let mut owner = self.owner.subscribe();
 
@@ -137,10 +161,13 @@ impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
         view(value);
     }
 
-    /// Edits the current value,
+    /// Manually, gets a mutable reference to the underlying value,
     /// 
-    /// If true is returned from, listeners will be notified.
+    /// **Note** If true is passed from edit, then listeners will be notified of a change even if a change was not made.
     /// 
+    /// This is unlike set, push, and insert_entry, where the previous value is compared to the new value.
+    /// 
+    #[inline]
     pub fn edit_value(&self, mut edit: impl FnMut(&mut ProjectedValue) -> bool) -> bool {
         self.owner.send_if_modified(|owner| {
             let value = if let Some(adapter) = self.table.get_mut.adapter_ref_mut.as_ref() {
@@ -154,8 +181,8 @@ impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
     }
 }
 
-/// Field VTable,
-///
+/// V-Table containing functions for handling fields from the owning type,
+/// 
 pub struct FieldVTable<Owner, Value, ProjectedValue> {
     /// Returns a reference to the projected value and field name,
     ///
@@ -282,6 +309,7 @@ impl<Owner, Value, ProjectedValue> FieldVTable<Owner, Value, ProjectedValue> {
 
     /// Includes an adapter for the set fn,
     ///
+    #[inline]
     pub fn with_get_ref_mut_adapter(
         mut self,
         adapter: impl Fn(
@@ -297,6 +325,7 @@ impl<Owner, Value, ProjectedValue> FieldVTable<Owner, Value, ProjectedValue> {
 
     /// Includes an adapter for the set fn,
     ///
+    #[inline]
     pub fn with_get_ref_adapter(
         mut self,
         adapter: impl Fn(fn(&Owner) -> (&str, &ProjectedValue), &Owner) -> (&str, &ProjectedValue)
@@ -309,6 +338,7 @@ impl<Owner, Value, ProjectedValue> FieldVTable<Owner, Value, ProjectedValue> {
 
     /// Includes an adapter for the set fn,
     ///
+    #[inline]
     pub fn with_set_adapter(
         mut self,
         adapter: impl Fn(fn(&mut Owner, ProjectedValue) -> bool, &mut Owner, ProjectedValue) -> bool
@@ -321,6 +351,7 @@ impl<Owner, Value, ProjectedValue> FieldVTable<Owner, Value, ProjectedValue> {
 
     /// Includes an apater for the push fn,
     ///
+    #[inline]
     pub fn with_push_adapter(
         mut self,
         adapter: impl Fn(fn(&mut Owner, Value) -> bool, &mut Owner, Value) -> bool
@@ -333,6 +364,7 @@ impl<Owner, Value, ProjectedValue> FieldVTable<Owner, Value, ProjectedValue> {
 
     /// Includes an adapter for the insert_entry fn,
     ///
+    #[inline]
     pub fn with_insert_entry_adapter(
         mut self,
         adapter: impl Fn(fn(&mut Owner, String, Value) -> bool, &mut Owner, Value) -> bool
@@ -345,6 +377,7 @@ impl<Owner, Value, ProjectedValue> FieldVTable<Owner, Value, ProjectedValue> {
 
     /// Includes an adapter for the insert_entry fn,
     ///
+    #[inline]
     pub fn with_take_adapter(
         mut self,
         adapter: impl Fn(fn(Owner) -> ProjectedValue, Owner) -> ProjectedValue + Sync + Send + 'static,

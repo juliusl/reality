@@ -416,19 +416,27 @@ impl Engine {
 
                     let mut host = Remote.create::<Host>(&mut context).await;
                     host.bind(context);
-                    // Find actions defined by the host for adding to the parsed block later
-                    for (dec, a) in host
-                        .action
-                        .iter()
-                        .filter(|a| a.value().is_some())
-                        .map(|a| (a.decorations().cloned(), a.value.clone().unwrap()))
-                    {
-                        host_actions.push((host.name.to_string(), a, dec));
-                    }
-                    host.bind_plugin(hostkey.transmute());
 
-                    if let Some(previous) = self.hosts.insert(host.name.to_string(), host) {
-                        warn!(address = previous.name, "Replacing host");
+                    if let Some(host_name) = host.name.value().cloned() {
+                        // Find actions defined by the host for adding to the parsed block later
+                        for (dec, a) in host
+                            .action
+                            .iter()
+                            .filter(|a| a.value().is_some())
+                            .map(|a| (a.decorations().cloned(), a.value.clone().unwrap()))
+                        {
+                            host_actions.push((host_name.to_string(), a, dec));
+                        }
+                        host.bind_plugin(hostkey.transmute());
+
+                        if let Some(previous) = self.hosts.insert(host_name, host) {
+                            warn!(
+                                address = previous.name.value().cloned().expect("should have a name if inserted"),
+                                "Replacing host"
+                            );
+                        }
+                    } else {
+                        panic!("Host is expected to have a name")
                     }
                 }
                 target.write().await.drain_dispatch_queues();
@@ -819,7 +827,9 @@ async fn build_published(tc: &mut ThunkContext) -> anyhow::Result<()> {
         let mut _a = eh.hosted_resource("engine://").await?;
 
         if let Some(published) = _a.context().cached::<Published>() {
-            published.clone().pack(tc.transient.storage.write().await.deref_mut());
+            published
+                .clone()
+                .pack(tc.transient.storage.write().await.deref_mut());
 
             tc.transient
                 .storage

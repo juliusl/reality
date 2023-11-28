@@ -235,6 +235,7 @@ impl Debug for Operation {
 }
 
 impl Action for Operation {
+    #[inline]
     fn address(&self) -> String {
         if let Some(tag) = self.tag.as_ref() {
             format!("{}#{}", self.name, tag)
@@ -243,28 +244,35 @@ impl Action for Operation {
         }
     }
 
+    #[inline]
     fn bind(&mut self, context: ThunkContext) {
         self.context = Some(context);
     }
 
+    #[inline]
     fn context(&self) -> &ThunkContext {
         self.context.as_ref().expect("should be bound to an engine")
     }
 
+    #[inline]
     fn context_mut(&mut self) -> &mut ThunkContext {
         self.context.as_mut().expect("should be bound to an engine")
     }
 
+    #[inline]
     fn bind_node(&mut self, node: ResourceKey<reality::attributes::Node>) {
         self.node = node;
     }
 
+    #[inline]
     fn node_rk(&self) -> ResourceKey<reality::attributes::Node> {
         self.node
     }
 
+    #[inline]
     fn bind_plugin(&mut self, _: ResourceKey<reality::attributes::Attribute>) {}
 
+    #[inline]
     fn plugin_rk(&self) -> ResourceKey<reality::attributes::Attribute> {
         ResourceKey::root()
     }

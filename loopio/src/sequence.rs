@@ -319,6 +319,7 @@ impl FromStr for Sequence {
 }
 
 impl Action for Sequence {
+    #[inline]
     fn address(&self) -> String {
         if let Some(tag) = self.tag.as_ref() {
             format!("{}#{}", self.name, tag)
@@ -327,30 +328,37 @@ impl Action for Sequence {
         }
     }
 
+    #[inline]
     fn context(&self) -> &ThunkContext {
         self.binding.as_ref().expect("should be bound to an engine")
     }
 
+    #[inline]
     fn context_mut(&mut self) -> &mut ThunkContext {
         self.binding.as_mut().expect("should be bound to an engine")
     }
 
+    #[inline]
     fn bind(&mut self, context: ThunkContext) {
         self.binding = Some(context);
     }
 
+    #[inline]
     fn bind_node(&mut self, node: ResourceKey<reality::attributes::Node>) {
         self.node = node;
     }
 
+    #[inline]
     fn node_rk(&self) -> ResourceKey<reality::attributes::Node> {
         self.node
     }
 
+    #[inline]
     fn bind_plugin(&mut self, plugin: ResourceKey<reality::attributes::Attribute>) {
         self.plugin = plugin;
     }
 
+    #[inline]
     fn plugin_rk(&self) -> ResourceKey<reality::attributes::Attribute> {
         self.plugin
     }

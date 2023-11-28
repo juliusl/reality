@@ -3,7 +3,7 @@ use reality::prelude::*;
 use serde::{Deserialize, Serialize};
 use tracing::trace;
 
-use crate::host::HostCondition;
+use crate::host::HostEvent;
 use crate::engine::EngineHandle;
 use crate::prelude::{Action, Host};
 
@@ -36,7 +36,7 @@ pub trait Ext {
     
     /// Listen for a condition from the host,
     /// 
-    async fn listen_host(&self, host: &str, condition: &str) -> Option<HostCondition>;
+    async fn listen_host(&self, host: &str, condition: &str) -> Option<HostEvent>;
 
     /// If the decoration property "notify" is defined, notifies host on the condition
     /// named there.
@@ -46,6 +46,8 @@ pub trait Ext {
 
 #[async_trait]
 impl Ext for ThunkContext {
+    /// Returns the current engine handle,
+    /// 
     async fn engine_handle(&self) -> Option<EngineHandle> {
         if let Some(handle) = self.node()
             .await
@@ -60,6 +62,8 @@ impl Ext for ThunkContext {
         }
     }
 
+    /// Get comments stored in the node,
+    /// 
     async fn get_comments(&self) -> Option<Comments> {
         self.node()
             .await
@@ -86,7 +90,7 @@ impl Ext for ThunkContext {
         Ok(())
     }
 
-    async fn listen_host(&self, host: &str, condition: &str) -> Option<HostCondition> {
+    async fn listen_host(&self, host: &str, condition: &str) -> Option<HostEvent> {
         if let Some(eh) = self.engine_handle().await {
             if let Ok(host) = eh.hosted_resource(format!("{host}://")).await {
                 let host = host.context().initialized::<Host>().await;

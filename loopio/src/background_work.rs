@@ -7,8 +7,7 @@ use reality::prelude::*;
 use tokio::select;
 use tokio_util::sync::CancellationToken;
 
-use crate::host::HostCondition;
-
+use crate::host::HostEvent;
 use crate::prelude::Address;
 use crate::prelude::EngineHandle;
 use crate::prelude::Ext;
@@ -81,9 +80,9 @@ pub enum CallStatus {
 ///
 #[derive(Debug, Clone)]
 pub enum EventStatus {
-    /// Host condition,
+    /// Host event status,
     ///
-    HostCondition(HostCondition),
+    Host(HostEvent),
     /// No activity for the event has been seen,
     ///
     None,

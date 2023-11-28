@@ -380,6 +380,11 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
             .register_internal_host_alias(alias?, replace_with?)
             .await;
         context.on_notify_host(scheme.as_str()).await?;
+
+        // 
+        // TODO -- context.wire_bus("demo://").commit(virtual_engine_proxy.path);
+        //      or context.virtual_bus("demo://"). api's -- wait_for, commit, changed,
+        // 
     }
 
     eprintln!(
@@ -491,7 +496,14 @@ pub struct ReverseProxy {
 }
 
 async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let _init = tc.initialized::<ReverseProxy>().await;
+    let r_init = tc.initialized::<ReverseProxy>().await;
+    let e_init = tc.initialized::<EngineProxy>().await;
+    let _rp_virt = VirtualReverseProxy::new(r_init);
+    let _ep_virt = VirtualEngineProxy::new(e_init);
+    let mut ep = _ep_virt.listen();
+
+    ep.changed().await?;
+
 
     // // let mut routes = BTreeMap::new();
 

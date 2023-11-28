@@ -1,11 +1,12 @@
 use std::pin::Pin;
-
 use anyhow::anyhow;
 use async_trait::async_trait;
 use futures_util::Future;
-use reality::attributes;
 use tracing::info;
 use uuid::Uuid;
+
+use reality::attributes::Node;
+use reality::attributes;
 
 use crate::prelude::*;
 
@@ -162,37 +163,88 @@ impl ActionExt for Operation {}
 #[async_trait]
 impl ActionExt for HostedResource {}
 
+impl Action for HostedResource {
+    #[inline]
+    fn address(&self) -> String {
+        self.address.to_string()
+    }
+
+    #[inline]
+    fn bind(&mut self, context: ThunkContext) {
+        self.binding = Some(context);
+    }
+
+    #[inline]
+    fn context(&self) -> &ThunkContext {
+        self.binding.as_ref().expect("should be bound to an engine")
+    }
+
+    #[inline]
+    fn context_mut(&mut self) -> &mut ThunkContext {
+        self.binding.as_mut().expect("should be bound to an engine")
+    }
+
+    #[inline]
+    fn bind_node(&mut self, node: ResourceKey<Node>) {
+        self.node_rk = node;
+    }
+
+    #[inline]
+    fn node_rk(&self) -> ResourceKey<Node> {
+        self.node_rk
+    }
+
+    #[inline]
+    fn plugin_rk(&self) -> ResourceKey<Attribute> {
+        self.rk
+    }
+
+    #[inline]
+    fn bind_plugin(&mut self, plugin: ResourceKey<reality::attributes::Attribute>) {
+        self.rk = plugin;
+    }
+}
+
+
 impl Action for ThunkContext {
+    #[inline]
     fn address(&self) -> String {
         self.property("address")
             .map(|s| s.to_string())
             .unwrap_or(self.variant_id.unwrap_or(Uuid::new_v4()).to_string())
     }
 
+    #[inline]
     fn bind(&mut self, context: ThunkContext) {
         *self = context;
     }
 
+    #[inline]
     fn bind_node(&mut self, node: ResourceKey<attributes::Node>) {
         self.write_cache(node)
     }
 
+    #[inline]
     fn bind_plugin(&mut self, plugin: ResourceKey<attributes::Attribute>) {
         self.attribute = plugin;
     }
 
+    #[inline]
     fn node_rk(&self) -> ResourceKey<attributes::Node> {
         self.cached().unwrap_or_default()
     }
 
+    #[inline]
     fn plugin_rk(&self) -> ResourceKey<attributes::Attribute> {
         self.attribute
     }
 
+    #[inline]
     fn context(&self) -> &ThunkContext {
         self
     }
 
+    #[inline]
     fn context_mut(&mut self) -> &mut ThunkContext {
         self
     }
@@ -296,7 +348,9 @@ impl RemoteAction {
             }
         }
 
+        // Get the receiver from the frame to find any decorations
         let recv = context.initialized_frame().await.recv.clone();
+
         // Gets the current parsed attributes state of the target attribute,
         {
             let node = context.node().await;
@@ -366,19 +420,19 @@ impl ActionFactory {
 
     /// Registers a plugin call to a symbol,
     ///
-    pub fn enable<T>(self, plugin: T) -> Self
+    pub fn enable<P>(self, plugin: P) -> Self
     where
-        T: Plugin,
+        P: Plugin,
     {
-        let key = self.attribute.branch(T::symbol());
+        let key = self.attribute.branch(P::symbol());
 
         let mut storage = self
             .storage
             .storage
             .try_write()
             .expect("should be able to write");
-        storage.put_resource::<T>(plugin, key.transmute());
-        storage.put_resource::<ThunkFn>(<T as Plugin>::call, key.transmute());
+        storage.put_resource::<P>(plugin, key.transmute());
+        storage.put_resource::<ThunkFn>(<P as Plugin>::call, key.transmute());
         drop(storage);
         self
     }
