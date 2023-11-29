@@ -434,7 +434,9 @@ async fn test_host() {
         if let Ok(Some(tc)) = hosted_resource.context().enable_virtual().await {
             let node = tc.node().await;
             let virtual_host = node
-                .current_resource::<Arc<tokio::sync::watch::Sender<VirtualHost>>>(tc.attribute.transmute())
+                .current_resource::<Arc<tokio::sync::watch::Sender<VirtualHost>>>(
+                    tc.attribute.transmute(),
+                )
                 .expect("should be enabled")
                 .clone();
             drop(node);
@@ -493,6 +495,10 @@ async fn test_host() {
                 // TODO -- improve api ergo, deref mut is to owned so need to figure out how to mutate inner
                 // field ref
                 commit.write_to_virtual(|virt: &mut VirtualHost| {
+                    virt.name.edit_value(|_, v| {
+                        v.value = Some(String::from("demo2"));
+                        true
+                    });
                     virt.name.commit();
                     eprintln!("Committed --");
                     true
@@ -502,7 +508,6 @@ async fn test_host() {
 
                 let mut node = hosted_resource.context().node.storage.write().await;
                 node.put_resource(virtual_host, hosted_resource.plugin_rk().transmute());
-
             } else {
                 panic!("Expecting the listener to be released");
             }
@@ -520,38 +525,6 @@ async fn test_host() {
         .await
     {
         eprintln!("{:#?}", hosted_resource.decoration);
-
-        // let mut stream = hosted_resource
-        //     .context()
-        //     .virtual_bus("demo://".parse::<Address>().unwrap())
-        //     .await
-        //     .wait_for::<Host>()
-        //     .await
-        //     .select(|h| &h.name)
-        //     .filter(|h| h.is_committed());
-
-        // let stream = &mut stream;
-
-        // pin_mut!(stream);
-
-        // while let Some(next) = stream.next().await {
-        //     next.0.view_value(|v| {
-        //         eprintln!("{:?}", v);
-        //     });
-        // }
-
-        // eprintln!("Found hosted resource - {}", hosted_resource.address());
-        // hosted_resource
-        //     .spawn()
-        //     .unwrap().await
-        //     .unwrap()
-        //     .unwrap();
-
-        // hosted_resource
-        //     .spawn()
-        //     .unwrap().await
-        //     .unwrap()
-        //     .unwrap();
     }
     ()
 }
