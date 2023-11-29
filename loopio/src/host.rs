@@ -466,9 +466,10 @@ async fn test_host() {
                     eprintln!("waiting for committed");
                     let name_committed = stream.next().await;
 
-                    if let Some(next) = name_committed {
-                        next.0.view_value(|v| {
+                    if let Some((field_changed, _latest)) = name_committed {
+                        field_changed.view_value(|v| {
                             eprintln!("!!!Name was committed!!! {:?}", v);
+                            assert_eq!(v.value.as_ref().unwrap().as_str(), "demo2");
                         });
                     }
 
