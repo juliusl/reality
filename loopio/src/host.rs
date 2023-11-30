@@ -440,11 +440,16 @@ async fn test_host() {
                 .expect("should be enabled")
                 .clone();
             drop(node);
-            let eh = eh.clone();
+            let _eh = eh.clone();
 
             // Receiver
+            // There are two levels of listening
+            // In this case it is the first level
+            // This example simulates what would happen when a plugin is called that 
+            // will listen for events.
+
             let listener = tokio::spawn(async move {
-                if let Ok(hosted_resource) = eh
+                if let Ok(hosted_resource) = _eh
                     .hosted_resource("demo://a/start/loopio.std.io.println")
                     .await
                 {
@@ -480,6 +485,27 @@ async fn test_host() {
                 eprintln!("Host was modified");
             });
 
+            let eh = eh.clone();
+            let listener_2 = tokio::spawn(async move {
+                if let Ok(hosted_resource) = eh
+                    .hosted_resource("demo://a/start/loopio.std.io.println")
+                    .await
+                {
+                    let mut rx = hosted_resource
+                        .context()
+                        .virtual_bus("demo://".parse::<Address>().unwrap())
+                        .await
+                        .wait_for::<Host>()
+                        .await
+                        .subscribe_raw();
+
+                    rx.changed().await.unwrap();
+
+                    eprintln!("Got host change from raw subscription");
+                    assert_eq!(rx.borrow().clone().name.value().unwrap().as_str(), "demo2");
+                }
+            });
+
             // Transmitter
             let tx = virtual_host.clone().borrow().name.clone().start_tx();
             if let Ok(_) = tx.next(|host| Ok(host)).finish() {
@@ -489,23 +515,29 @@ async fn test_host() {
                     .virtual_bus("demo://".parse::<Address>().unwrap())
                     .await;
 
-                // Create a new commit
-                let commit = commit.commit::<Host>().await;
+                eprintln!("Waiting for sync");
+                tokio::time::sleep(Duration::from_secs(1)).await;
+
+                // Create a new commit channel
+                let commit = commit.transmit::<Host>().await;
 
                 // Write a change to the virtual reference
                 // TODO -- improve api ergo, deref mut is to owned so need to figure out how to mutate inner
                 // field ref
                 commit.write_to_virtual(|virt: &mut VirtualHost| {
-                    virt.name.edit_value(|_, v| {
+                    virt.name.edit_value(|f, v| {
+                        assert_eq!(f, "name");
                         v.value = Some(String::from("demo2"));
                         true
                     });
-                    virt.name.commit();
+                    assert!(virt.name.commit());
+                    assert!(!virt.name.commit());
                     eprintln!("Committed --");
                     true
                 });
 
                 listener.await.unwrap();
+                listener_2.await.unwrap();
 
                 let mut node = hosted_resource.context().node.storage.write().await;
                 node.put_resource(virtual_host, hosted_resource.plugin_rk().transmute());
@@ -515,17 +547,17 @@ async fn test_host() {
         }
     }
 
-    if let Ok(mut h) = eh.hosted_resource("engine://test").await {
-        let seq =
-            crate::action::ActionExt::as_local_plugin::<crate::prelude::Sequence>(&mut h).await;
-        eprintln!("{:?}", seq.context().decoration);
-    }
+    // if let Ok(mut h) = eh.hosted_resource("engine://test").await {
+    //     let seq =
+    //         crate::action::ActionExt::as_local_plugin::<crate::prelude::Sequence>(&mut h).await;
+    //     eprintln!("{:?}", seq.context().decoration);
+    // }
 
-    if let Ok(hosted_resource) = eh
-        .hosted_resource("demo://a/start/loopio.std.io.println")
-        .await
-    {
-        eprintln!("{:#?}", hosted_resource.decoration);
-    }
+    // if let Ok(hosted_resource) = eh
+    //     .hosted_resource("demo://a/start/loopio.std.io.println")
+    //     .await
+    // {
+    //     eprintln!("{:#?}", hosted_resource.decoration);
+    // }
     ()
 }

@@ -396,10 +396,15 @@ mod tests {
     use serde::Serialize;
 
     #[derive(Reality, Clone, Serialize, Default)]
+    #[reality(call=test_noop, plugin)]
     struct Test {
         #[reality(derive_fromstr)]
         name: String,
         other: String,
+    }
+
+    async fn test_noop(_tc: &mut ThunkContext) -> anyhow::Result<()> {
+        Ok(())
     }
 
     #[test]

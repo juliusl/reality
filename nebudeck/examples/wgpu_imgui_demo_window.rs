@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::sync::OnceLock;
 use std::time::Instant;
 
@@ -144,6 +145,7 @@ impl ProcessWizard {
         let process = Remote.create::<Process>(&mut tc).await;
 
         eprintln!("{:?}", process);
+        tc.write_cache(VirtualProcess::new(process.clone()));
         tc.write_cache(process);
 
         tc.push_ui_node(|ui| {
@@ -193,37 +195,47 @@ async fn process_wizard(tc: &mut ThunkContext) -> anyhow::Result<()> {
 }
 
 impl UiDisplayMut for ProcessWizard {
-    fn fmt(&mut self, ui: &mut UiFormatter<'_>) -> anyhow::Result<()> {
-        ui.show_with_all(|mut eh, tc, ui| {
-            let _attr = tc.attribute.clone();
+    fn fmt(&mut self, __ui: &UiFormatter<'_>) -> anyhow::Result<()> {
+        // TODO -- improvements,
+        //  Builder from ui formatter? 
+        // - .section(|ui| { }) => tc.maybe_write_kv(String, Vec<fn(&mut UiFormatter<'_>)>>)
 
-            if let Some(mut cached) = tc.cached_mut::<Process>() {
-                let virt_proc = VirtualProcess::new(cached.clone());
-                let tx = virt_proc.program.start_tx();
-                
+        __ui.push_section("tools", |ui| {
+            if let Some(mut cached) = ui.tc.lock().unwrap().get_mut().unwrap().cached_mut::<VirtualProcess>() {
+                // cached["program"].clone().start_tx()
+                let tx = cached.program.clone().start_tx();
+
                 if let Ok(next) = tx
-                    .next(|n| {
-                        if n.edit_value(|field, program| {
-                            let prev = program.clone();
-                            ui.input_text(field, program).build();
-                            prev.as_str() != program.as_str()
-                        }) {
-                            Ok(n)
-                        } else {
-                            Err(anyhow!("No changes"))
-                        }
+                    .next(|mut n| {
+                        n.fmt(ui)?;
+                        Ok(n)
                     })
                     .finish() {
                         next.view_value(|r| {
                             eprintln!("Change -- {:?} {r}", Instant::now());
-                            cached.program = r.to_string();
                         });
+
+                        if next.is_pending() {
+                            cached.program.pending();
+                        }
+
+                        // TODO: ui.button("") { next.program.commit() }
                     }
 
-                if let Some(_bg) = eh.background() {
-                    if ui.button("Run") {}
+                if let Some(_bg) = ui.eh.lock().unwrap().background() {
+                    if ui.imgui.button("Run") {}
                 }
             }
+        });
+
+        __ui.show_section("tools", |ui, inner| {
+            let imgui = &ui.imgui;
+
+            imgui.window("tools").size([600.0, 800.0], imgui::Condition::Appearing).build(|| {
+                for i in inner.iter() {
+                    i(ui);
+                }
+            });
         });
 
         Ok(())

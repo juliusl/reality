@@ -6,8 +6,10 @@ use serde::Serialize;
 use imgui::Ui;
 
 use crate::ext::imgui_ext::AuxUiNode;
-use crate::ext::imgui_ext::UiTypeNode;
 use crate::ext::imgui_ext::UiNode;
+use crate::ext::imgui_ext::UiTypeNode;
+
+use super::UiDisplayMut;
 
 pub struct Input<'a> {
     /// Frame that is being edited,
@@ -205,7 +207,7 @@ impl Input<'_> {
 }
 
 /// Select a resource by address to open in the inspection window,
-/// 
+///
 #[derive(Reality, Debug, Default, Clone)]
 #[reality(call=create_inspect_action, plugin, group="ui")]
 pub struct Inspect {
@@ -253,10 +255,7 @@ async fn create_inspect_action(tc: &mut ThunkContext) -> anyhow::Result<()> {
         let mut storage = storage.write().await;
         init.pack(storage.deref_mut());
 
-        let _inspect = Inspect::default()
-            .unpack(
-                storage.deref_mut()
-            );
+        let _inspect = Inspect::default().unpack(storage.deref_mut());
 
         let published = action.publish(eh).await?;
 
@@ -265,5 +264,91 @@ async fn create_inspect_action(tc: &mut ThunkContext) -> anyhow::Result<()> {
         Ok(())
     } else {
         Err(anyhow!("An engine was not bound to the thunk context."))
+    }
+}
+
+impl<T: Plugin> UiDisplayMut for FieldRef<T, String, String> {
+    fn fmt(&mut self, ui: &super::UiFormatter<'_>) -> anyhow::Result<()> {
+        let ui = &ui.imgui;
+
+        if self.is_pending() {
+            if self.edit_value(|name, v| {
+                let mut editing = v.to_string();
+                ui.input_text(name, &mut editing).build();
+
+                if v.as_str() != editing.as_str() {
+                    *v = editing;
+                    return true;
+                }
+
+                false
+            }) {
+                Ok(())
+            } else {
+                Err(anyhow!("No changes"))
+            }
+        } else {
+            self.view_value(|v| {
+                ui.text(v);
+            });
+
+            ui.same_line();
+            if ui.button("Edit field") {
+                self.pending();
+                Ok(())
+            } else {
+                Err(anyhow!("No changes"))
+            }
+        }
+    }
+}
+
+impl<T: Plugin> UiDisplayMut for FieldRef<T, Decorated<String>, Decorated<String>> {
+    fn fmt(&mut self, ui: &super::UiFormatter<'_>) -> anyhow::Result<()> {
+        let ui = &ui.imgui;
+
+        // TODO -- Switch modes depending on the field ref condition
+        /*
+        -   If the field ref is pending, that means that it can be edited
+        -   If the field is committed or initial, then changes requires a "Confirmation"
+        -   If the field is default .. then they can be "added" -> Pending
+         */
+        if self.is_pending() {
+            if self.edit_value(|name, v| {
+                if let Some(value) = v.value.as_mut() {
+                    let mut editing = value.to_string();
+                    ui.input_text(name, &mut editing).build();
+
+                    if value.as_str() != editing.as_str() {
+                        *value = editing;
+                        return true;
+                    }
+                }
+                false
+            }) {
+                Ok(())
+            } else {
+                Err(anyhow!("No changes"))
+            }
+        } else {
+            self.view_value(|v| {
+                if let Some(v) = v.value() {
+                    ui.text(v);
+                }
+            });
+
+            if ui.button("Edit field") {
+                self.pending();
+            }
+            Ok(())
+        }
+
+        // handle decorations?
+    }
+}
+
+impl<T: Plugin> UiDisplayMut for FieldRef<T, Decorated<String>, Vec<Decorated<String>>> {
+    fn fmt(&mut self, ui: &super::UiFormatter<'_>) -> anyhow::Result<()> {
+        todo!()
     }
 }

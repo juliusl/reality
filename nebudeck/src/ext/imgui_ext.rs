@@ -4,8 +4,9 @@ use imgui_winit_support::WinitPlatform;
 use loopio::action::TryCallExt;
 use loopio::engine::{EnginePacket, Published};
 use loopio::prelude::*;
-use std::cell::OnceCell;
-use std::sync::Arc;
+use std::cell::{OnceCell, RefCell};
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::error;
@@ -320,9 +321,9 @@ impl DesktopApp for ImguiMiddleware {
                     imgui: ui,
                     #[cfg(feature = "terminal")]
                     subcommand: None,
-                    tc: None,
+                    tc: std::sync::Mutex::new(OnceLock::new()),
                     disp: None,
-                    eh: self.engine.get().cloned().expect("should be bound to an engine"),
+                    eh: std::sync::Mutex::new(self.engine.get().cloned().expect("should be bound to an engine")),
                 };
 
                 if let Err(err) = self.fmt(&mut formatter) {
@@ -377,7 +378,7 @@ pub trait ImguiExt {
     /// 
     fn push_ui_node(
         &self,
-        show: impl for<'a, 'b> Fn(&'a mut UiFormatter<'_>) -> bool + Send + Sync + 'static,
+        show: impl for<'a, 'b> Fn(&'a UiFormatter<'_>) -> bool + Send + Sync + 'static,
     );
 
     /// Pushes a new ui type node to transient storage,
@@ -386,7 +387,7 @@ pub trait ImguiExt {
     /// 
     async fn push_ui_type_node<G: Default + Send + Sync + 'static>(
         &self,
-        show: impl for<'a, 'b> Fn(&'a mut UiFormatter<'b>) -> bool
+        show: impl for<'a, 'b> Fn(&'a UiFormatter<'b>) -> bool
             + Send
             + Sync
             + 'static,
@@ -397,7 +398,7 @@ pub trait ImguiExt {
 impl ImguiExt for ThunkContext {
     fn push_ui_node(
         &self,
-        show: impl for<'a, 'b> Fn(&'a mut UiFormatter<'_>) -> bool + Send + Sync + 'static,
+        show: impl for<'a, 'b> Fn(&'a UiFormatter<'_>) -> bool + Send + Sync + 'static,
     ) {
         let mut storage = self
             .transient
@@ -414,7 +415,7 @@ impl ImguiExt for ThunkContext {
 
     async fn push_ui_type_node<G: Default + Send + Sync + 'static>(
         &self,
-        show: impl for<'a, 'b> Fn(&'a mut UiFormatter<'b>) -> bool
+        show: impl for<'a, 'b> Fn(&'a UiFormatter<'b>) -> bool
             + Send
             + Sync
             + 'static,
@@ -440,7 +441,7 @@ pub type AuxUi = Arc<
 >;
 
 pub type ShowUiNode =
-    Arc<dyn for<'frame> Fn(&mut UiFormatter<'frame>) -> bool + Sync + Send + 'static>;
+    Arc<dyn for<'frame> Fn(&UiFormatter<'frame>) -> bool + Sync + Send + 'static>;
 
 /// UI Node contains a rendering function w/ a thunk context,
 ///
@@ -563,7 +564,7 @@ async fn add_ui_component(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
 
 impl UiDisplayMut for UiNode {
-    fn fmt(&mut self, ui: &mut UiFormatter<'_>) -> anyhow::Result<()> {
+    fn fmt(&mut self, ui: &UiFormatter<'_>) -> anyhow::Result<()> {
         let _ui = &ui.imgui;
 
         if let Some(show_ui_node) = self.show_ui_node.as_ref() {
@@ -576,7 +577,7 @@ impl UiDisplayMut for UiNode {
 }
 
 impl UiDisplayMut for UiTypeNode {
-    fn fmt(&mut self, ui: &mut UiFormatter<'_>) -> anyhow::Result<()> {
+    fn fmt(&mut self, ui: &UiFormatter<'_>) -> anyhow::Result<()> {
         let _ui = &ui.imgui;
 
         if let Some(show_ui_node) = self.show_ui_node.as_ref() {
@@ -589,24 +590,30 @@ impl UiDisplayMut for UiTypeNode {
 }
 
 impl UiDisplayMut for ImguiMiddleware {
-    fn fmt(&mut self, ui: &mut UiFormatter<'_>) -> anyhow::Result<()> {
-        self.show_aux_nodes(&ui.imgui);
+    fn fmt(&mut self, ui: &UiFormatter<'_>) -> anyhow::Result<()> {
+        let _ui = &ui.imgui;
+        
+        self.show_aux_nodes(_ui);
 
         if let Some(eh) = self.engine.get_mut() {
             if let Some(bg) = eh.background() {
                 // Render ui nodes
                 for ui_node in self.ui_nodes.iter_mut() {
-                    ui.tc = Some(ui_node.context.clone());
+                    if let Ok(mut tc) = ui.tc.lock() {
+                        let _ = tc.take();
+                        
+                         tc.set(ui_node.context.clone()).ok();
+                    } 
                     ui_node.fmt(ui)?;
                 }
-                ui.tc = None;
+                
 
                 // Render ui-type nodes
-                for ui_type_node in self.ui_type_nodes.iter_mut() {
-                    ui.disp = Some(ui_type_node.dispatcher.clone());
-                    ui_type_node.fmt(ui)?;
-                }
-                ui.disp = None;
+                // for ui_type_node in self.ui_type_nodes.iter_mut() {
+                //     ui.disp = Some(ui_type_node.dispatcher.clone());
+                //     ui_type_node.fmt(ui)?;
+                // }
+                // ui.disp = None;
 
                 // Initialize list of published resources on start-up
                 if let Ok(mut _bg) = bg.call("engine://default/list/loopio.published") {

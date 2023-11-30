@@ -66,6 +66,9 @@ pub(crate) struct StructField {
     /// Parse as an set_of Type,
     /// 
     pub set_of: Option<Type>,
+    /// Parse as an decorated Type,
+    /// 
+    pub decorated: Option<Type>,
     /// True if this field should be enabled as an ext,
     ///
     pub ext: bool,
@@ -516,6 +519,7 @@ impl Parse for StructField {
         let mut vecdeq_of = None;
         let mut option_of = None;
         let mut set_of = None;
+        let mut decorated = None;
         let mut derive_fromstr = false;
         let mut ext = false;
         let mut plugin = false;
@@ -634,6 +638,21 @@ impl Parse for StructField {
                         }
                     }
 
+                    if meta.path.is_ident("decorated") {
+                        if callback.is_some() || map_of.is_some() || vec_of.is_some() || vecdeq_of.is_some() {
+                            return Err(syn::Error::new(meta.input.span(), "Can only have one of either, `parse`, `option_of`, `map_of`, of `vec_of`"))
+                        }
+
+                        if meta.input.parse::<Token![=]>().is_ok() {
+                            decorated = meta.input.parse::<syn::Type>().ok();
+                        } else {
+                            return Err(syn::Error::new(
+                                meta.input.span(),
+                                "Expecting a type for the value of the Vec",
+                            ));
+                        }
+                    }
+
                     if meta.path.is_ident("ext") {
                         ext = true;
                     }
@@ -663,6 +682,7 @@ impl Parse for StructField {
             map_of,
             option_of,
             set_of,
+            decorated,
             parse_callback: callback,
             attribute_type,
             ext,

@@ -1,5 +1,9 @@
 use std::sync::Arc;
 
+use crate::prelude::*;
+
+use crate::{CallAsync, FieldPacket, Plugin, ThunkContext, BlockObject};
+
 /// Field ref is a shared reference to an owner and includes a v-table for accessing fields on the owner,
 ///
 /// This is used by the derive library to create "Virtual" representations of Reality objects.
@@ -13,9 +17,9 @@ use std::sync::Arc;
 /// then it would be useful for the reverse-proxy to "listen" to the engine-proxy's state. The virtual representation can be used
 /// to create a bridge between the two-nodes through the ThunkContext.
 ///
-pub struct FieldRef<Owner = (), Value = (), ProjectedValue = ()>
+pub struct FieldRef<Owner = Noop, Value = (), ProjectedValue = ()>
 where
-    Owner: 'static,
+    Owner: Plugin + 'static,
     Value: 'static,
     ProjectedValue: 'static,
 {
@@ -30,7 +34,17 @@ where
     table: &'static FieldVTable<Owner, Value, ProjectedValue>,
 }
 
-impl<Owner, Value, ProjectedValue> Clone for FieldRef<Owner, Value, ProjectedValue> {
+/// TODO -- add noop attribute, allow PAth in call=
+/// 
+#[derive(Reality, Clone, Default, Debug)]
+#[reality(call = noop, plugin)]
+pub struct Noop;
+
+async fn noop(_: &mut ThunkContext) -> anyhow::Result<()> {
+    Ok(())
+}
+
+impl<Owner: Plugin, Value, ProjectedValue> Clone for FieldRef<Owner, Value, ProjectedValue> {
     fn clone(&self) -> Self {
         Self {
             condition: self.condition.clone(),
@@ -43,7 +57,7 @@ impl<Owner, Value, ProjectedValue> Clone for FieldRef<Owner, Value, ProjectedVal
 impl FieldRef {
     /// Creates a new field ref,
     ///
-    pub const fn new<Owner, Value, ProjectedValue>(
+    pub const fn new<Owner: Plugin, Value, ProjectedValue>(
         owner: Arc<tokio::sync::watch::Sender<Owner>>,
         table: &'static FieldVTable<Owner, Value, ProjectedValue>,
     ) -> FieldRef<Owner, Value, ProjectedValue> {
@@ -91,7 +105,7 @@ pub enum FieldCondition {
 
 /// Transaction struct for applying changes to a field in a serialized manner,
 ///
-pub struct FieldTx<Owner: 'static, Value: 'static, ProjectedValue: 'static> {
+pub struct FieldTx<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 'static> {
     /// Current field state,
     ///
     current: Option<FieldRef<Owner, Value, ProjectedValue>>,
@@ -100,12 +114,12 @@ pub struct FieldTx<Owner: 'static, Value: 'static, ProjectedValue: 'static> {
     next: anyhow::Result<FieldRef<Owner, Value, ProjectedValue>>,
 }
 
-impl<Owner, Value, ProjectedValue> FieldTx<Owner, Value, ProjectedValue> {
+impl<Owner: Plugin, Value, ProjectedValue> FieldTx<Owner, Value, ProjectedValue> {
     /// Processes the next action,
     ///
     pub fn next(
         mut self,
-        next: impl Fn(
+        mut next: impl FnMut(
             FieldRef<Owner, Value, ProjectedValue>,
         ) -> anyhow::Result<FieldRef<Owner, Value, ProjectedValue>>,
     ) -> Self {
@@ -142,7 +156,7 @@ impl<Owner, Value, ProjectedValue> FieldTx<Owner, Value, ProjectedValue> {
     }
 }
 
-impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
+impl<Owner: Plugin, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
     /// Creates a new transaction for editing the field,
     ///
     /// When finish() is called if a change was made, then Ok(T) will be returned w/ new state,
@@ -248,7 +262,6 @@ impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
     #[inline]
     pub fn pending(&mut self) {
         self.condition = FieldCondition::Pending;
-        // self
     }
 
     /// Put the field in the "committed" condition,
@@ -256,10 +269,15 @@ impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
     /// This indicates to consumers that the owner considers this field validated and in use by the
     /// owner.
     ///
+    /// Returns true if there was a transition.
+    ///
     #[inline]
-    pub fn commit(&mut self) {
+    pub fn commit(&mut self) -> bool {
+        let changed = matches!(self.condition, FieldCondition::Committed);
+
         self.condition = FieldCondition::Committed;
-        // self
+
+        !changed
     }
 
     /// Returns true if the field condition is currently FieldCondition::Committed,
@@ -293,7 +311,7 @@ impl<Owner, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
 
 /// V-Table containing functions for handling fields from the owning type,
 ///
-pub struct FieldVTable<Owner, Value, ProjectedValue> {
+pub struct FieldVTable<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 'static> {
     /// Returns a reference to the projected value and field name,
     ///
     get_ref: AdapterRef<fn(&Owner) -> (&str, &ProjectedValue), Owner, ProjectedValue>,
@@ -312,9 +330,15 @@ pub struct FieldVTable<Owner, Value, ProjectedValue> {
     /// If applicable, inserts a value with a key to a field,
     ///
     insert_entry: AdapterRef<fn(&mut Owner, String, Value) -> bool, Owner, Value>,
+    // /// Encode the current field into a field packet,
+    // ///
+    // encode: AdapterRef<fn(Owner::Virtual) -> FieldPacket, Owner, Value>,
+    // /// Decode a field packet into a field reference,
+    // /// 
+    // decode: AdapterRef<fn(Owner::Virtual, FieldPacket) -> FieldRef<Owner, Value, ProjectedValue>, Owner, Value>,
 }
 
-impl<Owner, Value, ProjectedValue> Clone for FieldVTable<Owner, Value, ProjectedValue> {
+impl<Owner: Plugin, Value, ProjectedValue> Clone for FieldVTable<Owner, Value, ProjectedValue> {
     fn clone(&self) -> Self {
         Self {
             get_ref: self.get_ref.clone(),
@@ -323,6 +347,8 @@ impl<Owner, Value, ProjectedValue> Clone for FieldVTable<Owner, Value, Projected
             push: self.push.clone(),
             insert_entry: self.insert_entry.clone(),
             take: self.take.clone(),
+            // encode: self.encode.clone(),
+            // decode: self.decode.clone(),
         }
     }
 }
@@ -360,7 +386,7 @@ impl<R: Clone, Owner, Value> Clone for AdapterRef<R, Owner, Value> {
     }
 }
 
-impl<Owner, Value, ProjectedValue> FieldVTable<Owner, Value, ProjectedValue> {
+impl<Owner: Plugin, Value, ProjectedValue> FieldVTable<Owner, Value, ProjectedValue> {
     /// Creates a new field vtable,
     ///
     pub fn new(
@@ -414,6 +440,8 @@ impl<Owner, Value, ProjectedValue> FieldVTable<Owner, Value, ProjectedValue> {
                 adapter_ref_mut: None,
                 adapter_ref_owned: None,
             },
+            // encode: todo!(),
+            // decode: todo!(),
         }
     }
 

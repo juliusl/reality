@@ -3,9 +3,13 @@ mod frame_editor;
 mod input;
 
 pub mod prelude {
+    use std::sync::Mutex;
+    use std::sync::OnceLock;
+    use anyhow::anyhow;
     use loopio::engine::EngineHandle;
     use loopio::prelude::Attribute;
     use loopio::prelude::Dispatcher;
+    use loopio::prelude::KvpExt;
     use loopio::prelude::Shared;
     use loopio::prelude::ThunkContext;
 
@@ -18,7 +22,7 @@ pub mod prelude {
     #[cfg(feature = "desktop-imgui")]
     pub use super::frame_editor::FieldWidget;
 
-    pub use super::button::Button;
+    // pub use super::button::Button;
     pub use super::input::Input;
 
     /// Ui formatter context,
@@ -29,49 +33,56 @@ pub mod prelude {
         pub imgui: &'frame mut imgui::Ui,
         /// Engine handle,
         ///
-        pub eh: EngineHandle,
+        pub eh: Mutex<EngineHandle>,
         /// Currently available subcommand,
         /// 
         #[cfg(feature = "terminal")]
         pub subcommand: Option<clap::Command>,
         /// Currently available thunk context,
         ///
-        pub tc: Option<ThunkContext>,
+        pub tc: Mutex<OnceLock<ThunkContext>>,
         /// Currently available dispatcher,
         ///
         pub disp: Option<Dispatcher<Shared, Attribute>>,
     }
 
     /// Trait for formatting ui controls for a type w/ a mutable reference,
-    ///
+    /// 
     pub trait UiDisplayMut {
         /// Formats the ui w/ a mutable reference to the implementing type,
         ///
-        fn fmt(&mut self, ui: &mut UiFormatter<'_>) -> anyhow::Result<()>;
+        /// **Implementations** **MUST** return OK(()) to indicate that the receiver was mutated, and
+        /// in all other cases return an error.
+        /// 
+        fn fmt(&mut self, ui: &UiFormatter<'_>) -> anyhow::Result<()>;
     }
 
     #[cfg(feature = "desktop-imgui")]
     impl UiFormatter<'_> {
-        /// Show w/ thunk context,
+        /// Pushes a show fn to a section by name,
         /// 
-        pub fn show_with_tc(&mut self, show: impl FnOnce(&mut ThunkContext, &imgui::Ui)) {
-            if let Some(tc) = self.tc.as_mut() {
-                show(tc, self.imgui)
+        pub fn push_section(&self, name: &str, show: fn(&UiFormatter<'_>)) {
+            if let Ok(mut tc) = self.context_mut() {
+                let (_, mut s) = tc.get_mut().unwrap().maybe_store_kv::<Vec<fn(&UiFormatter<'_>)>>(name, vec![]);
+                s.push(show);
             }
         }
 
-        /// Show w/ engine handle,
+        /// Takes any pending section show fn and passes it to a function that can format the section,
         /// 
-        pub fn show_with_eh(&mut self, show: impl FnOnce(EngineHandle, &imgui::Ui)) {
-            show(self.eh.clone(), self.imgui)
+        pub fn show_section(&self, name: &str, show: fn(&UiFormatter<'_>, Vec<fn(&UiFormatter<'_>)>)) {
+            if let Ok(mut tc) = self.context_mut() {
+                if let Some((_, s)) = tc.get_mut().unwrap().take_kv::<Vec<fn(&UiFormatter<'_>)>>(name) {
+                    drop(tc);
+                    show(self, s);
+                }
+            }
         }
 
-        /// Show w/ all resources,
+        /// Gets a mutable reference to the underlying thunk context,
         /// 
-        pub fn show_with_all(&mut self, show: impl FnOnce(EngineHandle, &mut ThunkContext, &imgui::Ui)) {
-            if let Some(tc) = self.tc.as_mut() {
-                show(self.eh.clone(), tc, self.imgui)
-            }
+        pub fn context_mut(&self) -> anyhow::Result<std::sync::MutexGuard<OnceLock<ThunkContext>>> {
+            self.tc.lock().map_err(|e| anyhow!("{e}"))
         }
 
         /// Display a menu corresponding the current subcommand config,

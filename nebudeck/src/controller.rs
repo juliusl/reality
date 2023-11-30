@@ -34,17 +34,3 @@ pub trait ControlBus {
         controller.take_control(Box::new(self), engine)
     }
 }
-
-/// Generic command type,
-///
-#[derive(Reality, Clone, Default)]
-pub struct Command {
-    /// Name of this command,
-    /// 
-    #[reality(derive_fromstr)]
-    pub name: String,
-    /// Name of argument and it's description,
-    ///
-    #[reality(map_of=String)]
-    pub arg: BTreeMap<String, String>,
-}

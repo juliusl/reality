@@ -119,7 +119,7 @@ pub mod utility {
     /// Set of utilities built into the engine,
     ///
     #[derive(Reality, Clone, Default)]
-    #[reality(ext, rename = "utility/loopio")]
+    #[reality(ext, rename = "utility/loopio", call = noop, plugin)]
     pub struct Utility {
         /// Unused
         #[reality(derive_fromstr)]
@@ -163,6 +163,10 @@ pub mod utility {
         #[cfg(feature = "wire-ext")]
         #[reality(ext)]
         enable_wire_bus: super::wire_ext::EnableWireBus,
+    }
+
+    async fn noop(_: &mut ThunkContext) -> anyhow::Result<()> {
+        Ok(())
     }
 }
 

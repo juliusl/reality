@@ -92,18 +92,20 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
         }
 
         editing.push_ui_node(move |_ui| {
-            let ui = &_ui.imgui;
-            if let Some(tc) = _ui.tc.as_mut() {
-                let mut init = tc.cached::<FrameEditor>().unwrap();
+            if let Ok(mut tc) = _ui.tc.lock() {
+                let attr = tc.get().unwrap().attribute;
+
+                let mut init = tc.get_mut().unwrap().cached::<FrameEditor>().unwrap();
                 let title = init
                     .editor_name
                     .clone()
-                    .unwrap_or_else(|| format!("{:?}", tc.attribute));
+                    .unwrap_or_else(|| format!("{:?}", attr));
 
+                let ui = &_ui.imgui;
                 ui.window(format!("Frame Editor - {}", title))
                     .size([800.0, 600.0], imgui::Condition::Once)
                     .build(|| {
-                        ui.label_text("Resource Key", tc.attribute.key().to_string());
+                        ui.label_text("Resource Key", attr.key().to_string());
 
                         // if ui.collapsing_header("DEBUG --", TreeNodeFlags::empty()) {
                         //     ui.text(debug);
@@ -113,7 +115,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                         //
                         let mut field_map = BTreeMap::<String, Vec<FieldPacket>>::new();
 
-                        if let Some(wb) = tc.cached_ref::<WireBus>() {
+                        if let Some(wb) = tc.get().unwrap().cached_ref::<WireBus>() {
                             for packet in wb.packets().iter() {
                                 let entry =
                                     field_map.entry(packet.field_name.to_string()).or_default();
@@ -186,10 +188,10 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                             }
                         }
 
-                        defined_properties_section(tc, ui);
+                        defined_properties_section(tc.get().unwrap(), ui);
 
                         let mut queue_update = false;
-                        if let Some(queued) = tc.cached_ref::<FrameUpdates>() {
+                        if let Some(queued) = tc.get().unwrap().cached_ref::<FrameUpdates>() {
                             let mut render = vec![];
                             for (idx, q) in queued.0.fields.iter().enumerate() {
                                 let FieldPacket {
@@ -254,7 +256,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                 ui.indent();
                                 // This can be optimized later -
                                 for edit in init.edit.iter_mut() {
-                                    if !tc.kv_contains::<FieldWidget>(&edit) {
+                                    if !tc.get().unwrap().kv_contains::<FieldWidget>(&edit) {
                                         match edit {
                                             Decorated { ref value, .. } => {
                                                 if let Some(value) = value.as_ref() {
@@ -276,11 +278,11 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                                                     .map(|d| d.to_vec())
                                                                     .unwrap_or_default(),
                                                                 help: help.map(String::to_string),
-                                                                widget_table: tc
+                                                                widget_table: tc.get().unwrap()
                                                                     .cached::<EditorWidgetTable>()
                                                                     .unwrap_or_default(),
                                                             };
-                                                            tc.store_kv(&edit, editor);
+                                                            tc.get_mut().unwrap().store_kv(&edit, editor);
                                                         }
                                                         _ => {
                                                             ui.label_text(
@@ -295,10 +297,10 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                             }
                                         }
                                     } else if let Some((_, mut editor)) =
-                                        tc.take_kv::<FieldWidget>(&edit)
+                                        tc.get_mut().unwrap().take_kv::<FieldWidget>(&edit)
                                     {
-                                        editor.show(tc, ui);
-                                        tc.store_kv(&edit, editor);
+                                        editor.show(tc.get_mut().unwrap(), ui);
+                                        tc.get_mut().unwrap().store_kv(&edit, editor);
                                     } else {
                                         ui.text("Could not initialize field widget");
                                     }
@@ -309,7 +311,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                 for (panel_name, field) in
                                     init.action.iter().map(|t| (t.tag(), t.value()))
                                 {
-                                    action_button(panel_name, field, name, ui, tc);
+                                    action_button(panel_name, field, name, ui, tc.get_mut().unwrap());
                                 }
 
                                 ui.unindent();
@@ -318,10 +320,10 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
                         if queue_update {
                             trace!("Queued frame update");
-                            let rk = tc.cached::<ResourceKey<Attribute>>();
+                            let rk = tc.get().unwrap().cached::<ResourceKey<Attribute>>();
 
-                            if let Some(cache) = tc.take_cache::<FrameUpdates>() {
-                                tc.spawn(move |tc| async move {
+                            if let Some(cache) = tc.get_mut().unwrap().take_cache::<FrameUpdates>() {
+                                tc.get().unwrap().spawn(move |tc| async move {
                                     unsafe {
                                         println!("Outside: {:?}", &rk);
                                         println!(
@@ -338,7 +340,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                     Ok(tc)
                                 });
 
-                                tc.write_cache(FrameUpdates::default());
+                                tc.get_mut().unwrap().write_cache(FrameUpdates::default());
                             }
                         }
                     });

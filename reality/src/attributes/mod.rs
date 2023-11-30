@@ -110,6 +110,8 @@ mod tests {
     #[reality(
         rename = "test",
         load=on_load,
+        call = test_noop,
+        plugin
     )]
     pub struct Test {
         /// Name for test,
@@ -139,6 +141,10 @@ mod tests {
         ///
         #[reality(attribute_type)]
         _test2: Test2,
+    }
+
+    async fn test_noop(tc: &mut ThunkContext) -> anyhow::Result<()> {
+        Ok(())
     }
 
     /// Called when loading this object,

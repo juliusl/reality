@@ -290,14 +290,19 @@ mod tests {
     }
     
     #[derive(Debug, Default, Serialize, Clone, Reality)]
-    #[reality(group = "reality")]
+    #[reality(group = "reality", call = test_noop, plugin)]
     pub struct Test {
         pub name: String,
         pub file: PathBuf,
     }
+
+    async fn test_noop(_tc: &mut ThunkContext) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     
-    #[derive(Debug, Serialize, Deserialize, Clone, Reality)]
-    #[reality(group = "reality")]
+    #[derive(Debug, Serialize, Default, Deserialize, Clone, Reality)]
+    #[reality(group = "reality", call = test_noop, plugin)]
     pub struct Test2 {
         name: String,
         file: PathBuf,
@@ -305,7 +310,8 @@ mod tests {
         test3: Test3,
     }
     
-    #[derive(Reality, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+    #[derive(Reality, Default, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+    #[reality(call = test_noop, plugin)]
     pub enum Test3 {
         A {
             #[reality(not_wire)]
@@ -315,6 +321,8 @@ mod tests {
             #[reality(not_wire)]
             b: String,
         },
+        #[default]
+        D,
     }
     
     impl FromStr for Test3 {
