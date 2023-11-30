@@ -1,10 +1,12 @@
 use std::cell::RefCell;
+use std::future::IntoFuture;
 use std::sync::OnceLock;
 use std::time::Instant;
 
 use anyhow::anyhow;
 use imgui::InputTextCallbackHandler;
 use imgui::Ui;
+use loopio::action::LocalAction;
 use loopio::action::RemoteAction;
 use loopio::action::TryCallExt;
 use loopio::foreground::ForegroundEngine;
@@ -141,10 +143,8 @@ struct ProcessWizard;
 
 impl ProcessWizard {
     async fn edit_program_name(mut tc: ThunkContext) -> anyhow::Result<ThunkContext> {
-        eprintln!("Creating process wizard");
         let process = Remote.create::<Process>(&mut tc).await;
 
-        eprintln!("{:?}", process);
         tc.write_cache(VirtualProcess::new(process.clone()));
         tc.write_cache(process);
 
@@ -163,6 +163,7 @@ async fn process_wizard(tc: &mut ThunkContext) -> anyhow::Result<()> {
     if let Some(eh) = tc.engine_handle().await {
         // Build a remote action
         let init = RemoteAction.build::<Process>(tc).await;
+        eprintln!("{:?}", tc.decoration);
 
         // Bind a task that defines the UI node and dependencies
         let init = init.bind_task("edit_program_name", ProcessWizard::edit_program_name);
@@ -170,17 +171,22 @@ async fn process_wizard(tc: &mut ThunkContext) -> anyhow::Result<()> {
         // Publish the remote action as a hosted resource
         let mut _a = init.publish(eh.clone()).await?;
 
+        // Get the hosted resource published from the action
         let mut _a = eh.hosted_resource(_a.to_string()).await?;
 
-        // Call the hosted resource
+        // Call a task on the hosted resource that will build the ui node
         if let Some(_tc) = _a.try_call("edit_program_name").await? {
-            if let Some(nodes) = _tc
+            if let Some(mut nodes) = _tc
                 .transient
                 .storage
                 .write()
                 .await
                 .take_resource::<Vec<UiNode>>(_tc.attribute.transmute())
             {
+                // TODO -- This needs to be added back to the core library
+                for n in nodes.iter_mut() {
+                    n.context.decoration = tc.decoration.clone();
+                }
                 // Transfer transient storage resources over to the current context
                 tc.transient
                     .storage
@@ -197,11 +203,18 @@ async fn process_wizard(tc: &mut ThunkContext) -> anyhow::Result<()> {
 impl UiDisplayMut for ProcessWizard {
     fn fmt(&mut self, __ui: &UiFormatter<'_>) -> anyhow::Result<()> {
         // TODO -- improvements,
-        //  Builder from ui formatter? 
+        //  Builder from ui formatter?
         // - .section(|ui| { }) => tc.maybe_write_kv(String, Vec<fn(&mut UiFormatter<'_>)>>)
-
         __ui.push_section("tools", |ui| {
-            if let Some(mut cached) = ui.tc.lock().unwrap().get_mut().unwrap().cached_mut::<VirtualProcess>() {
+            let mut pending_changes = vec![];
+            if let Some(mut cached) = ui
+                .tc
+                .lock()
+                .unwrap()
+                .get_mut()
+                .unwrap()
+                .cached_mut::<VirtualProcess>()
+            {
                 // cached["program"].clone().start_tx()
                 let tx = cached.program.clone().start_tx();
 
@@ -210,32 +223,57 @@ impl UiDisplayMut for ProcessWizard {
                         n.fmt(ui)?;
                         Ok(n)
                     })
-                    .finish() {
-                        next.view_value(|r| {
-                            eprintln!("Change -- {:?} {r}", Instant::now());
-                        });
+                    .finish()
+                {
+                    next.view_value(|r| {
+                        eprintln!("Change -- {:?} {r}", Instant::now());
+                        cached.program.pending();
+                    });
 
-                        if next.is_pending() {
-                            cached.program.pending();
-                        }
-
-                        // TODO: ui.button("") { next.program.commit() }
+                    if cached.program.is_pending() {
+                        let packet = cached.program.encode();
+                        pending_changes.push(("process_wizard", packet));
                     }
+                    // TODO -- ui.push_confirmation(|ui|{ })
+                }
+
+                // if let Ok(mut tc) = ui.context_mut() {
+                //     let tc = tc.get_mut().unwrap();
+                //     // LocalAction.build::<Process>(tc).into_future();
+                // }
+
+                // TODO -- If decorations has an address, then the run button can be enabled
+                if let Ok(deco) = ui.decorations.read() {
+                    ui.imgui.text(format!("{:#?}", deco));
+                }
 
                 if let Some(_bg) = ui.eh.lock().unwrap().background() {
-                    if ui.imgui.button("Run") {}
+                    if ui.imgui.button("Run") {
+                        // _bg.call(address)
+                    }
                 }
+            }
+
+            for (label, packet) in pending_changes.drain(..) {
+                ui.push_pending_change(label, packet);
             }
         });
 
-        __ui.show_section("tools", |ui, inner| {
+        __ui.show_section("tools", |ui, mut inner| {
             let imgui = &ui.imgui;
 
-            imgui.window("tools").size([600.0, 800.0], imgui::Condition::Appearing).build(|| {
-                for i in inner.iter() {
-                    i(ui);
-                }
-            });
+            imgui
+                .window("tools")
+                .size([600.0, 800.0], imgui::Condition::Appearing)
+                .build(move || {
+                    inner.fmt(ui).unwrap();
+
+                    let pending_changes = ui.for_each_pending_change(|name, fp| {
+                        imgui.text(format!("{name}:\n{:#?}", fp));
+                    });
+
+                    imgui.label_text("number of pending changes", pending_changes.to_string());
+                });
         });
 
         Ok(())
@@ -246,7 +284,7 @@ impl UiDisplayMut for ProcessWizard {
 #[reality(replace = VirtualProcess, call = init_command, plugin)]
 pub struct UiProcess;
 
-async fn init_command(tc: &mut ThunkContext) -> anyhow::Result<()> {
+async fn init_command(_tc: &mut ThunkContext) -> anyhow::Result<()> {
     Ok(())
 }
 

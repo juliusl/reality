@@ -663,9 +663,11 @@ impl Remote {
             .finish();
 
         p.sync(&tc);
-        tc.decoration = tc
+        if let Some(deco) = tc
             .fetch_kv::<Decoration>(tc.attribute)
-            .map(|(_, deco)| deco.clone());
+            .map(|(_, deco)| deco.clone()) {
+                tc.decoration = Some(deco);
+            }
         p
     }
 }

@@ -1,22 +1,25 @@
+use std::cell::OnceCell;
+use std::sync::Arc;
+use std::sync::OnceLock;
+use std::time::Instant;
+
 use imgui::Ui;
 use imgui_wgpu::RendererConfig;
 use imgui_winit_support::WinitPlatform;
-use loopio::action::TryCallExt;
-use loopio::engine::{EnginePacket, Published};
+
+use loopio::engine::Published;
+use loopio::engine::EnginePacket;
 use loopio::prelude::*;
-use std::cell::{OnceCell, RefCell};
-use std::collections::VecDeque;
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::error;
+
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
 
 use super::wgpu_ext::RenderPipelineMiddleware;
 use crate::desktop::DesktopApp;
+use crate::widgets::{UiDisplayMut, UiFormatter};
 use crate::ControlBus;
-use crate::widgets::{UiFormatter, UiDisplayMut};
 
 pub mod winit {
     #[cfg(feature = "desktop-vnext")]
@@ -57,7 +60,7 @@ pub struct ImguiMiddleware {
     ui_nodes: Vec<UiNode>,
     /// Vector of active ui nodes,
     ///
-    ui_type_nodes: Vec<UiTypeNode>,
+    _ui_type_nodes: Vec<UiTypeNode>,
     /// Vector of aux ui nodes,
     ///
     __aux_ui: Vec<AuxUiNode>,
@@ -82,7 +85,7 @@ impl ImguiMiddleware {
             open_demo: None,
             last_frame: None,
             ui_nodes: vec![],
-            ui_type_nodes: vec![],
+            _ui_type_nodes: vec![],
             __update_start: None,
             __last_updated: None,
             __aux_ui: vec![],
@@ -323,9 +326,18 @@ impl DesktopApp for ImguiMiddleware {
                     subcommand: None,
                     tc: std::sync::Mutex::new(OnceLock::new()),
                     disp: None,
-                    eh: std::sync::Mutex::new(self.engine.get().cloned().expect("should be bound to an engine")),
+                    eh: std::sync::Mutex::new(
+                        self.engine
+                            .get()
+                            .cloned()
+                            .expect("should be bound to an engine"),
+                    ),
+                    decorations: std::sync::RwLock::new(OnceLock::new()),
                 };
 
+                // ----------------------------------------
+                //        **UI DISPLAY ENTRYPOINT**
+                // ----------------------------------------
                 if let Err(err) = self.fmt(&mut formatter) {
                     ui.text(format!("{err}"));
                 }
@@ -373,24 +385,21 @@ impl ImguiMiddleware {
 #[async_trait]
 pub trait ImguiExt {
     /// Pushes a new ui node to transient storage,
-    /// 
+    ///
     /// **Note** When this fn is called it will take a snapshot of the current context.
-    /// 
+    ///
     fn push_ui_node(
         &self,
         show: impl for<'a, 'b> Fn(&'a UiFormatter<'_>) -> bool + Send + Sync + 'static,
     );
 
     /// Pushes a new ui type node to transient storage,
-    /// 
+    ///
     /// **Note** When this fn is called it will take a snapshot of the current context.
-    /// 
+    ///
     async fn push_ui_type_node<G: Default + Send + Sync + 'static>(
         &self,
-        show: impl for<'a, 'b> Fn(&'a UiFormatter<'b>) -> bool
-            + Send
-            + Sync
-            + 'static,
+        show: impl for<'a, 'b> Fn(&'a UiFormatter<'b>) -> bool + Send + Sync + 'static,
     );
 }
 
@@ -415,10 +424,7 @@ impl ImguiExt for ThunkContext {
 
     async fn push_ui_type_node<G: Default + Send + Sync + 'static>(
         &self,
-        show: impl for<'a, 'b> Fn(&'a UiFormatter<'b>) -> bool
-            + Send
-            + Sync
-            + 'static,
+        show: impl for<'a, 'b> Fn(&'a UiFormatter<'b>) -> bool + Send + Sync + 'static,
     ) {
         let mut storage = self
             .transient
@@ -440,8 +446,7 @@ pub type AuxUi = Arc<
     RwLock<dyn FnMut(&mut EngineHandle, &mut ImguiMiddleware, &Ui) -> bool + Sync + Send + 'static>,
 >;
 
-pub type ShowUiNode =
-    Arc<dyn for<'frame> Fn(&UiFormatter<'frame>) -> bool + Sync + Send + 'static>;
+pub type ShowUiNode = Arc<dyn for<'frame> Fn(&UiFormatter<'frame>) -> bool + Sync + Send + 'static>;
 
 /// UI Node contains a rendering function w/ a thunk context,
 ///
@@ -511,62 +516,8 @@ impl AuxUiNode {
     }
 }
 
-/// Plugin for adding ui components provided by a hosted resource,
-///
-#[derive(Reality, Default, Debug, Clone)]
-#[reality(call=add_ui_component, plugin, rename="add-ui")]
-pub struct AddUiComponent {
-    /// Address of the hosted resource providing a ui node,
-    ///
-    #[reality(derive_fromstr)]
-    pub address: Address,
-    /// List of thunk names that return a ui node,
-    ///
-    #[reality(vec_of=Decorated<String>)]
-    pub node: Vec<Decorated<String>>,
-}
-
-async fn add_ui_component(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    if let Some(eh) = tc.engine_handle().await {
-        let c = tc.initialized::<AddUiComponent>().await;
-
-        let a = eh.hosted_resource(c.address.to_string()).await?;
-
-        let mut nodes: Vec<UiNode> = vec![];
-        for n in c.node.iter() {
-            if let Some(t) = n.value() {
-                // Call the hosted resource
-
-                if let Some(_tc) = a.try_call(&t).await? {
-                    if let Some(mut _nodes) = _tc
-                        .transient
-                        .storage
-                        .write()
-                        .await
-                        .take_resource::<Vec<UiNode>>(_tc.attribute.transmute())
-                    {
-                        nodes.append(&mut *_nodes);
-                    }
-                }
-            }
-        }
-        // Transfer transient storage resources over to the current context
-
-        tc.transient
-            .storage
-            .write()
-            .await
-            .put_resource(nodes, ResourceKey::root());
-    }
-
-    Ok(())
-}
-
-
 impl UiDisplayMut for UiNode {
     fn fmt(&mut self, ui: &UiFormatter<'_>) -> anyhow::Result<()> {
-        let _ui = &ui.imgui;
-
         if let Some(show_ui_node) = self.show_ui_node.as_ref() {
             show_ui_node(ui);
             Ok(())
@@ -578,8 +529,6 @@ impl UiDisplayMut for UiNode {
 
 impl UiDisplayMut for UiTypeNode {
     fn fmt(&mut self, ui: &UiFormatter<'_>) -> anyhow::Result<()> {
-        let _ui = &ui.imgui;
-
         if let Some(show_ui_node) = self.show_ui_node.as_ref() {
             show_ui_node(ui);
             Ok(())
@@ -592,21 +541,44 @@ impl UiDisplayMut for UiTypeNode {
 impl UiDisplayMut for ImguiMiddleware {
     fn fmt(&mut self, ui: &UiFormatter<'_>) -> anyhow::Result<()> {
         let _ui = &ui.imgui;
-        
+
         self.show_aux_nodes(_ui);
 
         if let Some(eh) = self.engine.get_mut() {
             if let Some(bg) = eh.background() {
                 // Render ui nodes
                 for ui_node in self.ui_nodes.iter_mut() {
-                    if let Ok(mut tc) = ui.tc.lock() {
-                        let _ = tc.take();
-                        
-                         tc.set(ui_node.context.clone()).ok();
-                    } 
+                    // Swap current thunk context
+                    let yielding = if let Ok(mut tc) = ui.tc.lock() {
+                        let yielding = tc.take();
+                        ui.decorations.write().unwrap().take();
+
+                        let current = ui_node.context.clone();
+                        if let Some(decoration) = current.decoration.as_ref() {
+                            let _ = ui.decorations.write().unwrap().set(decoration.clone());
+                        }
+                        tc.set(current).ok();
+                        yielding
+                    } else {
+                        None
+                    };
+
+                    // Format UI
                     ui_node.fmt(ui)?;
+
+                    if let Ok(mut tc) = ui.tc.lock() {
+                        ui_node.context = tc.take().expect("should have been set previously");
+
+                        // Restore the previous thunk context
+                        if let Some(yielding) = yielding {
+                            ui.decorations.write().unwrap().take();
+                            if let Some(decoration) = yielding.decoration.as_ref() {
+                                let _ = ui.decorations.write().unwrap().set(decoration.clone());
+                            }
+                            tc.set(yielding).ok();
+                        }
+                    }
                 }
-                
 
                 // Render ui-type nodes
                 // for ui_type_node in self.ui_type_nodes.iter_mut() {
@@ -628,7 +600,8 @@ impl UiDisplayMut for ImguiMiddleware {
                             let mut __tc = _bg.into_foreground().unwrap();
 
                             if let Ok(mut storage) = __tc.transient.clone().storage.try_write() {
-                                self.published = Some(Published::default().unpack(storage.deref_mut()));
+                                self.published =
+                                    Some(Published::default().unpack(storage.deref_mut()));
                             }
                         }
                         _ => {}

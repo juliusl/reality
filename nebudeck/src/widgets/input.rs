@@ -267,7 +267,10 @@ async fn create_inspect_action(tc: &mut ThunkContext) -> anyhow::Result<()> {
     }
 }
 
-impl<T: Plugin> UiDisplayMut for FieldRef<T, String, String> {
+impl<T: Plugin> UiDisplayMut for FieldRef<T, String, String> 
+where
+    T::Virtual: NewFn<Inner = T>,
+{
     fn fmt(&mut self, ui: &super::UiFormatter<'_>) -> anyhow::Result<()> {
         let ui = &ui.imgui;
 
@@ -303,7 +306,10 @@ impl<T: Plugin> UiDisplayMut for FieldRef<T, String, String> {
     }
 }
 
-impl<T: Plugin> UiDisplayMut for FieldRef<T, Decorated<String>, Decorated<String>> {
+impl<T: Plugin> UiDisplayMut for FieldRef<T, Decorated<String>, Decorated<String>> 
+where
+    T::Virtual: NewFn<Inner = T>,
+{
     fn fmt(&mut self, ui: &super::UiFormatter<'_>) -> anyhow::Result<()> {
         let ui = &ui.imgui;
 
@@ -337,6 +343,7 @@ impl<T: Plugin> UiDisplayMut for FieldRef<T, Decorated<String>, Decorated<String
                 }
             });
 
+            ui.same_line();
             if ui.button("Edit field") {
                 self.pending();
             }

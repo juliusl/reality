@@ -386,7 +386,7 @@ impl RemoteAction {
 pub struct ActionFactory {
     /// Resource key for this action,
     ///
-    attribute: ResourceKey<Attribute>,
+    pub attribute: ResourceKey<Attribute>,
     /// Thunk context to build action components,
     ///
     pub storage: AsyncStorageTarget<Shared>,
@@ -517,29 +517,42 @@ pub trait TryCallExt: AsRef<ThunkContext> {
     /// Try calling a thunk by symbol,
     /// 
     async fn try_call(&self, symbol: &str) -> anyhow::Result<Option<ThunkContext>> {
-        let node = self.as_ref().node.storage.read().await;
+        let mut node = self.as_ref().node.storage.write().await;
         let key = self.as_ref().attribute.branch(symbol);
 
         let mut tc = self.as_ref().clone();
         tc.reset();
 
-        if let Some(thunk) =
+        // tc.decoration = node.take_resource::<Decoration>(ResourceKey::root()).map(|d| *d);
+        // eprintln!("{:?}", tc.decoration);
+
+        if let Some(_thunk) =
             node.resource::<ThunkFn>(key.transmute())
         {
-            match thunk(tc) {
+            let thunk = _thunk.clone();
+            drop(_thunk);
+
+            return match thunk(tc) {
                 CallOutput::Spawn(Some(op)) => {
-                    return op.await?.map(Some);
+                    Ok(op.await?.ok())
                 }
-                CallOutput::Abort(r) => r?,
-                CallOutput::Update(u) => return Ok(u),
-                _ => {}
-            }
-        } else if let Some(taskfn) =
-            node.resource::<TaskFn>(key.transmute())
+                CallOutput::Abort(r) => Err(r.expect_err("should be an error returned here")),
+                CallOutput::Update(u) => Ok(u),
+                _ => {
+                    // Skipping
+                    Ok(None)
+                }
+            };
+        }
+        
+        if let Some(taskfn) =
+            node.take_resource::<TaskFn>(key.transmute())
         {
-            return taskfn(tc)
+            drop(node);
+            let result = taskfn(tc)
                 .await
                 .map(Some);
+            return result;
         }
 
         Ok(None)

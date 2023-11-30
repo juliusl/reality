@@ -23,15 +23,15 @@ where
     Value: 'static,
     ProjectedValue: 'static,
 {
-    /// Field condition,
-    ///
-    condition: FieldCondition,
     /// Reference to the owner,
     ///
     owner: Arc<tokio::sync::watch::Sender<Owner>>,
     /// Field vtable for accessing the underlying field,
     ///
     table: &'static FieldVTable<Owner, Value, ProjectedValue>,
+    /// Field condition,
+    ///
+    condition: FieldCondition,
 }
 
 /// TODO -- add noop attribute, allow PAth in call=
@@ -114,7 +114,10 @@ pub struct FieldTx<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 'sta
     next: anyhow::Result<FieldRef<Owner, Value, ProjectedValue>>,
 }
 
-impl<Owner: Plugin, Value, ProjectedValue> FieldTx<Owner, Value, ProjectedValue> {
+impl<Owner: Plugin, Value, ProjectedValue> FieldTx<Owner, Value, ProjectedValue> 
+where
+    Owner::Virtual: NewFn<Inner = Owner>,
+{
     /// Processes the next action,
     ///
     pub fn next(
@@ -145,7 +148,8 @@ impl<Owner: Plugin, Value, ProjectedValue> FieldTx<Owner, Value, ProjectedValue>
     /// field will be returned,
     ///
     #[inline]
-    pub fn finish(self) -> anyhow::Result<FieldRef<Owner, Value, ProjectedValue>> {
+    pub fn finish(self) -> anyhow::Result<FieldRef<Owner, Value, ProjectedValue>> 
+    {
         /*
         TODO: Insert tower integegration here?
          */
@@ -156,7 +160,10 @@ impl<Owner: Plugin, Value, ProjectedValue> FieldTx<Owner, Value, ProjectedValue>
     }
 }
 
-impl<Owner: Plugin, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> {
+impl<Owner: Plugin, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue> 
+where
+    Owner::Virtual: NewFn<Inner = Owner>,
+{
     /// Creates a new transaction for editing the field,
     ///
     /// When finish() is called if a change was made, then Ok(T) will be returned w/ new state,
@@ -252,6 +259,21 @@ impl<Owner: Plugin, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue
         })
     }
 
+    /// Encodes the current field into a field packet,
+    /// 
+    pub fn encode(&self) -> FieldPacket {
+        (self.table.encode.root)(<Owner as Plugin>::Virtual::new(self.owner.borrow().to_owned()))
+    }
+
+    /// Decodes and applies a field packet to a virtual reference returning a field-ref in the pending state only
+    /// if changes were successfully applied.
+    /// 
+    /// Otherwise, returns an error in all other cases.
+    /// 
+    pub fn decode_and_apply(&self, fp: FieldPacket) -> anyhow::Result<Self> {
+        (self.table.decode.root)(<Owner as Plugin>::Virtual::new(self.owner.borrow().to_owned()), fp)
+    }
+
     /// Put the field in the "pending" condition,
     ///
     /// Automatically called during a field tx on .finish(), if the tx result is_ok().
@@ -330,12 +352,12 @@ pub struct FieldVTable<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 
     /// If applicable, inserts a value with a key to a field,
     ///
     insert_entry: AdapterRef<fn(&mut Owner, String, Value) -> bool, Owner, Value>,
-    // /// Encode the current field into a field packet,
-    // ///
-    // encode: AdapterRef<fn(Owner::Virtual) -> FieldPacket, Owner, Value>,
-    // /// Decode a field packet into a field reference,
-    // /// 
-    // decode: AdapterRef<fn(Owner::Virtual, FieldPacket) -> FieldRef<Owner, Value, ProjectedValue>, Owner, Value>,
+    /// Encode the current field into a field packet,
+    ///
+    encode: AdapterRef<fn(Owner::Virtual) -> FieldPacket, Owner, Value>,
+    /// Decode a field packet into a field reference,
+    /// 
+    decode: AdapterRef<fn(Owner::Virtual, FieldPacket) -> anyhow::Result<FieldRef<Owner, Value, ProjectedValue>>, Owner, Value>,
 }
 
 impl<Owner: Plugin, Value, ProjectedValue> Clone for FieldVTable<Owner, Value, ProjectedValue> {
@@ -347,8 +369,8 @@ impl<Owner: Plugin, Value, ProjectedValue> Clone for FieldVTable<Owner, Value, P
             push: self.push.clone(),
             insert_entry: self.insert_entry.clone(),
             take: self.take.clone(),
-            // encode: self.encode.clone(),
-            // decode: self.decode.clone(),
+            encode: self.encode.clone(),
+            decode: self.decode.clone(),
         }
     }
 }
@@ -367,8 +389,7 @@ struct AdapterRef<R: Clone, Owner, Value> {
     adapter_ref: Option<Arc<dyn Fn(R, &Owner) -> (&str, &Value) + Sync + Send + 'static>>,
     /// Adapter ref mut fn,
     ///
-    adapter_ref_mut:
-        Option<Arc<dyn Fn(R, &mut Owner) -> (&str, &mut Value) + Sync + Send + 'static>>,
+    adapter_ref_mut: Option<Arc<dyn Fn(R, &mut Owner) -> (&str, &mut Value) + Sync + Send + 'static>>,
     /// Adapter ref to owned ref,
     ///
     adapter_ref_owned: Option<Arc<dyn Fn(R, Owner) -> Value + Sync + Send + 'static>>,
@@ -386,7 +407,7 @@ impl<R: Clone, Owner, Value> Clone for AdapterRef<R, Owner, Value> {
     }
 }
 
-impl<Owner: Plugin, Value, ProjectedValue> FieldVTable<Owner, Value, ProjectedValue> {
+impl<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 'static> FieldVTable<Owner, Value, ProjectedValue> {
     /// Creates a new field vtable,
     ///
     pub fn new(
@@ -396,6 +417,8 @@ impl<Owner: Plugin, Value, ProjectedValue> FieldVTable<Owner, Value, ProjectedVa
         push: fn(&mut Owner, Value) -> bool,
         insert_entry: fn(&mut Owner, String, Value) -> bool,
         take: fn(Owner) -> ProjectedValue,
+        encode: fn(Owner::Virtual) -> FieldPacket,
+        decode: fn(Owner::Virtual, FieldPacket) -> anyhow::Result<FieldRef<Owner, Value, ProjectedValue>>,
     ) -> Self {
         Self {
             get_ref: AdapterRef {
@@ -440,8 +463,20 @@ impl<Owner: Plugin, Value, ProjectedValue> FieldVTable<Owner, Value, ProjectedVa
                 adapter_ref_mut: None,
                 adapter_ref_owned: None,
             },
-            // encode: todo!(),
-            // decode: todo!(),
+            encode: AdapterRef {
+                root: encode,
+                adapter: None,
+                adapter_ref: None,
+                adapter_ref_mut: None,
+                adapter_ref_owned: None,
+            },
+            decode: AdapterRef {
+                root: decode,
+                adapter: None,
+                adapter_ref: None,
+                adapter_ref_mut: None,
+                adapter_ref_owned: None,
+            },
         }
     }
 

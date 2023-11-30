@@ -314,11 +314,9 @@ mod tests {
     #[reality(call = test_noop, plugin)]
     pub enum Test3 {
         A {
-            #[reality(not_wire)]
             a: String,
         },
         _B {
-            #[reality(not_wire)]
             b: String,
         },
         #[default]
@@ -346,7 +344,24 @@ mod tests {
     #[test]
     fn test() {
         let _test = Test3::A { a: String::new() };
+
+        let virt = VirtualTest3::new(_test.clone());
+        assert!(virt.a.edit_value(|_, a| {
+            *a = String::from("hello world");
+            true
+        }));
+
+        let encoded = Test3::__encode_field_offset_0(virt);        
+        eprintln!("{:#?}", encoded);
+        assert_eq!("hello world", &bincode::deserialize::<String>(encoded.wire_data.as_ref().unwrap()).unwrap());
+
+        let decoded = Test3::__decode_apply_field_offset_0(VirtualTest3::new(_test), encoded).unwrap();
+        decoded.view_value(|v| {
+            assert_eq!("hello world", v);
+        });
+        assert!(decoded.is_pending());
     }
+
     impl Test3 {
         fn __test1(&self) -> &String {
             struct _Test {
@@ -364,24 +379,6 @@ mod tests {
             }
         }
     }
-    
-    // impl FromStr for Test3 {
-    //     type Err = anyhow::Error;
-    
-    //     fn from_str(s: &str) -> Result<Self, Self::Err> {
-    //         match s {
-    //             "a" => {
-    //                 Ok(Test3::A { a: s.to_string() })
-    //             },
-    //             "b" => {
-    //                 Ok(Test3::B { b: s.to_string() })
-    //             },
-    //             _ => {
-    //                 Err(anyhow::anyhow!("unrecognized input"))
-    //             }
-    //         }
-    //     }
-    // }
     
     impl FromStr for Test {
         type Err = Infallible;

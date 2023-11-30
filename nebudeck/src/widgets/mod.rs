@@ -3,12 +3,17 @@ mod frame_editor;
 mod input;
 
 pub mod prelude {
+    use std::collections::BTreeSet;
     use std::sync::Mutex;
     use std::sync::OnceLock;
+    use std::sync::RwLock;
     use anyhow::anyhow;
     use loopio::engine::EngineHandle;
     use loopio::prelude::Attribute;
+    use loopio::prelude::CacheExt;
+    use loopio::prelude::Decoration;
     use loopio::prelude::Dispatcher;
+    use loopio::prelude::FieldPacket;
     use loopio::prelude::KvpExt;
     use loopio::prelude::Shared;
     use loopio::prelude::ThunkContext;
@@ -24,6 +29,19 @@ pub mod prelude {
 
     // pub use super::button::Button;
     pub use super::input::Input;
+
+    pub struct SectionBody {
+        inner: Vec<fn(&UiFormatter<'_>)>
+    }
+
+    impl UiDisplayMut for SectionBody {
+        fn fmt(&mut self, ui: &UiFormatter<'_>) -> anyhow::Result<()> {
+            for i in self.inner.iter() {
+                i(ui);
+            }
+            Ok(())
+        }
+    }
 
     /// Ui formatter context,
     ///
@@ -44,6 +62,9 @@ pub mod prelude {
         /// Currently available dispatcher,
         ///
         pub disp: Option<Dispatcher<Shared, Attribute>>,
+        /// Currently available decoration,
+        /// 
+        pub decorations: RwLock<OnceLock<Decoration>>,
     }
 
     /// Trait for formatting ui controls for a type w/ a mutable reference,
@@ -70,13 +91,51 @@ pub mod prelude {
 
         /// Takes any pending section show fn and passes it to a function that can format the section,
         /// 
-        pub fn show_section(&self, name: &str, show: fn(&UiFormatter<'_>, Vec<fn(&UiFormatter<'_>)>)) {
+        pub fn show_section(&self, name: &str, show: fn(&UiFormatter<'_>, SectionBody)) {
             if let Ok(mut tc) = self.context_mut() {
                 if let Some((_, s)) = tc.get_mut().unwrap().take_kv::<Vec<fn(&UiFormatter<'_>)>>(name) {
                     drop(tc);
-                    show(self, s);
+                    show(self, SectionBody { inner: s });
                 }
             }
+        }
+
+        /// Pushes a pending change to a label,
+        /// 
+        /// **Note**: If a previous packet is present, it will be replaced by this packet.
+        /// 
+        pub fn push_pending_change(&self, label: &str, packet: FieldPacket) {
+            if let Ok(mut tc) = self.context_mut() {
+                let tc = tc.get_mut().unwrap();
+                // Insert the label to pending changes,
+                {
+                    let mut pending = tc.maybe_write_cache(BTreeSet::new());
+                    pending.insert(label.to_string());
+                }
+                
+                // Insert the new field packet,
+                {
+                    tc.store_kv(label, packet);
+                }
+            }
+        }
+
+        /// Apply func to each pending change,
+        /// 
+        pub fn for_each_pending_change(&self, mut func: impl FnMut(&str, &FieldPacket)) -> usize {
+            if let Ok(tc) = self.context_mut() {
+                let tc = tc.get().unwrap();
+                if let Some(pending) = tc.cached_ref::<BTreeSet<String>>() {
+                    for p in pending.iter() {
+                        if let Some((_, fp)) = tc.fetch_kv::<FieldPacket>(p.as_str()) {
+                            func(p, &fp);
+                        }
+                    }
+
+                    return pending.len();
+                }
+            }
+            0
         }
 
         /// Gets a mutable reference to the underlying thunk context,
