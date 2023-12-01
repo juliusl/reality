@@ -206,6 +206,12 @@ impl UiDisplayMut for ProcessWizard {
         //  Builder from ui formatter?
         // - .section(|ui| { }) => tc.maybe_write_kv(String, Vec<fn(&mut UiFormatter<'_>)>>)
         __ui.push_section("tools", |ui| {
+            // Prepare current frame updates
+            let mut current_frame_updates = FrameUpdates::default();
+            ui.for_each_pending_change(|_, p| {
+                current_frame_updates.0.fields.push(p.clone());
+            });
+
             let mut pending_changes = vec![];
             if let Some(mut cached) = ui
                 .tc
@@ -237,19 +243,40 @@ impl UiDisplayMut for ProcessWizard {
                     // TODO -- ui.push_confirmation(|ui|{ })
                 }
 
-                // if let Ok(mut tc) = ui.context_mut() {
-                //     let tc = tc.get_mut().unwrap();
-                //     // LocalAction.build::<Process>(tc).into_future();
-                // }
-
-                // TODO -- If decorations has an address, then the run button can be enabled
                 if let Ok(deco) = ui.decorations.read() {
                     ui.imgui.text(format!("{:#?}", deco));
-                }
 
-                if let Some(_bg) = ui.eh.lock().unwrap().background() {
-                    if ui.imgui.button("Run") {
-                        // _bg.call(address)
+                    if let Some(address) = deco
+                        .get()
+                        .and_then(|d| d.comment_properties.as_ref())
+                        .and_then(|d| d.get("address"))
+                    {
+                        if let Some(bg) = ui.eh.lock().unwrap().background() {
+                            if let Ok(mut call) = bg.call(address) {
+                                match call.status() {
+                                    loopio::background_work::CallStatus::Enabled => {
+                                        if ui.imgui.button("Run") {
+                                            call.spawn_with_updates(current_frame_updates);
+                                        }
+                                    },
+                                    loopio::background_work::CallStatus::Disabled => {},
+                                    loopio::background_work::CallStatus::Running => {
+                                        ui.imgui.text("Running");
+
+                                        ui.imgui.same_line();
+                                        if ui.imgui.button("Cancel") {
+                                            call.cancel();
+                                        }
+                                    },
+                                    loopio::background_work::CallStatus::Pending => {
+                                        let _ = call.into_foreground().unwrap();
+                                        eprintln!(
+                                            "Background work finished"
+                                        );
+                                    },
+                                }
+                            }
+                        }
                     }
                 }
             }

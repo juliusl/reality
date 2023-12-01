@@ -5,6 +5,8 @@ use bytes::Bytes;
 use reality::prelude::*;
 use serde::{Serialize, Deserialize};
 
+use crate::action::ActionExt;
+
 #[async_trait::async_trait]
 pub trait StdExt {
     /// Find the text content of a file loaded in transient storage under `ResourceKey::with_hash(pathstr)`,
@@ -180,7 +182,7 @@ pub struct Process {
 }
 
 async fn start_process(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let init = tc.initialized::<Process>().await;
+    let init = tc.as_remote_plugin::<Process>().await;
 
     let command = init.env.iter().fold(
         std::process::Command::new(&init.program),

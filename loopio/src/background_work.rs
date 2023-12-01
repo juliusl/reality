@@ -8,9 +8,11 @@ use tokio::select;
 use tokio_util::sync::CancellationToken;
 
 use crate::host::HostEvent;
+use crate::prelude::Action;
 use crate::prelude::Address;
 use crate::prelude::EngineHandle;
 use crate::prelude::Ext;
+use crate::prelude::Process;
 
 /// Background work container,
 ///
@@ -191,6 +193,45 @@ impl BackgroundFuture {
                 let call_output = CallOutput::Spawn(Some(handle.spawn(async move {
                     select! {
                         result = eh.run(address) => result,
+                        _ = cancel.cancelled() => {
+                            Err(anyhow!("Call was cancelled"))
+                        }
+                    }
+                })));
+                self.tc.store_kv(&self.address.to_string(), call_output);
+                CallStatus::Running
+            } else {
+                CallStatus::Disabled
+            }
+        } else {
+            self.status()
+        }
+    }
+
+    /// Spawn the hosted resource w/ frame updates,
+    /// 
+    pub fn spawn_with_updates(&mut self, updates: FrameUpdates) -> CallStatus {
+        if matches!(self.status(), CallStatus::Enabled) {
+            if let Some(eh) = self.tc.cached::<EngineHandle>() {
+                println!("Spawning from background future {}", self.address);
+                let address = self.address.to_string();
+                let handle = self.tc.node.runtime.clone().unwrap();
+
+                self.cancellation = self.tc.cancellation.child_token();
+                let cancel = self.cancellation.clone();
+                let call_output = CallOutput::Spawn(Some(handle.spawn(async move {
+                    let mut resource = eh.hosted_resource(&address).await?;
+
+                    let rk =  resource.plugin_rk();
+                    unsafe {
+                        resource.context_mut().node_mut().await.put_resource::<FrameUpdates>(
+                            updates,
+                            rk.transmute(),
+                        );
+                    }
+
+                    select! {
+                        result = resource.spawn().unwrap() => result?,
                         _ = cancel.cancelled() => {
                             Err(anyhow!("Call was cancelled"))
                         }

@@ -11,6 +11,19 @@ pub trait NewFn {
     fn new(plugin: Self::Inner) -> Self;
 }
 
+// TODO
+// /// Super-trait for virtual plugin types
+// /// 
+// pub trait VirtualPlugin : CallAsync + Send + Sync {
+//     /// Concrete plugin type,
+//     /// 
+//     type Concrete: Plugin;
+
+//     /// Returns a new virtual plugin initialized from the concrete plugin,
+//     /// 
+//     fn new(plugin: Self::Concrete) -> Self;
+// }
+
 /// Allows users to export logic as a simple fn,
 ///
 pub trait Plugin: BlockObject<Shared> + CallAsync + Clone + Default {
