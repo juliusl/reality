@@ -239,6 +239,7 @@ impl StructData {
             let take_helper_fn_ident = format_ident!("__take_field_offset_{}", offset);
             let encode_helper_fn_ident = format_ident!("__encode_field_offset_{}", offset);
             let decode_apply_helper_fn_ident = format_ident!("__decode_apply_field_offset_{}", offset);
+            let filter_packet_helper_fn_ident = format_ident!("__filter_packet_field_offset_{}", offset);
 
             let push_helper_impl = f.vec_of.as_ref().map(|f| {
                 quote_spanned!(f.span()=> 
@@ -363,10 +364,18 @@ impl StructData {
                     }
                 }
             );
-            
-            
 
-
+            let name_lit = f.field_name_lit_str();
+            let filter_packet_helper_impl = quote_spanned!(f.span=> 
+                fn #filter_packet_helper_fn_ident(vp: &#virtual_ident, fp: &FieldPacket) -> anyhow::Result<FieldRef<Self, #ty, #absolute_ty>> {
+                    if fp.field_offset == #offset && fp.field_name == #name_lit {
+                        Ok(vp.#name.clone())
+                    } else {
+                        Err(anyhow::anyhow!("Does not match"))
+                    }
+                }
+            );
+            
             quote_spanned! {f.span=>
                 fn #get_ref_helper_fn_ident(&self) -> (&str, &#absolute_ty) {
                     (#field_ident, #get_fn)
@@ -388,6 +397,7 @@ impl StructData {
                 #insert_entry_helper_impl
                 #encode_helper_impl
                 #decode_helper_impl
+                #filter_packet_helper_impl
             }
         });
 
@@ -405,6 +415,7 @@ impl StructData {
             let vtable_helper_fn_ident = format_ident!("__field_offset_{}_vtable", offset);
             let encode_helper_fn_ident = format_ident!("__encode_field_offset_{}", offset);
             let decode_apply_helper_fn_ident = format_ident!("__decode_apply_field_offset_{}", offset);
+            let filter_packet_helper_fn_ident = format_ident!("__filter_packet_field_offset_{}", offset);
 
             quote_spanned! {f.span=>
                 fn #vtable_helper_fn_ident() -> &'static FieldVTable<#ident, #ty, #absolute_ty>
@@ -421,6 +432,7 @@ impl StructData {
                         Self::#take_helper_fn_ident,
                         Self::#encode_helper_fn_ident,
                         Self::#decode_apply_helper_fn_ident,
+                        Self::#filter_packet_helper_fn_ident,
                     ))
                 }
             }
@@ -448,8 +460,61 @@ impl StructData {
             }
         });
 
+        let on_read_fields = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
+            let offset = &f.offset;
+            let name = &f.name;
+            let ty = f.field_ty();
+
+            quote_spanned!(f.span=>
+                impl #impl_generics OnReadField<#offset> for #ident #ty_generics #where_clause {
+                    type FieldType = #ty;
+            
+                    #[inline]
+                    fn read(virt: &Self::Virtual) -> &FieldRef<Self, Self::FieldType, Self::ProjectedType> {
+                        &virt.#name
+                    }
+                }
+            )
+        });
+
+        let on_write_fields = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
+            let offset = &f.offset;
+            let name = &f.name;
+
+            quote_spanned!(f.span=>
+                impl #impl_generics OnWriteField<#offset> for #ident #ty_generics #where_clause {
+                    #[inline]
+                    fn write(virt: &mut Self::Virtual) -> &mut FieldRef<Self, Self::FieldType, Self::ProjectedType> {
+                        &mut virt.#name
+                    }
+                }
+            )
+        });
 
         let virt_vis = &self.vis;
+
+        let set_pending_impl = self.fields.iter().filter(|f| self.replace.is_none() && !f.ignore && !f.not_wire).map(|f| {
+            let name = &f.name;
+            let name_lit = f.field_name_lit_str();
+
+            quote_spanned!(f.span=>
+                #name_lit => {
+                    self.#name.pending();
+                    true
+                }
+            )
+        });
+
+        let list_pending_impl = self.fields.iter().filter(|f| self.replace.is_none() && !f.ignore && !f.not_wire).map(|f| {
+            let name = &f.name;
+            let name_lit = f.field_name_lit_str();
+
+            quote_spanned!(f.span=>
+                if self.#name.is_pending() {
+                    results.push(#name_lit);
+                }
+            )
+        });
 
         let virtual_ref = quote_spanned!(self.span=>
             /// Virtual interface over plugin,
@@ -459,6 +524,21 @@ impl StructData {
             #virt_vis struct #virtual_ident {
                 owner: std::sync::Arc<tokio::sync::watch::Sender<#ident>>,
                 #(#vtable_field_impl)*
+            }
+
+            impl FieldRefController for #virtual_ident {
+                fn set_pending(&mut self, field_name: &str) -> bool {
+                    match field_name {
+                        #(#set_pending_impl),*
+                        _ => false
+                    }
+                }
+
+                fn list_pending(&self) -> Vec<&str> {
+                    let mut results = vec![];
+                    #(#list_pending_impl)*
+                    results
+                }
             }
 
             impl #virtual_ident {
@@ -526,10 +606,12 @@ impl StructData {
                 #(#vtable_field_helpers_impl)*
             }
 
+            #(#on_read_fields)*
+            #(#on_write_fields)*
+
             #virtual_ref
         )
     }
-
 
     /// Implements visit traits,
     /// 
@@ -632,8 +714,60 @@ impl StructData {
             )
         });
 
+        let fields = self.fields.iter().fold(HashMap::new(), |mut acc, f| {
+            let key = (&f.ty, f.field_ty());
+
+            if !acc.contains_key(&key) {
+                acc.insert(key, vec![f.clone()]);
+            } else if let Some(list) = acc.get_mut(&key) {
+                list.push(f.clone());
+            }
+
+            acc
+        });
+
+        let virtual_visit_impls = fields.iter().map(|((absolute_ty, ty), fields)| {
+            let owner = &self.name;
+
+            let packet_routes = fields.iter().filter(|f| !f.ignore && !f.not_wire).map(|f| {
+                let offset = &f.offset;
+
+                quote_spanned!(f.span=>
+                    routes.route::<#offset>()
+                )
+            });
+
+            let packet_routes_mut = fields.iter().filter(|f| !f.ignore && !f.not_wire).map(|f| {
+                let offset = &f.offset;
+
+                quote_spanned!(f.span=>
+                    visit(<Self as OnWriteField::<#offset>>::write(virt));
+                )
+            });
+
+            quote!(
+                impl #impl_generics VisitVirtual<#ty, #absolute_ty> for #owner #ty_generics #where_clause {
+                    fn visit_fields<'a>(routes: &'a PacketRoutes<Self>) -> Vec<&'a FieldRef<Self, #ty, #absolute_ty>> {
+                        vec![
+                            #(#packet_routes),*
+                        ]
+                    }
+                }
+
+                impl #impl_generics VisitVirtualMut<#ty, #absolute_ty> for #owner #ty_generics #where_clause {
+                    fn visit_fields_mut(virt: &mut Self::Virtual, mut visit: impl FnMut(&mut FieldRef<Self, #ty, #absolute_ty>)) {
+                        #(#packet_routes_mut)*
+                    }
+                }
+            )
+        });
+
+
+
         quote_spanned!(self.span=> 
             #(#visit_impls)*
+
+            #(#virtual_visit_impls)*
         )
     }
 
@@ -792,8 +926,8 @@ impl StructData {
 
         let (impl_generics, _, where_clause) = &generics.split_for_impl();
 
-        let on_load = self.on_load.clone().map(|p| quote!(#p(storage).await;)).unwrap_or_default();
-        let on_unload = self.on_unload.clone().map(|p| quote!(#p(storage).await;)).unwrap_or_default();
+        let on_load = self.on_load.clone().map(|p| quote!(#p(storage, rk).await;)).unwrap_or_default();
+        let on_unload = self.on_unload.clone().map(|p| quote!(#p(storage, rk).await;)).unwrap_or_default();
         let on_completed = self.on_completed.clone().map(|p| quote!(#p(storage))).unwrap_or(quote!(None));
 
         let ext = self.fields.iter().filter(|f| f.ext && self.replace.is_none()).map(|f| {
@@ -940,6 +1074,14 @@ impl StructData {
                 format_ident!("Virtual{}", ident)
             };
 
+            let route_fields = self.fields.iter().filter(|f| self.replace.is_none() && !f.ignore && !f.not_wire).map(|f| {
+                let offset = &f.offset;
+              
+                quote_spanned!(f.span=>
+                    router.route_one::<#offset>()
+                )
+            });
+
             quote!(
             impl #_impl_generics Plugin for #name #ty_generics #where_clause  {
                 type Virtual = #virtual_ident;
@@ -947,6 +1089,12 @@ impl StructData {
                 #[allow(unused_variables)]
                 fn sync(&mut self, context: &ThunkContext) {
                     #(#synchronizable)*
+                }
+
+                fn listen_one(router: std::sync::Arc<PacketRouter<Self>>) -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> {
+                    Box::pin(async move {
+                        let _ = tokio::join!(#(#route_fields),*);
+                    })
                 }
             }
 
@@ -1010,11 +1158,11 @@ impl StructData {
         let object_type_trait = quote_spanned!(self.span=>
             #[async_trait]
             impl #impl_generics BlockObject<Storage> for #name #ty_generics #where_clause {
-                async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>) {
+                async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>, rk: Option<ResourceKey<Attribute>>) {
                     #on_load
                 }
 
-                async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>) {
+                async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>, rk: Option<ResourceKey<Attribute>>) {
                     #on_unload
                 }
 

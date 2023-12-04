@@ -32,12 +32,21 @@ pub mod prelude {
     pub use super::visit::FieldOwned;
     pub use super::visit::FieldPacket;
     pub use super::visit::FieldPacketType;
+    pub use super::visit::FrameListener;
     pub use super::visit::Frame;
     pub use super::visit::FrameUpdates;
     pub use super::visit::SetField;
     pub use super::visit::ToFrame;
     pub use super::visit::Visit;
     pub use super::visit::VisitMut;
+    pub use super::visit::OnReadField;
+    pub use super::visit::OnWriteField;
+    pub use super::visit::PacketRoutes;
+    pub use super::visit::PacketRouter;
+    pub use super::visit::FieldKey;
+    pub use super::visit::FieldIndex;
+    pub use super::visit::VisitVirtual;
+    pub use super::visit::VisitVirtualMut;
 
     /// Returns fields for an attribute type,
     ///
@@ -143,14 +152,14 @@ mod tests {
         _test2: Test2,
     }
 
-    async fn test_noop(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    async fn test_noop(_tc: &mut ThunkContext) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Called when loading this object,
     ///
     #[allow(dead_code)]
-    async fn on_load<S>(storage: AsyncStorageTarget<S>)
+    async fn on_load<S>(storage: AsyncStorageTarget<S>, _: Option<ResourceKey<Attribute>>)
     where
         S: StorageTarget + Send + Sync + 'static,
     {

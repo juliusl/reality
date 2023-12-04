@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use async_stream::stream;
 use futures_util::Future;
 use futures_util::FutureExt;
 
@@ -23,7 +24,7 @@ use reality::prelude::*;
 /// Struct for a top-level node,
 ///
 #[derive(Reality, Default)]
-#[reality(call = debug_op, plugin)]
+#[reality(call = run_operation, plugin)]
 pub struct Operation {
     /// Name of this operation,
     ///
@@ -47,20 +48,32 @@ pub struct Operation {
     node: ResourceKey<reality::attributes::Node>,
 }
 
-async fn debug_op(tc: &mut ThunkContext) -> anyhow::Result<()> {
+/// **Main** entrypoint for operations defined w/ .runmd. Will call plugins in the order their 
+/// extensions were defined under the operation node.
+/// 
+async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let mut init = tc.initialized::<Operation>().await;
     init.bind(tc.clone());
-    // eprintln!("Found operation {:?}", init);
-    // let block = tc.parsed_block().await.unwrap_or_default();
-    // if let Some(node) = block.nodes.get(&init.node) {
-    //     // eprintln!("Found node.....{:?}", init.node.transmute::<Attribute>());
-    //     // eprintln!("{:#?}", node.doc_headers.get(&init.node.transmute()));
-    //     // eprintln!("{:#?}", node.comment_properties.get(&init.node.transmute()));
-    // }
 
     let node = tc.node().await;
-    let _tc = node
-        .stream_attributes()
+    
+    let parsed = node.current_resource::<ParsedAttributes>(ResourceKey::root());
+    
+    // Create a stream so that we can await operations inside of the try_fold
+    let stream = stream! {
+        if let Some(parsed) =  parsed {
+            // yield parsed.node;
+            
+            for p in parsed.parsed() {
+                yield p;
+            }
+        }
+    };
+
+    // **NOTE** It's important to drop this reference here since we may take a reference to this node 
+    // inside of a plugin
+    drop(node);
+    let _tc = stream
         .map(Ok)
         .try_fold(tc.clone(), |tc, attr| async move {
             // eprintln!("-- should call -- {:?}", attr);
@@ -70,6 +83,7 @@ async fn debug_op(tc: &mut ThunkContext) -> anyhow::Result<()> {
                 let node = tc.node().await;
                 let mut tc = tc.clone();
                 if let Some(func) = node.current_resource::<ThunkFn>(attr.transmute()) {
+                    drop(node);
                     tc.attribute = attr;
                     match (func)(tc.clone()) {
                         CallOutput::Spawn(Some(jh)) => {
@@ -80,8 +94,14 @@ async fn debug_op(tc: &mut ThunkContext) -> anyhow::Result<()> {
                         CallOutput::Skip | CallOutput::Spawn(None) | CallOutput::Update(None) => {}
                     }
                 } else {
-                    // TODO -- The expectation is that each of these attributes has a thunk fn
-                    // For now make this very loud to fix any edge cases
+                    //
+                    // **BACKGROUND**
+                    // For now make this very loud to fix any edge cases that may exist when parsing runmd
+                    // If an attribute was added it meant that the attribute was successfully parsed, if that was the case
+                    // then during compilation a thunk fn should exist for this extension.
+                    // This indicates that an edge case was not handled between either the lexer -> parser (parse)
+                    // or parser -> engine (compile) phases.
+                    //
                     eprintln!("ERROR!! ======== NO THUNK FN {:?}", attr);
                 }
 

@@ -1,4 +1,5 @@
 use std::cell::OnceCell;
+use std::cell::RefCell;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
@@ -333,6 +334,7 @@ impl DesktopApp for ImguiMiddleware {
                             .expect("should be bound to an engine"),
                     ),
                     decorations: std::sync::RwLock::new(OnceLock::new()),
+                    frame_updates: RefCell::new(FrameUpdates::default()),
                 };
 
                 // ----------------------------------------

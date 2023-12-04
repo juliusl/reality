@@ -1,14 +1,31 @@
+use std::io::IntoInnerError;
+use std::marker::PhantomData;
+use std::ops::Index;
+use std::ops::IndexMut;
 use std::str::FromStr;
+use std::sync::Arc;
+use std::sync::OnceLock;
 
+use anyhow::anyhow;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio::sync::watch::Ref;
+use tokio::sync::Mutex;
 use tracing::error;
 
 use crate::Attribute;
 use crate::AttributeType;
+use crate::Dispatcher;
+use crate::FieldRef;
+use crate::FieldRefController;
+use crate::NewFn;
+use crate::OnParseField;
+use crate::Plugin;
 use crate::ResourceKey;
 use crate::Shared;
+use crate::StorageTarget;
+use crate::WireClient;
 
 /// Field access,
 ///
@@ -69,30 +86,168 @@ pub struct FieldOwned<T> {
 #[derive(Clone, Default, Debug)]
 pub struct Frame {
     /// TODO: If set, acts as the receiver for any field packets,
-    /// 
+    ///
     pub recv: FieldPacket,
     /// Packets for all fields,
-    /// 
-    pub fields: Vec<FieldPacket>
+    ///
+    pub fields: Vec<FieldPacket>,
 }
 
 /// Wrapper struct over frames meant to update a block object,
-/// 
+///
 /// TODO: Could add filters and such
-/// 
-#[derive(Clone, Default, Debug)]
-pub struct FrameUpdates(pub Frame);
+///
+#[derive(Clone, Debug, Default)]
+pub struct FrameUpdates {
+    pub frame: Frame,
+}
+
+/// Contains sync primitives for handling changes via framing,
+///
+/// A frame is a collection of field packets. Field packets can be applied to Plugin types to mutate field values.
+///
+/// # Protocol - Applying Packets
+///
+/// To apply a field packet, first the packet must be decoded by the virtual plugin into a field reference. The change
+/// is simulated w/ the virtual plugin and if successful a field reference is returned.
+///
+/// This field reference represents a field that has a pending change. How the field reference is handled next is up
+/// to the owner of the field reference. If the field reference is committed, it **MUST** mean that the value has been validated,
+/// and that the value will be in use by the owner.
+///
+/// # Protocol - Sending packets
+///
+/// To broadcast a packet to a listener, first an update w/ the virtual plugin is applied. This results in a field
+/// reference w/ the updated value. The field reference can then be encoded to a field packet and transmitted.
+///
+pub struct FrameListener<P: Plugin, const BUFFER_LEN: usize = 1>
+where
+    P::Virtual: NewFn<Inner = P>,
+{
+    /// Virtual reference,
+    ///
+    virt: Arc<tokio::sync::watch::Sender<P::Virtual>>,
+    /// Packet receiver,
+    ///
+    rx_packets: Arc<Mutex<tokio::sync::mpsc::Receiver<FieldPacket>>>,
+    /// Packet transmission handle,
+    ///
+    tx_packets: Arc<tokio::sync::mpsc::Sender<FieldPacket>>,
+}
+
+impl<P, const BUFFER_LEN: usize> Default for FrameListener<P, BUFFER_LEN> 
+where
+    P: Plugin,
+    P::Virtual: NewFn<Inner = P>, 
+{
+    fn default() -> Self {
+        FrameListener::new(P::default())
+    }
+}
+
+impl<P, const BUFFER_LEN: usize> Clone for FrameListener<P, BUFFER_LEN>
+where
+    P: Plugin,
+    P::Virtual: NewFn<Inner = P>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            virt: self.virt.clone(),
+            rx_packets: self.rx_packets.clone(),
+            tx_packets: self.tx_packets.clone(),
+        }
+    }
+}
+
+impl<P: Plugin> FrameListener<P>
+where
+    P::Virtual: NewFn<Inner = P>,
+{   
+    /// Returns a new frame listener w/ a specific buffer size,
+    /// 
+    pub fn with_buffer<const BUFFER_LEN: usize>(init: P) -> FrameListener<P, BUFFER_LEN> {
+        FrameListener::<P, BUFFER_LEN>::new(init)
+    }
+}
+
+impl<P: Plugin, const BUFFER_LEN: usize> FrameListener<P, BUFFER_LEN>
+where
+    P::Virtual: NewFn<Inner = P>,
+{
+    /// Returns a new frame listener bounded by producer size,
+    ///
+    pub fn new(init: P) -> FrameListener<P, BUFFER_LEN> {
+        let (wtx, _) = tokio::sync::watch::channel(P::Virtual::new(init));
+        let (tx, rx) = tokio::sync::mpsc::channel(BUFFER_LEN);
+
+        FrameListener {
+            virt: Arc::new(wtx),
+            rx_packets: Arc::new(Mutex::new(rx)),
+            tx_packets: Arc::new(tx),
+        }
+    }
+
+    /// Returns the max allowed producers,
+    ///
+    pub const fn buffer_len(&self) -> usize {
+        BUFFER_LEN
+    }
+
+    /// Returns a channel to send field packets,
+    /// 
+    pub fn frame_tx(&self) -> Arc<tokio::sync::mpsc::Sender<FieldPacket>> {
+        self.tx_packets.clone()
+    }
+
+    /// Subscribe to changes to the virtual plugin,
+    ///
+    pub fn subscribe_virtual(&self) -> tokio::sync::watch::Receiver<P::Virtual> {
+        self.virt.subscribe()
+    }
+
+    /// Borrows a reference to the virtual plugin,
+    ///
+    pub fn borrow_virtual(&self) -> Ref<'_, P::Virtual> {
+        self.virt.borrow()
+    }
+
+    /// Updates the virtual plugin, notifying listeners if update returns true,
+    /// 
+    /// Returns true if a notification should/will be sent to listeners,
+    /// 
+    pub fn update_virtual(&self, update: impl FnOnce(&mut P::Virtual) -> bool) -> bool {
+        self.virt.send_if_modified(update)
+    }
+
+    /// Returns a permit for transmitting a field packet when,
+    ///
+    pub async fn new_tx(&self) -> anyhow::Result<tokio::sync::mpsc::Permit<'_, FieldPacket>> {
+        let permit = self.tx_packets.reserve().await?;
+        Ok(permit)
+    }
+
+    /// Listens for the next packet,
+    ///
+    pub async fn listen(&mut self) -> anyhow::Result<FieldPacket> {
+        let mut rx = self.rx_packets.lock().await;
+
+        match rx.recv().await {
+            Some(packet) => Ok(packet),
+            None => Err(anyhow!("Channel is closed")),
+        }
+    }
+}
 
 /// Converts a type to a list of packets,
 ///
-pub trait ToFrame : AttributeType<Shared> {
+pub trait ToFrame: AttributeType<Shared> {
     /// Returns the current type as a Frame,
     ///
     fn to_frame(&self, key: ResourceKey<Attribute>) -> Frame;
 
     /// Returns the current type as a Frame w/ wire data set,
-    /// 
-    fn to_wire_frame(&self, key: ResourceKey<Attribute>) -> Frame 
+    ///
+    fn to_wire_frame(&self, key: ResourceKey<Attribute>) -> Frame
     where
         Self: Sized + Serialize,
     {
@@ -102,10 +257,10 @@ pub trait ToFrame : AttributeType<Shared> {
     }
 
     /// Returns an empty receiver packet,
-    /// 
-    fn receiver_packet(&self, key: ResourceKey<Attribute>) -> FieldPacket 
+    ///
+    fn receiver_packet(&self, key: ResourceKey<Attribute>) -> FieldPacket
     where
-        Self: Sized
+        Self: Sized,
     {
         FieldPacket {
             data: None,
@@ -353,6 +508,32 @@ pub trait VisitMut<T> {
     fn visit_mut<'a: 'b, 'b>(&'a mut self) -> Vec<FieldMut<'b, T>>;
 }
 
+/// Trait for visiting fields references on the virtual reference,
+/// 
+pub trait VisitVirtual<T, Projected> 
+where
+    Self: Plugin + 'static,
+    T: 'static,
+    Projected: 'static
+{
+    /// Returns a vector of field references from the virtual plugin,
+    /// 
+    fn visit_fields<'a>(virt: &'a PacketRoutes<Self>) -> Vec<&'a FieldRef<Self, T, Projected>>;
+}
+
+/// Trait for visiting fields references on the virtual reference,
+/// 
+pub trait VisitVirtualMut<T, Projected> 
+where
+    Self: Plugin + 'static,
+    T: 'static,
+    Projected: 'static
+{
+    /// Returns a vector of mutable field references from the virtual plugin,
+    /// 
+    fn visit_fields_mut(routes: &mut Self::Virtual, visit: impl FnMut(&mut FieldRef<Self, T, Projected>));
+}
+
 /// Trait for setting a field,
 ///
 pub trait SetField<T> {
@@ -378,12 +559,251 @@ where
     }
 }
 
+/// Wrapper over the field offset and type so that the compiler can match by offset,
+///
+pub struct FieldIndex<const OFFSET: usize, T>(pub PhantomData<T>);
+
+/// Wraps a field offset into a pointer struct,
+///
+/// Used to convert into a field index.
+///
+pub struct FieldKey<const OFFSET: usize>;
+
+/// Wrapper over an inner virtual plugin providing an index operation for
+/// finding packet routes.
+///
+pub struct PacketRoutes<P: Plugin> {
+    /// Inner virtual plugin,
+    ///
+    pub inner: P::Virtual,
+}
+
+/// Struct for starting routing tasks,
+///
+pub struct PacketRouter<P, S = Shared>
+where
+    P: Plugin,
+    S: StorageTarget + Send + Sync + 'static,
+{
+    /// Inner virtual plugin,
+    ///
+    pub routes: PacketRoutes<P>,
+    /// Dispatcher,
+    ///
+    pub dispatcher: OnceLock<Dispatcher<S, FrameUpdates>>,
+    /// Broadcast channel for forwarding packets to the dispatcher,
+    ///
+    pub tx: Arc<tokio::sync::broadcast::Sender<FieldPacket>>,
+}
+
+impl<P, S> PacketRouter<P, S>
+where
+    P: Plugin,
+    S: StorageTarget + Send + Sync + 'static,
+{
+    /// Creates a new packet router,
+    ///
+    pub fn new() -> Self 
+    where
+        P::Virtual: NewFn<Inner = P>
+    {
+        let len = P::default().to_frame(ResourceKey::new()).fields.len();
+
+        let (tx, _rx) = tokio::sync::broadcast::channel(usize::max(len, 1));
+
+        Self {
+            routes: PacketRoutes::new(P::default()),
+            tx: Arc::new(tx),
+            dispatcher: OnceLock::new(),
+        }
+    }
+
+    /// Routes a single packet to OFFSET,
+    ///
+    /// Returns Ok(()) if the packet was received and dispatched successfully, otherwise
+    /// returns an error.
+    ///
+    pub async fn route_one<const OFFSET: usize>(&self) -> anyhow::Result<()>
+    where
+        P: OnWriteField<OFFSET> + 
+            OnReadField<OFFSET>
+            + OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>
+            + Plugin,
+        P::Virtual: NewFn<Inner = P>,
+    {
+        if self.dispatcher.get().is_some() {
+            let mut rx = self.tx.clone().subscribe();
+
+            let next = rx.recv().await?;
+
+            self.try_route(next).await?;
+
+            Ok(())
+        } else {
+            Err(anyhow!("Not bound to a dispatcher"))
+        }
+    }
+
+    /// Tries to route the packet to field at OFFSET,
+    ///
+    /// If the packet can be decoded and applied, and a change was applied, a dispatch
+    /// is queued that pushes the update to frame updates.
+    ///
+    pub async fn try_route<const OFFSET: usize>(&self, packet: FieldPacket) -> anyhow::Result<()>
+    where
+        P: OnReadField<OFFSET>
+            + OnWriteField<OFFSET>
+            + OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>
+            + Plugin,
+        P::Virtual: NewFn<Inner = P>,
+    {
+        let field_ref = self.routes.route();
+
+        if let Some(mut dispatcher) = self.dispatcher.get().cloned() {
+            field_ref.filter_packet(&packet)?;
+
+            let applied = field_ref.decode_and_apply(packet)?;
+
+            if applied.is_pending() {
+                dispatcher.queue_dispatch_mut(move |f| {
+                    let fp = applied.encode();
+                    f.frame.fields.push(fp);
+                });
+                Ok(())
+            } else {
+                Err(anyhow!("No changes"))
+            }
+        } else {
+            Err(anyhow!("Dispatcher is not initialized"))
+        }
+    }
+}
+
+impl<P: Plugin> PacketRoutes<P> {
+    /// Creates a new packet routes interface,
+    /// 
+    pub fn new(inner: P) -> Self 
+    where
+        P::Virtual: NewFn<Inner = P>
+    {
+        PacketRoutes {
+            inner: P::Virtual::new(inner),
+        }
+    }
+
+    pub fn apply_pending_list(&mut self, list: &[&str]) {
+        for l in list {
+            self.inner.set_pending(&l);
+        }
+    }
+
+    /// Returns a reference to a field reference for the field at OFFSET,
+    ///
+    pub fn route<const OFFSET: usize>(
+        &self,
+    ) -> &FieldRef<
+        P,
+        <P as OnReadField<OFFSET>>::FieldType,
+        <P as OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>>::ProjectedType,
+    >
+    where
+        P: OnReadField<OFFSET>
+            + OnWriteField<OFFSET>
+            + OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>
+            + Plugin,
+    {
+        &self[FieldKey::<OFFSET>.into()]
+    }
+
+
+    pub fn route_mut<'a: 'b, 'b, const OFFSET: usize>(
+        &'a mut self,
+    ) -> &'b mut FieldRef<
+        P,
+        <P as OnReadField<OFFSET>>::FieldType,
+        <P as OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>>::ProjectedType,
+    >
+    where
+        P: OnReadField<OFFSET> + OnWriteField<OFFSET> + 
+            OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>
+            + Plugin,
+    {
+        &mut self[FieldKey::<OFFSET>.into()]
+    }
+}
+
+impl<const OFFSET: usize, P, T> IndexMut<FieldIndex<OFFSET, T>> for PacketRoutes<P>
+where
+    T: Send + Sync + 'static,
+    P: OnReadField<OFFSET, FieldType = T> + OnWriteField<OFFSET, FieldType = T> + OnParseField<OFFSET, T> + Plugin,
+{
+    // type Output = FieldRef<P, T, <P as OnParseField<OFFSET, T>>::ProjectedType>;
+
+    // #[inline]
+    // fn index(&self, _: FieldIndex<OFFSET, T>) -> &Self::Output {
+    //     P::read(&self.inner)
+    // }
+
+    fn index_mut(&mut self, _: FieldIndex<OFFSET, T>) -> &mut Self::Output {
+        P::write(&mut self.inner)
+    }
+}
+
+impl<const OFFSET: usize, P, T> Index<FieldIndex<OFFSET, T>> for PacketRoutes<P>
+where
+    T: Send + Sync + 'static,
+    P: OnReadField<OFFSET, FieldType = T> + OnWriteField<OFFSET, FieldType = T> + OnParseField<OFFSET, T> + Plugin,
+{
+    type Output = FieldRef<P, T, <P as OnParseField<OFFSET, T>>::ProjectedType>;
+
+    #[inline]
+    fn index(&self, _: FieldIndex<OFFSET, T>) -> &Self::Output {
+        P::read(&self.inner)
+    }
+}
+
+impl<const OFFSET: usize, T> From<FieldKey<OFFSET>> for FieldIndex<OFFSET, T> {
+    fn from(_: FieldKey<OFFSET>) -> Self {
+        FieldIndex(PhantomData)
+    }
+}
+
+/// Trait for returning field references by offset,
+///
+pub trait OnReadField<const OFFSET: usize>
+where
+    Self: Plugin + OnParseField<OFFSET, <Self as OnReadField<OFFSET>>::FieldType>,
+{
+    /// The field type being read,
+    ///
+    type FieldType: Send + Sync + 'static;
+
+    /// Reads a field reference from this type,
+    ///
+    fn read(virt: &Self::Virtual) -> &FieldRef<Self, Self::FieldType, Self::ProjectedType>;
+}
+
+/// Trait for returning mutable field references by offset,
+///
+pub trait OnWriteField<const OFFSET: usize>
+where
+    Self: Plugin + OnReadField<OFFSET> + OnParseField<OFFSET, <Self as OnReadField<OFFSET>>::FieldType>,
+{
+    /// Writes to a field reference from this type,
+    ///
+    fn write(virt: &mut Self::Virtual) -> &mut FieldRef<Self, Self::FieldType, Self::ProjectedType>;
+}
+
 #[allow(unused_imports)]
 mod tests {
-    use std::sync::OnceLock;
+    use std::{
+        ops::Index,
+        sync::{Arc, OnceLock},
+        time::Duration,
+    };
 
     use super::FieldMut;
-    use crate::prelude::*;
+    use crate::{prelude::*, FieldKey, FrameListener, PacketRoutes};
 
     pub mod reality {
         pub use crate::*;
@@ -392,8 +812,12 @@ mod tests {
         }
     }
 
+    use anyhow::anyhow;
+    use async_stream::stream;
     use async_trait::async_trait;
+    use futures_util::{pin_mut, StreamExt};
     use serde::Serialize;
+    use tokio::{join, time::Instant};
 
     #[derive(Reality, Clone, Serialize, Default)]
     #[reality(call=test_noop, plugin)]
@@ -446,5 +870,105 @@ mod tests {
         let packet = crate::attributes::visit::FieldPacket::new_data(String::from("Hello World"));
         let packet = packet.route(0, None).into_wire::<String>();
         println!("{:?}", packet.wire_data);
+    }
+
+    #[tokio::test]
+    async fn test_frame_listener() {
+        let mut _frame_listener = FrameListener::with_buffer::<1>(Test {
+            name: String::from("cool name"),
+            other: String::from("hello other world"),
+        });
+
+        let tx = _frame_listener.borrow_virtual().name.clone().start_tx();
+
+        let field_ref = tx
+            .next(|f| {
+                assert!(f.edit_value(|_, v| {
+                    *v = String::from("really cool name");
+                    true
+                }));
+
+                Ok(f)
+            })
+            .finish()
+            .unwrap();
+
+        let packet = field_ref.encode();
+
+        let permit = _frame_listener.new_tx().await.unwrap();
+        permit.send(packet);
+
+        let next = _frame_listener.listen().await.unwrap();
+        eprintln!("{:#?}", next);
+        ()
+    }
+
+    #[tokio::test]
+    async fn test_frame_router() {
+        // Create a new node
+        let node = Shared::default().into_thread_safe_with(tokio::runtime::Handle::current());
+
+        // Simulate a thunk context being used
+        let mut tc: ThunkContext = node.into();
+
+        // Create a new wire server/client for this plugin Test
+        let server = WireServer::<Test>::new(&mut tc).await.unwrap();
+
+        tokio::spawn(server.clone().start());
+
+        let client = server.clone().new_client();
+
+        // client.queue_modify(|t| {
+        //     t.name.edit_value(|_, n| {
+        //         *n = String::from("hello world cool test 2");
+        //         true
+        //     });
+        //     Ok(t.name.encode())
+        // });
+
+        client.try_borrow_modify(|t| {
+            t.name.edit_value(|_, n| {
+                *n = String::from("hello world cool test 2");
+                true
+            });
+            Ok(t.name.encode())
+        }).unwrap();
+
+        // Simulate a concurrent process starting up subsequently
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Simulate receiving changes on thunk execution
+        let test = Remote.create::<Test>(&mut tc).await;
+
+        test.to_virtual().name.view_value(|v| {
+            assert_eq!("hello world cool test 2", v);
+        });
+
+        // client.queue_modify(move |t| {
+        //     t.name.edit_value(move |_, n| {
+        //         *n = String::from("hello world cool test 3");
+        //         true
+        //     });
+        //     Ok(t.name.encode())
+        // });
+
+        client.try_borrow_modify(|t| {
+            t.name.edit_value(|_, n| {
+                *n = String::from("hello world cool test 3");
+                true
+            });
+            Ok(t.name.encode())
+        }).unwrap();
+        
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Simulate receiving changes on thunk execution
+        let test = Remote.create::<Test>(&mut tc).await;
+
+        test.to_virtual().name.view_value(|v| {
+            assert_eq!("hello world cool test 3", v);
+        });
+
+        ()
     }
 }

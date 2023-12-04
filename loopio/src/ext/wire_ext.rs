@@ -5,10 +5,15 @@ use std::sync::OnceLock;
 use anyhow::anyhow;
 use futures_util::Stream;
 use reality::prelude::*;
+use reality::FrameListener;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio::select;
+use tokio::sync::broadcast::error::SendError;
 use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Sender;
+use tracing::debug;
+use tracing::error;
 use tracing::info;
 
 use crate::prelude::Action;
@@ -82,7 +87,7 @@ async fn enable_wire_bus(tc: &mut ThunkContext) -> anyhow::Result<()> {
                             attr.transmute(),
                         );
                 }
-            };
+            }
         }
         Ok(())
     } else {

@@ -556,6 +556,13 @@ impl<S: StorageTarget> AttributeParser<S> {
             .insert(object_ty.ident.to_string(), object_ty);
     }
 
+    pub fn add_object_type_with(&mut self, ident: &str, object_ty: impl Into<BlockObjectType<S>>) {
+        let object_ty = object_ty.into();
+        debug!("Enabling object type {}", object_ty.ident);
+        self.block_object_types
+            .insert(ident.to_string(), object_ty);
+    }
+
     /// Adds an attribute type to the parser and returns self,
     ///
     pub fn with_type<C>(&mut self) -> &mut Self
@@ -907,7 +914,8 @@ where
                 storage.drain_dispatch_queues();
             }
 
-            handler.on_load(namespace).await;
+            // Extension has been loaded to a namespace
+            handler.on_load(namespace, parser.attributes.last().copied()).await;
             parser.handlers.push(handler);
 
             // Drain any dispatches before trying to load the rest of the resources

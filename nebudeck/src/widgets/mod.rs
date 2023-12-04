@@ -3,6 +3,7 @@ mod frame_editor;
 mod input;
 
 pub mod prelude {
+    use std::cell::RefCell;
     use std::collections::BTreeSet;
     use std::sync::Mutex;
     use std::sync::OnceLock;
@@ -14,6 +15,7 @@ pub mod prelude {
     use loopio::prelude::Decoration;
     use loopio::prelude::Dispatcher;
     use loopio::prelude::FieldPacket;
+    use loopio::prelude::FrameUpdates;
     use loopio::prelude::KvpExt;
     use loopio::prelude::Shared;
     use loopio::prelude::ThunkContext;
@@ -65,6 +67,9 @@ pub mod prelude {
         /// Currently available decoration,
         /// 
         pub decorations: RwLock<OnceLock<Decoration>>,
+        /// Current frame updates,
+        /// 
+        pub frame_updates: RefCell<FrameUpdates>,
     }
 
     /// Trait for formatting ui controls for a type w/ a mutable reference,
@@ -91,11 +96,11 @@ pub mod prelude {
 
         /// Takes any pending section show fn and passes it to a function that can format the section,
         /// 
-        pub fn show_section(&self, name: &str, show: fn(&UiFormatter<'_>, SectionBody)) {
+        pub fn show_section(&self, name: &str, show: fn(&str, &UiFormatter<'_>, SectionBody)) {
             if let Ok(mut tc) = self.context_mut() {
                 if let Some((_, s)) = tc.get_mut().unwrap().take_kv::<Vec<fn(&UiFormatter<'_>)>>(name) {
                     drop(tc);
-                    show(self, SectionBody { inner: s });
+                    show(name, self, SectionBody { inner: s });
                 }
             }
         }
@@ -136,6 +141,49 @@ pub mod prelude {
                 }
             }
             0
+        }
+
+        /// Shows the call button if applicable,
+        /// 
+        pub fn show_call_button(&self) {
+            if let Ok(deco) = self.decorations.read() {
+                self.imgui.text(format!("{:#?}", deco));
+
+                if let Some(address) = deco
+                    .get()
+                    .and_then(|d| d.comment_properties.as_ref())
+                    .and_then(|d| d.get("address"))
+                {
+                    if let Some(bg) = self.eh.lock().unwrap().background() {
+                        if let Ok(mut call) = bg.call(address) {
+                            match call.status() {
+                                loopio::background_work::CallStatus::Enabled => {
+                                    if self.imgui.button("Run") {
+                                        call.spawn_with_updates(
+                                            self.frame_updates.replace(FrameUpdates::default())
+                                        );
+                                    }
+                                },
+                                loopio::background_work::CallStatus::Disabled => {},
+                                loopio::background_work::CallStatus::Running => {
+                                    self.imgui.text("Running");
+
+                                    self.imgui.same_line();
+                                    if self.imgui.button("Cancel") {
+                                        call.cancel();
+                                    }
+                                },
+                                loopio::background_work::CallStatus::Pending => {
+                                    let _ = call.into_foreground().unwrap();
+                                    eprintln!(
+                                        "Background work finished"
+                                    );
+                                },
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         /// Gets a mutable reference to the underlying thunk context,

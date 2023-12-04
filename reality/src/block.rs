@@ -1,7 +1,9 @@
 use crate::AsyncStorageTarget;
+use crate::Attribute;
 use crate::AttributeType;
 use crate::AttributeTypeParser;
 use crate::FieldPacket;
+use crate::ResourceKey;
 use crate::SetField;
 use crate::StorageTarget;
 use crate::ToFrame;
@@ -74,11 +76,11 @@ where
 
     /// Called when the block object is being loaded into it's namespace,
     ///
-    async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>);
+    async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>, rk: Option<ResourceKey<Attribute>>);
 
     /// Called when the block object is being unloaded from it's namespace,
     ///
-    async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>);
+    async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>, rk: Option<ResourceKey<Attribute>>);
 
     /// Called when the block object's parent attribute has completed processing,
     ///
@@ -92,6 +94,7 @@ where
 type BlockObjectFn<Storage> =
     fn(
         AsyncStorageTarget<Storage>,
+        Option<ResourceKey<Attribute>>
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>;
 
 /// Type-alias for a block object event completion fn,
@@ -109,6 +112,7 @@ where
     on_unload: BlockObjectFn<Storage>,
     on_completed: BlockObjectCompletionFn<Storage>,
     namespace: Option<AsyncStorageTarget<Storage>>,
+    resource_key: Option<ResourceKey<Attribute>>
 }
 
 impl<Storage> Clone for BlockObjectHandler<Storage>
@@ -121,6 +125,7 @@ where
             on_unload: self.on_unload,
             on_completed: self.on_completed,
             namespace: self.namespace.clone(),
+            resource_key: self.resource_key.clone(),
         }
     }
 }
@@ -141,14 +146,16 @@ where {
             on_unload: B::on_unload,
             on_completed: B::on_completed,
             namespace: None,
+            resource_key: None,
         }
     }
 
     /// Calls the on_load handler,
     ///
-    pub async fn on_load(&mut self, namespace: AsyncStorageTarget<Storage>) {
-        (self.on_load)(namespace.clone()).await;
+    pub async fn on_load(&mut self, namespace: AsyncStorageTarget<Storage>, key: Option<ResourceKey<Attribute>>) {
+        (self.on_load)(namespace.clone(), key.clone()).await;
         self.namespace = Some(namespace);
+        self.resource_key = key;
     }
 
     /// Calls the on_completed handler,
@@ -165,7 +172,7 @@ where {
     ///
     pub async fn on_unload(&self) {
         if let Some(namespace) = self.namespace.clone() {
-            (self.on_unload)(namespace).await
+            (self.on_unload)(namespace, self.resource_key).await
         }
     }
 }

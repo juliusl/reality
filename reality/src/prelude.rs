@@ -49,6 +49,15 @@ pub use crate::CacheExt;
 pub use crate::FieldRef;
 pub use crate::FieldVTable;
 pub use crate::NewFn;
+pub use crate::OnReadField;
+pub use crate::PacketRoutes;
+pub use crate::PacketRouter;
+pub use crate::FrameListener;
+pub use crate::WireServer;
+pub use crate::VisitVirtual;
+pub use crate::FieldRefController;
+pub use crate::VisitVirtualMut;
+pub use crate::OnWriteField;
 
 /*
     Macros for working w/ a storage target

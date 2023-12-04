@@ -53,7 +53,7 @@ pub struct Host {
     plugin: ResourceKey<reality::attributes::Attribute>,
 }
 
-async fn on_unload<S: StorageTarget>(storage: AsyncStorageTarget<S>) {
+async fn on_unload<S: StorageTarget>(storage: AsyncStorageTarget<S>, _: Option<ResourceKey<Attribute>>) {
     let storage = storage.storage.read().await;
 
     eprintln!("on unload being called");

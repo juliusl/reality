@@ -1,16 +1,11 @@
-use std::cell::RefCell;
-use std::future::IntoFuture;
-use std::sync::OnceLock;
 use std::time::Instant;
-
-use anyhow::anyhow;
 use imgui::InputTextCallbackHandler;
-use imgui::Ui;
+use imgui::TreeNodeFlags;
 use loopio::action::LocalAction;
-use loopio::action::RemoteAction;
 use loopio::action::TryCallExt;
 use loopio::foreground::ForegroundEngine;
 use loopio::prelude::*;
+use loopio::prelude::AttributeType;
 use nebudeck::desktop::*;
 use nebudeck::ext::imgui_ext::ImguiExt;
 use nebudeck::ext::imgui_ext::ImguiMiddleware;
@@ -102,7 +97,7 @@ fn main() -> anyhow::Result<()> {
     ",
     );
     engine.enable::<Test>();
-    engine.enable::<ProcessWizard>();
+    engine.enable_as::<ProcessWizard, Process>();
 
     let foreground = ForegroundEngine::new(engine);
 
@@ -127,7 +122,7 @@ struct Test {
 }
 
 async fn test(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let init = Remote.create::<Test>(tc).await;
+    let init = Local.create::<Test>(tc).await;
     println!("{:#?}", init);
     tc.print_debug_info();
 
@@ -145,8 +140,11 @@ impl ProcessWizard {
     async fn edit_program_name(mut tc: ThunkContext) -> anyhow::Result<ThunkContext> {
         let process = Remote.create::<Process>(&mut tc).await;
 
+        let wire_server = WireServer::<Process>::new(&mut tc).await?;
+
         tc.write_cache(VirtualProcess::new(process.clone()));
         tc.write_cache(process);
+        tc.write_cache(wire_server);
 
         tc.push_ui_node(|ui| {
             if let Err(err) = ProcessWizard.fmt(ui) {
@@ -161,8 +159,10 @@ impl ProcessWizard {
 
 async fn process_wizard(tc: &mut ThunkContext) -> anyhow::Result<()> {
     if let Some(eh) = tc.engine_handle().await {
-        // Build a remote action
-        let init = RemoteAction.build::<Process>(tc).await;
+        // Build a local action
+        // **Note** This could be a remote action but since there is no state there's no
+        // point in initializing as a RemoteAction.
+        let init = LocalAction.build::<Process>(tc).await;
         eprintln!("{:?}", tc.decoration);
 
         // Bind a task that defines the UI node and dependencies
@@ -207,12 +207,9 @@ impl UiDisplayMut for ProcessWizard {
         // - .section(|ui| { }) => tc.maybe_write_kv(String, Vec<fn(&mut UiFormatter<'_>)>>)
         __ui.push_section("tools", |ui| {
             // Prepare current frame updates
-            let mut current_frame_updates = FrameUpdates::default();
-            ui.for_each_pending_change(|_, p| {
-                current_frame_updates.0.fields.push(p.clone());
-            });
-
             let mut pending_changes = vec![];
+
+            // TODO: Currently this is the most straightforward way of applying this pattern
             if let Some(mut cached) = ui
                 .tc
                 .lock()
@@ -240,44 +237,6 @@ impl UiDisplayMut for ProcessWizard {
                         let packet = cached.program.encode();
                         pending_changes.push(("process_wizard", packet));
                     }
-                    // TODO -- ui.push_confirmation(|ui|{ })
-                }
-
-                if let Ok(deco) = ui.decorations.read() {
-                    ui.imgui.text(format!("{:#?}", deco));
-
-                    if let Some(address) = deco
-                        .get()
-                        .and_then(|d| d.comment_properties.as_ref())
-                        .and_then(|d| d.get("address"))
-                    {
-                        if let Some(bg) = ui.eh.lock().unwrap().background() {
-                            if let Ok(mut call) = bg.call(address) {
-                                match call.status() {
-                                    loopio::background_work::CallStatus::Enabled => {
-                                        if ui.imgui.button("Run") {
-                                            call.spawn_with_updates(current_frame_updates);
-                                        }
-                                    },
-                                    loopio::background_work::CallStatus::Disabled => {},
-                                    loopio::background_work::CallStatus::Running => {
-                                        ui.imgui.text("Running");
-
-                                        ui.imgui.same_line();
-                                        if ui.imgui.button("Cancel") {
-                                            call.cancel();
-                                        }
-                                    },
-                                    loopio::background_work::CallStatus::Pending => {
-                                        let _ = call.into_foreground().unwrap();
-                                        eprintln!(
-                                            "Background work finished"
-                                        );
-                                    },
-                                }
-                            }
-                        }
-                    }
                 }
             }
 
@@ -286,18 +245,32 @@ impl UiDisplayMut for ProcessWizard {
             }
         });
 
-        __ui.show_section("tools", |ui, mut inner| {
+        __ui.show_section("tools", |title, ui, mut inner| {
             let imgui = &ui.imgui;
 
             imgui
-                .window("tools")
+                .window(title)
                 .size([600.0, 800.0], imgui::Condition::Appearing)
                 .build(move || {
                     inner.fmt(ui).unwrap();
 
+                    let mut current_frame_updates = FrameUpdates::default();
+
                     let pending_changes = ui.for_each_pending_change(|name, fp| {
-                        imgui.text(format!("{name}:\n{:#?}", fp));
+                        if ui
+                            .imgui
+                            .collapsing_header(format!("DEBUG: {name}"), TreeNodeFlags::empty())
+                        {
+                            imgui.text(format!("{:#?}", fp));
+                        }
+                        current_frame_updates.frame.fields.push(fp.clone());
                     });
+
+                    if pending_changes >= 1 {
+                        ui.frame_updates.replace(current_frame_updates);
+                    }
+
+                    ui.show_call_button();
 
                     imgui.label_text("number of pending changes", pending_changes.to_string());
                 });

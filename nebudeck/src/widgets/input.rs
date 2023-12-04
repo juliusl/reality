@@ -319,6 +319,7 @@ where
         -   If the field is committed or initial, then changes requires a "Confirmation"
         -   If the field is default .. then they can be "added" -> Pending
          */
+
         if self.is_pending() {
             if self.edit_value(|name, v| {
                 if let Some(value) = v.value.as_mut() {

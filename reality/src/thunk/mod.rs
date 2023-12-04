@@ -12,6 +12,7 @@ pub mod prelude {
     pub use super::plugin::NewFn;
     pub use super::plugin::Plugin;
     pub use crate::AsyncStorageTarget;
+    use crate::Attribute;
     pub use crate::AttributeType;
     pub use crate::BlockObject;
     pub use super::plugin::Pack;
@@ -25,6 +26,9 @@ pub mod prelude {
     pub use futures_util::FutureExt;
     pub use std::marker::PhantomData;
     pub use std::ops::DerefMut;
+    pub use super::plugin::WireServer;
+    pub use super::plugin::WireClient;
+    pub use super::plugin::FieldRefController;
     use crate::FieldPacket;
     use crate::SetField;
 
@@ -51,7 +55,7 @@ pub mod prelude {
     impl<P, In> Plugin for Thunk<P> 
     where 
         P: Plugin<Virtual = In> + Send + Sync + 'static,
-        In: CallAsync + ToOwned<Owned = P> + NewFn<Inner = P> + Send + Sync
+        In: FieldRefController + CallAsync + ToOwned<Owned = P> + NewFn<Inner = P> + Send + Sync
     {
         type Virtual = P::Virtual;
     }
@@ -77,6 +81,7 @@ pub mod prelude {
     impl<P> AttributeType<Shared> for Thunk<P>
     where
         P: Plugin + Send + Sync + 'static,
+        P::Virtual: NewFn<Inner = P>
     {
         fn symbol() -> &'static str {
             <P as AttributeType<Shared>>::symbol()
@@ -112,17 +117,18 @@ pub mod prelude {
     impl<P> BlockObject<Shared> for Thunk<P>
     where
         P: SetField<FieldPacket> + Plugin + Send + Sync + 'static,
+        P::Virtual: NewFn<Inner = P>
     {
         /// Called when the block object is being loaded into it's namespace,
         ///
-        async fn on_load(storage: AsyncStorageTarget<Shared>) {
-            <P as BlockObject<Shared>>::on_load(storage).await;
+        async fn on_load(storage: AsyncStorageTarget<Shared>, rk: Option<ResourceKey<Attribute>>) {
+            <P as BlockObject<Shared>>::on_load(storage, rk).await;
         }
 
         /// Called when the block object is being unloaded from it's namespace,
         ///
-        async fn on_unload(storage: AsyncStorageTarget<Shared>) {
-            <P as BlockObject<Shared>>::on_unload(storage).await;
+        async fn on_unload(storage: AsyncStorageTarget<Shared>, rk: Option<ResourceKey<Attribute>>) {
+            <P as BlockObject<Shared>>::on_unload(storage, rk).await;
         }
 
         /// Called when the block object's parent attribute has completed processing,
@@ -135,6 +141,7 @@ pub mod prelude {
     impl<P> ToFrame for Thunk<P>
     where
         P: Plugin + Send + Sync + 'static,
+        P::Virtual: NewFn<Inner = P>
     {
         fn to_frame(&self, key: crate::ResourceKey<crate::Attribute>) -> crate::Frame {
             crate::Frame {

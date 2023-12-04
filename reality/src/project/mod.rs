@@ -404,6 +404,7 @@ mod tests {
     }
     
     #[tokio::test]
+    #[tracing_test::traced_test]
     async fn test_project_parser() {
         let mut project = Project::new(crate::Shared::default());
     
@@ -427,9 +428,9 @@ mod tests {
             <app/reality.test>
             : .name Hello World 2
             : .file .test/test-1.md
-            </reality.test>
+            <reality.test>
             : .name World Hello
-            </reality.test2>
+            <reality.test2>
             : .name World Hello3
     
             + .test

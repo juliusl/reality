@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_stream::stream;
 use futures_util::stream::BoxStream;
 use futures_util::Future;
@@ -8,6 +10,8 @@ use tracing::debug;
 use tracing::trace;
 use uuid::Uuid;
 
+use crate::FrameListener;
+use crate::PacketRouter;
 use crate::prelude::Latest;
 use crate::AsyncStorageTarget;
 use crate::Attribute;
@@ -272,10 +276,41 @@ impl Context {
     /// **Note**: This is the state that was evaluated at the start of the application, when the runmd was parsed.
     ///
     pub async fn initialized<P: Plugin + Sync + Send + 'static>(&self) -> P {
+        let node = self.node()
+            .await;
+
+        let plugin = node.current_resource::<P>(self.attribute.transmute())
+            .unwrap_or_default();
+
+        drop(node);
+
+        plugin
+    }
+
+    /// Returns the packet router initialized for P,
+    /// 
+    pub async fn router<P: Plugin + Sync + Send + 'static>(&self) -> Option<Arc<PacketRouter<P>>> {
         self.node()
             .await
-            .current_resource::<P>(self.attribute.transmute())
-            .unwrap_or_default()
+            .current_resource(self.attribute.transmute())
+    }
+
+    pub async fn listener<P: Plugin + Sync + Send + 'static>(&self) -> Option<FrameListener<P>> 
+    where 
+        P::Virtual: NewFn<Inner = P>, 
+    {
+        self.node()
+            .await
+            .current_resource(self.attribute.transmute())
+    }
+
+    /// Listens for one packet,
+    /// 
+    pub async fn listen_one<P: Plugin + Sync + Send + 'static>(self) -> ThunkContext {
+        if let Some(router) = self.router().await {
+            P::listen_one(router).await;
+        }
+        self
     }
 
     /// Creates a new initializer,
@@ -665,9 +700,10 @@ impl Remote {
         p.sync(&tc);
         if let Some(deco) = tc
             .fetch_kv::<Decoration>(tc.attribute)
-            .map(|(_, deco)| deco.clone()) {
-                tc.decoration = Some(deco);
-            }
+            .map(|(_, deco)| deco.clone())
+        {
+            tc.decoration = Some(deco);
+        }
         p
     }
 }
@@ -716,16 +752,25 @@ where
     /// Applies frame updates,
     ///
     pub async fn apply_frame_updates(mut self) -> Initializer<'a, P> {
+        // eprintln!("trying to dispatch frame updates");
+        let mut _dispatcher = self.context.dispatcher::<FrameUpdates>().await;
+        
+        _dispatcher.dispatch_all().await;
+
+        drop(_dispatcher);
+
+        eprintln!("dispatched frame updates");
+        // // Drain the frame updates dispatcher
         let node = self.context.node().await;
 
         println!("Looking for updates {:?}", self.context.attribute);
         if let Some(packets) = node.resource::<FrameUpdates>(self.context.attribute.transmute()) {
             println!(
                 "Frame updates enabled, applying field packets, {}",
-                packets.0.fields.len()
+                packets.frame.fields.len()
             );
             for field in packets
-                .0
+                .frame
                 .fields
                 .iter()
                 .map(|f| f.clone().into_field_owned())

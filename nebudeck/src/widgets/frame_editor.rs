@@ -193,7 +193,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                         let mut queue_update = false;
                         if let Some(queued) = tc.get().unwrap().cached_ref::<FrameUpdates>() {
                             let mut render = vec![];
-                            for (idx, q) in queued.0.fields.iter().enumerate() {
+                            for (idx, q) in queued.frame.fields.iter().enumerate() {
                                 let FieldPacket {
                                     wire_data,
                                     data_type_name,
@@ -329,7 +329,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                         println!(
                                             "Putting frame change -- {:?} packets: {}",
                                             tc.attribute,
-                                            cache.0.fields.len()
+                                            cache.frame.fields.len()
                                         );
                                         println!("{:#?}", cache);
                                         tc.node_mut().await.put_resource::<FrameUpdates>(
@@ -505,7 +505,7 @@ impl EditorWidgetTable {
                     tc.spawn(|mut tc| async move {
                         if let Some(mut updates) = tc.cached_mut::<FrameUpdates>() {
                             for change in changes {
-                                updates.0.fields.push(change);
+                                updates.frame.fields.push(change);
                             }
                         }
                         Ok(tc)
@@ -586,7 +586,7 @@ impl EditorWidgetTable {
                     tc.spawn(|mut tc| async move {
                         if let Some(mut updates) = tc.cached_mut::<FrameUpdates>() {
                             for change in changes {
-                                updates.0.fields.push(change);
+                                updates.frame.fields.push(change);
                             }
                         }
                         Ok(tc)

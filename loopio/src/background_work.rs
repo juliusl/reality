@@ -33,8 +33,8 @@ pub struct BackgroundWork {
 /// Creates a new background work resource,
 ///
 async fn create_background_work_handle(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let init = Remote.create::<BackgroundWork>(tc).await;
     println!("Creating background work handle");
+    let init = Local.create::<BackgroundWork>(tc).await;
     let (_, bh) = tc.maybe_store_kv::<BackgroundWorkEngineHandle>(
         init.address.to_string(),
         BackgroundWorkEngineHandle { tc: tc.clone() },

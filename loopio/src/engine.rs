@@ -1,4 +1,6 @@
 use anyhow::anyhow;
+use reality::AttributeTypeParser;
+use reality::BlockObjectType;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -76,11 +78,53 @@ impl EngineBuilder {
         }
     }
 
-    /// Registers a plugin w/ this engine builder,
+    /// Enables as a thunk for plugin P,
     ///
-    pub fn enable<P: Plugin + Default + Clone + ToFrame + Send + Sync + 'static>(&mut self) {
+    pub fn enable<P>(&mut self)
+    where
+        P: Plugin + Default + Clone + ToFrame + Send + Sync + 'static,
+        P::Virtual: NewFn<Inner = P> + ToOwned<Owned = P>,
+    {
         self.register_with(|parser| {
             parser.with_object_type::<Thunk<P>>();
+        });
+    }
+
+    /// Enables an object type to be parsed,
+    ///
+    pub fn enable_as<P, Inner>(&mut self)
+    where
+        P: Plugin + Default + Clone + ToFrame + Send + Sync + 'static,
+        P::Virtual: NewFn<Inner = Inner>,
+        Inner: Plugin,
+        Inner::Virtual: NewFn<Inner = Inner>,
+    {
+        self.register_with(|parser| {
+            let mut block_obj = BlockObjectType::<Shared>::new::<Thunk<Inner>>();
+
+            block_obj.attribute_type =
+                AttributeTypeParser::<Shared>::new_with(P::symbol(), |parser, input| {
+                    P::parse(parser, input);
+
+                    let key = parser
+                        .attributes
+                        .last()
+                        .cloned()
+                        .unwrap_or(ResourceKey::root());
+                    if let Some(storage) = parser.storage() {
+                        storage.lazy_put_resource::<ThunkFn>(<P as Plugin>::call, key.transmute());
+                        storage.lazy_put_resource::<EnableFrame>(
+                            EnableFrame(<Inner as Plugin>::enable_frame),
+                            key.transmute(),
+                        );
+                        storage.lazy_put_resource::<EnableVirtual>(
+                            EnableVirtual(<Inner as Plugin>::enable_virtual),
+                            key.transmute(),
+                        );
+                    }
+                });
+
+            parser.add_object_type_with(P::symbol(), block_obj);
         });
     }
 
@@ -137,7 +181,7 @@ impl reality::prelude::RegisterWith for EngineBuilder {
 ///
 /// Events will be configured via a plugin model. Plugins will execute when the event is loaded in the order they are defined.
 ///
-/// Plugins are executed as "Thunks" in a "call-by-name" fashion. Plugins belonging to an event share state linearly, 
+/// Plugins are executed as "Thunks" in a "call-by-name" fashion. Plugins belonging to an event share state linearly,
 /// meaning after a plugin executes, it can modify state before the next plugin executes.
 ///
 /// An event may have 1 or more plugins.
@@ -237,7 +281,11 @@ impl Engine {
     /// Registers a plugin w/ this engine,
     ///
     #[inline]
-    pub fn enable<P: Plugin + Default + Clone + ToFrame + Send + Sync + 'static>(&mut self) {
+    pub fn enable<P>(&mut self)
+    where
+        P: Plugin + Default + Clone + ToFrame + Send + Sync + 'static,
+        P::Virtual: NewFn<Inner = P>,
+    {
         self.register_with(|parser| {
             parser.with_object_type::<Thunk<P>>();
         });
@@ -299,6 +347,7 @@ impl Engine {
         target: &mut AttributeParser<Shared>,
     ) where
         T: Plugin + BlockObject<Shared> + crate::prelude::Action + SetIdentifiers,
+        T::Virtual: NewFn<Inner = T>,
     {
         let name = name
             .map(|n| n.to_string())
@@ -440,7 +489,11 @@ impl Engine {
 
                         if let Some(previous) = self.hosts.insert(host_name, host) {
                             warn!(
-                                address = previous.name.value().cloned().expect("should have a name if inserted"),
+                                address = previous
+                                    .name
+                                    .value()
+                                    .cloned()
+                                    .expect("should have a name if inserted"),
                                 "Replacing host"
                             );
                         }
@@ -650,13 +703,15 @@ impl Engine {
             }
 
             // Drain dispatch queues
-            unsafe {
-                let mut node = resource.context_mut().node_mut().await;
+            {
+                let mut node = resource.context_mut().node.storage.write().await;
                 node.put_resource(self.engine_handle(), ResourceKey::root());
                 node.drain_dispatch_queues();
             }
+            {
+                resource.context_mut().write_cache(self.engine_handle());
+            }
 
-            resource.context_mut().write_cache(self.engine_handle());
             Ok(resource)
         } else {
             Err(anyhow!("Could not find resource: {}", address))
@@ -712,9 +767,10 @@ impl Engine {
                 trace!("Handling packet {:?}", packet.action);
                 match packet.action {
                     EngineAction::Call { address, mut tx } => {
-                        info!(address, "Looking up hosted resource");
+                        println!("Looking up hosted resource");
                         if let Some(tx) = tx.take() {
                             if let Ok(resource) = self.get_resource(address).await {
+                                println!("Sending call output");
                                 if let Err(_) = tx.send(resource.into_call_output()) {
                                     error!("Could not call resource");
                                 }
@@ -749,7 +805,9 @@ impl Engine {
                                         .collect(),
                                 };
 
-                                resource.context_mut().write_cache(published);
+                                {
+                                    resource.context_mut().write_cache(published);
+                                }
 
                                 if let Err(_) = tx.send(Some(resource)) {
                                     error!("Could not call resource");
@@ -991,7 +1049,7 @@ impl EngineHandle {
     pub async fn run(&self, address: impl Into<String>) -> anyhow::Result<ThunkContext> {
         let address = address.into();
 
-        trace!("Looking for {}", &address);
+        println!("Looking for {}", &address);
         let (tx, rx) = tokio::sync::oneshot::channel::<CallOutput>();
 
         let packet = EnginePacket {
@@ -1004,10 +1062,16 @@ impl EngineHandle {
         self.sender.send(packet)?;
 
         match rx.await? {
-            CallOutput::Spawn(Some(jh)) => jh.await?,
+            CallOutput::Spawn(Some(jh)) => {
+                println!("spawning update");
+                jh.await?
+            },
             CallOutput::Abort(err) => {
                 err?;
                 Err(anyhow!("Call was aborted"))
+            }
+            CallOutput::Update(Some(next)) => {
+                Ok(next)
             }
             _ => Err(anyhow!("Call was skipped")),
         }

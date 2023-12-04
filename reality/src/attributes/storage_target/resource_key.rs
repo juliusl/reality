@@ -6,6 +6,7 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use serde::Serialize;
 use serde::Deserialize;
+use tracing::trace;
 
 use super::target::StorageTargetKey;
 
@@ -127,6 +128,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
     /// Otherwise, creates a new key.
     ///
     pub fn transmute<B: Send + Sync + 'static>(&self) -> ResourceKey<B> {
+        trace!(from=std::any::type_name::<T>(), to=std::any::type_name::<B>());
         if let Some((key, len)) = self.label_parts() {
             let bsize = std::mem::size_of::<B>();
 
