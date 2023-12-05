@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use loopio::prelude::*;
 
 /// Type-alias for optional background work,

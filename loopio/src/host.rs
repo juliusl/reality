@@ -1,12 +1,9 @@
-use anyhow::anyhow;
-use futures_util::pin_mut;
-use futures_util::StreamExt;
+
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
-use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio::sync::Notify;
@@ -16,7 +13,6 @@ use reality::prelude::*;
 use crate::prelude::Action;
 use crate::prelude::Address;
 use crate::prelude::Ext;
-use crate::prelude::VirtualBusExt;
 
 /// A Host contains a broadly shared storage context,
 ///
@@ -352,6 +348,9 @@ async fn test_host_condition() {
 
 #[tokio::test]
 async fn test_host() {
+    use crate::prelude::VirtualBusExt;
+    use futures_util::pin_mut;
+
     let mut workspace = Workspace::new();
     workspace.add_buffer(
         "demo.md",
@@ -420,7 +419,7 @@ async fn test_host() {
 
     let block = engine.block().unwrap();
     let eh = engine.engine_handle();
-    let deck = crate::deck::Deck::from(block);
+    let _deck = crate::deck::Deck::from(block);
     // eprintln!("{:#?}", deck);
     let _e = engine.spawn(|_, p| {
         eprintln!("{:?}", p);
@@ -469,7 +468,7 @@ async fn test_host() {
                     pin_mut!(stream);
 
                     eprintln!("waiting for committed");
-                    let name_committed = stream.next().await;
+                    let name_committed = futures_util::StreamExt::next(&mut stream).await;
 
                     if let Some((field_changed, _latest)) = name_committed {
                         field_changed.view_value(|v| {
@@ -516,7 +515,7 @@ async fn test_host() {
                     .await;
 
                 eprintln!("Waiting for sync");
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
                 // Create a new commit channel
                 let commit = commit.transmit::<Host>().await;

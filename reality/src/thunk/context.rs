@@ -295,6 +295,10 @@ impl Context {
             .current_resource(self.attribute.transmute())
     }
 
+    /// Returns the current **default** frame listener for plugin P,
+    /// 
+    /// **Note**: The default frame listener only has a buffer_len of 1.
+    /// 
     pub async fn listener<P: Plugin + Sync + Send + 'static>(&self) -> Option<FrameListener<P>> 
     where 
         P::Virtual: NewFn<Inner = P>, 

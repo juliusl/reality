@@ -1,4 +1,3 @@
-use std::io::IntoInnerError;
 use std::marker::PhantomData;
 use std::ops::Index;
 use std::ops::IndexMut;
@@ -10,9 +9,9 @@ use anyhow::anyhow;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
-use tokio::sync::watch::Ref;
 use tokio::sync::Mutex;
 use tracing::error;
+use tracing::trace;
 
 use crate::Attribute;
 use crate::AttributeType;
@@ -25,7 +24,6 @@ use crate::Plugin;
 use crate::ResourceKey;
 use crate::Shared;
 use crate::StorageTarget;
-use crate::WireClient;
 
 /// Field access,
 ///
@@ -126,7 +124,7 @@ where
 {
     /// Virtual reference,
     ///
-    virt: Arc<tokio::sync::watch::Sender<P::Virtual>>,
+    virt: Arc<tokio::sync::watch::Sender<PacketRoutes<P>>>,
     /// Packet receiver,
     ///
     rx_packets: Arc<Mutex<tokio::sync::mpsc::Receiver<FieldPacket>>>,
@@ -135,10 +133,10 @@ where
     tx_packets: Arc<tokio::sync::mpsc::Sender<FieldPacket>>,
 }
 
-impl<P, const BUFFER_LEN: usize> Default for FrameListener<P, BUFFER_LEN> 
+impl<P, const BUFFER_LEN: usize> Default for FrameListener<P, BUFFER_LEN>
 where
     P: Plugin,
-    P::Virtual: NewFn<Inner = P>, 
+    P::Virtual: NewFn<Inner = P>,
 {
     fn default() -> Self {
         FrameListener::new(P::default())
@@ -162,9 +160,9 @@ where
 impl<P: Plugin> FrameListener<P>
 where
     P::Virtual: NewFn<Inner = P>,
-{   
+{
     /// Returns a new frame listener w/ a specific buffer size,
-    /// 
+    ///
     pub fn with_buffer<const BUFFER_LEN: usize>(init: P) -> FrameListener<P, BUFFER_LEN> {
         FrameListener::<P, BUFFER_LEN>::new(init)
     }
@@ -177,11 +175,33 @@ where
     /// Returns a new frame listener bounded by producer size,
     ///
     pub fn new(init: P) -> FrameListener<P, BUFFER_LEN> {
-        let (wtx, _) = tokio::sync::watch::channel(P::Virtual::new(init));
+        let (wtx, _) = tokio::sync::watch::channel(PacketRoutes::new(init));
         let (tx, rx) = tokio::sync::mpsc::channel(BUFFER_LEN);
 
         FrameListener {
             virt: Arc::new(wtx),
+            rx_packets: Arc::new(Mutex::new(rx)),
+            tx_packets: Arc::new(tx),
+        }
+    }
+
+    /// Returns a new listener w/ an updated buffer len,
+    ///
+    /// Re-uses the previous inner virtual plugin watch channel.
+    ///
+    /// **Panics** If NEW_BUFFER_LEN is < 0
+    ///
+    pub fn with_buffer_size<const NEW_BUFFER_LEN: usize>(self) -> FrameListener<P, NEW_BUFFER_LEN> {
+        trace!(
+            from = BUFFER_LEN,
+            to = NEW_BUFFER_LEN,
+            "Creating new listener w/ new buffer len"
+        );
+
+        let (tx, rx) = tokio::sync::mpsc::channel(NEW_BUFFER_LEN);
+
+        FrameListener {
+            virt: self.virt,
             rx_packets: Arc::new(Mutex::new(rx)),
             tx_packets: Arc::new(tx),
         }
@@ -194,29 +214,9 @@ where
     }
 
     /// Returns a channel to send field packets,
-    /// 
+    ///
     pub fn frame_tx(&self) -> Arc<tokio::sync::mpsc::Sender<FieldPacket>> {
         self.tx_packets.clone()
-    }
-
-    /// Subscribe to changes to the virtual plugin,
-    ///
-    pub fn subscribe_virtual(&self) -> tokio::sync::watch::Receiver<P::Virtual> {
-        self.virt.subscribe()
-    }
-
-    /// Borrows a reference to the virtual plugin,
-    ///
-    pub fn borrow_virtual(&self) -> Ref<'_, P::Virtual> {
-        self.virt.borrow()
-    }
-
-    /// Updates the virtual plugin, notifying listeners if update returns true,
-    /// 
-    /// Returns true if a notification should/will be sent to listeners,
-    /// 
-    pub fn update_virtual(&self, update: impl FnOnce(&mut P::Virtual) -> bool) -> bool {
-        self.virt.send_if_modified(update)
     }
 
     /// Returns a permit for transmitting a field packet when,
@@ -235,6 +235,18 @@ where
             Some(packet) => Ok(packet),
             None => Err(anyhow!("Channel is closed")),
         }
+    }
+
+    /// Subscribes to active packet routes,
+    ///
+    pub fn subscribe_virtual(&self) -> tokio::sync::watch::Receiver<PacketRoutes<P>> {
+        self.virt.subscribe()
+    }
+
+    /// Returns the current packet routes for this plugin,
+    ///
+    pub fn routes(&self) -> Arc<tokio::sync::watch::Sender<PacketRoutes<P>>> {
+        self.virt.clone()
     }
 }
 
@@ -509,29 +521,32 @@ pub trait VisitMut<T> {
 }
 
 /// Trait for visiting fields references on the virtual reference,
-/// 
-pub trait VisitVirtual<T, Projected> 
+///
+pub trait VisitVirtual<T, Projected>
 where
     Self: Plugin + 'static,
     T: 'static,
-    Projected: 'static
+    Projected: 'static,
 {
     /// Returns a vector of field references from the virtual plugin,
-    /// 
+    ///
     fn visit_fields<'a>(virt: &'a PacketRoutes<Self>) -> Vec<&'a FieldRef<Self, T, Projected>>;
 }
 
 /// Trait for visiting fields references on the virtual reference,
-/// 
-pub trait VisitVirtualMut<T, Projected> 
+///
+pub trait VisitVirtualMut<T, Projected>
 where
     Self: Plugin + 'static,
     T: 'static,
-    Projected: 'static
+    Projected: 'static,
 {
     /// Returns a vector of mutable field references from the virtual plugin,
-    /// 
-    fn visit_fields_mut(routes: &mut Self::Virtual, visit: impl FnMut(&mut FieldRef<Self, T, Projected>));
+    ///
+    fn visit_fields_mut(
+        routes: &mut Self::Virtual,
+        visit: impl FnMut(&mut FieldRef<Self, T, Projected>),
+    );
 }
 
 /// Trait for setting a field,
@@ -587,7 +602,7 @@ where
 {
     /// Inner virtual plugin,
     ///
-    pub routes: PacketRoutes<P>,
+    pub routes: Arc<tokio::sync::watch::Sender<PacketRoutes<P>>>,
     /// Dispatcher,
     ///
     pub dispatcher: OnceLock<Dispatcher<S, FrameUpdates>>,
@@ -603,16 +618,16 @@ where
 {
     /// Creates a new packet router,
     ///
-    pub fn new() -> Self 
+    pub fn new(routes: Arc<tokio::sync::watch::Sender<PacketRoutes<P>>>) -> Self
     where
-        P::Virtual: NewFn<Inner = P>
+        P::Virtual: NewFn<Inner = P>,
     {
         let len = P::default().to_frame(ResourceKey::new()).fields.len();
 
         let (tx, _rx) = tokio::sync::broadcast::channel(usize::max(len, 1));
 
         Self {
-            routes: PacketRoutes::new(P::default()),
+            routes,
             tx: Arc::new(tx),
             dispatcher: OnceLock::new(),
         }
@@ -625,8 +640,8 @@ where
     ///
     pub async fn route_one<const OFFSET: usize>(&self) -> anyhow::Result<()>
     where
-        P: OnWriteField<OFFSET> + 
-            OnReadField<OFFSET>
+        P: OnWriteField<OFFSET>
+            + OnReadField<OFFSET>
             + OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>
             + Plugin,
         P::Virtual: NewFn<Inner = P>,
@@ -657,34 +672,46 @@ where
             + Plugin,
         P::Virtual: NewFn<Inner = P>,
     {
-        let field_ref = self.routes.route();
-
         if let Some(mut dispatcher) = self.dispatcher.get().cloned() {
-            field_ref.filter_packet(&packet)?;
+            let routes = self.routes.borrow();
 
-            let applied = field_ref.decode_and_apply(packet)?;
+            let field_ref = routes.route::<OFFSET>();
 
-            if applied.is_pending() {
-                dispatcher.queue_dispatch_mut(move |f| {
-                    let fp = applied.encode();
-                    f.frame.fields.push(fp);
-                });
-                Ok(())
-            } else {
-                Err(anyhow!("No changes"))
+            // It's possible this packet comes from outside of the process. Log what we are checking against
+            trace!(
+                field_offset_src = OFFSET,
+                field_name_src = field_ref.encode().field_name,
+                field_offset_remote = packet.field_offset,
+                field_name_remote = packet.field_name,
+                "Filtering packet",
+            );
+            match field_ref.filter_packet(&packet) {
+                Ok(field) => {
+                    dispatcher.queue_dispatch_mut(move |f| {
+                        f.frame.fields.push(field.encode());
+                    });
+                    return Ok(());
+                }
+                Err(err) => {
+                    // TODO -- This is expected
+                    eprintln!(
+                        "Skipping packet, {err}",
+                    );
+                },
             }
+            Err(anyhow!("Did not apply packet via this route"))
         } else {
-            Err(anyhow!("Dispatcher is not initialized"))
+            Err(anyhow!("No dispatcher was set"))
         }
     }
 }
 
 impl<P: Plugin> PacketRoutes<P> {
     /// Creates a new packet routes interface,
-    /// 
-    pub fn new(inner: P) -> Self 
+    ///
+    pub fn new(inner: P) -> Self
     where
-        P::Virtual: NewFn<Inner = P>
+        P::Virtual: NewFn<Inner = P>,
     {
         PacketRoutes {
             inner: P::Virtual::new(inner),
@@ -715,7 +742,6 @@ impl<P: Plugin> PacketRoutes<P> {
         &self[FieldKey::<OFFSET>.into()]
     }
 
-
     pub fn route_mut<'a: 'b, 'b, const OFFSET: usize>(
         &'a mut self,
     ) -> &'b mut FieldRef<
@@ -724,8 +750,9 @@ impl<P: Plugin> PacketRoutes<P> {
         <P as OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>>::ProjectedType,
     >
     where
-        P: OnReadField<OFFSET> + OnWriteField<OFFSET> + 
-            OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>
+        P: OnReadField<OFFSET>
+            + OnWriteField<OFFSET>
+            + OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>
             + Plugin,
     {
         &mut self[FieldKey::<OFFSET>.into()]
@@ -735,7 +762,10 @@ impl<P: Plugin> PacketRoutes<P> {
 impl<const OFFSET: usize, P, T> IndexMut<FieldIndex<OFFSET, T>> for PacketRoutes<P>
 where
     T: Send + Sync + 'static,
-    P: OnReadField<OFFSET, FieldType = T> + OnWriteField<OFFSET, FieldType = T> + OnParseField<OFFSET, T> + Plugin,
+    P: OnReadField<OFFSET, FieldType = T>
+        + OnWriteField<OFFSET, FieldType = T>
+        + OnParseField<OFFSET, T>
+        + Plugin,
 {
     // type Output = FieldRef<P, T, <P as OnParseField<OFFSET, T>>::ProjectedType>;
 
@@ -752,7 +782,10 @@ where
 impl<const OFFSET: usize, P, T> Index<FieldIndex<OFFSET, T>> for PacketRoutes<P>
 where
     T: Send + Sync + 'static,
-    P: OnReadField<OFFSET, FieldType = T> + OnWriteField<OFFSET, FieldType = T> + OnParseField<OFFSET, T> + Plugin,
+    P: OnReadField<OFFSET, FieldType = T>
+        + OnWriteField<OFFSET, FieldType = T>
+        + OnParseField<OFFSET, T>
+        + Plugin,
 {
     type Output = FieldRef<P, T, <P as OnParseField<OFFSET, T>>::ProjectedType>;
 
@@ -787,11 +820,14 @@ where
 ///
 pub trait OnWriteField<const OFFSET: usize>
 where
-    Self: Plugin + OnReadField<OFFSET> + OnParseField<OFFSET, <Self as OnReadField<OFFSET>>::FieldType>,
+    Self: Plugin
+        + OnReadField<OFFSET>
+        + OnParseField<OFFSET, <Self as OnReadField<OFFSET>>::FieldType>,
 {
     /// Writes to a field reference from this type,
     ///
-    fn write(virt: &mut Self::Virtual) -> &mut FieldRef<Self, Self::FieldType, Self::ProjectedType>;
+    fn write(virt: &mut Self::Virtual)
+        -> &mut FieldRef<Self, Self::FieldType, Self::ProjectedType>;
 }
 
 #[allow(unused_imports)]
@@ -879,9 +915,14 @@ mod tests {
             other: String::from("hello other world"),
         });
 
-        let tx = _frame_listener.borrow_virtual().name.clone().start_tx();
+        let tx = _frame_listener.routes();
 
         let field_ref = tx
+            .borrow()
+            .inner
+            .name
+            .clone()
+            .start_tx()
             .next(|f| {
                 assert!(f.edit_value(|_, v| {
                     *v = String::from("really cool name");
@@ -918,21 +959,16 @@ mod tests {
 
         let client = server.clone().new_client();
 
-        // client.queue_modify(|t| {
-        //     t.name.edit_value(|_, n| {
-        //         *n = String::from("hello world cool test 2");
-        //         true
-        //     });
-        //     Ok(t.name.encode())
-        // });
+        client
+            .try_borrow_modify(|t| {
+                t.inner.name.edit_value(|_, n| {
+                    *n = String::from("hello world cool test 2");
+                    true
+                });
 
-        client.try_borrow_modify(|t| {
-            t.name.edit_value(|_, n| {
-                *n = String::from("hello world cool test 2");
-                true
-            });
-            Ok(t.name.encode())
-        }).unwrap();
+                Ok(t.inner.name.encode())
+            })
+            .unwrap();
 
         // Simulate a concurrent process starting up subsequently
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -944,22 +980,16 @@ mod tests {
             assert_eq!("hello world cool test 2", v);
         });
 
-        // client.queue_modify(move |t| {
-        //     t.name.edit_value(move |_, n| {
-        //         *n = String::from("hello world cool test 3");
-        //         true
-        //     });
-        //     Ok(t.name.encode())
-        // });
+        client
+            .try_borrow_modify(|t| {
+                t.inner.name.edit_value(|_, n| {
+                    *n = String::from("hello world cool test 3");
+                    true
+                });
+                Ok(t.inner.name.encode())
+            })
+            .unwrap();
 
-        client.try_borrow_modify(|t| {
-            t.name.edit_value(|_, n| {
-                *n = String::from("hello world cool test 3");
-                true
-            });
-            Ok(t.name.encode())
-        }).unwrap();
-        
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         // Simulate receiving changes on thunk execution

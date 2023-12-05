@@ -1,18 +1,15 @@
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::anyhow;
 use tokio::select;
-use tokio::sync::Notify;
 use tokio::sync::broadcast::error::SendError;
 use tokio::sync::watch::Ref;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use tracing::error;
 use tracing::trace;
-use tracing::warn;
 
 use crate::prelude::*;
 use super::prelude::CallAsync;
@@ -74,11 +71,20 @@ pub trait Plugin: ToFrame + BlockObject<Shared> + CallAsync + Clone + Default {
             let init = c.initialized::<Self>().await;
             let frame = init.to_frame(c.attribute);
 
-            let packet_router = PacketRouter::<Self>::new();
+            let listener = FrameListener::<Self>::new(init);
+
+            let packet_router = PacketRouter::<Self>::new(listener.routes());
             packet_router
                 .dispatcher
                 .set(c.dispatcher::<FrameUpdates>().await)
                 .ok();
+
+            trace!("Create packet routes for resource");
+            c.node
+                .storage
+                .write()
+                .await
+                .put_resource(listener, c.attribute.transmute());
 
             trace!("Create packet routes for resource");
             c.node
@@ -157,12 +163,6 @@ where
     /// Cancellation token,
     ///
     cancel: CancellationToken,
-    /// Client dispatcher,
-    /// 
-    dispatcher: OnceLock<Dispatcher<Shared, WireClient<P, BUFFER_LEN>>>,
-    /// If the server is running, this notifies a background task that dispatches any pending activity from the client dispatcher,
-    /// 
-    notify_packet_avail: Arc<Notify>,
 }
 
 impl<P, const BUFFER_LEN: usize> WireServer<P, BUFFER_LEN>
@@ -179,24 +179,18 @@ where
     pub async fn new(tc: &mut ThunkContext) -> anyhow::Result<Arc<WireServer<P, BUFFER_LEN>>> {
         if let Some(init) = P::enable_virtual(tc.clone()).await? {
             if let Some(init) = P::enable_frame(init).await? {
-                if let Some(router) = init.router::<P>().await {
-                    let plugin = init.initialized::<P>().await;
-
-                    let listener = FrameListener::<P, BUFFER_LEN>::new(plugin);
-
+                if let (Some(router), Some(listener)) = (init.router::<P>().await, init.listener::<P>().await) {
                     let server = WireServer::<_, BUFFER_LEN> {
                         router,
-                        listener,
-                        dispatcher: OnceLock::new(),
-                        notify_packet_avail: Arc::new(Notify::new()),
+                        listener: listener.with_buffer_size(),
                         cancel: tc.cancellation.child_token(),
                     };
 
                     let server = Arc::new(server);
 
-                    let dispatcher = init.node.maybe_dispatcher(init.attribute.transmute(), server.clone().new_client()).await;
-
-                    server.dispatcher.set(dispatcher).ok();
+                    // TODO -- eventually this could be useful
+                    // let dispatcher = init.node.maybe_dispatcher(init.attribute.transmute(), server.clone().new_client()).await;
+                    // server.dispatcher.set(dispatcher).ok();
                     
                     return Ok(server);
                 }
@@ -211,37 +205,43 @@ where
     pub async fn start(self: Arc<WireServer<P, BUFFER_LEN>>) -> anyhow::Result<()> {
         let mut listener = self.listener.clone();
         let router = self.router.clone();
-        let disp = self.dispatcher.get().cloned();
         let cancel = self.cancel.child_token();
-        let notify_packet_avail = self.notify_packet_avail.clone();
 
-        // TODO -- allow multiple ports?
+        // TODO -- Currently only one port starts to route changes
         let _port = tokio::spawn(self.start_port());
         
-        tokio::spawn(async move {
-            loop {
-                notify_packet_avail.notified().await;
+        // TODO -- if a client dispatcher is in-use this is required to handle new changes
+        // tokio::spawn(async move {
+        //     loop {
+        //         notify_packet_avail.notified().await;
 
-                if let Some(disp) = disp.as_ref() {
-                    let mut disp = disp.clone();
-                    disp.dispatch_all().await;
-                }
+        //         if let Some(disp) = disp.as_ref() {
+        //             let mut disp = disp.clone();
+        //             disp.dispatch_all().await;
+        //         }
                 
-                if cancel.is_cancelled() {
-                    return;
-                }
-            }
-        });
+        //         if cancel.is_cancelled() {
+        //             return;
+        //         }
+        //     }
+        // });
 
-        while let Ok(next) = listener.listen().await {
-            eprintln!("Listener got field: {}", next.field_name);
+        while let Ok(next) = select! { 
+            next = listener.listen() => next,
+            _ = cancel.cancelled() => {
+                return Err(anyhow!("Process is shutting down down"))
+            }
+        } {
+            debug!("Listener got field: {}", next.field_name);
             if let Err(SendError(pending)) = router.tx.send(next) {
-                warn!("Could not route next packet, no receivers are currently listening. Will retry.");
+                debug!("Could not route next packet, no receivers are currently listening. Will retry.");
 
                 tokio::time::sleep(Duration::from_millis(100)).await;
 
                 let resend = listener.new_tx().await?;
                 resend.send(pending);
+            } else {
+                debug!("Sent update to router");
             }
         }
 
@@ -259,6 +259,11 @@ where
 
     /// Starts a port to listen for changes,
     ///
+    /// **Note**: This is where packets sent from router.tx are handled.
+    /// 
+    /// The packet is applied to all routes once and if successfully applied it is sent to the frame updates
+    /// dispatcher.
+    /// 
     async fn start_port(self: Arc<WireServer<P, BUFFER_LEN>>) {
         let listening = self.router.clone();
         let cancel = self.cancel.child_token();
@@ -288,40 +293,40 @@ where
     P: Plugin,
     P::Virtual: NewFn<Inner = P>,
 {
-    /// Queues a modification,
-    /// 
-    /// This modification will be executed by the client dispatcher therefore an open port must 
-    /// be currently listening for the dispatch to be handled. This is different from `try_borrow_modify` which
-    /// will try to execute the change immediately.
-    /// 
-    pub fn queue_modify(
-        &self,
-        modify: impl FnOnce(Ref<'_, P::Virtual>) -> anyhow::Result<FieldPacket> + Send + Sync + 'static,
-    ) {
-        if let Some(disp) = self.0.dispatcher.get() {
-            disp.clone()
-                .queue_dispatch_task(|e| {
-                    let client = e.clone();
-                    Box::pin(async move {
-                        if let Err(err) = client.borrow_and_modify(modify).await {
-                            error!("Could not modify upstream plugin {err}");
-                        }
-                    })
-                });
+    // /// Queues a modification,
+    // /// 
+    // /// This modification will be executed by the client dispatcher therefore an open port must 
+    // /// be currently listening for the dispatch to be handled. This is different from `try_borrow_modify` which
+    // /// will try to execute the change immediately.
+    // /// 
+    // pub fn queue_modify(
+    //     &self,
+    //     modify: impl FnOnce(Ref<'_, PacketRoutes<P>>) -> anyhow::Result<FieldPacket> + Send + Sync + 'static,
+    // ) {
+    //     if let Some(disp) = self.0.dispatcher.get() {
+    //         disp.clone()
+    //             .queue_dispatch_task(|e| {
+    //                 let client = e.clone();
+    //                 Box::pin(async move {
+    //                     if let Err(err) = client.borrow_and_modify(modify).await {
+    //                         error!("Could not modify upstream plugin {err}");
+    //                     }
+    //                 })
+    //             });
 
-            self.0.notify_packet_avail.notify_one();
-        }
-    }
+    //         self.0.notify_packet_avail.notify_one();
+    //     }
+    // }
 
     /// If modify returns a packet successfully then this fn will try to send that packet to
     /// the listener. If the packet was successfully sent then Ok(()) is returned.
     /// 
     /// An error is returned in all other cases since the state could have changed when modify was called.
     /// 
-    pub fn try_borrow_modify(&self, modify: impl FnOnce(Ref<'_, P::Virtual>) -> anyhow::Result<FieldPacket>) -> anyhow::Result<()> {
-        let virt = self.0.listener.borrow_virtual();
+    pub fn try_borrow_modify(&self, modify: impl FnOnce(Ref<'_, PacketRoutes<P>>) -> anyhow::Result<FieldPacket>) -> anyhow::Result<()> {
+        let virt = self.0.listener.routes();
 
-        let packet = modify(virt)?;
+        let packet = modify(virt.borrow())?;
 
         self.try_send(packet)?;
 
@@ -330,13 +335,12 @@ where
 
     /// TODO -- This is could be wonky
     /// 
-    pub fn try_borrow_modify_batch(&self, modify: impl FnOnce(&mut P::Virtual) -> anyhow::Result<Vec<FieldPacket>>) -> anyhow::Result<()> {
+    pub fn try_borrow_modify_batch(&self, modify: impl FnOnce(&mut PacketRoutes<P>) -> anyhow::Result<Vec<FieldPacket>>) -> anyhow::Result<()> {
         let mut packets = vec![];
-        self.0.listener.update_virtual(|virt| { 
+        self.0.listener.routes().send_if_modified(|virt| { 
             if let Ok(mut updated) = modify(virt) {
                 updated.iter().for_each(|u| {
-                    // eprintln!("setting {}", u.field_name);
-                    assert!(virt.set_pending(&u.field_name));
+                    virt.inner.set_pending(&u.field_name);
                 });
 
                 packets.append(&mut updated);
@@ -353,40 +357,13 @@ where
         Ok(())
     }
 
-    /// 
+    /// Tries to send a field packet to the frame listener,
     /// 
     pub fn try_send(&self, packet: FieldPacket) -> anyhow::Result<()> {
         let tx = self.0.listener.frame_tx();
 
         let permit = tx.try_reserve()?;
         permit.send(packet);
-
-        Ok(())
-    }
-
-    /// Borrows the virtual plugin and if modified transmits a packet to the wire server,
-    ///
-    /// Returns Ok(()) if a packet was sent successfully.
-    ///
-    async fn borrow_and_modify(
-        &self,
-        modify: impl FnOnce(Ref<'_, P::Virtual>) -> anyhow::Result<FieldPacket>,
-    ) -> anyhow::Result<()> {
-        let v = self.0.listener.borrow_virtual();
-
-        if let Ok(fp) = modify(v) {
-            self.send(fp).await?;
-        }
-
-        Ok(())
-    }
-
-    /// Sends a field packet,
-    ///
-    async fn send(&self, packet: FieldPacket) -> anyhow::Result<()> {
-        let tx = self.0.listener.new_tx().await?;
-
-        tx.send(packet);
 
         Ok(())
     }
