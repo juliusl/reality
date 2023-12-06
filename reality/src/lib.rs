@@ -26,6 +26,9 @@ pub use project::Dir;
 mod thunk;
 pub use thunk::*;
 
+mod wire;
+pub use wire::prelude::*;
+
 pub mod derive {
     pub use reality_derive::AttributeType;
     pub use reality_derive::Reality;

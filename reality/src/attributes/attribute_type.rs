@@ -15,8 +15,8 @@ use crate::VisitMut;
 use super::attribute::Property;
 use super::visit::Field;
 use super::visit::FieldMut;
-use super::visit::FieldPacket;
-use super::visit::FieldPacketType;
+use crate::prelude::FieldPacket;
+use crate::prelude::FieldPacketType;
 use super::AttributeParser;
 use super::StorageTarget;
 
@@ -435,31 +435,6 @@ where
         data.field_name = Self::field_name().to_string();
         data.owner_name = std::any::type_name::<Self>().to_string();
         data
-    }
-
-    /// Returns a new packet from wire_data,
-    ///
-    fn from_wire(data: Vec<u8>) -> anyhow::Result<FieldPacket>
-    where
-        T: FieldPacketType + Serialize + DeserializeOwned,
-    {
-        let mut _data = None::<T>;
-        {
-            T::from_binary(data, &mut _data)?;
-        }
-
-        if let Some(data) = _data {
-            let mut data = FieldPacket::new_data(data);
-            data.field_offset = FIELD_OFFSET;
-            data.field_name = Self::field_name().to_string();
-            data.owner_name = std::any::type_name::<Self>().to_string();
-            Ok(data)
-        } else {
-            Err(anyhow!(
-                "Did not deserialize bincode for {}",
-                std::any::type_name::<T>()
-            ))
-        }
     }
 
     /// Returns a field_packet for wire transport,
