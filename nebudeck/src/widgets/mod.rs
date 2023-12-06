@@ -1,6 +1,7 @@
 mod button;
 mod frame_editor;
 mod input;
+mod servers;
 
 pub mod prelude {
     use std::cell::RefCell;
@@ -31,6 +32,8 @@ pub mod prelude {
 
     // pub use super::button::Button;
     pub use super::input::Input;
+
+    pub use super::servers::Servers;
 
     pub struct SectionBody {
         inner: Vec<fn(&UiFormatter<'_>)>

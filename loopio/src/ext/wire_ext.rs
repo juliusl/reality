@@ -127,7 +127,16 @@ impl VirtualBus {
     ///
     pub async fn wait_for<P: Plugin>(
         &mut self,
-    ) -> <Shared as StorageTarget>::BorrowMutResource<'_, BusOwnerPort<P, (), ()>> {
+    ) -> <Shared as StorageTarget>::BorrowMutResource<'_, BusOwnerPort<P, (), ()>> 
+    where
+        P::Virtual: NewFn<Inner = P>
+    {
+        if let Some(server) = self.node.wire_server::<P>().await {
+            let _client = server.clone().new_client();
+
+            let _start_server = tokio::spawn(server.start());
+        }
+
         let rx = self
             .node
             .maybe_write_cache::<BusOwnerPort<P, (), ()>>(BusOwnerPort {

@@ -1032,19 +1032,7 @@ impl StructData {
                     /// Initialize virtual mode for the plugin,
                     /// 
                     async fn call(tc: &mut ThunkContext) -> anyhow::Result<()> {
-                        let plugin = Remote.create::<#ident>(tc).await;
-                        let virtual_port = plugin.to_virtual();
-                        let rx = virtual_port.listen();
-
-                        unsafe {
-                            let mut node = tc.node_mut().await; 
-                            node.maybe_put_resource(virtual_port.owner(), tc.attribute.transmute());
-
-                            let (virtual_port, virtual_rx) = tokio::sync::watch::channel(virtual_port);
-                            node.maybe_put_resource(std::sync::Arc::new(virtual_port), tc.attribute.transmute());
-                            node.maybe_put_resource(rx, tc.attribute.transmute());
-                            node.maybe_put_resource(virtual_rx, tc.attribute.transmute());
-                        }
+                        enable_virtual_dependencies::<#ident>(tc).await?;
         
                         Ok(())
                     }

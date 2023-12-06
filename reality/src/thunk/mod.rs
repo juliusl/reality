@@ -29,6 +29,7 @@ pub mod prelude {
     pub use super::plugin::WireServer;
     pub use super::plugin::WireClient;
     pub use super::plugin::FieldRefController;
+    pub use super::plugin::enable_virtual_dependencies;
     use crate::FieldPacket;
     use crate::SetField;
 

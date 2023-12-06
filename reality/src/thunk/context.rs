@@ -7,6 +7,7 @@ use futures_util::StreamExt;
 use futures_util::TryStreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
+use tracing::error;
 use tracing::trace;
 use uuid::Uuid;
 
@@ -300,6 +301,28 @@ impl Context {
     /// **Note**: The default frame listener only has a buffer_len of 1.
     /// 
     pub async fn listener<P: Plugin + Sync + Send + 'static>(&self) -> Option<FrameListener<P>> 
+    where 
+        P::Virtual: NewFn<Inner = P>, 
+    {
+        self.node()
+            .await
+            .current_resource(self.attribute.transmute())
+    }
+
+    /// Returns the current wire server if initialized,
+    /// 
+    pub async fn wire_server<P: Plugin + Sync + Send + 'static>(&self) -> Option<Arc<WireServer<P>>> 
+    where 
+        P::Virtual: NewFn<Inner = P>, 
+    {
+        self.node()
+            .await
+            .current_resource(self.attribute.transmute())
+    }
+
+    /// Returns the current wire client if initialized,
+    /// 
+    pub async fn wire_client<P: Plugin + Sync + Send + 'static>(&self) -> Option<WireClient<P>> 
     where 
         P::Virtual: NewFn<Inner = P>, 
     {
@@ -756,20 +779,20 @@ where
     /// Applies frame updates,
     ///
     pub async fn apply_frame_updates(mut self) -> Initializer<'a, P> {
-        // eprintln!("trying to dispatch frame updates");
-        let mut _dispatcher = self.context.dispatcher::<FrameUpdates>().await;
+        debug!("trying to dispatch frame updates");
+        let mut dispatcher = self.context.dispatcher::<FrameUpdates>().await;
         
-        _dispatcher.dispatch_all().await;
+        dispatcher.dispatch_all().await;
 
-        drop(_dispatcher);
+        drop(dispatcher);
 
-        eprintln!("dispatched frame updates");
+        debug!("dispatched frame updates");
         // // Drain the frame updates dispatcher
         let node = self.context.node().await;
 
-        println!("Looking for updates {:?}", self.context.attribute);
+        debug!("Looking for updates {:?}", self.context.attribute);
         if let Some(packets) = node.resource::<FrameUpdates>(self.context.attribute.transmute()) {
-            println!(
+            debug!(
                 "Frame updates enabled, applying field packets, {}",
                 packets.frame.fields.len()
             );
@@ -779,9 +802,9 @@ where
                 .iter()
                 .map(|f| f.clone().into_field_owned())
             {
-                println!("Applying frame update {:?}", field);
+                debug!("Applying frame update {:?}", field);
                 if !self.initialized.set_field(field) {
-                    eprintln!("Could not set field");
+                    error!("Could not set field");
                 }
             }
         }

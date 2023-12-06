@@ -11,6 +11,7 @@ use tracing::debug;
 use tracing::error;
 use tracing::trace;
 
+use crate::Noop;
 use crate::prelude::*;
 use super::prelude::CallAsync;
 use super::prelude::CallOutput;
@@ -32,7 +33,8 @@ pub trait NewFn {
 
 /// Allows users to export logic as a simple fn,
 ///
-pub trait Plugin: ToFrame + BlockObject<Shared> + CallAsync + Clone + Default {
+pub trait Plugin: ToFrame + BlockObject<Shared> + CallAsync + Clone + Default 
+{
     /// Associated type of the virtual version of this plugin,
     ///
     /// **Note** If the derive macro is used, this type will be auto-generated w/ the plugin impl,
@@ -177,23 +179,21 @@ where
     /// **Note** Will enable virtual and frame mode if not already enabled.
     ///
     pub async fn new(tc: &mut ThunkContext) -> anyhow::Result<Arc<WireServer<P, BUFFER_LEN>>> {
-        if let Some(init) = P::enable_virtual(tc.clone()).await? {
-            if let Some(init) = P::enable_frame(init).await? {
-                if let (Some(router), Some(listener)) = (init.router::<P>().await, init.listener::<P>().await) {
-                    let server = WireServer::<_, BUFFER_LEN> {
-                        router,
-                        listener: listener.with_buffer_size(),
-                        cancel: tc.cancellation.child_token(),
-                    };
+        if let Some(init) = P::enable_frame(tc.clone()).await? {
+            if let (Some(router), Some(listener)) = (init.router::<P>().await, init.listener::<P>().await) {
+                let server = WireServer::<_, BUFFER_LEN> {
+                    router,
+                    listener: listener.with_buffer_size(),
+                    cancel: tc.cancellation.child_token(),
+                };
 
-                    let server = Arc::new(server);
+                let server = Arc::new(server);
 
-                    // TODO -- eventually this could be useful
-                    // let dispatcher = init.node.maybe_dispatcher(init.attribute.transmute(), server.clone().new_client()).await;
-                    // server.dispatcher.set(dispatcher).ok();
-                    
-                    return Ok(server);
-                }
+                // TODO -- eventually this could be useful
+                // let dispatcher = init.node.maybe_dispatcher(init.attribute.transmute(), server.clone().new_client()).await;
+                // server.dispatcher.set(dispatcher).ok();
+                
+                return Ok(server);
             }
         }
 
@@ -232,16 +232,19 @@ where
                 return Err(anyhow!("Process is shutting down down"))
             }
         } {
-            debug!("Listener got field: {}", next.field_name);
-            if let Err(SendError(pending)) = router.tx.send(next) {
-                debug!("Could not route next packet, no receivers are currently listening. Will retry.");
-
-                tokio::time::sleep(Duration::from_millis(100)).await;
-
-                let resend = listener.new_tx().await?;
-                resend.send(pending);
-            } else {
-                debug!("Sent update to router");
+            // TODO -- fix the ordering of this
+            for n in next {
+                debug!("Listener got field: {}", n.field_name);
+                if let Err(SendError(pending)) = router.tx.send(n) {
+                    debug!("Could not route next packet, no receivers are currently listening. Will retry.");
+    
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+    
+                    let resend = listener.new_tx().await?;
+                    resend.send(vec![pending]);
+                } else {
+                    debug!("Sent update to router");
+                }
             }
         }
 
@@ -257,6 +260,12 @@ where
         WireClient(self.clone())
     }
 
+    /// Subscribe to changes to packet routes,
+    /// 
+    pub fn subscribe_packet_routes(self: Arc<WireServer<P, BUFFER_LEN>>) -> tokio::sync::watch::Receiver<PacketRoutes<P>> {
+        self.listener.subscribe_virtual()
+    }
+
     /// Starts a port to listen for changes,
     ///
     /// **Note**: This is where packets sent from router.tx are handled.
@@ -270,7 +279,12 @@ where
 
         loop {
             select! {
-                _ = P::listen_one(listening.clone()) => {}
+                _ = P::listen_one(listening.clone()) => {
+                    eprintln!("port got update");
+                    self.router.routes.send_if_modified(|r| {
+                        true
+                    });
+                }
                 _ = cancel.cancelled() => {
                     debug!("wire server handler is exiting");
                     return;
@@ -328,43 +342,109 @@ where
 
         let packet = modify(virt.borrow())?;
 
-        self.try_send(packet)?;
+        self.try_send(vec![packet])?;
 
         Ok(())
     }
 
-    /// TODO -- This is could be wonky
+    /// Send a batch of field packets at once,
     /// 
-    pub fn try_borrow_modify_batch(&self, modify: impl FnOnce(&mut PacketRoutes<P>) -> anyhow::Result<Vec<FieldPacket>>) -> anyhow::Result<()> {
-        let mut packets = vec![];
-        self.0.listener.routes().send_if_modified(|virt| { 
-            if let Ok(mut updated) = modify(virt) {
-                updated.iter().for_each(|u| {
-                    virt.inner.set_pending(&u.field_name);
-                });
+    pub fn try_borrow_modify_batch(&self, modify: impl FnOnce(Ref<'_, PacketRoutes<P>>) -> anyhow::Result<Vec<FieldPacket>>) -> anyhow::Result<()> {
+        let updates = modify( self.0.listener.routes().borrow())?;
 
-                packets.append(&mut updated);
-                true
-            } else {
-                false
-            }
-        });
-
-        for p in packets {
-            self.try_send(p)?;
-        }
+        self.try_send(updates)?;
 
         Ok(())
     }
 
-    /// Tries to send a field packet to the frame listener,
+    /// Tries to send a batch of field packets to the frame listener,
     /// 
-    pub fn try_send(&self, packet: FieldPacket) -> anyhow::Result<()> {
+    pub fn try_send(&self, packets: Vec<FieldPacket>) -> anyhow::Result<()> {
         let tx = self.0.listener.frame_tx();
 
         let permit = tx.try_reserve()?;
-        permit.send(packet);
+        permit.send(packets);
 
         Ok(())
     }
+}
+
+pub async fn enable_virtual_dependencies<P: Plugin>(tc: &mut ThunkContext) -> anyhow::Result<()> 
+where
+    P::Virtual: NewFn<Inner = P>
+{
+    // Enable wire server
+    debug!("Enabling wire server");
+    let wire_server = WireServer::<P>::new(tc).await;
+
+    let mut storage = tc.node.storage.write().await;
+    storage.put_resource(
+        wire_server, 
+        tc.attribute.transmute()
+    );
+
+    Ok(())
+}
+
+#[derive(Reality, Debug, Default, Clone)]
+#[reality(call = test, plugin)]
+pub struct Test {
+    #[reality(derive_fromstr)]
+    name: String
+}
+
+async fn test(_: &mut ThunkContext) -> anyhow::Result<()> {
+    Ok(())
+}
+
+#[tokio::test]
+#[tracing_test::traced_test]
+async fn test_wire_server() {
+    let mut tc = ThunkContext::new();
+
+    let server = WireServer::<Test>::new(&mut tc).await.unwrap();
+
+    let running = tokio::spawn(server.clone().start());
+
+    let ct = server.cancel.child_token();
+
+    let mut listen_routes = server.clone().subscribe_packet_routes();
+
+    let _listen_routes = tokio::spawn(async move { 
+        while !ct.is_cancelled() {
+            if let Ok(()) = listen_routes.changed().await {
+                let _next = listen_routes.borrow_and_update();
+                _next.route::<0>().view_value(|v| {
+                    assert_eq!(v, "hello town");
+                    eprintln!("got change: {v}");
+                });
+                
+                return;
+            }
+        }
+    });
+
+    let client = server.clone().new_client();
+
+    client.try_borrow_modify(|_r| {
+        let fields = VisitVirtual::<String, String>::visit_fields(&_r);
+        for field in fields { 
+            field.edit_value(|_, n| {
+                *n = String::from("hello town");
+                true
+            });
+        }
+
+        let field = _r.route::<0>();
+        Ok(field.encode())
+    }).unwrap();
+
+    // Test route change notification
+    _listen_routes.await.unwrap();
+
+    // Test shutdown
+    server.cancel.cancel();
+
+    running.await.unwrap().expect_err("should be canceled");
+    ()
 }

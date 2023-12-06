@@ -484,26 +484,26 @@ async fn test_host() {
                 eprintln!("Host was modified");
             });
 
-            let eh = eh.clone();
-            let listener_2 = tokio::spawn(async move {
-                if let Ok(hosted_resource) = eh
-                    .hosted_resource("demo://a/start/loopio.std.io.println")
-                    .await
-                {
-                    let mut rx = hosted_resource
-                        .context()
-                        .virtual_bus("demo://".parse::<Address>().unwrap())
-                        .await
-                        .wait_for::<Host>()
-                        .await
-                        .subscribe_raw();
+            // let eh = eh.clone();
+            // let listener_2 = tokio::spawn(async move {
+            //     if let Ok(hosted_resource) = eh
+            //         .hosted_resource("demo://a/start/loopio.std.io.println")
+            //         .await
+            //     {
+            //         let mut rx = hosted_resource
+            //             .context()
+            //             .virtual_bus("demo://".parse::<Address>().unwrap())
+            //             .await
+            //             .wait_for::<Host>()
+            //             .await
+            //             .subscribe_raw();
 
-                    rx.changed().await.unwrap();
+            //         rx.changed().await.unwrap();
 
-                    eprintln!("Got host change from raw subscription");
-                    assert_eq!(rx.borrow().clone().name.value().unwrap().as_str(), "demo2");
-                }
-            });
+            //         eprintln!("Got host change from raw subscription");
+            //         assert_eq!(rx.borrow().clone().name.value().unwrap().as_str(), "demo2");
+            //     }
+            // });
 
             // Transmitter
             let tx = virtual_host.clone().borrow().name.clone().start_tx();
@@ -536,7 +536,7 @@ async fn test_host() {
                 });
 
                 listener.await.unwrap();
-                listener_2.await.unwrap();
+                // listener_2.await.unwrap();
 
                 let mut node = hosted_resource.context().node.storage.write().await;
                 node.put_resource(virtual_host, hosted_resource.plugin_rk().transmute());

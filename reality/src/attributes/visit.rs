@@ -127,10 +127,10 @@ where
     virt: Arc<tokio::sync::watch::Sender<PacketRoutes<P>>>,
     /// Packet receiver,
     ///
-    rx_packets: Arc<Mutex<tokio::sync::mpsc::Receiver<FieldPacket>>>,
+    rx_packets: Arc<Mutex<tokio::sync::mpsc::Receiver<Vec<FieldPacket>>>>,
     /// Packet transmission handle,
     ///
-    tx_packets: Arc<tokio::sync::mpsc::Sender<FieldPacket>>,
+    tx_packets: Arc<tokio::sync::mpsc::Sender<Vec<FieldPacket>>>,
 }
 
 impl<P, const BUFFER_LEN: usize> Default for FrameListener<P, BUFFER_LEN>
@@ -215,20 +215,20 @@ where
 
     /// Returns a channel to send field packets,
     ///
-    pub fn frame_tx(&self) -> Arc<tokio::sync::mpsc::Sender<FieldPacket>> {
+    pub fn frame_tx(&self) -> Arc<tokio::sync::mpsc::Sender<Vec<FieldPacket>>> {
         self.tx_packets.clone()
     }
 
     /// Returns a permit for transmitting a field packet when,
     ///
-    pub async fn new_tx(&self) -> anyhow::Result<tokio::sync::mpsc::Permit<'_, FieldPacket>> {
+    pub async fn new_tx(&self) -> anyhow::Result<tokio::sync::mpsc::Permit<'_, Vec<FieldPacket>>> {
         let permit = self.tx_packets.reserve().await?;
         Ok(permit)
     }
 
-    /// Listens for the next packet,
+    /// Listens for the next batch of packets,
     ///
-    pub async fn listen(&mut self) -> anyhow::Result<FieldPacket> {
+    pub async fn listen(&mut self) -> anyhow::Result<Vec<FieldPacket>> {
         let mut rx = self.rx_packets.lock().await;
 
         match rx.recv().await {
@@ -767,13 +767,6 @@ where
         + OnParseField<OFFSET, T>
         + Plugin,
 {
-    // type Output = FieldRef<P, T, <P as OnParseField<OFFSET, T>>::ProjectedType>;
-
-    // #[inline]
-    // fn index(&self, _: FieldIndex<OFFSET, T>) -> &Self::Output {
-    //     P::read(&self.inner)
-    // }
-
     fn index_mut(&mut self, _: FieldIndex<OFFSET, T>) -> &mut Self::Output {
         P::write(&mut self.inner)
     }
@@ -937,7 +930,7 @@ mod tests {
         let packet = field_ref.encode();
 
         let permit = _frame_listener.new_tx().await.unwrap();
-        permit.send(packet);
+        permit.send(vec![packet]);
 
         let next = _frame_listener.listen().await.unwrap();
         eprintln!("{:#?}", next);

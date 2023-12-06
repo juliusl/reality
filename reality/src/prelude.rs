@@ -59,6 +59,8 @@ pub use crate::FieldRefController;
 pub use crate::VisitVirtualMut;
 pub use crate::OnWriteField;
 
+pub use crate::enable_virtual_dependencies;
+
 /*
     Macros for working w/ a storage target
 */
