@@ -593,21 +593,28 @@ pub struct PacketRoutes<P: Plugin> {
     pub inner: P::Virtual,
 }
 
-/// Struct for starting routing tasks,
-///
+/// When a packet arrives to the router, it's decoded by each field to find the field it applies to.
+/// 
+/// If the field was updated successfully, it is passed to the dispatcher which will then update FrameUpdates.
+/// 
+/// FrameUpdates are read when a remote plugin is loaded and applied to the initialized state of the plugin.
+/// 
 pub struct PacketRouter<P, S = Shared>
 where
     P: Plugin,
     S: StorageTarget + Send + Sync + 'static,
 {
-    /// Inner virtual plugin,
+    /// Handle to a watch channel which maintains state of P,
+    /// 
+    /// The inner PacketRoutes is just a wrapper over the Virtual plugin that provides access to field refs
+    /// by offset.
     ///
     pub routes: Arc<tokio::sync::watch::Sender<PacketRoutes<P>>>,
     /// Dispatcher,
     ///
     pub dispatcher: OnceLock<Dispatcher<S, FrameUpdates>>,
-    /// Broadcast channel for forwarding packets to the dispatcher,
-    ///
+    /// Broadcast channel for forwarding packets to routes,
+    /// 
     pub tx: Arc<tokio::sync::broadcast::Sender<FieldPacket>>,
 }
 
@@ -687,21 +694,22 @@ where
             );
             match field_ref.filter_packet(&packet) {
                 Ok(field) => {
+                    // When this is queued to the dispatcher, the next time the remote_plugin is loaded
+                    // the dispatcher will drain this queue and frame updates will be updated
                     dispatcher.queue_dispatch_mut(move |f| {
                         f.frame.fields.push(field.encode());
                     });
                     return Ok(());
                 }
                 Err(err) => {
-                    // TODO -- This is expected
-                    eprintln!(
+                    trace!(
                         "Skipping packet, {err}",
                     );
                 },
             }
             Err(anyhow!("Did not apply packet via this route"))
         } else {
-            Err(anyhow!("No dispatcher was set"))
+            Err(anyhow!("Not bound to a dispatcher"))
         }
     }
 }

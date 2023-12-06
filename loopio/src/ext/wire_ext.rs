@@ -9,6 +9,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Sender;
+use tokio::task::JoinHandle;
 use tracing::info;
 
 use crate::prelude::Action;
@@ -131,17 +132,21 @@ impl VirtualBus {
     where
         P::Virtual: NewFn<Inner = P>
     {
-        if let Some(server) = self.node.wire_server::<P>().await {
-            let _client = server.clone().new_client();
+        let wire_server = self.node.wire_server::<P>().await.unwrap();
 
-            let _start_server = tokio::spawn(server.start());
-        }
+        let client = wire_server.new_client();
 
         let rx = self
             .node
             .maybe_write_cache::<BusOwnerPort<P, (), ()>>(BusOwnerPort {
                 tx: init_virtual_context!(self, std::sync::Arc<tokio::sync::watch::Sender<P>>),
                 vrx: init_virtual_context!(self, tokio::sync::watch::Receiver<P::Virtual>),
+                client,
+                port: {
+                    let lock = OnceLock::new();
+                    lock.set(tokio::spawn(wire_server.start_port())).expect("should be empty");
+                    lock
+                },
                 sel: |_| panic!("Incomplete bus definition"),
             });
 
@@ -167,6 +172,8 @@ impl VirtualBus {
 /// Owner port listening for any published changes to some owner,
 ///
 pub struct BusOwnerPort<Owner: Plugin + 'static, Value: 'static = (), ProjectedValue: 'static = ()>
+where 
+    Owner::Virtual: NewFn<Inner = Owner>
 {
     /// Initialized owner,
     ///
@@ -174,6 +181,12 @@ pub struct BusOwnerPort<Owner: Plugin + 'static, Value: 'static = (), ProjectedV
     /// Changes to virtual reference,
     ///
     vrx: OnceLock<Receiver<Owner::Virtual>>,
+    /// Wire client,
+    /// 
+    client: WireClient<Owner>,
+    /// Running wire-server port listening for changes from the wire server,
+    /// 
+    port: OnceLock<JoinHandle<()>>,
     /// Selects a field on the owner to receive notifications on,
     ///
     sel: fn(&Owner::Virtual) -> &FieldRef<Owner, Value, ProjectedValue>,
@@ -189,7 +202,10 @@ pub struct BusVirtualPort<Owner: Plugin + 'static> {
 
 /// Field port that is activated when an field owner has submitted some change,
 ///
-pub struct BusFieldPort<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 'static> {
+pub struct BusFieldPort<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 'static> 
+where 
+    Owner::Virtual: NewFn<Inner = Owner>
+{
     /// Owner bus,
     ///
     owner_port: BusOwnerPort<Owner, Value, ProjectedValue>,
@@ -208,7 +224,10 @@ impl<Owner: Plugin + 'static> BusVirtualPort<Owner> {
     }
 }
 
-impl<Owner: Plugin + 'static> BusOwnerPort<Owner, (), ()> {
+impl<Owner: Plugin + 'static> BusOwnerPort<Owner, (), ()> 
+where 
+    Owner::Virtual: NewFn<Inner = Owner>
+{
     /// Selects a field to monitor changes on from the owner,
     ///
     pub fn select<Value: 'static, ProjectedValue: 'static>(
@@ -220,6 +239,8 @@ impl<Owner: Plugin + 'static> BusOwnerPort<Owner, (), ()> {
                 sel,
                 tx: self.tx.clone(),
                 vrx: self.vrx.clone(),
+                client: self.client.clone(),
+                port: OnceLock::new(), // Don't actually need an initialized port so can just create an empty lock here
             },
             filter: |_| true,
         }
