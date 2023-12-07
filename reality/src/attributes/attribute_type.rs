@@ -3,7 +3,6 @@ use std::marker::PhantomData;
 use std::ops::DerefMut;
 use std::str::FromStr;
 
-use anyhow::anyhow;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 

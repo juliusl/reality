@@ -13,6 +13,8 @@ use uuid::Uuid;
 
 use crate::FrameListener;
 use crate::PacketRouter;
+use crate::WireClient;
+use crate::WireServer;
 use crate::prelude::Latest;
 use crate::AsyncStorageTarget;
 use crate::Attribute;

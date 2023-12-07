@@ -15,6 +15,7 @@ pub mod prelude {
     use crate::Attribute;
     pub use crate::AttributeType;
     pub use crate::BlockObject;
+    use crate::FieldRefController;
     pub use super::plugin::Pack;
     use crate::ResourceKey;
     pub use super::context::Remote;
@@ -26,10 +27,6 @@ pub mod prelude {
     pub use futures_util::FutureExt;
     pub use std::marker::PhantomData;
     pub use std::ops::DerefMut;
-    pub use super::plugin::WireServer;
-    pub use super::plugin::WireClient;
-    pub use super::plugin::FieldRefController;
-    pub use super::plugin::enable_virtual_dependencies;
     use crate::FieldPacket;
     use crate::SetField;
 

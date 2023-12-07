@@ -1,6 +1,6 @@
     ```runmd
     + .operation test_std_io                                            # Tests std io utilities
-    <store/loopio.stdio.println>          Hello World                                 # Prints a new line
+    <store/loopio.stdio.println>          Hello World                   # Prints a new line
     | abc
     |   def
     |     ghi
@@ -17,9 +17,8 @@
     : .piped true
     <user.test>
 
-    + .operation test_poem                                      # Tests poem utilities
-    <loopio.poem.engine-proxy> localhost:0                      # Runs a local server that can start operations or sequences
-    |# notify = teshost://engine_proxy_started
+    + .operation test-engine-proxy                                      # Tests poem utilities
+    <loopio.poem.engine-proxy> localhost:0                              # Runs a local server that can start operations or sequences
     
     : .alias testhost://test-engine-proxy
     : test          .route test_std_io
@@ -32,24 +31,25 @@
     : test_handler  .path /test-handler/:name
 
     + .operation start_reverse_proxy
-    <loopio.receive-signal>                     engine_proxy_started
-    : .host                                     testhost
-    <loopio.poem.reverse-proxy-config>          testhost://test-engine-proxy
-    <loopio.poem.reverse-proxy>                 localhost:3576
-    : .host                                     testhost://test-engine-proxy
+    <loopio.poem.reverse-proxy-config>  testhost://test-engine-proxy
+    
+    <loopio.poem.reverse-proxy>         localhost:3576
+    : .host testhost://test-engine-proxy
 
-    + .sequence start_tests                                  # Sequence that starts the demo
+    + .sequence start_tests                                             # Sequence that starts the demo
     : .step test_std_io
     |# kind = once
     
     : .step start_reverse_proxy, test_poem
     : .loop false
 
-    + .sequence run_println                                  # Sequence that can be called by the engine proxy
+    + .sequence run_println                                             # Sequence that can be called by the engine proxy
     : .step test_std_io
     : .loop false
 
-    + .host testhost                                         # Host configured w/ a starting sequence
+    + .host testhost                                                    # Host configured w/ a starting sequence
     : .start        start_tests
-    : .condition    engine_proxy_started
+    : .event        test-engine-proxy
+    
+
     ```

@@ -3,10 +3,13 @@ use reality::prelude::*;
 use serde::{Deserialize, Serialize};
 use tracing::trace;
 
-use crate::host::HostEvent;
 use crate::engine::EngineHandle;
-use crate::prelude::{Action, Host};
+use crate::prelude::{Action, Address, Host};
 
+use self::wire_ext::{VirtualBusExt, VirtualBus};
+
+#[cfg(feature = "flexbuffers-ext")]
+pub mod flexbuffers_ext;
 #[cfg(feature = "hyper-ext")]
 pub mod hyper_ext;
 #[cfg(feature = "poem-ext")]
@@ -15,8 +18,6 @@ pub mod poem_ext;
 pub mod std_ext;
 #[cfg(feature = "wire-ext")]
 pub mod wire_ext;
-#[cfg(feature = "flexbuffers-ext")]
-pub mod flexbuffers_ext;
 
 /// General extensions for ThunkContext,
 ///
@@ -32,26 +33,28 @@ pub trait Ext {
 
     /// Notify host w/ a condition,
     ///
-    async fn notify_host(&self, host: &str, condition: &str) -> anyhow::Result<()>;
-    
+    async fn notify_host(&self, host: &str) -> anyhow::Result<()>;
+
     /// Listen for a condition from the host,
-    /// 
-    async fn listen_host(&self, host: &str, condition: &str) -> Option<HostEvent>;
+    ///
+    async fn listen_host(&self, host: &str) -> Option<VirtualBus>;
 
     /// If the decoration property "notify" is defined, notifies host on the condition
     /// named there.
-    /// 
+    ///
     async fn on_notify_host(&self, host: &str) -> anyhow::Result<()>;
 }
 
 #[async_trait]
 impl Ext for ThunkContext {
     /// Returns the current engine handle,
-    /// 
+    ///
     async fn engine_handle(&self) -> Option<EngineHandle> {
-        if let Some(handle) = self.node()
+        if let Some(handle) = self
+            .node()
             .await
-            .current_resource::<EngineHandle>(ResourceKey::root()) {
+            .current_resource::<EngineHandle>(ResourceKey::root())
+        {
             if let Ok(handle) = handle.sync().await {
                 Some(handle)
             } else {
@@ -63,7 +66,7 @@ impl Ext for ThunkContext {
     }
 
     /// Get comments stored in the node,
-    /// 
+    ///
     async fn get_comments(&self) -> Option<Comments> {
         self.node()
             .await
@@ -71,14 +74,13 @@ impl Ext for ThunkContext {
     }
 
     async fn on_notify_host(&self, host: &str) -> anyhow::Result<()> {
-        if let Some(notify) = self.property("notify") {
-            self.notify_host(host, notify)
-                .await?;
+        if let Some(_notify) = self.property("notify") {
+            self.notify_host(host).await?;
         }
         Ok(())
     }
 
-    async fn notify_host(&self, host: &str, condition: &str) -> anyhow::Result<()> {
+    async fn notify_host(&self, host: &str) -> anyhow::Result<()> {
         // if let Some(host) = self.host(host).await {
         //     if let Some(host_condition) =
         //         host.current_resource::<HostCondition>(Some(ResourceKey::with_hash(condition)))
@@ -90,25 +92,22 @@ impl Ext for ThunkContext {
         Ok(())
     }
 
-    async fn listen_host(&self, host: &str, condition: &str) -> Option<HostEvent> {
+    /// Searches for a virtual bus hosted by this context,
+    /// 
+    async fn listen_host(&self, host: &str) -> Option<VirtualBus> {
         if let Some(eh) = self.engine_handle().await {
             if let Ok(host) = eh.hosted_resource(format!("{host}://")).await {
                 let host = host.context().initialized::<Host>().await;
+                // TODO
+                /*
+                    Host should be an entry point to different attribute streams
+                */
+                let address = Address::new(host.address());
+                let vbus = host.context().virtual_bus(address).await;
 
-                
+                return Some(vbus);
             }
         }
-        
-
-        // if let Some(host) = self.host(host).await {
-        //     if let Some(host_condition) =
-        //         host.current_resource::<HostCondition>(Some(ResourceKey::with_hash(condition)))
-        //     {
-        //         trace!("Found condition");
-        //         return Some(host_condition);
-        //     }
-        // }
-
         None
     }
 }
@@ -129,12 +128,8 @@ pub mod utility {
         #[cfg(feature = "std-ext")]
         #[reality(plugin)]
         stdio: super::std_ext::Stdio,
-        /// Adds a plugin to receive a signal from a host,
-        /// 
-        #[reality(ext)]
-        receive_signal: super::ReceiveSignal,
         /// Adds a process plugin,
-        /// 
+        ///
         #[cfg(feature = "std-ext")]
         #[reality(ext)]
         process: super::std_ext::Process,
@@ -159,46 +154,14 @@ pub mod utility {
         #[reality(ext)]
         request: super::hyper_ext::Request,
         /// Enables a wire bus for an attribute,
-        /// 
+        ///
         #[cfg(feature = "wire-ext")]
         #[reality(ext)]
         enable_wire_bus: super::wire_ext::EnableWireBus,
     }
 
     async fn noop(_: &mut ThunkContext) -> anyhow::Result<()> {
+        eprintln!("NOOP FROM UTILITY");
         Ok(())
     }
-}
-
-#[derive(Reality, Default, Clone)]
-#[reality(plugin, call = send_signal, rename = "send-signal", group = "loopio")]
-pub struct SendSignal {
-    #[reality(derive_fromstr)]
-    name: String,
-    host: String,
-}
-
-async fn send_signal(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let signal = tc.initialized::<SendSignal>().await;
-    tc.notify_host(&signal.host, &signal.name).await
-}
-
-#[derive(Reality, Serialize, Deserialize, PartialEq, PartialOrd, Debug, Default, Clone)]
-#[reality(plugin, call = receive_signal, rename = "receive-signal", group = "loopio")]
-pub struct ReceiveSignal {
-    #[reality(derive_fromstr)]
-    name: String,
-    host: String,
-}
-
-async fn receive_signal(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let signal = tc.initialized::<ReceiveSignal>().await;
-    eprintln!("Listening for signal {:?}", signal);
-    if let Some(listener) = tc.listen_host(&signal.host, &signal.name).await {
-        listener.listen().notified().await;
-        eprintln!("Got notification for {:?}", signal);
-    } else {
-        eprintln!("No condition found for {:?}", signal);
-    }
-    Ok(())
 }

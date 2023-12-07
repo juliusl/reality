@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 
 use anyhow::anyhow;
 use futures_util::Stream;
+use reality::WireClient;
 use reality::prelude::*;
 use serde::Deserialize;
 use serde::Serialize;

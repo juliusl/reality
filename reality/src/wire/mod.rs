@@ -1,6 +1,8 @@
 mod frame;
 mod packet;
 mod routes;
+mod server;
+mod op;
 
 pub mod prelude {
     pub use super::frame::Frame;
@@ -13,6 +15,10 @@ pub mod prelude {
     pub use super::routes::FieldKey;
     pub use super::routes::PacketRouter;
     pub use super::routes::PacketRoutes;
+    pub use super::server::WireServer;
+    pub use super::server::WireClient;
+    pub use super::server::FieldRefController;
+    pub use super::server::enable_virtual_dependencies;
 }
 
 #[allow(unused_imports)]
