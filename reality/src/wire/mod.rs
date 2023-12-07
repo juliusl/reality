@@ -66,7 +66,7 @@ mod test {
 
         let field_ref = tx
             .borrow()
-            .inner
+            .virtual_ref()
             .name
             .clone()
             .start_tx()
@@ -108,12 +108,12 @@ mod test {
 
         client
             .try_borrow_modify(|t| {
-                t.inner.name.edit_value(|_, n| {
+                t.virtual_ref().name.edit_value(|_, n| {
                     *n = String::from("hello world cool test 2");
                     true
                 });
 
-                Ok(t.inner.name.encode())
+                Ok(t.virtual_ref().name.encode())
             })
             .unwrap();
 
@@ -129,11 +129,11 @@ mod test {
 
         client
             .try_borrow_modify(|t| {
-                t.inner.name.edit_value(|_, n| {
+                t.virtual_ref().name.edit_value(|_, n| {
                     *n = String::from("hello world cool test 3");
                     true
                 });
-                Ok(t.inner.name.encode())
+                Ok(t.virtual_ref().name.encode())
             })
             .unwrap();
 

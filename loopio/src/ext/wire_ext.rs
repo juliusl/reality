@@ -132,25 +132,34 @@ impl VirtualBus {
     where
         P::Virtual: NewFn<Inner = P>
     {
-        let wire_server = self.node.wire_server::<P>().await.unwrap();
+        if let Some(tc) = self.node.find_node_context::<P>().await {
+            if let Ok(Some(context)) = tc.enable_virtual().await {
+                let wire_server = context.wire_server::<P>().await.unwrap();
 
-        let client = wire_server.new_client();
+                let client = wire_server.clone().new_client();
 
-        let rx = self
-            .node
-            .maybe_write_cache::<BusOwnerPort<P, (), ()>>(BusOwnerPort {
-                tx: init_virtual_context!(self, std::sync::Arc<tokio::sync::watch::Sender<P>>),
-                vrx: init_virtual_context!(self, tokio::sync::watch::Receiver<P::Virtual>),
-                client,
-                port: {
-                    let lock = OnceLock::new();
-                    lock.set(tokio::spawn(wire_server.start_port())).expect("should be empty");
-                    lock
-                },
-                sel: |_| panic!("Incomplete bus definition"),
-            });
+                let rx = self
+                    .node
+                    .maybe_write_cache::<BusOwnerPort<P, (), ()>>(BusOwnerPort {
+                        client: client.clone(),
+                        vrx: {
+                            let lock = OnceLock::new();
+                            assert!(lock.set(client.subscribe()).is_ok());
+                            lock
+                        },
+                        sel: |_| panic!("Incomplete bus definition"),
+                        _port: {
+                            let lock = OnceLock::new();
+                            lock.set(tokio::spawn(wire_server.clone().start_port())).expect("should be empty");
+                            lock
+                        },
+                    });
 
-        rx
+                return rx;
+            }
+        }
+
+        panic!("Could not find plugin")
     }
 
     /// Prepares and returns a virtual port on the bus to transmit changes
@@ -175,18 +184,15 @@ pub struct BusOwnerPort<Owner: Plugin + 'static, Value: 'static = (), ProjectedV
 where 
     Owner::Virtual: NewFn<Inner = Owner>
 {
-    /// Initialized owner,
-    ///
-    tx: OnceLock<Arc<Sender<Owner>>>,
-    /// Changes to virtual reference,
-    ///
-    vrx: OnceLock<Receiver<Owner::Virtual>>,
     /// Wire client,
     /// 
     client: WireClient<Owner>,
+    /// Receiver for updates to any of Owner's packet routes,
+    /// 
+    vrx: OnceLock<Receiver<PacketRoutes<Owner>>>,
     /// Running wire-server port listening for changes from the wire server,
     /// 
-    port: OnceLock<JoinHandle<()>>,
+    _port: OnceLock<JoinHandle<()>>,
     /// Selects a field on the owner to receive notifications on,
     ///
     sel: fn(&Owner::Virtual) -> &FieldRef<Owner, Value, ProjectedValue>,
@@ -237,28 +243,28 @@ where
         BusFieldPort {
             owner_port: BusOwnerPort {
                 sel,
-                tx: self.tx.clone(),
                 vrx: self.vrx.clone(),
                 client: self.client.clone(),
-                port: OnceLock::new(), // Don't actually need an initialized port so can just create an empty lock here
+                _port: OnceLock::new(), // Don't actually need an initialized port so can just create an empty lock here
             },
             filter: |_| true,
         }
     }
 
-    /// Subscribes to all owner changes w/o any field refs,
-    ///
-    /// **Panics** Will panic if the tx is not set, which means that this type was created manually instead
-    /// of through the OwnerPort.
-    ///
-    pub fn subscribe_raw(&self) -> tokio::sync::watch::Receiver<Owner> {
-        let tx = self.tx.get().expect("should be set");
-        tx.subscribe()
-    }
+    // /// Subscribes to all owner changes w/o any field refs,
+    // ///
+    // /// **Panics** Will panic if the tx is not set, which means that this type was created manually instead
+    // /// of through the OwnerPort.
+    // ///
+    // pub fn subscribe_raw(&self) -> tokio::sync::watch::Receiver<Owner> {
+    //     let tx = self.tx.get().expect("should be set");
+    //     tx.subscribe()
+    // }
 }
 
-impl<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 'static>
-    BusFieldPort<Owner, Value, ProjectedValue>
+impl<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 'static> BusFieldPort<Owner, Value, ProjectedValue>
+where
+    Owner::Virtual: NewFn<Inner = Owner>
 {
     /// Applies a filter on a received field,
     ///
@@ -279,56 +285,45 @@ impl<
     type Item = (FieldRef<Owner, Value, ProjectedValue>, Owner);
 
     fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
+        self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         let filter = self.filter;
         let sel = self.owner_port.sel;
 
-        let tx = self.owner_port.tx.clone();
+        let mut rx: tokio::sync::watch::Receiver<PacketRoutes<Owner>> = self.owner_port.client.subscribe();
 
-        if let Some(rx) = self.owner_port.vrx.get_mut() {
-            match rx.has_changed() {
-                Ok(true) => {
-                    let next = rx.borrow_and_update();
+        match rx.has_changed() {
+            Ok(true) => {
+                let next: tokio::sync::watch::Ref<'_, PacketRoutes<Owner>> = rx.borrow_and_update();
 
-                    let virt = next;
-                    let field = sel(&virt);
+                let virt = next.virtual_ref();
+                let field = sel(&virt);
 
-                    let next = virt.to_owned();
+                // let next = virt.to_owned();
 
-                    if filter(&field) {
-                        // If field ref is in the committed state, notify any raw listeners
-                        if field.is_committed() {
-                            eprintln!("Field committed, notifying listeners of owner actual");
-                            if let Some(tx) = tx.get() {
-                                if let Err(err) = tx.send(next) {
-                                    eprintln!("{err}");
-                                    return std::task::Poll::Ready(None);
-                                } else {
-                                    eprintln!("Updated owner");
-                                }
-                            }
-                        }
-
-                        std::task::Poll::Ready(Some((field.clone(), virt.to_owned())))
-                    } else {
-                        cx.waker().wake_by_ref();
-                        std::task::Poll::Pending
+                if filter(&field) {
+                    // If field ref is in the committed state, notify any raw listeners
+                    if field.is_committed() {
+                        eprintln!("Field committed, notifying listeners of owner actual");
+                        
+                        todo!()
                     }
-                }
-                Ok(false) => {
+
+                    std::task::Poll::Ready(Some((field.clone(), virt.to_owned())))
+                } else {
                     cx.waker().wake_by_ref();
                     std::task::Poll::Pending
                 }
-                Err(err) => {
-                    eprintln!("{err}");
-                    std::task::Poll::Ready(None)
-                }
             }
-        } else {
-            eprintln!("stream is exiting");
-            std::task::Poll::Ready(None)
+            Ok(false) => {
+                cx.waker().wake_by_ref();
+                std::task::Poll::Pending
+            }
+            Err(err) => {
+                eprintln!("{err}");
+                std::task::Poll::Ready(None)
+            }
         }
     }
 }

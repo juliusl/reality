@@ -24,7 +24,16 @@ pub struct FieldKey<const OFFSET: usize>;
 pub struct PacketRoutes<P: Plugin> {
     /// Inner virtual plugin,
     ///
-    pub inner: P::Virtual,
+    inner: P::Virtual,
+}
+
+impl<P: Plugin> PacketRoutes<P> {
+    /// Returns a reference to the inner virtual plugin,
+    /// 
+    #[inline]
+    pub fn virtual_ref(&self) -> &P::Virtual {
+        &self.inner
+    }
 }
 
 /// When a packet arrives to the router, it's decoded by each field to find the field it applies to.

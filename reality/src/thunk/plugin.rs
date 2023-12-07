@@ -308,31 +308,6 @@ where
     P: Plugin,
     P::Virtual: NewFn<Inner = P>,
 {
-    // /// Queues a modification,
-    // ///
-    // /// This modification will be executed by the client dispatcher therefore an open port must
-    // /// be currently listening for the dispatch to be handled. This is different from `try_borrow_modify` which
-    // /// will try to execute the change immediately.
-    // ///
-    // pub fn queue_modify(
-    //     &self,
-    //     modify: impl FnOnce(Ref<'_, PacketRoutes<P>>) -> anyhow::Result<FieldPacket> + Send + Sync + 'static,
-    // ) {
-    //     if let Some(disp) = self.0.dispatcher.get() {
-    //         disp.clone()
-    //             .queue_dispatch_task(|e| {
-    //                 let client = e.clone();
-    //                 Box::pin(async move {
-    //                     if let Err(err) = client.borrow_and_modify(modify).await {
-    //                         error!("Could not modify upstream plugin {err}");
-    //                     }
-    //                 })
-    //             });
-
-    //         self.0.notify_packet_avail.notify_one();
-    //     }
-    // }
-
     /// If modify returns a packet successfully then this fn will try to send that packet to
     /// the listener. If the packet was successfully sent then Ok(()) is returned.
     ///
@@ -374,6 +349,36 @@ where
 
         Ok(())
     }
+
+    /// Sub
+    /// 
+    pub fn subscribe(&self) -> tokio::sync::watch::Receiver<PacketRoutes<P>> {
+        self.0.clone().subscribe_packet_routes()
+    }
+
+    // /// Queues a modification,
+    // ///
+    // /// This modification will be executed by the client dispatcher therefore an open port must
+    // /// be currently listening for the dispatch to be handled. This is different from `try_borrow_modify` which
+    // /// will try to execute the change immediately.
+    // ///
+    // pub fn queue_modify(
+    //     &self,
+    //     modify: impl FnOnce(Ref<'_, PacketRoutes<P>>) -> anyhow::Result<FieldPacket> + Send + Sync + 'static,
+    // ) {
+    //     if let Some(disp) = self.0.dispatcher.get() {
+    //         disp.clone()
+    //             .queue_dispatch_task(|e| {
+    //                 let client = e.clone();
+    //                 Box::pin(async move {
+    //                     if let Err(err) = client.borrow_and_modify(modify).await {
+    //                         error!("Could not modify upstream plugin {err}");
+    //                     }
+    //                 })
+    //             });
+    //         self.0.notify_packet_avail.notify_one();
+    //     }
+    // }
 }
 
 pub async fn enable_virtual_dependencies<P: Plugin>(tc: &mut ThunkContext) -> anyhow::Result<()>
