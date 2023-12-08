@@ -4,13 +4,14 @@ use std::sync::OnceLock;
 
 use anyhow::anyhow;
 use futures_util::Stream;
-use reality::WireClient;
 use reality::prelude::*;
+use reality::WireClient;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Sender;
 use tokio::task::JoinHandle;
+use tracing::error;
 use tracing::info;
 
 use crate::prelude::Action;
@@ -98,6 +99,7 @@ async fn enable_wire_bus(tc: &mut ThunkContext) -> anyhow::Result<()> {
 ///
 /// Plugin virtualization enables communication and coordination between plugins.
 ///
+#[derive(Clone)]
 pub struct VirtualBus {
     /// Nodes that can be virtualized by the bus,
     ///
@@ -129,9 +131,9 @@ impl VirtualBus {
     ///
     pub async fn wait_for<P: Plugin>(
         &mut self,
-    ) -> <Shared as StorageTarget>::BorrowMutResource<'_, BusOwnerPort<P, (), ()>> 
+    ) -> <Shared as StorageTarget>::BorrowMutResource<'_, BusOwnerPort<P, (), ()>>
     where
-        P::Virtual: NewFn<Inner = P>
+        P::Virtual: NewFn<Inner = P>,
     {
         if let Some(tc) = self.node.find_node_context::<P>().await {
             if let Ok(Some(context)) = tc.enable_virtual().await {
@@ -151,13 +153,18 @@ impl VirtualBus {
                         sel: |_| panic!("Incomplete bus definition"),
                         _port: {
                             let lock = OnceLock::new();
-                            lock.set(tokio::spawn(wire_server.clone().start_port())).expect("should be empty");
+                            lock.set(tokio::spawn(wire_server.clone().start_port()))
+                                .expect("should be empty");
                             lock
                         },
                     });
 
                 return rx;
+            } else {
+                error!("Could not enable virtual mode for plugin");
             }
+        } else {
+            error!("Could not find node context");
         }
 
         panic!("Could not find plugin")
@@ -182,17 +189,17 @@ impl VirtualBus {
 /// Owner port listening for any published changes to some owner,
 ///
 pub struct BusOwnerPort<Owner: Plugin + 'static, Value: 'static = (), ProjectedValue: 'static = ()>
-where 
-    Owner::Virtual: NewFn<Inner = Owner>
+where
+    Owner::Virtual: NewFn<Inner = Owner>,
 {
     /// Wire client,
-    /// 
+    ///
     client: WireClient<Owner>,
     /// Receiver for updates to any of Owner's packet routes,
-    /// 
+    ///
     vrx: OnceLock<Receiver<PacketRoutes<Owner>>>,
     /// Running wire-server port listening for changes from the wire server,
-    /// 
+    ///
     _port: OnceLock<JoinHandle<()>>,
     /// Selects a field on the owner to receive notifications on,
     ///
@@ -209,9 +216,9 @@ pub struct BusVirtualPort<Owner: Plugin + 'static> {
 
 /// Field port that is activated when an field owner has submitted some change,
 ///
-pub struct BusFieldPort<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 'static> 
-where 
-    Owner::Virtual: NewFn<Inner = Owner>
+pub struct BusFieldPort<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 'static>
+where
+    Owner::Virtual: NewFn<Inner = Owner>,
 {
     /// Owner bus,
     ///
@@ -231,9 +238,9 @@ impl<Owner: Plugin + 'static> BusVirtualPort<Owner> {
     }
 }
 
-impl<Owner: Plugin + 'static> BusOwnerPort<Owner, (), ()> 
-where 
-    Owner::Virtual: NewFn<Inner = Owner>
+impl<Owner: Plugin + 'static> BusOwnerPort<Owner, (), ()>
+where
+    Owner::Virtual: NewFn<Inner = Owner>,
 {
     /// Selects a field to monitor changes on from the owner,
     ///
@@ -263,9 +270,10 @@ where
     // }
 }
 
-impl<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 'static> BusFieldPort<Owner, Value, ProjectedValue>
+impl<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 'static>
+    BusFieldPort<Owner, Value, ProjectedValue>
 where
-    Owner::Virtual: NewFn<Inner = Owner>
+    Owner::Virtual: NewFn<Inner = Owner>,
 {
     /// Applies a filter on a received field,
     ///
@@ -277,7 +285,7 @@ where
 
 impl<
         'a,
-        V: CallAsync + ToOwned<Owned = Owner> + NewFn<Inner = Owner> + 'a,
+        V: CallAsync + ToOwned<Owned = Owner> + FieldRefController + NewFn<Inner = Owner> + 'a,
         Owner: Plugin<Virtual = V> + 'static,
         Value: 'static,
         ProjectedValue: 'static,
@@ -292,7 +300,8 @@ impl<
         let filter = self.filter;
         let sel = self.owner_port.sel;
 
-        let mut rx: tokio::sync::watch::Receiver<PacketRoutes<Owner>> = self.owner_port.client.subscribe();
+        let mut rx: tokio::sync::watch::Receiver<PacketRoutes<Owner>> =
+            self.owner_port.client.subscribe();
 
         match rx.has_changed() {
             Ok(true) => {
@@ -301,14 +310,10 @@ impl<
                 let virt = next.virtual_ref();
                 let field = sel(&virt);
 
-                // let next = virt.to_owned();
-
                 if filter(&field) {
                     // If field ref is in the committed state, notify any raw listeners
                     if field.is_committed() {
-                        eprintln!("Field committed, notifying listeners of owner actual");
-                        
-                        todo!()
+                        virt.owner().send_if_modified(|_| true);
                     }
 
                     std::task::Poll::Ready(Some((field.clone(), virt.to_owned())))

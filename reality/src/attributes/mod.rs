@@ -230,11 +230,12 @@ mod tests {
 
         let vtest = VirtualTest::new(test);
 
-        let _listener = vtest.listen();
+        let _listener = vtest.listen_raw();
 
         let tx = vtest.name.start_tx();
 
-        let tx_result = tx.next(|f| {
+        let tx_result = tx.next(|mut f| {
+            f.commit();
             Ok(f)
         }).finish();
 
@@ -244,7 +245,7 @@ mod tests {
             Err(_) => todo!(),
         }
 
-        // listener.changed().await.unwrap();
+        assert!(_listener.has_changed().unwrap());
         // let _vtest = listener.borrow_and_update();
     }
 }

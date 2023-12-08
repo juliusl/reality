@@ -1,14 +1,14 @@
+pub mod action;
+pub mod address;
+pub mod background_work;
+pub mod deck;
 pub mod engine;
 mod ext;
+pub mod foreground;
 pub mod host;
 pub mod operation;
 pub mod prelude;
 pub mod sequence;
-pub mod address;
-pub mod action;
-pub mod deck;
-pub mod background_work;
-pub mod foreground;
 
 #[allow(unused_imports)]
 mod tests {
@@ -31,6 +31,9 @@ mod tests {
     use crate::engine::Engine;
     use crate::engine::EngineBuilder;
     use crate::operation::Operation;
+    use crate::prelude::Action;
+    use crate::prelude::Address;
+    use crate::prelude::VirtualBusExt;
 
     #[derive(Reality, Default, Debug, Clone)]
     #[reality(plugin, group = "demo", rename = "test_plugin2")]
@@ -99,11 +102,11 @@ mod tests {
     }
 
     #[tokio::test]
-    // #[tracing_test::traced_test]
+    #[tracing_test::traced_test]
     async fn test_plugin_model() {
-        // TODO: Test Isoloation -- 7bda126d-466c-4408-b5b7-9683eea90b65
         let mut builder = Engine::builder();
         builder.enable::<TestPlugin>();
+        builder.enable::<TestPlugin2>();
 
         let engine = builder.build();
         let runmd = r#"
@@ -123,7 +126,7 @@ mod tests {
         : HOME .env /home/test
         : .args --name
         : .args test
-        <b/demo.test_plugin> cargo
+        <b/demo.test_plugin2> cargo
         : .name hello-world-3-tagged
         : RUST_LOG .env lifec=trace
         : HOME .env /home/test2
@@ -149,8 +152,37 @@ mod tests {
         let engine = engine.compile(workspace).await;
         let eh = engine.engine_handle();
 
-        if let Ok(_resource) = eh.hosted_resource("engine://state#test").await {
+        engine.spawn(|_, p| Some(p));
 
+        if let Ok(_resource) = eh.hosted_resource("engine://start#test").await {
+            let mut bus = _resource
+                .context()
+                .virtual_bus(Address::from_str("test/operation#test_tag").unwrap())
+                .await;
+
+            let mut txbus = bus.clone();
+            let _ = tokio::spawn(async move {
+                let tx = txbus.transmit::<TestPlugin2>().await;
+                
+                tx.write_to_virtual(|virt| {
+                    eprintln!("writing to virtual");
+                    virt.name.commit()
+                });
+            });
+
+            let mut bus_port = bus
+                .wait_for::<TestPlugin2>()
+                .await
+                .select(|s| &s.name)
+                .filter(|f| f.is_committed());
+
+            let bus_port = &mut bus_port;
+
+            pin_mut!(bus_port);
+
+            while let Some(_) = bus_port.next().await {
+                eprintln!("got update");
+            }
         }
 
         // for (address, _) in engine.iter_operations() {

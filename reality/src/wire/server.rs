@@ -10,6 +10,10 @@ use crate::prelude::*;
 use anyhow::anyhow;
 
 pub trait FieldRefController {
+    /// Field owner type,
+    /// 
+    type Owner: Plugin;
+
     /// Sets a field by name to the pending state,
     ///
     /// Returns true if the field was found and set to pending.
@@ -19,6 +23,21 @@ pub trait FieldRefController {
     /// Returns a list of pending fields,
     ///
     fn list_pending(&self) -> Vec<&str>;
+
+    /// Returns a channel receiver to watch for changes to the field ref owner,
+    /// 
+    /// **Note** This channel is noisy and will not receive any information on which fields changed. In addition it may be notified
+    /// even if no changes actually occured.
+    /// 
+    fn listen_raw(&self) -> tokio::sync::watch::Receiver<Self::Owner>;
+
+    /// Returns a reference to the tx side of the watch channel over Owner,
+    /// 
+    fn owner(&self) -> Arc<tokio::sync::watch::Sender<Self::Owner>>;
+
+    /// Returns the current state of owner,
+    /// 
+    fn current(&self) -> Self::Owner;
 }
 
 /// Wire server can run in the background and manage sending/receiving frames for a plugn,
@@ -261,7 +280,7 @@ where
 {
     // Enable wire server
     debug!("Enabling wire server");
-    let wire_server = WireServer::<P>::new(tc).await;
+    let wire_server = WireServer::<P>::new(tc).await?;
 
     let mut storage = tc.node.storage.write().await;
     storage.put_resource(wire_server, tc.attribute.transmute());

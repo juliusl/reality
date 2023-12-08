@@ -500,10 +500,9 @@ async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let e_init = tc.initialized::<EngineProxy>().await;
     let _rp_virt = VirtualReverseProxy::new(r_init);
     let _ep_virt = VirtualEngineProxy::new(e_init);
-    let mut ep = _ep_virt.listen();
+    let mut ep = _ep_virt.listen_raw();
 
     ep.changed().await?;
-
 
     // // let mut routes = BTreeMap::new();
 

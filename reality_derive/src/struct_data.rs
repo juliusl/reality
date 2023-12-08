@@ -527,6 +527,8 @@ impl StructData {
             }
 
             impl FieldRefController for #virtual_ident {
+                type Owner = #ident;
+
                 fn set_pending(&mut self, field_name: &str) -> bool {
                     match field_name {
                         #(#set_pending_impl),*
@@ -539,12 +541,22 @@ impl StructData {
                     #(#list_pending_impl)*
                     results
                 }
+
+                fn listen_raw(&self) -> tokio::sync::watch::Receiver<Self::Owner> {
+                    self.owner.subscribe()
+                }
+
+                fn current(&self) -> Self::Owner {
+                    self.owner.subscribe().borrow().to_owned()
+                }
+                
+                fn owner(&self) -> std::sync::Arc<tokio::sync::watch::Sender<Self::Owner>> {
+                    self.owner.clone()
+                }
             }
 
-            impl #virtual_ident {
-                /// Creates a new virtual receiver for plugin,
-                /// 
-                pub fn __new(init: #ident) -> Self {
+            impl #impl_generics From<#ident #ty_generics> for #virtual_ident #where_clause  {
+                fn from(init: #ident) -> #virtual_ident {
                     let (owner, rx) = tokio::sync::watch::channel(init);
                     let owner = std::sync::Arc::new(owner);
                     Self {
@@ -552,31 +564,13 @@ impl StructData {
                         #(#vtable_field_new_impl)*
                     }
                 }
-
-                /// Returns a sender that can send changes outside of field references,
-                /// 
-                pub fn owner(&self) -> std::sync::Arc<tokio::sync::watch::Sender<#ident>> {
-                    self.owner.clone()
-                }
-
-                /// Returns a receiver to listen for possible modifications of the owner,
-                /// 
-                pub fn listen(&self) -> tokio::sync::watch::Receiver<#ident> {
-                    self.owner.subscribe()
-                }
-
-                /// Returns the current state of the owner as an owned reference,
-                /// 
-                pub fn current(&self) -> #ident {
-                    self.owner.subscribe().borrow().to_owned()
-                }
             }
 
             impl NewFn for #virtual_ident {
                 type Inner = #ident;
 
                 fn new(value: Self::Inner) -> Self {
-                    #virtual_ident::__new(value)
+                    #virtual_ident::from(value)
                 }
             }
 
@@ -1041,12 +1035,6 @@ impl StructData {
                 impl #_impl_generics #name #ty_generics #where_clause {
                     pub fn to_virtual(self) -> #virtual_ident {
                         #virtual_ident::new(self)
-                    }
-                }
-
-                impl #_impl_generics From<#name #ty_generics> for #virtual_ident #where_clause {
-                    fn from(value: #name #ty_generics) -> #virtual_ident {
-                        #virtual_ident::new(value)
                     }
                 }
             ))
