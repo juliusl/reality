@@ -34,6 +34,13 @@ impl<P: Plugin> PacketRoutes<P> {
     pub fn virtual_ref(&self) -> &P::Virtual {
         &self.inner
     }
+
+    /// Returns a mutable reference to the inner virtual plugin,
+    /// 
+    #[inline]
+    pub fn virtual_mut(&mut self) -> &mut P::Virtual {
+        &mut self.inner
+    }
 }
 
 /// When a packet arrives to the router, it's decoded by each field to find the field it applies to.

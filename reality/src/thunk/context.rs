@@ -451,8 +451,8 @@ impl Context {
         &self,
     ) -> Option<ThunkContext> {
         let mut attrs = self
-            .node()
-            .await
+            .node
+            .clone()
             .stream_attributes()
             .fold(vec![], |mut acc, attr| async move {
                 let mut clone = self.clone();

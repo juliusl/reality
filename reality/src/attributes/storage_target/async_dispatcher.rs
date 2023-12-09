@@ -179,18 +179,19 @@ macro_rules! enable_queue {
                 resource_key,
                 ..
             } = $rcv;
+            
+            let mut storage = storage.deref().write().await;
 
             $(
-                let checking = storage.read().await;
-                if checking
+                if storage
                     .resource::<$queue_ty>(resource_key.transmute())
                     .is_none()
                 {
-                    drop(checking);
-                    let mut storage = storage.deref().write().await;
                     storage.put_resource(<$queue_ty as Default>::default(), resource_key.transmute());
                 }
             )*
+
+            drop(storage);
         }
     };
 }

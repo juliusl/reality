@@ -460,7 +460,7 @@ async fn test_host() {
                         .await
                         .wait_for::<Host>()
                         .await
-                        .select(|h| &h.name)
+                        .select(|h| &h.virtual_ref().name)
                         .filter(|h| h.is_committed());
 
                     let stream = &mut stream;
@@ -523,14 +523,14 @@ async fn test_host() {
                 // Write a change to the virtual reference
                 // TODO -- improve api ergo, deref mut is to owned so need to figure out how to mutate inner
                 // field ref
-                commit.write_to_virtual(|virt: &mut VirtualHost| {
-                    virt.name.edit_value(|f, v| {
+                commit.write_to_virtual(|virt| {
+                    virt.virtual_mut().name.edit_value(|f, v| {
                         assert_eq!(f, "name");
                         v.value = Some(String::from("demo2"));
                         true
                     });
-                    assert!(virt.name.commit());
-                    assert!(!virt.name.commit());
+                    assert!(virt.virtual_mut().name.commit());
+                    assert!(!virt.virtual_mut().name.commit());
                     eprintln!("Committed --");
                     true
                 });

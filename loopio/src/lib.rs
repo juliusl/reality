@@ -25,6 +25,8 @@ mod tests {
     use reality::prelude::*;
     use tokio::io::AsyncReadExt;
     use tokio::join;
+    use tokio::pin;
+    use tokio::sync::Notify;
     use tracing::trace;
     use uuid::Bytes;
 
@@ -155,32 +157,33 @@ mod tests {
         engine.spawn(|_, p| Some(p));
 
         if let Ok(_resource) = eh.hosted_resource("engine://start#test").await {
+            // Create a new virtual bus
             let mut bus = _resource
                 .context()
                 .virtual_bus(Address::from_str("test/operation#test_tag").unwrap())
                 .await;
 
+            // Create a clone for the test task
             let mut txbus = bus.clone();
+
             let _ = tokio::spawn(async move {
                 let tx = txbus.transmit::<TestPlugin2>().await;
-                
+
                 tx.write_to_virtual(|virt| {
                     eprintln!("writing to virtual");
-                    virt.name.commit()
+                    virt.virtual_mut().name.commit()
                 });
             });
 
+            // Create a new port listening for changes to the name field
             let mut bus_port = bus
                 .wait_for::<TestPlugin2>()
                 .await
-                .select(|s| &s.name)
-                .filter(|f| f.is_committed());
+                .select(|s| &s.virtual_ref().name)
+                .filter(|f| f.is_committed())
+                .pinned();
 
-            let bus_port = &mut bus_port;
-
-            pin_mut!(bus_port);
-
-            while let Some(_) = bus_port.next().await {
+            if let Some(_) = bus_port.deref_mut().next().await {
                 eprintln!("got update");
             }
         }

@@ -545,13 +545,13 @@ impl StructData {
                 fn listen_raw(&self) -> tokio::sync::watch::Receiver<Self::Owner> {
                     self.owner.subscribe()
                 }
+                
+                fn send_raw(&self) -> std::sync::Arc<tokio::sync::watch::Sender<Self::Owner>> {
+                    self.owner.clone()
+                }
 
                 fn current(&self) -> Self::Owner {
                     self.owner.subscribe().borrow().to_owned()
-                }
-                
-                fn owner(&self) -> std::sync::Arc<tokio::sync::watch::Sender<Self::Owner>> {
-                    self.owner.clone()
                 }
             }
 

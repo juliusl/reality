@@ -33,7 +33,7 @@ pub trait FieldRefController {
 
     /// Returns a reference to the tx side of the watch channel over Owner,
     /// 
-    fn owner(&self) -> Arc<tokio::sync::watch::Sender<Self::Owner>>;
+    fn send_raw(&self) -> Arc<tokio::sync::watch::Sender<Self::Owner>>;
 
     /// Returns the current state of owner,
     /// 
@@ -199,7 +199,7 @@ where
 impl<P> WireClient<P>
 where
     P: Plugin,
-    P::Virtual: NewFn<Inner = P>,
+    P::Virtual: NewFn<Inner = P> + FieldRefController,
 {
     /// If modify returns a packet successfully then this fn will try to send that packet to
     /// the listener. If the packet was successfully sent then Ok(()) is returned.
@@ -249,6 +249,12 @@ where
         self.0.clone().subscribe_packet_routes()
     }
 
+    /// Returns a reference to a routes updater,
+    /// 
+    pub fn routes(&self) -> Arc<tokio::sync::watch::Sender<PacketRoutes<P>>> {
+        self.0.listener.routes()
+    }
+
     // /// Queues a modification,
     // ///
     // /// This modification will be executed by the client dispatcher therefore an open port must
@@ -283,7 +289,8 @@ where
     let wire_server = WireServer::<P>::new(tc).await?;
 
     let mut storage = tc.node.storage.write().await;
-    storage.put_resource(wire_server, tc.attribute.transmute());
+    storage.maybe_put_resource(wire_server.clone(), tc.attribute.transmute());
+    storage.maybe_put_resource(wire_server.new_client(), tc.attribute.transmute());
 
     Ok(())
 }

@@ -1,5 +1,6 @@
 use std::pin::Pin;
 
+use tracing::debug;
 use tracing::trace;
 
 use super::prelude::CallAsync;
@@ -58,39 +59,33 @@ pub trait Plugin: ToFrame + BlockObject<Shared> + CallAsync + Clone + Default {
         Self::Virtual: NewFn<Inner = Self>,
     {
         CallOutput::Spawn(context.spawn(|c| async {
-            eprintln!("enabling frame");
+            debug!("Enabling frame");
             let init = c.initialized::<Self>().await;
+            
+            debug!("Converting to frame");
             let frame = init.to_frame(c.attribute);
 
+            debug!("Creating frame listener");
             let listener = FrameListener::<Self>::new(init);
 
+            debug!("Creating packet router");
             let packet_router = PacketRouter::<Self>::new(listener.routes());
             packet_router
                 .dispatcher
                 .set(c.dispatcher::<FrameUpdates>().await)
                 .ok();
 
-            trace!("Create packet routes for resource");
-            c.node
-                .storage
-                .write()
-                .await
-                .put_resource(listener, c.attribute.transmute());
+            let mut node = c.node.storage.write().await;
+            debug!("Create packet routes for resource");
+            node.maybe_put_resource(listener, c.attribute.transmute());
 
-            trace!("Create packet routes for resource");
-            c.node
-                .storage
-                .write()
-                .await
-                .put_resource(std::sync::Arc::new(packet_router), c.attribute.transmute());
+            debug!("Create packet routes for resource");
+            node.maybe_put_resource(std::sync::Arc::new(packet_router), c.attribute.transmute());
 
-            trace!("Putting frame for resource");
-            c.node
-                .storage
-                .write()
-                .await
-                .put_resource(frame, c.attribute.transmute());
+            debug!("Putting frame for resource");
+            node.maybe_put_resource(frame, c.attribute.transmute());
 
+            drop(node);
             Ok(c)
         }))
     }
