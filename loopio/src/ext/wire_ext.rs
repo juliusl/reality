@@ -283,13 +283,13 @@ where
     }
 }
 
-impl<
-        'a,
-        V: CallAsync + ToOwned<Owned = Owner> + FieldRefController + NewFn<Inner = Owner> + 'a,
-        Owner: Plugin<Virtual = V> + 'static,
-        Value: 'static,
-        ProjectedValue: 'static,
-    > Stream for &'a mut BusFieldPort<Owner, Value, ProjectedValue>
+impl<'a, V, Owner, Value, ProjectedValue> Stream
+    for &'a mut BusFieldPort<Owner, Value, ProjectedValue>
+where
+    V: CallAsync + ToOwned<Owned = Owner> + FieldRefController + NewFn<Inner = Owner> + 'a,
+    Owner: Plugin<Virtual = V> + 'static,
+    Value: 'static,
+    ProjectedValue: 'static,
 {
     type Item = (FieldRef<Owner, Value, ProjectedValue>, Owner);
 
@@ -327,7 +327,7 @@ impl<
                 std::task::Poll::Pending
             }
             Err(err) => {
-                eprintln!("{err}");
+                error!("{err}");
                 std::task::Poll::Ready(None)
             }
         }
