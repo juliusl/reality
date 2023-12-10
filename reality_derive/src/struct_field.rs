@@ -667,11 +667,11 @@ impl Parse for StructField {
                     if meta.path.is_ident("ext") {
                         ext = true;
                     }
-                    
+
                     if meta.path.is_ident("plugin") {
                         plugin = true;
                     }
-                    
+
                     if meta.path.is_ident("not_wire") {
                         not_wire = true;
                     }

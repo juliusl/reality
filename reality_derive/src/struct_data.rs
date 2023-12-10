@@ -249,7 +249,7 @@ impl StructData {
             let filter_packet_helper_fn_ident = format_ident!("__filter_packet_field_offset_{}", offset);
 
             let push_helper_impl = f.vec_of.as_ref().map(|f| {
-                quote_spanned!(f.span()=> 
+                quote_spanned!(f.span()=>
                     fn #push_helper_fn_ident(&mut self, value: #ty) -> bool {
                         self.#name.push(value);
                         true
@@ -264,7 +264,7 @@ impl StructData {
             ));
 
             let insert_entry_helper_impl = f.map_of.as_ref().map(|f| {
-                quote_spanned!(f.span()=> 
+                quote_spanned!(f.span()=>
                     fn #insert_entry_helper_fn_ident(&mut self, key: impl Into<String>, value: #ty) -> bool {
                         self.#name.insert(key.into(), value).is_none()
                     }
@@ -279,7 +279,7 @@ impl StructData {
 
 
             let set_helper = f.variant.as_ref().map(|(variant, enum_ty)| {
-                quote_spanned!(f.span=> 
+                quote_spanned!(f.span=>
                     let changed = if let #enum_ty::#variant { #name, .. } = &self {
                         #name != &value
                     } else {
@@ -293,14 +293,14 @@ impl StructData {
                         false
                     }
                 )
-            }).unwrap_or(quote_spanned!(f.span=>  
+            }).unwrap_or(quote_spanned!(f.span=>
                 let changed = &self.#name != &value;
                 self.#name = value;
                 changed
             ));
 
             let take_helper = f.variant.as_ref().map(|(variant, enum_ty)| {
-                quote_spanned!(f.span=> 
+                quote_spanned!(f.span=>
                     if let #enum_ty::#variant { #name, .. } = self {
                         #name
                     } else {
@@ -308,7 +308,7 @@ impl StructData {
                     }
                 )
             }).unwrap_or(quote_spanned!(f.span=> self.#name));
-            
+
             let encode_helper_impl = quote_spanned!(f.span=>
                 fn #encode_helper_fn_ident(vp: #virtual_ident) -> FieldPacket {
                     let mut packet =  <Self as OnParseField<#offset, #ty>>::empty_packet();
@@ -324,7 +324,7 @@ impl StructData {
 
 
             let set_helper_impl = f.variant.as_ref().map(|(variant, enum_ty)| {
-                quote_spanned!(f.span=> 
+                quote_spanned!(f.span=>
                     let changed = if let #enum_ty::#variant { #name, .. } = &owner {
                         #name != v
                     } else {
@@ -338,13 +338,13 @@ impl StructData {
                         false
                     }
                 )
-            }).unwrap_or(quote_spanned!(f.span=>  
+            }).unwrap_or(quote_spanned!(f.span=>
                 let changed = v != &owner.#name;
                 *v = owner.#name.to_owned();
                 changed
             ));
 
-            let decode_helper_impl = quote_spanned!(f.span=> 
+            let decode_helper_impl = quote_spanned!(f.span=>
                 /// Decode and apply a field packet to a virtual plugin,
                 /// 
                 /// Returns a field reference if the decoded value was applied succesfully.
@@ -373,7 +373,7 @@ impl StructData {
             );
 
             let name_lit = f.field_name_lit_str();
-            let filter_packet_helper_impl = quote_spanned!(f.span=> 
+            let filter_packet_helper_impl = quote_spanned!(f.span=>
                 fn #filter_packet_helper_fn_ident(vp: &#virtual_ident, fp: &FieldPacket) -> anyhow::Result<FieldRef<Self, #ty, #absolute_ty>> {
                     if fp.field_offset == #offset && fp.field_name == #name_lit {
                         Ok(vp.#name.clone())
@@ -382,7 +382,7 @@ impl StructData {
                     }
                 }
             );
-            
+
             quote_spanned! {f.span=>
                 fn #get_ref_helper_fn_ident(&self) -> (&str, &#absolute_ty) {
                     (#field_ident, #get_fn)
@@ -483,7 +483,7 @@ impl StructData {
             quote_spanned!(f.span=>
                 impl #impl_generics OnReadField<#offset> for #ident #ty_generics #where_clause {
                     type FieldType = #ty;
-            
+
                     #[inline]
                     fn read(virt: &Self::Virtual) -> &FieldRef<Self, Self::FieldType, Self::ProjectedType> {
                         &virt.#name
@@ -654,7 +654,7 @@ impl StructData {
             let _fields = fields.iter().map(|f| {
                 let ty = f.field_ty();
                 let offset = &f.offset;
-                quote_spanned!(f.span=> 
+                quote_spanned!(f.span=>
                     <Self as OnParseField<#offset, #ty>>::get_field(self)
                 )
             });
@@ -681,15 +681,15 @@ impl StructData {
                     (#field_name_lit, #offset) => { *<Self as OnParseField<#offset, #ty>>::get_field_mut(self).value = field.value; true }
                 )
             });
- 
+
             let _fromstr_derive = {
                 fields.iter().find(|f| f.derive_fromstr).map(|f| {
                     let name = &f.name;
-    
+
                     quote_spanned!(self.span=>
                       impl #impl_generics std::str::FromStr for #owner #ty_generics #where_clause {
                           type Err = anyhow::Error;
-    
+
                           fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
                               let mut _s = Self::default();
                               _s.#name = s.parse()?;
@@ -855,7 +855,7 @@ impl StructData {
                     fn field_name() -> &'static str {
                         #field_ident
                     }
-                
+
                     #[allow(unused_variables)]
                     fn on_parse(&mut self, #mut_value value: #ty, _tag: Option<&String>) -> ResourceKey<Property> {
                         let mut hasher = ResourceKeyHashBuilder::new_default_hasher();
@@ -992,13 +992,13 @@ impl StructData {
             });
 
         let to_frame = self.fields.iter().filter(|f| !f.ignore && !f.not_wire && self.replace.is_none()).map(|f| {
-            let offset = f.offset; 
+            let offset = f.offset;
             let ty = f.field_ty();
             let pty = &f.ty;
             let _name = &f.name;
 
             f.variant.as_ref().map(|(variant, enum_ty)| {
-                quote_spanned!(f.span=> 
+                quote_spanned!(f.span=>
                     if let #enum_ty::#variant { #_name, .. } = self {
                         {
                             let mut packet = <Self as OnParseField<#offset, #ty>>::into_packet(#_name.clone());
