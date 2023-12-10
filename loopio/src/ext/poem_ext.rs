@@ -24,6 +24,7 @@ use reality::prelude::*;
 use reality::CommaSeperatedStrings;
 use tracing::error;
 
+use crate::action::ActionExt;
 use crate::ext::*;
 use crate::prelude::Action;
 use crate::prelude::Address;
@@ -496,13 +497,11 @@ pub struct ReverseProxy {
 }
 
 async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let r_init = tc.initialized::<ReverseProxy>().await;
-    let e_init = tc.initialized::<EngineProxy>().await;
-    let _rp_virt = VirtualReverseProxy::new(r_init);
-    let _ep_virt = VirtualEngineProxy::new(e_init);
-    let mut ep = _ep_virt.listen_raw();
+    let init = tc.as_remote_plugin::<ReverseProxy>().await;
 
-    ep.changed().await?;
+    let bus = tc.virtual_bus(init.address.parse::<Address>()?).await;
+    
+    // TODO -- Get the address of the engine_proxies 
 
     // // let mut routes = BTreeMap::new();
 

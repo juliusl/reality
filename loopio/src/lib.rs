@@ -142,14 +142,8 @@ mod tests {
         ```
         "#;
 
-        tokio::fs::create_dir_all(".test").await.unwrap();
-
-        tokio::fs::write(".test/test_plugin.md", runmd)
-            .await
-            .unwrap();
-
         let mut workspace = Workspace::new();
-        workspace.add_local(".test/test_plugin.md");
+        workspace.add_buffer(".test/test_plugin.md", runmd);
 
         let engine = engine.compile(workspace).await;
         let eh = engine.engine_handle();
@@ -187,23 +181,6 @@ mod tests {
                 eprintln!("got update");
             }
         }
-
-        // for (address, _) in engine.iter_operations() {
-        //     println!("{address}");
-        // }
-
-        // let mut sequences = engine.iter_sequences().collect::<Vec<_>>().clone();
-        // let mut _seq = None;
-        // if let Some((address, seq)) = sequences.pop() {
-        //     println!("{address} -- {:#?}", seq);
-
-        //     _seq = Some(seq.clone());
-        //     tokio::spawn(async move { engine.handle_packets(|_, packet| Some(packet)).await });
-        // }
-
-        // _seq.clone().unwrap().await.unwrap();
-        // _seq.unwrap().await.unwrap();
-
         ()
     }
 }
