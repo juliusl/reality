@@ -82,13 +82,15 @@ impl VariantStruct {
             ));
         }
 
-        attrs.extend_from_slice(&self
-            .variant
-            .attrs
-            .clone()
-            .iter()
-            .map(|f| quote_spanned!(f.span()=> #f))
-            .collect::<Vec<_>>());
+        attrs.extend_from_slice(
+            &self
+                .variant
+                .attrs
+                .clone()
+                .iter()
+                .map(|f| quote_spanned!(f.span()=> #f))
+                .collect::<Vec<_>>(),
+        );
 
         quote_spanned!(self.variant.span()=>
             #(#attrs)*
@@ -160,7 +162,7 @@ impl EnumData {
     }
 
     /// Renders a register fn,
-    /// 
+    ///
     pub fn render_register(&self) -> TokenStream {
         let name = &self.input.ident;
 
@@ -168,17 +170,17 @@ impl EnumData {
 
         let variants = self.variants.iter().filter(|v| v.plugin).map(|v| {
             let ty = &v.variant.ident;
-            quote_spanned!(v.variant.span()=> 
+            quote_spanned!(v.variant.span()=>
                 _parser.with_object_type::<Thunk<#ty>>();
             )
         });
 
-        quote_spanned!{name.span()=>
+        quote_spanned! {name.span()=>
             impl #name #ty_generics #where_clause  {
                 pub fn register(host: &mut impl RegisterWith) {
                   host.register_with(|_parser| {
                     #(#variants)*
-                  }); 
+                  });
                 }
             }
         }

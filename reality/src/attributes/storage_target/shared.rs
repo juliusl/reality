@@ -22,7 +22,7 @@ pub struct Shared {
 
 impl Shared {
     /// Unpack a stored type,
-    /// 
+    ///
     pub fn unpack<T: for<'a> From<&'a mut Shared>>(&mut self) -> T {
         T::from(self)
     }

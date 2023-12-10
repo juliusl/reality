@@ -4,9 +4,9 @@ use async_trait::async_trait;
 use bytes::BufMut;
 use bytes::BytesMut;
 use loopio::action::Action;
-use loopio::prelude::StdExt;
-use loopio::prelude::PoemExt;
 use loopio::engine::Engine;
+use loopio::prelude::PoemExt;
+use loopio::prelude::StdExt;
 
 use loopio::prelude::flexbuffers_ext::FlexbufferExt;
 use reality::prelude::*;
@@ -47,22 +47,27 @@ struct Test {
 #[async_trait]
 impl CallAsync for Test {
     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
-        context.enable_flexbuffer().await; {
+        context.enable_flexbuffer().await;
+        {
             let mut total_buf = BytesMut::new();
-            context.write_flexbuffer(|b| {
-                b.start_map().push("name", "jello");
-                total_buf.put(b.view());
-            }).await?;
+            context
+                .write_flexbuffer(|b| {
+                    b.start_map().push("name", "jello");
+                    total_buf.put(b.view());
+                })
+                .await?;
         }
 
         let mut __name = Vec::new();
-        context.read_flexbuffer(|r| {
-            if let Some(name) = r.as_map().index("name").ok() {
-                assert_eq!("jello", name.as_str());
-                println!("reading from flexbuffer node -- {name}");
-                __name.push(name.as_str().to_string());
-            }
-        }).await?;
+        context
+            .read_flexbuffer(|r| {
+                if let Some(name) = r.as_map().index("name").ok() {
+                    assert_eq!("jello", name.as_str());
+                    println!("reading from flexbuffer node -- {name}");
+                    __name.push(name.as_str().to_string());
+                }
+            })
+            .await?;
 
         // println!("Printing from outside -- {:?}", __name);
         use loopio::prelude::Ext;
@@ -73,15 +78,12 @@ impl CallAsync for Test {
 
         let content = context.find_file_text("loopio/examples/test.txt").await;
         println!("{:?}", content);
-        assert_eq!(
-            initialized.expect.as_str(), 
-            content.unwrap_or_default()
-        );
+        assert_eq!(initialized.expect.as_str(), content.unwrap_or_default());
 
         if let Some(result) = context.find_command_result("ls").await {
             println!("{}", String::from_utf8(result.output)?);
         }
-        
+
         Ok(())
     }
 }
@@ -116,5 +118,8 @@ impl CallAsync for Echo {
 #[test]
 fn test_symbols() {
     println!("{}", <Test as AttributeType<Shared>>::symbol());
-    println!("{}", <loopio::prelude::Process as AttributeType<Shared>>::symbol())
+    println!(
+        "{}",
+        <loopio::prelude::Process as AttributeType<Shared>>::symbol()
+    )
 }

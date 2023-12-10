@@ -5,9 +5,9 @@ use std::pin::Pin;
 use tracing::error;
 use tracing::trace;
 
-use crate::prelude::*;
 use crate::lex::prelude::Context;
 use crate::lex::prelude::Instruction;
+use crate::prelude::*;
 
 /// Type-alias for a boxed block provider,
 ///
@@ -80,9 +80,7 @@ impl Parser {
             ) = line
             {
                 locations.push(lexer.span());
-            } else if let Ok(
-                Instruction::AppendComment
-            ) = line {
+            } else if let Ok(Instruction::AppendComment) = line {
                 lexer.extras.append_property();
             }
         }
@@ -163,7 +161,7 @@ impl Parser {
     fn on_add_node(&mut self, node_info: NodeInfo, block_info: BlockInfo) {
         // Reset the current node index
         self.current_node_idx.take();
-        
+
         // Parse attr on line
         if let Some(ref attr) = node_info.line.attr {
             let node = self.node_provider.provide(

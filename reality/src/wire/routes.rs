@@ -1,12 +1,18 @@
-use std::{ops::{IndexMut, Index}, marker::PhantomData, sync::{Arc, OnceLock}};
+use std::{
+    marker::PhantomData,
+    ops::{Index, IndexMut},
+    sync::{Arc, OnceLock},
+};
 
-use tracing::trace;
 use anyhow::anyhow;
+use tracing::trace;
 
-use crate::{OnReadField, OnWriteField, OnParseField, Plugin, FieldRef, Shared, StorageTarget, Dispatcher, FrameUpdates, NewFn, ResourceKey, FieldRefController};
+use crate::{
+    Dispatcher, FieldRef, FieldRefController, FrameUpdates, NewFn, OnParseField, OnReadField,
+    OnWriteField, Plugin, ResourceKey, Shared, StorageTarget,
+};
 
 use super::prelude::FieldPacket;
-
 
 /// Wrapper over the field offset and type so that the compiler can match by offset,
 ///
@@ -29,14 +35,14 @@ pub struct PacketRoutes<P: Plugin> {
 
 impl<P: Plugin> PacketRoutes<P> {
     /// Returns a reference to the inner virtual plugin,
-    /// 
+    ///
     #[inline]
     pub fn virtual_ref(&self) -> &P::Virtual {
         &self.inner
     }
 
     /// Returns a mutable reference to the inner virtual plugin,
-    /// 
+    ///
     #[inline]
     pub fn virtual_mut(&mut self) -> &mut P::Virtual {
         &mut self.inner
@@ -44,18 +50,18 @@ impl<P: Plugin> PacketRoutes<P> {
 }
 
 /// When a packet arrives to the router, it's decoded by each field to find the field it applies to.
-/// 
+///
 /// If the field was updated successfully, it is passed to the dispatcher which will then update FrameUpdates.
-/// 
+///
 /// FrameUpdates are read when a remote plugin is loaded and applied to the initialized state of the plugin.
-/// 
+///
 pub struct PacketRouter<P, S = Shared>
 where
     P: Plugin,
     S: StorageTarget + Send + Sync + 'static,
 {
     /// Handle to a watch channel which maintains state of P,
-    /// 
+    ///
     /// The inner PacketRoutes is just a wrapper over the Virtual plugin that provides access to field refs
     /// by offset.
     ///
@@ -64,7 +70,7 @@ where
     ///
     pub dispatcher: OnceLock<Dispatcher<S, FrameUpdates>>,
     /// Broadcast channel for forwarding packets to routes,
-    /// 
+    ///
     pub tx: Arc<tokio::sync::broadcast::Sender<super::packet::FieldPacket>>,
 }
 
@@ -152,10 +158,8 @@ where
                     return Ok(());
                 }
                 Err(err) => {
-                    trace!(
-                        "Skipping packet, {err}",
-                    );
-                },
+                    trace!("Skipping packet, {err}",);
+                }
             }
             Err(anyhow!("Did not apply packet via this route"))
         } else {

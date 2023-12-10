@@ -1,7 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
 use reality_derive::Reality;
-use tokio::{select, sync::{broadcast::error::SendError, watch::Ref}};
+use tokio::{
+    select,
+    sync::{broadcast::error::SendError, watch::Ref},
+};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error};
 
@@ -11,7 +14,7 @@ use anyhow::anyhow;
 
 pub trait FieldRefController {
     /// Field owner type,
-    /// 
+    ///
     type Owner: Plugin;
 
     /// Sets a field by name to the pending state,
@@ -25,18 +28,18 @@ pub trait FieldRefController {
     fn list_pending(&self) -> Vec<&str>;
 
     /// Returns a channel receiver to watch for changes to the field ref owner,
-    /// 
+    ///
     /// **Note** This channel is noisy and will not receive any information on which fields changed. In addition it may be notified
     /// even if no changes actually occured.
-    /// 
+    ///
     fn listen_raw(&self) -> tokio::sync::watch::Receiver<Self::Owner>;
 
     /// Returns a reference to the tx side of the watch channel over Owner,
-    /// 
+    ///
     fn send_raw(&self) -> Arc<tokio::sync::watch::Sender<Self::Owner>>;
 
     /// Returns the current state of owner,
-    /// 
+    ///
     fn current(&self) -> Self::Owner;
 }
 
@@ -244,13 +247,13 @@ where
     }
 
     /// Subscribe to changes on the inner packet routes,
-    /// 
+    ///
     pub fn subscribe(&self) -> tokio::sync::watch::Receiver<PacketRoutes<P>> {
         self.0.clone().subscribe_packet_routes()
     }
 
     /// Returns a reference to a routes updater,
-    /// 
+    ///
     pub fn routes(&self) -> Arc<tokio::sync::watch::Sender<PacketRoutes<P>>> {
         self.0.listener.routes()
     }

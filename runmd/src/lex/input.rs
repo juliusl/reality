@@ -15,15 +15,13 @@ pub enum Input<'source> {
     #[regex(r##"[^\r\n"`#]*"##, on_input)]
     Text(&'source str),
     /// Multiple lines of input text,
-    /// 
+    ///
     Lines(Vec<&'source str>),
 }
 
 #[inline]
 fn on_escaped_input<'s>(lex: &mut Lexer<'s, Input<'s>>) -> &'s str {
-    lex.slice()
-        .trim()
-        .trim_matches(|c| c == '\"' || c == '`')
+    lex.slice().trim().trim_matches(|c| c == '\"' || c == '`')
 }
 
 #[inline]
@@ -38,7 +36,7 @@ fn on_input<'s>(lex: &mut Lexer<'s, Input<'s>>) -> Filter<&'s str> {
 
 impl<'a> Input<'a> {
     /// Unwraps into the input str,
-    /// 
+    ///
     #[inline]
     pub fn input_str(self) -> String {
         match self {
@@ -50,29 +48,19 @@ impl<'a> Input<'a> {
 
 #[test]
 fn test_input_lexer() {
-    let mut lex = Input::lexer(
-        r"hello-world # Test comment",
-    );
+    let mut lex = Input::lexer(r"hello-world # Test comment");
     assert_eq!(lex.next(), Some(Ok(Input::Text("hello-world"))));
 
-    let mut lex = Input::lexer(
-        r"  hello  world # Test comment",
-    );
+    let mut lex = Input::lexer(r"  hello  world # Test comment");
     assert_eq!(lex.next(), Some(Ok(Input::Text("hello  world"))));
 
-    let mut lex = Input::lexer(
-        r"   'hello-world'   # Test comment",
-    );
+    let mut lex = Input::lexer(r"   'hello-world'   # Test comment");
     assert_eq!(lex.next(), Some(Ok(Input::EscapedText("hello-world"))));
 
-    let mut lex = Input::lexer(
-        r"   `hello-world`   # Test comment",
-    );
+    let mut lex = Input::lexer(r"   `hello-world`   # Test comment");
     assert_eq!(lex.next(), Some(Ok(Input::EscapedText("hello-world"))));
 
-    let mut lex = Input::lexer(
-        r##"   "hello world"  # Test comment"##,
-    );
+    let mut lex = Input::lexer(r##"   "hello world"  # Test comment"##);
     assert_eq!(lex.next(), Some(Ok(Input::EscapedText("hello world"))));
 
     let mut lex = Input::lexer(
@@ -81,5 +69,10 @@ fn test_input_lexer() {
         hello world 
         '"##,
     );
-    assert_eq!(lex.next(), Some(Ok(Input::EscapedText("\n        \n        hello world \n        "))));
+    assert_eq!(
+        lex.next(),
+        Some(Ok(Input::EscapedText(
+            "\n        \n        hello world \n        "
+        )))
+    );
 }

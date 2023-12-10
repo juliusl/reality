@@ -1,8 +1,8 @@
+use serde::Deserialize;
+use serde::Serialize;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::str::FromStr;
-use serde::Deserialize;
-use serde::Serialize;
 
 use crate::Decoration;
 use crate::KvpExt;
@@ -100,13 +100,13 @@ impl<T: FromStr + Send + Sync + 'static> Decorated<T> {
     }
 
     /// Finds a property in decorations,
-    /// 
+    ///
     pub fn property(&self, name: impl AsRef<str>) -> Option<&String> {
         self.decoration.as_ref().and_then(|d| d.prop(name.as_ref()))
     }
 
     /// Returns a reference to decorations,
-    /// 
+    ///
     pub fn decorations(&self) -> Option<&Decoration> {
         self.decoration.as_ref()
     }

@@ -1,4 +1,3 @@
-
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
@@ -49,7 +48,10 @@ pub struct Host {
     plugin: ResourceKey<reality::attributes::Attribute>,
 }
 
-async fn on_unload<S: StorageTarget>(storage: AsyncStorageTarget<S>, _: Option<ResourceKey<Attribute>>) {
+async fn on_unload<S: StorageTarget>(
+    storage: AsyncStorageTarget<S>,
+    _: Option<ResourceKey<Attribute>>,
+) {
     let storage = storage.storage.read().await;
 
     eprintln!("on unload being called");
@@ -444,7 +446,7 @@ async fn test_host() {
             // Receiver
             // There are two levels of listening
             // In this case it is the first level
-            // This example simulates what would happen when a plugin is called that 
+            // This example simulates what would happen when a plugin is called that
             // will listen for events.
 
             let listener = tokio::spawn(async move {

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use serde::Serialize;
 use serde::Deserialize;
+use serde::Serialize;
 
 /// Struct for storing extra information on an runmd instruction,
 ///

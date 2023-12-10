@@ -1,11 +1,10 @@
-use std::time::Instant;
 use imgui::InputTextCallbackHandler;
 use imgui::TreeNodeFlags;
 use loopio::action::LocalAction;
 use loopio::action::TryCallExt;
 use loopio::foreground::ForegroundEngine;
-use loopio::prelude::*;
 use loopio::prelude::AttributeType;
+use loopio::prelude::*;
 use nebudeck::desktop::*;
 use nebudeck::ext::imgui_ext::ImguiExt;
 use nebudeck::ext::imgui_ext::ImguiMiddleware;
@@ -15,6 +14,7 @@ use nebudeck::ext::*;
 use nebudeck::widgets::UiDisplayMut;
 use nebudeck::widgets::UiFormatter;
 use nebudeck::ControlBus;
+use std::time::Instant;
 
 /// Demonstrates how to build on top of the WgpuSystem Desktop App implementation,
 ///

@@ -1,15 +1,15 @@
 use anyhow::Error;
 use reality::ResourceKey;
 use reality::StorageTarget;
-use tokio::task::JoinHandle;
 use tokio::task::JoinError;
+use tokio::task::JoinHandle;
 
-use crate::engine::EngineBuilder;
-use crate::prelude::EngineHandle;
-use crate::background_work::CallStatus;
-use crate::prelude::Engine;
-use crate::background_work::BackgroundWorkEngineHandle;
 use crate::background_work::BackgroundWork;
+use crate::background_work::BackgroundWorkEngineHandle;
+use crate::background_work::CallStatus;
+use crate::engine::EngineBuilder;
+use crate::prelude::Engine;
+use crate::prelude::EngineHandle;
 use crate::prelude::Published;
 
 /// Type-alias for the background task listening for new engine packets,
@@ -34,25 +34,25 @@ pub struct ForegroundEngine {
 
 impl ForegroundEngine {
     /// Returns a new engine handle,
-    /// 
+    ///
     pub fn engine_handle(&self) -> EngineHandle {
         self.eh.clone()
     }
 
     /// Returns a new tokio runtime handle,
-    /// 
+    ///
     pub fn handle(&self) -> tokio::runtime::Handle {
         self.runtime.handle().clone()
     }
 
     /// Returns a new mutable reference to a tokio runtime,
-    /// 
+    ///
     pub fn runtime_mut(&mut self) -> &mut tokio::runtime::Runtime {
         &mut self.runtime
     }
 
     /// Returns a reference to a tokio runtime,
-    /// 
+    ///
     pub fn runtime(&self) -> &tokio::runtime::Runtime {
         &self.runtime
     }
@@ -105,14 +105,17 @@ impl ForegroundEngine {
         eh = runtime.block_on(async move {
             let tc = eh.run("engine://default").await.unwrap();
             let transient = tc.transient().await;
-            let handle = transient.current_resource::<BackgroundWorkEngineHandle>(ResourceKey::root());
+            let handle =
+                transient.current_resource::<BackgroundWorkEngineHandle>(ResourceKey::root());
             assert!(handle.is_some());
             eh.background_work = Some(handle.unwrap());
             eh
         });
 
         // Run diagnostics before returning the foreground engine
-        let bg = eh.background().expect("should be able to create a background handle");
+        let bg = eh
+            .background()
+            .expect("should be able to create a background handle");
         if let Ok(mut bg) = bg.call("engine://test_background_work") {
             loop {
                 match bg.status() {
@@ -142,7 +145,5 @@ impl ForegroundEngine {
 
 #[test]
 fn test_foreground_engine() {
-    let _mt_engine = ForegroundEngine::new(
-        crate::prelude::Engine::builder(),
-    );
+    let _mt_engine = ForegroundEngine::new(crate::prelude::Engine::builder());
 }

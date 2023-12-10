@@ -132,10 +132,11 @@ impl VirtualBus {
                         port_active: OnceLock::new(),
                         task: OnceLock::new(),
                     });
-                
+
                 if port.tx.get().is_none() {
                     let server = context.wire_server::<P>().await.unwrap();
-                    assert!(port.tx
+                    assert!(port
+                        .tx
                         .set(
                             server
                                 .subscribe_packet_routes()
@@ -159,7 +160,8 @@ impl VirtualBus {
                 if port.task.get().is_none() {
                     let server = context.wire_server::<P>().await.unwrap();
 
-                    assert!(port.task
+                    assert!(port
+                        .task
                         .set(tokio::spawn(async move {
                             info!("Starting wire server and port");
                             tokio::spawn(server.clone().start_port());
@@ -194,7 +196,7 @@ impl VirtualBus {
                     .maybe_write_cache::<BusVirtualPort<P>>(BusVirtualPort {
                         tx: OnceLock::new(),
                     });
-                
+
                 if port.tx.get().is_none() {
                     let client = context.wire_client::<P>().await.unwrap();
                     assert!(port.tx.set(client.routes()).is_ok());

@@ -1,12 +1,12 @@
-use std::pin::Pin;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use futures_util::Future;
+use std::pin::Pin;
 use tracing::info;
 use uuid::Uuid;
 
-use reality::attributes::Node;
 use reality::attributes;
+use reality::attributes::Node;
 
 use crate::prelude::*;
 
@@ -205,7 +205,6 @@ impl Action for HostedResource {
     }
 }
 
-
 impl Action for ThunkContext {
     #[inline]
     fn address(&self) -> String {
@@ -393,11 +392,11 @@ pub struct ActionFactory {
 }
 
 /// Type-alias for a task future,
-/// 
+///
 type Task = Pin<Box<dyn Future<Output = anyhow::Result<ThunkContext>> + Send + Sync + 'static>>;
 
 /// Type-alias for a task fn resource,
-/// 
+///
 type TaskFn = Pin<Box<dyn Fn(ThunkContext) -> Task + Send + Sync + 'static>>;
 
 impl ActionFactory {
@@ -438,7 +437,7 @@ impl ActionFactory {
     }
 
     /// Binds a task to the action context being built,
-    /// 
+    ///
     pub fn bind_task<F>(
         self,
         symbol: &str,
@@ -511,11 +510,11 @@ impl From<ActionFactory> for ThunkContext {
 }
 
 /// Trait for trying to call a thunk by name w/ a thunk context,
-/// 
+///
 #[async_trait]
 pub trait TryCallExt: AsRef<ThunkContext> {
     /// Try calling a thunk by symbol,
-    /// 
+    ///
     async fn try_call(&self, symbol: &str) -> anyhow::Result<Option<ThunkContext>> {
         let mut node = self.as_ref().node.storage.write().await;
         let key = self.as_ref().attribute.branch(symbol);
@@ -526,16 +525,12 @@ pub trait TryCallExt: AsRef<ThunkContext> {
         // tc.decoration = node.take_resource::<Decoration>(ResourceKey::root()).map(|d| *d);
         // eprintln!("{:?}", tc.decoration);
 
-        if let Some(_thunk) =
-            node.resource::<ThunkFn>(key.transmute())
-        {
+        if let Some(_thunk) = node.resource::<ThunkFn>(key.transmute()) {
             let thunk = _thunk.clone();
             drop(_thunk);
 
             return match thunk(tc) {
-                CallOutput::Spawn(Some(op)) => {
-                    Ok(op.await?.ok())
-                }
+                CallOutput::Spawn(Some(op)) => Ok(op.await?.ok()),
                 CallOutput::Abort(r) => Err(r.expect_err("should be an error returned here")),
                 CallOutput::Update(u) => Ok(u),
                 _ => {
@@ -544,14 +539,10 @@ pub trait TryCallExt: AsRef<ThunkContext> {
                 }
             };
         }
-        
-        if let Some(taskfn) =
-            node.take_resource::<TaskFn>(key.transmute())
-        {
+
+        if let Some(taskfn) = node.take_resource::<TaskFn>(key.transmute()) {
             drop(node);
-            let result = taskfn(tc)
-                .await
-                .map(Some);
+            let result = taskfn(tc).await.map(Some);
             return result;
         }
 
@@ -624,7 +615,8 @@ async fn custom_action(_tc: &mut ThunkContext) -> anyhow::Result<()> {
     eprintln!("custom action init");
 
     // Create the local action
-    let action = LocalAction.build::<Host>(_tc)
+    let action = LocalAction
+        .build::<Host>(_tc)
         .await
         // Add a task
         .bind_task("test 123", |mut tc| async move {
@@ -656,12 +648,10 @@ async fn custom_action(_tc: &mut ThunkContext) -> anyhow::Result<()> {
         .expect("should have call");
 
     if let Some(mut show) = local_action.context().try_call("show_ui_node").await? {
-        if let Some(__ui_node) = show.take_cache::<()>() {
-
-        }
+        if let Some(__ui_node) = show.take_cache::<()>() {}
     }
 
     let _host = local_action.as_plugin::<Host>().await;
-    
+
     Ok(())
 }

@@ -6,7 +6,7 @@ use tracing::trace;
 use crate::engine::EngineHandle;
 use crate::prelude::{Action, Address, Host};
 
-use self::wire_ext::{VirtualBusExt, VirtualBus};
+use self::wire_ext::{VirtualBus, VirtualBusExt};
 
 #[cfg(feature = "flexbuffers-ext")]
 pub mod flexbuffers_ext;
@@ -93,7 +93,7 @@ impl Ext for ThunkContext {
     }
 
     /// Searches for a virtual bus hosted by this context,
-    /// 
+    ///
     async fn listen_host(&self, host: &str) -> Option<VirtualBus> {
         if let Some(eh) = self.engine_handle().await {
             if let Ok(host) = eh.hosted_resource(format!("{host}://")).await {

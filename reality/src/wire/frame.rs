@@ -3,7 +3,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use tracing::trace;
 
-use crate::{AttributeType, Shared, ResourceKey, Attribute, FieldPacket, Plugin, NewFn};
+use crate::{Attribute, AttributeType, FieldPacket, NewFn, Plugin, ResourceKey, Shared};
 
 use anyhow::anyhow;
 

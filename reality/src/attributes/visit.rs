@@ -1,6 +1,6 @@
 use crate::FieldRef;
-use crate::PacketRoutes;
 use crate::OnParseField;
+use crate::PacketRoutes;
 use crate::Plugin;
 
 /// Field access,
@@ -200,5 +200,4 @@ mod tests {
         assert_eq!("hello-world", test.name.as_str());
         assert_eq!("hello-world-2", test.other.as_str());
     }
-
 }

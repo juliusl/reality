@@ -278,17 +278,17 @@ mod tests {
     use std::convert::Infallible;
     use std::path::PathBuf;
     use std::str::FromStr;
-    
+
     use crate::AsyncStorageTarget;
     use crate::AttributeType;
     use crate::BlockObject;
     use crate::OnParseField;
     use reality::prelude::*;
-    
+
     mod reality {
         pub use crate::*;
     }
-    
+
     #[derive(Debug, Default, Serialize, Clone, Reality)]
     #[reality(group = "reality", call = test_noop, plugin)]
     pub struct Test {
@@ -300,7 +300,6 @@ mod tests {
         Ok(())
     }
 
-    
     #[derive(Debug, Serialize, Default, Deserialize, Clone, Reality)]
     #[reality(group = "reality", call = test_noop, plugin)]
     pub struct Test2 {
@@ -309,7 +308,7 @@ mod tests {
         #[reality(attribute_type=Test3, not_wire)]
         test3: Test3,
     }
-    
+
     #[derive(Reality, Default, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
     #[reality(call = test_noop, plugin)]
     pub enum Test3 {
@@ -322,25 +321,25 @@ mod tests {
         #[default]
         D,
     }
-    
+
     impl FromStr for Test3 {
         type Err = Infallible;
-    
+
         fn from_str(_s: &str) -> Result<Self, Self::Err> {
             Ok(Test3::A { a: String::new() })
         }
     }
-    
+
     use async_trait::async_trait;
-    
+
     #[derive(Reality, Serialize, Default, Clone, Debug)]
     #[reality(plugin, call = test_call)]
     pub struct Test4;
-    
+
     pub async fn test_call(_: &mut ThunkContext) -> anyhow::Result<()> {
         Ok(())
     }
-    
+
     #[test]
     fn test() {
         let _test = Test3::A { a: String::new() };
@@ -351,11 +350,15 @@ mod tests {
             true
         }));
 
-        let encoded = Test3::__encode_field_offset_0(virt);        
+        let encoded = Test3::__encode_field_offset_0(virt);
         eprintln!("{:#?}", encoded);
-        assert_eq!("hello world", &bincode::deserialize::<String>(encoded.wire_data.as_ref().unwrap()).unwrap());
+        assert_eq!(
+            "hello world",
+            &bincode::deserialize::<String>(encoded.wire_data.as_ref().unwrap()).unwrap()
+        );
 
-        let decoded = Test3::__decode_apply_field_offset_0(VirtualTest3::new(_test), encoded).unwrap();
+        let decoded =
+            Test3::__decode_apply_field_offset_0(VirtualTest3::new(_test), encoded).unwrap();
         decoded.view_value(|v| {
             assert_eq!("hello world", v);
         });
@@ -367,11 +370,11 @@ mod tests {
             struct _Test {
                 a: String,
             }
-    
+
             let _test = Test3::A {
                 a: Default::default(),
             };
-    
+
             if let Test3::A { a } = self {
                 a
             } else {
@@ -379,10 +382,10 @@ mod tests {
             }
         }
     }
-    
+
     impl FromStr for Test {
         type Err = Infallible;
-    
+
         fn from_str(_: &str) -> Result<Self, Self::Err> {
             Ok(Test {
                 name: String::new(),
@@ -390,10 +393,10 @@ mod tests {
             })
         }
     }
-    
+
     impl FromStr for Test2 {
         type Err = Infallible;
-    
+
         fn from_str(_: &str) -> Result<Self, Self::Err> {
             Ok(Test2 {
                 name: String::new(),
@@ -402,20 +405,20 @@ mod tests {
             })
         }
     }
-    
+
     #[tokio::test]
     #[tracing_test::traced_test]
     async fn test_project_parser() {
         let mut project = Project::new(crate::Shared::default());
-    
+
         project.add_node_plugin("test", |_, _, parser| {
             parser.with_object_type::<Test>();
             parser.with_object_type::<Test2>();
             parser.with_object_type::<Test3>();
         });
-    
+
         tokio::fs::create_dir_all(".test").await.unwrap();
-    
+
         tokio::fs::write(
             ".test/v2v2test.md",
             r#"
@@ -454,20 +457,20 @@ mod tests {
         )
         .await
         .unwrap();
-    
+
         let mut _project = project.load_file(".test/v2v2test.md").await.unwrap();
-    
+
         println!("{:#?}", _project.nodes.read().await.keys());
-    
+
         for (k, node) in _project.nodes.write().await.iter_mut() {
             let node = node.read().await;
             println!("{:?}", k);
-    
+
             let attributes = node.resource::<ParsedAttributes>(ResourceKey::root());
-    
+
             if let Some(attributes) = attributes {
                 println!("{:#?}", attributes);
-    
+
                 for attr in attributes.parsed() {
                     let test = node.resource::<Test>(attr.transmute());
                     println!("{:?}", test);

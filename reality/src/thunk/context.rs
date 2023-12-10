@@ -11,19 +11,17 @@ use tracing::error;
 use tracing::trace;
 use uuid::Uuid;
 
-use crate::FrameListener;
-use crate::PacketRouter;
-use crate::WireClient;
-use crate::WireServer;
 use crate::prelude::Latest;
 use crate::AsyncStorageTarget;
 use crate::Attribute;
 use crate::Decoration;
 use crate::Dispatcher;
 use crate::Frame;
+use crate::FrameListener;
 use crate::FrameUpdates;
 use crate::HostedResource;
 use crate::Node;
+use crate::PacketRouter;
 use crate::ParsedAttributes;
 use crate::ParsedBlock;
 use crate::ResourceKey;
@@ -31,6 +29,8 @@ use crate::Shared;
 use crate::StorageTarget;
 use crate::StorageTargetKey;
 use crate::Tag;
+use crate::WireClient;
+use crate::WireServer;
 
 use super::prelude::*;
 
@@ -279,10 +279,10 @@ impl Context {
     /// **Note**: This is the state that was evaluated at the start of the application, when the runmd was parsed.
     ///
     pub async fn initialized<P: Plugin + Sync + Send + 'static>(&self) -> P {
-        let node = self.node()
-            .await;
+        let node = self.node().await;
 
-        let plugin = node.current_resource::<P>(self.attribute.transmute())
+        let plugin = node
+            .current_resource::<P>(self.attribute.transmute())
             .unwrap_or_default();
 
         drop(node);
@@ -291,7 +291,7 @@ impl Context {
     }
 
     /// Returns the packet router initialized for P,
-    /// 
+    ///
     pub async fn router<P: Plugin + Sync + Send + 'static>(&self) -> Option<Arc<PacketRouter<P>>> {
         self.node()
             .await
@@ -299,12 +299,12 @@ impl Context {
     }
 
     /// Returns the current **default** frame listener for plugin P,
-    /// 
+    ///
     /// **Note**: The default frame listener only has a buffer_len of 1.
-    /// 
-    pub async fn listener<P: Plugin + Sync + Send + 'static>(&self) -> Option<FrameListener<P>> 
-    where 
-        P::Virtual: NewFn<Inner = P>, 
+    ///
+    pub async fn listener<P: Plugin + Sync + Send + 'static>(&self) -> Option<FrameListener<P>>
+    where
+        P::Virtual: NewFn<Inner = P>,
     {
         self.node()
             .await
@@ -312,10 +312,10 @@ impl Context {
     }
 
     /// Returns the current wire server if initialized,
-    /// 
-    pub async fn wire_server<P: Plugin + Sync + Send + 'static>(&self) -> Option<Arc<WireServer<P>>> 
-    where 
-        P::Virtual: NewFn<Inner = P>, 
+    ///
+    pub async fn wire_server<P: Plugin + Sync + Send + 'static>(&self) -> Option<Arc<WireServer<P>>>
+    where
+        P::Virtual: NewFn<Inner = P>,
     {
         self.node()
             .await
@@ -323,10 +323,10 @@ impl Context {
     }
 
     /// Returns the current wire client if initialized,
-    /// 
-    pub async fn wire_client<P: Plugin + Sync + Send + 'static>(&self) -> Option<WireClient<P>> 
-    where 
-        P::Virtual: NewFn<Inner = P>, 
+    ///
+    pub async fn wire_client<P: Plugin + Sync + Send + 'static>(&self) -> Option<WireClient<P>>
+    where
+        P::Virtual: NewFn<Inner = P>,
     {
         self.node()
             .await
@@ -334,7 +334,7 @@ impl Context {
     }
 
     /// Listens for one packet,
-    /// 
+    ///
     pub async fn listen_one<P: Plugin + Sync + Send + 'static>(self) -> ThunkContext {
         if let Some(router) = self.router().await {
             P::listen_one(router).await;
@@ -783,7 +783,7 @@ where
     pub async fn apply_frame_updates(mut self) -> Initializer<'a, P> {
         debug!("trying to dispatch frame updates");
         let mut dispatcher = self.context.dispatcher::<FrameUpdates>().await;
-        
+
         dispatcher.dispatch_all().await;
 
         drop(dispatcher);

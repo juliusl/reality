@@ -96,9 +96,7 @@ impl KvpExt for ThunkContext {
         R: Send + Sync + 'static,
     {
         let key = self.attribute.transmute().branch(&key);
-        self.__cached
-            .resource::<R>(key)
-            .is_some()
+        self.__cached.resource::<R>(key).is_some()
     }
 
     fn kv_get<R>(
@@ -108,8 +106,7 @@ impl KvpExt for ThunkContext {
     where
         R: Send + Sync + 'static,
     {
-        self.__cached
-            .resource(key)
+        self.__cached.resource(key)
     }
 
     fn kv_get_mut<R>(
@@ -119,8 +116,7 @@ impl KvpExt for ThunkContext {
     where
         R: Send + Sync + 'static,
     {
-        self.__cached
-            .resource_mut(key)
+        self.__cached.resource_mut(key)
     }
 
     fn maybe_store_kv<R>(
@@ -137,7 +133,7 @@ impl KvpExt for ThunkContext {
         let set_value = !self.kv_contains::<R>(&key);
 
         if let Some((_, __config)) = self.fetch_mut_kv::<KvpConfig>(&key) {
-            // TODO -- 
+            // TODO --
         }
 
         if set_value {
@@ -145,7 +141,8 @@ impl KvpExt for ThunkContext {
             self.store_kv(&key, value);
         }
 
-        self.fetch_mut_kv(&key).expect("should only be accessed once per context")
+        self.fetch_mut_kv(&key)
+            .expect("should only be accessed once per context")
     }
 
     /// Store a resource by key in cache,
@@ -155,8 +152,7 @@ impl KvpExt for ThunkContext {
         R: Send + Sync + 'static,
     {
         let key = self.attribute.transmute().branch(&key);
-        self.__cached
-            .put_resource::<R>(value, key);
+        self.__cached.put_resource::<R>(value, key);
     }
 
     /// Take the resource from the kv store,

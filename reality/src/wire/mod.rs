@@ -1,8 +1,8 @@
 mod frame;
+mod op;
 mod packet;
 mod routes;
 mod server;
-mod op;
 
 pub mod prelude {
     pub use super::frame::Frame;
@@ -15,21 +15,21 @@ pub mod prelude {
     pub use super::routes::FieldKey;
     pub use super::routes::PacketRouter;
     pub use super::routes::PacketRoutes;
-    pub use super::server::WireServer;
-    pub use super::server::WireClient;
-    pub use super::server::FieldRefController;
     pub use super::server::enable_virtual_dependencies;
+    pub use super::server::FieldRefController;
+    pub use super::server::WireClient;
+    pub use super::server::WireServer;
 }
 
 #[allow(unused_imports)]
 mod test {
-    use std::time::Duration;
     use crate::prelude::*;
     use anyhow::anyhow;
     use async_stream::stream;
     use async_trait::async_trait;
     use futures_util::{pin_mut, StreamExt};
     use serde::Serialize;
+    use std::time::Duration;
     use tokio::{join, time::Instant};
 
     #[derive(Reality, Clone, Serialize, Default)]

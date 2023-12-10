@@ -17,7 +17,9 @@ impl ReadProp {
         match lexer.next() {
             Some(next) => match next {
                 Ok(prop) => match prop {
-                    PropReader::Json(p) | PropReader::Toml(p) => Some((p.0.to_string(), p.1.input_str())),
+                    PropReader::Json(p) | PropReader::Toml(p) => {
+                        Some((p.0.to_string(), p.1.input_str()))
+                    }
                 },
                 Err(_) => None,
             },
@@ -63,7 +65,11 @@ fn on_json<'a>(lex: &mut Lexer<'a, PropReader<'a>>) -> Filter<Prop<'a>> {
 }
 
 fn on_toml<'a>(lex: &mut Lexer<'a, PropReader<'a>>) -> Filter<Prop<'a>> {
-    let name = lex.slice().trim().trim_matches(|c|  c == '=' || c == '[' || c == ']').trim();
+    let name = lex
+        .slice()
+        .trim()
+        .trim_matches(|c| c == '=' || c == '[' || c == ']')
+        .trim();
     let mut input_lexer: Lexer<Input> = lex.clone().morph();
 
     if let Some(Ok(input)) = input_lexer.next() {

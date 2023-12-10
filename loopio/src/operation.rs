@@ -48,29 +48,29 @@ pub struct Operation {
     node: ResourceKey<reality::attributes::Node>,
 }
 
-/// **Main** entrypoint for operations defined w/ .runmd. Will call plugins in the order their 
+/// **Main** entrypoint for operations defined w/ .runmd. Will call plugins in the order their
 /// extensions were defined under the operation node.
-/// 
+///
 async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let mut init = tc.initialized::<Operation>().await;
     init.bind(tc.clone());
 
     let node = tc.node().await;
-    
+
     let parsed = node.current_resource::<ParsedAttributes>(ResourceKey::root());
-    
+
     // Create a stream so that we can await operations inside of the try_fold
     let stream = stream! {
         if let Some(parsed) =  parsed {
             // yield parsed.node;
-            
+
             for p in parsed.parsed() {
                 yield p;
             }
         }
     };
 
-    // **NOTE** It's important to drop this reference here since we may take a reference to this node 
+    // **NOTE** It's important to drop this reference here since we may take a reference to this node
     // inside of a plugin
     drop(node);
     let _tc = stream
@@ -78,7 +78,7 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
         .try_fold(tc.clone(), |tc, attr| async move {
             // eprintln!("-- should call -- {:?}", attr);
             // TODO -- Can add the plumbing for the activity system through here
-            // 
+            //
             {
                 let node = tc.node().await;
                 let mut tc = tc.clone();
@@ -225,7 +225,9 @@ impl Future for Operation {
     ) -> std::task::Poll<Self::Output> {
         if let Some((cancelled, mut spawned)) = self.as_mut().spawned.take() {
             if cancelled.is_cancelled() {
-                return std::task::Poll::Ready(Err(anyhow::anyhow!("Operation has been cancelled")));
+                return std::task::Poll::Ready(Err(anyhow::anyhow!(
+                    "Operation has been cancelled"
+                )));
             }
 
             match spawned.poll_unpin(cx) {

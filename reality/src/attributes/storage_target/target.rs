@@ -58,23 +58,23 @@ pub trait StorageTarget {
     }
 
     /// Returns the number of resource keys currently stored,
-    /// 
+    ///
     fn len(&self) -> usize;
 
     /// Returns true if the target is currently empty,
-    /// 
+    ///
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Returns true if a resource was removed,
-    /// 
+    ///
     fn remove_resource_at(&mut self, _key: ResourceKey<Attribute>) -> bool {
         false
     }
 
     /// Returns a copy of the current value of a resource,
-    /// 
+    ///
     fn current_resource<T: ToOwned<Owned = T> + Send + Sync + 'static>(
         &self,
         resource_key: StorageTargetKey<T>,
@@ -93,11 +93,8 @@ pub trait StorageTarget {
     ) -> Self::BorrowMutResource<'_, T>;
 
     /// Returns true if a resource T is present in storage,
-    /// 
-    fn contains<T: Send + Sync + 'static>(
-        &self,
-        _resource_key: StorageTargetKey<T>,
-    ) -> bool {
+    ///
+    fn contains<T: Send + Sync + 'static>(&self, _resource_key: StorageTargetKey<T>) -> bool {
         false
     }
 

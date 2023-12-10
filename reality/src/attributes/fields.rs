@@ -295,10 +295,10 @@ where
     }
 
     /// Filters a field packet,
-    /// 
-    /// If this field ref matches the field packet, then it will return Ok(Self), 
+    ///
+    /// If this field ref matches the field packet, then it will return Ok(Self),
     /// otherwise returns an error.
-    /// 
+    ///
     pub fn filter_packet(&self, fp: &FieldPacket) -> anyhow::Result<Self> {
         (self.table.filter.root)(&<Owner as Plugin>::Virtual::new(self.owner()), fp)
     }
@@ -462,8 +462,14 @@ impl<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 'static>
         insert_entry: fn(&mut Owner, String, Value) -> bool,
         take: fn(Owner) -> ProjectedValue,
         encode: fn(Owner::Virtual) -> FieldPacket,
-        decode: fn(Owner::Virtual, FieldPacket) -> anyhow::Result<FieldRef<Owner, Value, ProjectedValue>>,
-        filter: fn(&Owner::Virtual, &FieldPacket) -> anyhow::Result<FieldRef<Owner, Value, ProjectedValue>>,
+        decode: fn(
+            Owner::Virtual,
+            FieldPacket,
+        ) -> anyhow::Result<FieldRef<Owner, Value, ProjectedValue>>,
+        filter: fn(
+            &Owner::Virtual,
+            &FieldPacket,
+        ) -> anyhow::Result<FieldRef<Owner, Value, ProjectedValue>>,
     ) -> Self {
         Self {
             get_ref: AdapterRef {

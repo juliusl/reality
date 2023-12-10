@@ -1,7 +1,7 @@
 use super::prelude::*;
 
 /// Struct containing attribute parameters,
-/// 
+///
 /// An attribute is simply a container w/ a name and an input value,
 ///
 #[derive(Hash, Default, Debug, Clone, PartialEq)]

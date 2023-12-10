@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, path::PathBuf, process::ExitStatus};
 use async_trait::async_trait;
 use bytes::Bytes;
 use reality::prelude::*;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::action::ActionExt;
 
@@ -31,15 +31,21 @@ pub trait StdExt {
 #[async_trait]
 impl StdExt for ThunkContext {
     async fn find_file_text(&mut self, path: impl Into<PathBuf> + Send + Sync) -> Option<String> {
-        self.transient()
-            .await
-            .current_resource::<String>(path.into().to_str().map(ResourceKey::with_hash).unwrap_or(ResourceKey::root()))
+        self.transient().await.current_resource::<String>(
+            path.into()
+                .to_str()
+                .map(ResourceKey::with_hash)
+                .unwrap_or(ResourceKey::root()),
+        )
     }
 
     async fn find_file(&mut self, path: impl Into<PathBuf> + Send + Sync) -> Option<Bytes> {
-        self.transient()
-            .await
-            .current_resource::<Bytes>(path.into().to_str().map(ResourceKey::with_hash).unwrap_or(ResourceKey::root()))
+        self.transient().await.current_resource::<Bytes>(
+            path.into()
+                .to_str()
+                .map(ResourceKey::with_hash)
+                .unwrap_or(ResourceKey::root()),
+        )
     }
 
     async fn find_command_result(&self, program: &str) -> Option<CommandResult> {
@@ -101,10 +107,12 @@ impl CallAsync for ReadTextFile {
         // println!("{:?}", result);
         let result = result?;
 
-        context
-            .transient_mut()
-            .await
-            .put_resource(result, path.to_str().map(ResourceKey::with_hash).unwrap_or(ResourceKey::root()));
+        context.transient_mut().await.put_resource(
+            result,
+            path.to_str()
+                .map(ResourceKey::with_hash)
+                .unwrap_or(ResourceKey::root()),
+        );
 
         Ok(())
     }
@@ -132,7 +140,9 @@ impl CallAsync for ReadFile {
 
         context.transient_mut().await.put_resource(
             Bytes::copy_from_slice(&result),
-            path.to_str().map(ResourceKey::with_hash).unwrap_or(ResourceKey::root()),
+            path.to_str()
+                .map(ResourceKey::with_hash)
+                .unwrap_or(ResourceKey::root()),
         );
 
         Ok(())
@@ -165,19 +175,19 @@ impl CallAsync for Println {
 #[reality(plugin, call = start_process, group = "loopio.std")]
 pub struct Process {
     /// Name of the program,
-    /// 
+    ///
     #[reality(derive_fromstr)]
     pub program: String,
     /// Environment variables the process will have access to
-    /// 
+    ///
     #[reality(map_of=String)]
     pub env: BTreeMap<String, String>,
     /// List of arguments to add to the process,
-    /// 
+    ///
     #[reality(vec_of=String)]
     pub arg: Vec<String>,
     /// If true, the process output will be stored
-    /// 
+    ///
     pub piped: bool,
 }
 

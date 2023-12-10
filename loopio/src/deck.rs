@@ -31,15 +31,15 @@ pub struct Deck {
 
 impl Deck {
     /// Returns doc headers,
-    /// 
-    pub fn doc_headers(&self, hr: &HostedResource)  -> Option<&Vec<String>> {
+    ///
+    pub fn doc_headers(&self, hr: &HostedResource) -> Option<&Vec<String>> {
         let key = Self::key(hr);
         eprintln!("Deck key -- {:?}", key);
         self.doc_headers.get(&key)
     }
 
     /// Returns a deck key from a hosted resource,
-    /// 
+    ///
     fn key(hr: &HostedResource) -> ResourceKey<Attribute> {
         hr.node_rk().branch(hr.plugin_rk()).transmute()
     }
@@ -60,70 +60,46 @@ impl From<&ParsedBlock> for Deck {
                 // deck.properties.insert(*rk, props.clone());
                 let rk = nk.branch(rk);
                 deck.properties.insert(rk.transmute(), props.clone());
-                deck.node_paths.insert(
-                    NodePath {
-                        node: idx,
-                        offset,
-                    },
-                    rk.transmute(),
-                );
+                deck.node_paths
+                    .insert(NodePath { node: idx, offset }, rk.transmute());
             }
 
             for (offset, (rk, docs)) in node.doc_headers.iter().enumerate() {
                 // deck.doc_headers.insert(*rk, docs.clone());
                 let rk = nk.branch(rk);
                 deck.doc_headers.insert(rk.transmute(), docs.clone());
-                deck.node_paths.insert(
-                    NodePath {
-                        node: idx,
-                        offset,
-                    },
-                    rk.transmute(),
-                );
+                deck.node_paths
+                    .insert(NodePath { node: idx, offset }, rk.transmute());
             }
 
             for (offset, (rk, props)) in node.properties.comment_properties.iter().enumerate() {
                 // deck.properties.insert(rk.transmute(), props.clone());
                 let rk = nk.branch(rk);
                 deck.properties.insert(rk.transmute(), props.clone());
-                deck.node_paths.insert(
-                    NodePath {
-                        node: idx,
-                        offset,
-                    },
-                    rk.transmute(),
-                );
+                deck.node_paths
+                    .insert(NodePath { node: idx, offset }, rk.transmute());
             }
 
             for (offset, (rk, docs)) in node.properties.doc_headers.iter().enumerate() {
                 // deck.doc_headers.insert(rk.transmute(), docs.clone());
                 let rk = nk.branch(rk);
                 deck.doc_headers.insert(rk.transmute(), docs.clone());
-                deck.node_paths.insert(
-                    NodePath {
-                        node: idx,
-                        offset,
-                    },
-                    rk.transmute(),
-                );
+                deck.node_paths
+                    .insert(NodePath { node: idx, offset }, rk.transmute());
             }
 
             for (idx, attr) in node.attributes.iter().enumerate() {
                 if let Some(defined) = node.properties.defined.get(attr) {
                     for (offset, defined) in defined.iter().enumerate() {
-                        deck.node_paths.insert(
-                            NodePath {
-                                node: idx,
-                                offset,
-                            },
-                            defined.transmute(),
-                        );
+                        deck.node_paths
+                            .insert(NodePath { node: idx, offset }, defined.transmute());
                     }
                 }
             }
 
             for (path, rk) in node.paths.iter().filter(|(f, _)| !f.is_empty()) {
-                deck.paths.insert(path.to_string(), nk.branch(rk).transmute());
+                deck.paths
+                    .insert(path.to_string(), nk.branch(rk).transmute());
             }
         }
 

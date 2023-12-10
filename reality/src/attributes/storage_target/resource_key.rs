@@ -1,11 +1,11 @@
 use core::slice;
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
-use std::hash::Hash;
-use std::marker::PhantomData;
-use serde::Serialize;
 use serde::Deserialize;
+use serde::Serialize;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hash;
+use std::hash::Hasher;
+use std::marker::PhantomData;
 use tracing::trace;
 
 use super::target::StorageTargetKey;
@@ -57,7 +57,6 @@ pub struct ResourceKey<T: Send + Sync + 'static> {
     _t: PhantomData<T>,
 }
 
-
 impl<T: Send + Sync + 'static> Default for ResourceKey<T> {
     fn default() -> Self {
         Self::new()
@@ -66,19 +65,22 @@ impl<T: Send + Sync + 'static> Default for ResourceKey<T> {
 
 impl<T: Send + Sync + 'static> ResourceKey<T> {
     /// Root resource key,
-    /// 
+    ///
     pub const fn root() -> ResourceKey<T> {
-        ResourceKey { data: 0, _t: PhantomData }
+        ResourceKey {
+            data: 0,
+            _t: PhantomData,
+        }
     }
 
     /// Returns true if the current key is a root key,
-    /// 
+    ///
     pub const fn is_root(&self) -> bool {
         self.data == 0
     }
 
     /// Panics if the current key is the root key,
-    /// 
+    ///
     pub const fn expect_not_root(self) -> Self {
         if self.is_root() {
             panic!("Should not be root key")
@@ -128,7 +130,10 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
     /// Otherwise, creates a new key.
     ///
     pub fn transmute<B: Send + Sync + 'static>(&self) -> ResourceKey<B> {
-        trace!(from=std::any::type_name::<T>(), to=std::any::type_name::<B>());
+        trace!(
+            from = std::any::type_name::<T>(),
+            to = std::any::type_name::<B>()
+        );
         if let Some((key, len)) = self.label_parts() {
             let bsize = std::mem::size_of::<B>();
 
@@ -327,22 +332,22 @@ bitflags::bitflags! {
         ///
         const ENABLE_CURSOR = 1 << 4;
         /// If set, the type name of the resource has been hashed into the resource key,
-        /// 
+        ///
         const HASH_TYPE_NAME = 1 << 5;
         /// If set the type name of an owning type has been hashed into the resource key,
-        /// 
+        ///
         const HASH_OWNER_TYPE_NAME = 1 << 6;
         /// If set, the field offset has been hashed into the resource key,
-        /// 
+        ///
         const HASH_OFFSET_TYPE_NAME = 1 << 7;
         /// If set, the field name has been hashed into the resource key,
-        /// 
+        ///
         const HASH_FIELD_NAME = 1 << 8;
         /// If set, the tag value has been hashed into the resource key,
-        /// 
+        ///
         const HASH_TAG_VALUE = 1 << 9;
         /// If set, the length of the field name was hashed into the resoruce key,
-        /// 
+        ///
         const HASH_FIELD_NAME_LEN = 1 << 10;
         /// Resource key is a hashed counter, meaning within the same namespace, it can store
         /// multiple references to the same type under a hashkey plus index. This allows

@@ -1,8 +1,3 @@
-
 /// Widget to explore wire servers available,
-/// 
-pub struct Servers {
-    
-}
-
-
+///
+pub struct Servers {}

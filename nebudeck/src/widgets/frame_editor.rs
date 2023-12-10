@@ -278,11 +278,15 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                                                     .map(|d| d.to_vec())
                                                                     .unwrap_or_default(),
                                                                 help: help.map(String::to_string),
-                                                                widget_table: tc.get().unwrap()
+                                                                widget_table: tc
+                                                                    .get()
+                                                                    .unwrap()
                                                                     .cached::<EditorWidgetTable>()
                                                                     .unwrap_or_default(),
                                                             };
-                                                            tc.get_mut().unwrap().store_kv(&edit, editor);
+                                                            tc.get_mut()
+                                                                .unwrap()
+                                                                .store_kv(&edit, editor);
                                                         }
                                                         _ => {
                                                             ui.label_text(
@@ -311,7 +315,13 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                 for (panel_name, field) in
                                     init.action.iter().map(|t| (t.tag(), t.value()))
                                 {
-                                    action_button(panel_name, field, name, ui, tc.get_mut().unwrap());
+                                    action_button(
+                                        panel_name,
+                                        field,
+                                        name,
+                                        ui,
+                                        tc.get_mut().unwrap(),
+                                    );
                                 }
 
                                 ui.unindent();
@@ -322,7 +332,8 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                             trace!("Queued frame update");
                             let rk = tc.get().unwrap().cached::<ResourceKey<Attribute>>();
 
-                            if let Some(cache) = tc.get_mut().unwrap().take_cache::<FrameUpdates>() {
+                            if let Some(cache) = tc.get_mut().unwrap().take_cache::<FrameUpdates>()
+                            {
                                 tc.get().unwrap().spawn(move |tc| async move {
                                     unsafe {
                                         println!("Outside: {:?}", &rk);

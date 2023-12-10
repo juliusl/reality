@@ -11,10 +11,7 @@ fn main() -> anyhow::Result<()> {
     let desktop = Desktop::new()?;
 
     let engine = Engine::builder();
-    BlankWindow.delegate(
-        desktop, 
-        ForegroundEngine::new(engine)
-    );
+    BlankWindow.delegate(desktop, ForegroundEngine::new(engine));
 
     Ok(())
 }

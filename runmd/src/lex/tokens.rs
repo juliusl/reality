@@ -8,7 +8,10 @@ use super::prelude::*;
 pub enum Tokens<'source> {
     /// Extension container,
     ///
-    #[regex("([a-zA-Z]*[/]?[a-zA-Z0-9._-]+|([(][a-zA-Z0-9._-]+[ ]*[a-zA-Z0-9._-]+[)]))>", on_extension)]
+    #[regex(
+        "([a-zA-Z]*[/]?[a-zA-Z0-9._-]+|([(][a-zA-Z0-9._-]+[ ]*[a-zA-Z0-9._-]+[)]))>",
+        on_extension
+    )]
     Extension(Extension<'source>),
     /// Attribute container,
     ///
@@ -107,7 +110,11 @@ fn on_extension<'s>(lex: &mut Lexer<'s, Tokens<'s>>) -> Filter<Extension<'s>> {
         if let Some(tag) = lex.slice().split('/').next() {
             Extension {
                 tag: Some(tag),
-                name: lex.slice().trim_start_matches(tag).trim_start_matches('/').trim_end_matches('>'),
+                name: lex
+                    .slice()
+                    .trim_start_matches(tag)
+                    .trim_start_matches('/')
+                    .trim_end_matches('>'),
                 suffix: None,
                 input: get_input!(lex),
             }
@@ -121,7 +128,11 @@ fn on_extension<'s>(lex: &mut Lexer<'s, Tokens<'s>>) -> Filter<Extension<'s>> {
         }
     } else {
         Extension {
-            tag: if lex.slice().contains('/') { lex.slice().split('/').next() } else { None },
+            tag: if lex.slice().contains('/') {
+                lex.slice().split('/').next()
+            } else {
+                None
+            },
             name: lex.slice().trim_end_matches('>'),
             suffix: None,
             input: get_input!(lex),

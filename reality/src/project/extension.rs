@@ -159,7 +159,7 @@ where
                 let before_task = before_task.clone();
 
                 dispatcher.queue_dispatch_owned_task(move |result| {
-                    Box::pin(async move { 
+                    Box::pin(async move {
                         let (controller, value) = result?;
                         (before_task)(target, controller, value).await
                     })
@@ -177,7 +177,7 @@ where
             if let Some(user_task) = self.user_task.clone() {
                 let target = target.clone();
                 dispatcher.queue_dispatch_owned_task(move |result| {
-                    Box::pin(async move { 
+                    Box::pin(async move {
                         let (controller, value) = result?;
                         (user_task)(target, controller, value).await
                     })
@@ -199,7 +199,7 @@ where
                 let after_task = after_task.clone();
 
                 dispatcher.queue_dispatch_owned_task(move |result| {
-                    Box::pin(async move { 
+                    Box::pin(async move {
                         let (controller, value) = result?;
                         (after_task)(target, controller, value).await
                     })
@@ -357,7 +357,7 @@ mod tests {
     use tokio::io::AsyncReadExt;
     use tracing::trace;
 
-    use crate::{Transform, ResourceKey, Shared, StorageTarget};
+    use crate::{ResourceKey, Shared, StorageTarget, Transform};
 
     #[tokio::test]
     #[tracing_test::traced_test]

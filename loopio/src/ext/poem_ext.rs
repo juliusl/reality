@@ -143,12 +143,16 @@ impl PoemExt for ThunkContext {
 
     #[inline]
     async fn replace_header_map(&mut self, header_map: HeaderMap) {
-        self.transient_mut().await.put_resource(header_map, ResourceKey::root())
+        self.transient_mut()
+            .await
+            .put_resource(header_map, ResourceKey::root())
     }
 
     #[inline]
     async fn get_path_vars(&mut self) -> Option<PathVars> {
-        self.transient().await.current_resource::<PathVars>(ResourceKey::root())
+        self.transient()
+            .await
+            .current_resource::<PathVars>(ResourceKey::root())
     }
 
     #[inline]
@@ -278,7 +282,7 @@ async fn on_proxy(
 ///
 async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
     let initialized = Remote.create::<EngineProxy>(context).await;
-    
+
     // Find hosted resources to route to
     let mut resources = BTreeMap::new();
     for (setting, handler) in initialized.route.iter().filter_map(|(k, v)| {
@@ -382,10 +386,10 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
             .await;
         context.on_notify_host(scheme.as_str()).await?;
 
-        // 
+        //
         // TODO -- context.wire_bus("demo://").commit(virtual_engine_proxy.path);
         //      or context.virtual_bus("demo://"). api's -- wait_for, commit, changed,
-        // 
+        //
     }
 
     eprintln!(
@@ -405,7 +409,7 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
 
 /// Reverse proxy config,
 ///
-#[derive(Reality, Serialize, Deserialize, Clone, PartialEq,  Default)]
+#[derive(Reality, Serialize, Deserialize, Clone, PartialEq, Default)]
 #[reality(plugin, call = configure_reverse_proxy, rename = "reverse-proxy-config", group = "loopio.poem")]
 pub struct ReverseProxyConfig {
     /// Alias this config is for,
@@ -500,8 +504,8 @@ async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = tc.as_remote_plugin::<ReverseProxy>().await;
 
     let bus = tc.virtual_bus(init.address.parse::<Address>()?).await;
-    
-    // TODO -- Get the address of the engine_proxies 
+
+    // TODO -- Get the address of the engine_proxies
 
     // // let mut routes = BTreeMap::new();
 

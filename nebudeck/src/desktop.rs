@@ -5,17 +5,17 @@ use loopio::engine::EnginePacket;
 use tracing::error;
 use tracing::info;
 
+use winit::dpi::LogicalSize;
 use winit::event::DeviceEvent;
 use winit::event::DeviceId;
 use winit::event::Event;
 use winit::event::StartCause;
 use winit::event::WindowEvent;
 use winit::event_loop::EventLoopBuilder;
+use winit::event_loop::EventLoopProxy;
 use winit::event_loop::EventLoopWindowTarget;
 use winit::window::Window;
 use winit::window::WindowId;
-use winit::event_loop::EventLoopProxy;
-use winit::dpi::LogicalSize;
 
 use loopio::prelude::*;
 
@@ -27,52 +27,60 @@ pub mod winit {
 }
 
 use crate::controller::ControlBus;
+use crate::ext::imgui_ext::ImguiExt;
 use crate::BackgroundWork;
 use crate::Controller;
-use crate::ext::imgui_ext::ImguiExt;
 
 /// Desktop app that enables developer utilities,
-/// 
+///
 /// - Enables the engine packet listener on app launch,
 /// - Enables developer widget plugins on the loopio engine
-/// 
+///
 pub struct DevProject;
 
 impl DevProject {
     /// Creates a new project based on the current directory,
-    /// 
+    ///
     pub fn current_project(self) -> (Desktop, EngineBuilder) {
         self.open_project(CurrentDir.workspace())
     }
 
     /// Opens a project from a workspace,
-    /// 
+    ///
     pub fn open_project(self, mut workspace: Workspace) -> (Desktop, EngineBuilder) {
-        (Desktop::new().expect("should be able to create a new desktop app").with_title("Dev Project App").enable_engine_packet_listener(), {
-            let mut engine = Engine::builder();
-            engine.enable::<crate::widgets::FrameEditor>();
-            engine.enable::<Placeholder>();
-            workspace.add_buffer("dev_project_frame_editor.md", 
-            r#"
+        (
+            Desktop::new()
+                .expect("should be able to create a new desktop app")
+                .with_title("Dev Project App")
+                .enable_engine_packet_listener(),
+            {
+                let mut engine = Engine::builder();
+                engine.enable::<crate::widgets::FrameEditor>();
+                engine.enable::<Placeholder>();
+                workspace.add_buffer(
+                    "dev_project_frame_editor.md",
+                    r#"
             ```runmd
             + .operation open_debug_window
             # -- Opens a debug window
             <nebudeck.placeholder>
             ```
-            "#);
-            engine.set_workspace(workspace);
-            engine
-        })
+            "#,
+                );
+                engine.set_workspace(workspace);
+                engine
+            },
+        )
     }
 }
 
 /// Placeholder plugin,
-/// 
+///
 #[derive(Reality, Clone, Debug, Default)]
 #[reality(call = placeholder, plugin)]
 pub struct Placeholder {
     #[reality(derive_fromstr)]
-    name: String
+    name: String,
 }
 
 async fn placeholder(tc: &mut ThunkContext) -> anyhow::Result<()> {
@@ -83,8 +91,7 @@ async fn placeholder(tc: &mut ThunkContext) -> anyhow::Result<()> {
 ///
 /// This controller can be used to build a desktop app.
 ///
-pub struct Desktop
-{
+pub struct Desktop {
     /// Winit event loop,
     ///
     pub event_loop: std::cell::OnceCell<winit::event_loop::EventLoop<EnginePacket>>,
@@ -96,14 +103,14 @@ pub struct Desktop
     ///
     pub enable_engine_packet_listener: bool,
     /// Starting resolution size, Defaults to 1920x1080.
-    /// 
+    ///
     /// **Note** This will be overridden if set by middleware.
-    /// 
+    ///
     pub starting_resolution: (f64, f64),
     /// Title of the window when starting up, Default to empty.
-    /// 
+    ///
     /// **Note** This will be overridden if set by middleware.
-    /// 
+    ///
     pub window_title: String,
 }
 
@@ -137,18 +144,18 @@ impl Desktop {
     }
 
     /// Sets a starting resolution for the window,
-    /// 
+    ///
     /// **Note**: This can be overidden by middleware.
-    /// 
+    ///
     pub fn with_resolution(mut self, height: impl Into<f64>, width: impl Into<f64>) -> Self {
         self.starting_resolution = (width.into(), height.into());
         self
     }
 
     /// Sets a starting window title for the window,
-    /// 
+    ///
     /// **Note**: This can be overidden by middleware.
-    /// 
+    ///
     pub fn with_title(mut self, title: impl Into<String>) -> Self {
         self.window_title = title.into();
         self
@@ -159,7 +166,10 @@ impl Desktop {
     pub fn open<D: DesktopApp + 'static>(mut self, mut app: D) {
         if let Some(event_loop) = std::cell::OnceCell::take(&mut self.event_loop) {
             if let Ok(window) = winit::window::Window::new(&event_loop) {
-                window.set_inner_size(LogicalSize::new(self.starting_resolution.0, self.starting_resolution.1));
+                window.set_inner_size(LogicalSize::new(
+                    self.starting_resolution.0,
+                    self.starting_resolution.1,
+                ));
                 window.set_title(&self.window_title);
                 let window = app.configure_window(window);
                 info!("Starting window");

@@ -161,7 +161,7 @@ impl Workspace {
     }
 
     /// Returns an iterator over sources,
-    /// 
+    ///
     pub async fn iter_sources(&self) -> impl Iterator<Item = &Source> {
         self.sources.iter()
     }

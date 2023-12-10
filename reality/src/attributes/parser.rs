@@ -18,12 +18,12 @@ use super::attribute_type::ParsableAttributeTypeField;
 use super::attribute_type::ParsableField;
 use super::AttributeTypeParser;
 use super::StorageTarget;
-use crate::CallAsync;
 use crate::block::BlockObjectHandler;
 use crate::AsyncStorageTarget;
 use crate::AttributeType;
 use crate::BlockObject;
 use crate::BlockObjectType;
+use crate::CallAsync;
 use crate::Decoration;
 use crate::FieldPacket;
 use crate::KvpExt;
@@ -117,7 +117,10 @@ impl ParsedBlock {
 
     /// Gets the parsed attributes of a node,
     ///
-    pub fn get_node(&self, node: ResourceKey<crate::attributes::Node>) -> Option<&ParsedAttributes> {
+    pub fn get_node(
+        &self,
+        node: ResourceKey<crate::attributes::Node>,
+    ) -> Option<&ParsedAttributes> {
         self.nodes.get(&node)
     }
 
@@ -150,7 +153,7 @@ impl ParsedBlock {
     }
 
     /// Looks for a hosted resource by path and returns a mutable reference,
-    /// 
+    ///
     pub fn find_resource_mut(&mut self, resource: impl AsRef<str>) -> Option<&mut HostedResource> {
         self.resource_paths.get_mut(resource.as_ref())
     }
@@ -161,7 +164,7 @@ impl ParsedBlock {
 #[derive(Debug, Default, Clone)]
 pub struct ParsedAttributes {
     /// Node resource key,
-    /// 
+    ///
     pub node: ResourceKey<Attribute>,
     /// Parsed attributes,
     ///
@@ -240,7 +243,7 @@ impl ParsedAttributes {
     ///
     #[inline]
     pub fn parsed(&self) -> impl Iterator<Item = ResourceKey<Attribute>> + '_ {
-       self.attributes.iter().cloned()
+        self.attributes.iter().cloned()
     }
 
     /// Resolve a path,
@@ -300,10 +303,8 @@ impl ParsedAttributes {
                             .comment_properties
                             .insert(*last, line.comment_properties.clone());
                     } else {
-                        self.comment_properties.insert(
-                            self.node, 
-                            line.comment_properties.clone()
-                        );
+                        self.comment_properties
+                            .insert(self.node, line.comment_properties.clone());
                     }
                 } else if line.extension.is_none() && line.attr.is_some() {
                     if let Some(last) = self.last().cloned() {
@@ -312,10 +313,8 @@ impl ParsedAttributes {
                     } else {
                         // eprintln!("f -- skipped {:?}", line);
                         // eprintln!("{:?}", self);
-                        self.comment_properties.insert(
-                            self.node, 
-                            line.comment_properties.clone()
-                        );
+                        self.comment_properties
+                            .insert(self.node, line.comment_properties.clone());
                     }
                 }
             } else {
@@ -528,7 +527,11 @@ impl<S: StorageTarget> AttributeParser<S> {
         if let Some(storage) = self.storage() {
             // Initialize attribute type,
             let init = source.as_ref().parse::<T>().map_err(|_| {
-                anyhow::anyhow!("Could not parse {} from {}", std::any::type_name::<T>(), source.as_ref())
+                anyhow::anyhow!(
+                    "Could not parse {} from {}",
+                    std::any::type_name::<T>(),
+                    source.as_ref()
+                )
             })?;
             storage.lazy_put_resource(init, key.transmute());
             if let Some(tag) = self.tag() {
@@ -559,8 +562,7 @@ impl<S: StorageTarget> AttributeParser<S> {
     pub fn add_object_type_with(&mut self, ident: &str, object_ty: impl Into<BlockObjectType<S>>) {
         let object_ty = object_ty.into();
         debug!("Enabling object type {}", object_ty.ident);
-        self.block_object_types
-            .insert(ident.to_string(), object_ty);
+        self.block_object_types.insert(ident.to_string(), object_ty);
     }
 
     /// Adds an attribute type to the parser and returns self,
@@ -915,7 +917,9 @@ where
             }
 
             // Extension has been loaded to a namespace
-            handler.on_load(namespace, parser.attributes.last().copied()).await;
+            handler
+                .on_load(namespace, parser.attributes.last().copied())
+                .await;
             parser.handlers.push(handler);
 
             // Drain any dispatches before trying to load the rest of the resources

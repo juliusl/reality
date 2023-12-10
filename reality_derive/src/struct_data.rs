@@ -1,11 +1,17 @@
-use std::collections::HashMap;
 use proc_macro2::Ident;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use quote::format_ident;
 use quote::quote;
-use quote::ToTokens;
 use quote::quote_spanned;
+use quote::ToTokens;
+use std::collections::HashMap;
+use syn::parse::Parse;
+use syn::parse2;
+use syn::spanned::Spanned;
+use syn::Data;
+use syn::DeriveInput;
+use syn::FieldsNamed;
 use syn::GenericParam;
 use syn::Generics;
 use syn::ImplGenerics;
@@ -16,17 +22,11 @@ use syn::Type;
 use syn::TypeGenerics;
 use syn::Visibility;
 use syn::WhereClause;
-use syn::parse::Parse;
-use syn::parse2;
-use syn::Data;
-use syn::DeriveInput;
-use syn::FieldsNamed;
-use syn::spanned::Spanned;
 
 use crate::struct_field::StructField;
 
 /// Parses a struct from derive attribute,
-/// 
+///
 /// ``` norun
 /// #[derive(AttributeType)]
 /// #[reality(rename="")]
@@ -37,14 +37,14 @@ use crate::struct_field::StructField;
 #[derive(Clone)]
 pub(crate) struct StructData {
     /// Span of the struct being derived,
-    /// 
+    ///
     span: Span,
     vis: Visibility,
     /// Name of the struct,
     ///
     name: Ident,
     /// Generics
-    /// 
+    ///
     generics: Generics,
     /// Parsed struct fields,
     ///
@@ -52,25 +52,25 @@ pub(crate) struct StructData {
     plugin: bool,
     ext: bool,
     /// Reality attribute, rename option
-    /// 
+    ///
     rename: Option<LitStr>,
     /// Reality attribute, on_load fn path,
-    /// 
+    ///
     on_load: Option<Path>,
     /// Reality attribute, on_unload fn path,
-    /// 
+    ///
     on_unload: Option<Path>,
     /// Reality attribute, on_completed fn path,
-    /// 
+    ///
     on_completed: Option<Path>,
     /// Group name,
-    /// 
+    ///
     group: Option<LitStr>,
     /// CallAsync fn,
-    /// 
+    ///
     call: Option<Ident>,
     /// Replace thee
-    /// 
+    ///
     replace: Option<Type>,
 }
 
@@ -108,7 +108,7 @@ impl Parse for StructData {
                         meta.input.parse::<Token![=]>()?;
                         group = meta.input.parse::<LitStr>().ok();
                     }
-                    
+
                     if meta.path.is_ident("load") {
                         meta.input.parse::<Token![=]>()?;
                         reality_on_load = meta.input.parse::<Path>().ok();
@@ -140,7 +140,7 @@ impl Parse for StructData {
                         meta.input.parse::<Token![=]>()?;
                         replace = meta.input.parse::<Type>().ok();
                     }
-                    
+
                     Ok(())
                 })?;
             }
@@ -161,9 +161,11 @@ impl Parse for StructData {
                     })
                     .collect::<Vec<_>>()
             }
-            Data::Enum(data) => { 
+            Data::Enum(data) => {
                 let mut variants = vec![];
-                let fields = data.variants.clone()
+                let fields = data
+                    .variants
+                    .clone()
                     .into_pairs()
                     .map(|pair| {
                         let variant = pair.into_value();
@@ -172,9 +174,10 @@ impl Parse for StructData {
                     })
                     .flat_map(|v| {
                         let variant_name = v.ident.clone();
-                        v.fields.iter()
+                        v.fields
+                            .iter()
                             .filter_map(|n| parse2::<StructField>(n.to_token_stream()).ok())
-                            .map(|mut f| { 
+                            .map(|mut f| {
                                 f.variant = Some((variant_name.clone(), name.clone()));
                                 f
                             })
@@ -186,12 +189,16 @@ impl Parse for StructData {
                         f
                     })
                     .collect();
-                    fields
+                fields
             }
             _ => vec![],
         };
 
-        if let Some(lifetime) = derive_input.generics.lifetimes().find(|l| l.lifetime.ident != format_ident!("static")) {
+        if let Some(lifetime) = derive_input
+            .generics
+            .lifetimes()
+            .find(|l| l.lifetime.ident != format_ident!("static"))
+        {
             Err(input.error(format!("Struct must be `'static`, therefore may not contain any fields w/ generic lifetimes. Please remove `'{}`", lifetime.lifetime.ident)))
         } else {
             Ok(Self {
@@ -438,27 +445,35 @@ impl StructData {
             }
         });
 
-        let vtable_field_impl = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
-            let name = &f.name;
-            let ty = f.field_ty();
-            let absolute_ty = &f.ty;
+        let vtable_field_impl = self
+            .fields
+            .iter()
+            .filter(|_| self.replace.is_none())
+            .map(|f| {
+                let name = &f.name;
+                let ty = f.field_ty();
+                let absolute_ty = &f.ty;
 
-            quote_spanned! {f.span=>
-                pub #name: FieldRef<#ident #ty_generics, #ty, #absolute_ty>,
-            }
-        });
+                quote_spanned! {f.span=>
+                    pub #name: FieldRef<#ident #ty_generics, #ty, #absolute_ty>,
+                }
+            });
 
-        let vtable_field_new_impl = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
-            let name = &f.name;
-            let offset = f.offset;
-            let vtable_helper_fn_ident = format_ident!("__field_offset_{}_vtable", offset);
-            quote_spanned! {f.span=>
-                #name: FieldRef::new(
-                    owner.clone(),
-                    #ident::#vtable_helper_fn_ident(),
-                ),
-            }
-        });
+        let vtable_field_new_impl =
+            self.fields
+                .iter()
+                .filter(|_| self.replace.is_none())
+                .map(|f| {
+                    let name = &f.name;
+                    let offset = f.offset;
+                    let vtable_helper_fn_ident = format_ident!("__field_offset_{}_vtable", offset);
+                    quote_spanned! {f.span=>
+                        #name: FieldRef::new(
+                            owner.clone(),
+                            #ident::#vtable_helper_fn_ident(),
+                        ),
+                    }
+                });
 
         let on_read_fields = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
             let offset = &f.offset;
@@ -493,32 +508,40 @@ impl StructData {
 
         let virt_vis = &self.vis;
 
-        let set_pending_impl = self.fields.iter().filter(|f| self.replace.is_none() && !f.ignore && !f.not_wire).map(|f| {
-            let name = &f.name;
-            let name_lit = f.field_name_lit_str();
+        let set_pending_impl = self
+            .fields
+            .iter()
+            .filter(|f| self.replace.is_none() && !f.ignore && !f.not_wire)
+            .map(|f| {
+                let name = &f.name;
+                let name_lit = f.field_name_lit_str();
 
-            quote_spanned!(f.span=>
-                #name_lit => {
-                    self.#name.pending();
-                    true
-                }
-            )
-        });
+                quote_spanned!(f.span=>
+                    #name_lit => {
+                        self.#name.pending();
+                        true
+                    }
+                )
+            });
 
-        let list_pending_impl = self.fields.iter().filter(|f| self.replace.is_none() && !f.ignore && !f.not_wire).map(|f| {
-            let name = &f.name;
-            let name_lit = f.field_name_lit_str();
+        let list_pending_impl = self
+            .fields
+            .iter()
+            .filter(|f| self.replace.is_none() && !f.ignore && !f.not_wire)
+            .map(|f| {
+                let name = &f.name;
+                let name_lit = f.field_name_lit_str();
 
-            quote_spanned!(f.span=>
-                if self.#name.is_pending() {
-                    results.push(#name_lit);
-                }
-            )
-        });
+                quote_spanned!(f.span=>
+                    if self.#name.is_pending() {
+                        results.push(#name_lit);
+                    }
+                )
+            });
 
         let virtual_ref = quote_spanned!(self.span=>
             /// Virtual interface over plugin,
-            /// 
+            ///
             #[derive(Reality)]
             #[reality(replace = #ident)]
             #virt_vis struct #virtual_ident {
@@ -545,7 +568,7 @@ impl StructData {
                 fn listen_raw(&self) -> tokio::sync::watch::Receiver<Self::Owner> {
                     self.owner.subscribe()
                 }
-                
+
                 fn send_raw(&self) -> std::sync::Arc<tokio::sync::watch::Sender<Self::Owner>> {
                     self.owner.clone()
                 }
@@ -608,8 +631,13 @@ impl StructData {
     }
 
     /// Implements visit traits,
-    /// 
-    pub(crate) fn visit_trait(&self, impl_generics: &ImplGenerics<'_>, ty_generics: &TypeGenerics<'_>, where_clause: &Option<&WhereClause>) -> TokenStream {
+    ///
+    pub(crate) fn visit_trait(
+        &self,
+        impl_generics: &ImplGenerics<'_>,
+        ty_generics: &TypeGenerics<'_>,
+        where_clause: &Option<&WhereClause>,
+    ) -> TokenStream {
         let fields = self.fields.iter().fold(HashMap::new(), |mut acc, f| {
             if !acc.contains_key(&f.ty) {
                 acc.insert(f.ty.clone(), vec![f.clone()]);
@@ -756,9 +784,7 @@ impl StructData {
             )
         });
 
-
-
-        quote_spanned!(self.span=> 
+        quote_spanned!(self.span=>
             #(#visit_impls)*
 
             #(#virtual_visit_impls)*
@@ -766,7 +792,7 @@ impl StructData {
     }
 
     /// Returns token stream of generated AttributeType trait
-    /// 
+    ///
     pub(crate) fn attribute_type_trait(self) -> TokenStream {
         let ident = &self.name;
         let original = self.generics.clone();
@@ -775,14 +801,14 @@ impl StructData {
 
         let mut with_st = self.generics.clone();
         with_st.params.push(
-            parse2::<GenericParam>(
-                quote!(S: StorageTarget + Send + Sync + 'static)).expect("should be able to tokenize")
-            );
+            parse2::<GenericParam>(quote!(S: StorageTarget + Send + Sync + 'static))
+                .expect("should be able to tokenize"),
+        );
 
         let (impl_generics, _, where_clause) = &with_st.split_for_impl();
-        
+
         let visit_impl = self.visit_trait(&original_impl_generics, &ty_generics, where_clause);
-        
+
         let symbol = self.attr_symbol(ident);
         let fields = self.fields.clone();
         let fields = fields.iter().enumerate().map(|(offset, f)| {
@@ -796,7 +822,10 @@ impl StructData {
                     parser.add_parseable_extension_type_field::<#offset, Self, #ty>();
                 }
             } else {
-                let comment = LitStr::new(format!("Parsing field `{}`", f.name).as_str(), Span::call_site());
+                let comment = LitStr::new(
+                    format!("Parsing field `{}`", f.name).as_str(),
+                    Span::call_site(),
+                );
                 quote_spanned! {f.span=>
                     let _ = #comment;
                     parser.add_parseable_field::<#offset, Self, #ty>();
@@ -805,7 +834,7 @@ impl StructData {
         });
 
         //  Implementation for fields parsers,
-        // 
+        //
         let fields_on_parse_impl = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
             let field_ident = f.field_name_lit_str();
             let ty = f.field_ty();
@@ -853,12 +882,12 @@ impl StructData {
         });
 
         if let Some(replace) = self.replace.as_ref() {
-            quote_spanned! {self.span=> 
+            quote_spanned! {self.span=>
                 impl #impl_generics AttributeType<S> for #ident #ty_generics #where_clause {
                     fn symbol() -> &'static str {
                         #symbol
                     }
-    
+
                     fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
                         <#replace as AttributeType<S>>::parse(parser, content)
                     }
@@ -866,16 +895,16 @@ impl StructData {
             }
         } else {
             let virtual_impl = self.virtual_plugin();
-    
-            quote_spanned! {self.span=> 
+
+            quote_spanned! {self.span=>
                 impl #impl_generics AttributeType<S> for #ident #ty_generics #where_clause {
                     fn symbol() -> &'static str {
                         #symbol
                     }
-    
+
                     fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
                         let mut enable = parser.parse_attribute::<Self>(content.as_ref());
-    
+
                         if enable.is_ok() {
                             #(#fields)*
                         }
@@ -885,28 +914,32 @@ impl StructData {
                 #virtual_impl
 
                 #(#fields_on_parse_impl)*
-    
+
                 #visit_impl
             }
         }
-
     }
 
     /// Get the attribute ty symbol,
-    /// 
+    ///
     fn attr_symbol(&self, ident: &Ident) -> TokenStream {
-        let group = self.group.as_ref().map(|g| quote_spanned!(self.span=> #g)).unwrap_or(quote_spanned!(self.span=> std::env!("CARGO_PKG_NAME")));
-        let name = self.rename.clone().unwrap_or(
-            LitStr::new(ident.to_string().to_lowercase().as_str(), self.span)
-        );
-        
+        let group = self
+            .group
+            .as_ref()
+            .map(|g| quote_spanned!(self.span=> #g))
+            .unwrap_or(quote_spanned!(self.span=> std::env!("CARGO_PKG_NAME")));
+        let name = self.rename.clone().unwrap_or(LitStr::new(
+            ident.to_string().to_lowercase().as_str(),
+            self.span,
+        ));
+
         quote_spanned!(self.span=>
             concat!(#group, '.', #name)
         )
     }
 
-     /// Returns token stream of generated AttributeType trait
-    /// 
+    /// Returns token stream of generated AttributeType trait
+    ///
     pub(crate) fn object_type_trait(self) -> TokenStream {
         let name = self.name.clone();
         let original = self.generics.clone();
@@ -914,29 +947,49 @@ impl StructData {
         let ty_generics = ty_generics.clone();
         let mut generics = self.generics.clone();
         generics.params.push(
-            parse2::<GenericParam>(
-                quote!(Storage: StorageTarget + Send + Sync + 'static)).expect("should be able to tokenize")
-            );
+            parse2::<GenericParam>(quote!(Storage: StorageTarget + Send + Sync + 'static))
+                .expect("should be able to tokenize"),
+        );
 
         let (impl_generics, _, where_clause) = &generics.split_for_impl();
 
-        let on_load = self.on_load.clone().map(|p| quote!(#p(storage, rk).await;)).unwrap_or_default();
-        let on_unload = self.on_unload.clone().map(|p| quote!(#p(storage, rk).await;)).unwrap_or_default();
-        let on_completed = self.on_completed.clone().map(|p| quote!(#p(storage))).unwrap_or(quote!(None));
+        let on_load = self
+            .on_load
+            .clone()
+            .map(|p| quote!(#p(storage, rk).await;))
+            .unwrap_or_default();
+        let on_unload = self
+            .on_unload
+            .clone()
+            .map(|p| quote!(#p(storage, rk).await;))
+            .unwrap_or_default();
+        let on_completed = self
+            .on_completed
+            .clone()
+            .map(|p| quote!(#p(storage)))
+            .unwrap_or(quote!(None));
 
-        let ext = self.fields.iter().filter(|f| f.ext && self.replace.is_none()).map(|f| {
-            let ty = f.field_ty();
-            quote_spanned!(f.span=>
-                _parser.with_object_type::<Thunk<#ty>>();
-            )
-        });
+        let ext = self
+            .fields
+            .iter()
+            .filter(|f| f.ext && self.replace.is_none())
+            .map(|f| {
+                let ty = f.field_ty();
+                quote_spanned!(f.span=>
+                    _parser.with_object_type::<Thunk<#ty>>();
+                )
+            });
 
-        let plugins = self.fields.iter().filter(|f| f.plugin && self.replace.is_none()).map(|f| {
-            let ty = f.field_ty();
-            quote_spanned!(f.span=>
-                #ty::register(host); 
-            )
-        });
+        let plugins = self
+            .fields
+            .iter()
+            .filter(|f| f.plugin && self.replace.is_none())
+            .map(|f| {
+                let ty = f.field_ty();
+                quote_spanned!(f.span=>
+                    #ty::register(host);
+                )
+            });
 
         let to_frame = self.fields.iter().filter(|f| !f.ignore && !f.not_wire && self.replace.is_none()).map(|f| {
             let offset = f.offset; 
@@ -968,7 +1021,9 @@ impl StructData {
                 }))
         });
 
-        let synchronizable = self.fields.iter()
+        let synchronizable = self
+            .fields
+            .iter()
             .filter(|f| !f.ignore && f.is_decorated && self.replace.is_none())
             .map(|f| {
                 let name = &f.name;
@@ -1003,7 +1058,7 @@ impl StructData {
                             f.sync(context);
                         }
                     )
-                }else if f.vecdeq_of.is_some() {
+                } else if f.vecdeq_of.is_some() {
                     quote_spanned!(f.span=>
                         for m in self.#name.iter_mut() {
                             m.sync(context);
@@ -1015,7 +1070,7 @@ impl StructData {
                     )
                 }
             });
-        
+
         let init_virt_plugin = if self.replace.is_none() {
             let ident = &self.name;
             let virtual_ident = format_ident!("Virtual{}", ident);
@@ -1024,10 +1079,10 @@ impl StructData {
                 #[async_trait]
                 impl CallAsync for #virtual_ident {
                     /// Initialize virtual mode for the plugin,
-                    /// 
+                    ///
                     async fn call(tc: &mut ThunkContext) -> anyhow::Result<()> {
                         enable_virtual_dependencies::<#ident>(tc).await?;
-        
+
                         Ok(())
                     }
                 }
@@ -1044,19 +1099,29 @@ impl StructData {
 
         let plugin = if self.plugin {
             let ident = &self.name;
-            let virtual_ident = if let Some(replace) = self.replace.as_ref() { 
-                format_ident!("Virtual{}", replace.to_token_stream().to_string().trim_start_matches("Virtual"))
-             } else {  
+            let virtual_ident = if let Some(replace) = self.replace.as_ref() {
+                format_ident!(
+                    "Virtual{}",
+                    replace
+                        .to_token_stream()
+                        .to_string()
+                        .trim_start_matches("Virtual")
+                )
+            } else {
                 format_ident!("Virtual{}", ident)
             };
 
-            let route_fields = self.fields.iter().filter(|f| self.replace.is_none() && !f.ignore && !f.not_wire).map(|f| {
-                let offset = &f.offset;
-              
-                quote_spanned!(f.span=>
-                    router.route_one::<#offset>()
-                )
-            });
+            let route_fields = self
+                .fields
+                .iter()
+                .filter(|f| self.replace.is_none() && !f.ignore && !f.not_wire)
+                .map(|f| {
+                    let offset = &f.offset;
+
+                    quote_spanned!(f.span=>
+                        router.route_one::<#offset>()
+                    )
+                });
 
             quote!(
             impl #_impl_generics Plugin for #name #ty_generics #where_clause  {
@@ -1081,7 +1146,7 @@ impl StructData {
                   #(#plugins)*
                   host.register_with(|_parser| {
                     #(#ext)*
-                  }); 
+                  });
                 }
             }
             )
@@ -1125,7 +1190,6 @@ impl StructData {
             quote!()
         };
 
-
         let mut from_shared = None;
         if !self.fields.iter().any(|f| f.variant.is_some()) {
             from_shared = Some(self.clone().from_shared());
@@ -1149,7 +1213,7 @@ impl StructData {
 
             impl #_impl_generics ToFrame for #name #ty_generics #where_clause {
                 fn to_frame(&self, key: ResourceKey<Attribute>) -> Frame {
-                    Frame { 
+                    Frame {
                         recv: self.receiver_packet(key),
                         fields: vec![
                             #(#to_frame),*
@@ -1164,13 +1228,11 @@ impl StructData {
             #from_shared
         );
 
-
         let mut attribute_type = self.clone().attribute_type_trait();
         attribute_type.extend(object_type_trait);
         attribute_type.extend(self.object_ty_api());
         attribute_type
     }
-
 
     fn object_ty_api(self) -> TokenStream {
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
@@ -1196,7 +1258,7 @@ impl StructData {
             impl #impl_generics SetField<FieldPacket> for #name #ty_generics #where_clause {
                 fn set_field(&mut self, field: FieldOwned<FieldPacket>) -> bool {
                     let FieldOwned { owner, name, offset, value } = field;
-        
+
                     match (offset, value.field_name.as_str()) {
                         #(#fields)*
                         _ => false
@@ -1243,8 +1305,8 @@ impl StructData {
             quote_spanned!(self.span=>
                 impl #impl_generics Pack for #name #ty_generics #where_clause {
                     /// Packs the receiver into storage,
-                    /// 
-                    fn pack<S>(self, storage: &mut S) 
+                    ///
+                    fn pack<S>(self, storage: &mut S)
                     where
                         S: StorageTarget
                     {
@@ -1252,10 +1314,10 @@ impl StructData {
                     }
 
                     /// Unpacks self from Shared,
-                    /// 
+                    ///
                     /// The default value for a field will be used if not stored.
-                    /// 
-                    fn unpack<S>(mut self, mut value: &mut S) -> Self 
+                    ///
+                    fn unpack<S>(mut self, mut value: &mut S) -> Self
                     where
                         S: StorageTarget
                     {
@@ -1273,7 +1335,7 @@ impl StructData {
 #[test]
 fn test_parse_struct_data() {
     use quote::ToTokens;
-    
+
     let stream = <proc_macro2::TokenStream as std::str::FromStr>::from_str(
         r#"
 struct Test {
@@ -1288,7 +1350,10 @@ struct Test {
 
     let field = data.fields.remove(0);
     assert_eq!(false, field.ignore);
-    assert_eq!(Some("\"Name\"".to_string()), field.rename.map(|r| r.to_token_stream().to_string()));
+    assert_eq!(
+        Some("\"Name\"".to_string()),
+        field.rename.map(|r| r.to_token_stream().to_string())
+    );
     assert_eq!("name", field.name.to_string().as_str());
     assert_eq!("String", field.ty.to_token_stream().to_string().as_str());
 }

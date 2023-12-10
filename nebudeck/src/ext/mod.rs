@@ -11,10 +11,10 @@ macro_rules! cfg_feature {
 
 cfg_feature!("desktop-imgui", {
     mod wgpu_ext;
-    pub use wgpu_ext::WgpuResourceManagementExt;
-    pub use wgpu_ext::WgpuSystem;
     pub use wgpu_ext::BoxedMiddleware;
     pub use wgpu_ext::RenderPipelineMiddleware;
+    pub use wgpu_ext::WgpuResourceManagementExt;
+    pub use wgpu_ext::WgpuSystem;
 });
 
 #[cfg(feature = "desktop-imgui")]

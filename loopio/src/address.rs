@@ -1,9 +1,8 @@
 use std::fmt::Display;
 
 use reality::prelude::*;
-use serde::Serialize;
 use serde::Deserialize;
-
+use serde::Serialize;
 
 /// Struct containing address parameters and a notification handle,
 ///
@@ -22,7 +21,7 @@ pub struct Address {
     ///
     tag: Option<String>,
     /// Filter value of this address,
-    /// 
+    ///
     filter: Option<String>,
 }
 
@@ -61,7 +60,7 @@ impl Address {
     }
 
     /// Sets the filter paramter of this address,
-    /// 
+    ///
     pub fn with_filter(mut self, filter: impl Into<String>) -> Self {
         self.filter = Some(filter.into());
         self
@@ -71,30 +70,23 @@ impl Address {
     ///
     pub fn node_address(&self) -> String {
         if let Some(host) = self.host.as_ref() {
-            format!(
-                "{}://{}",
-                host,
-                self.node
-            )
+            format!("{}://{}", host, self.node)
         } else {
-            format!(
-                "engine://{}",
-                self.node
-            )
+            format!("engine://{}", self.node)
         }
     }
 
     /// Returns the path,
-    /// 
+    ///
     /// **Note**: Will trim the leading `/`
-    /// 
+    ///
     pub fn path(&self) -> &str {
         self.path.trim_start_matches('/')
     }
-    
+
     /// TODO: Use the resource key to build paths to fields?
-    /// 
-    fn _apply_filter(&self) -> anyhow::Result<()>{
+    ///
+    fn _apply_filter(&self) -> anyhow::Result<()> {
         if let Some(filter) = self.filter.as_ref() {
             let filter = url::form_urlencoded::parse(filter.as_bytes());
             for (k, v) in filter {
@@ -184,14 +176,18 @@ fn test_address_from_str() {
     assert_eq!(address.node, "show_demo_window".to_string());
     assert_eq!(address.path, "/a/loopio.test".to_string());
 
-
-    let address =
-        Address::from_str("test://show_demo_window/a/loopio.test?type_name=core::alloc::String#test").expect("should be valid");
+    let address = Address::from_str(
+        "test://show_demo_window/a/loopio.test?type_name=core::alloc::String#test",
+    )
+    .expect("should be valid");
     assert_eq!(address.host, Some("test".to_string()));
     assert_eq!(address.tag, Some("test".to_string()));
     assert_eq!(address.node, "show_demo_window".to_string());
     assert_eq!(address.path, "/a/loopio.test".to_string());
-    assert_eq!(address.filter, Some("type_name=core::alloc::String".to_string()));
+    assert_eq!(
+        address.filter,
+        Some("type_name=core::alloc::String".to_string())
+    );
     address._apply_filter().unwrap();
 }
 

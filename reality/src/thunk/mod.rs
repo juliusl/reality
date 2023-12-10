@@ -1,25 +1,27 @@
+mod cache_ext;
 mod call_async;
 mod context;
-mod plugin;
-mod cache_ext;
 mod kvp_ext;
+mod plugin;
 
 pub mod prelude {
-    pub use super::kvp_ext::*;
     pub use super::cache_ext::*;
     pub use super::call_async::*;
     pub use super::context::Context as ThunkContext;
+    pub use super::context::Local;
+    pub use super::context::Remote;
+    pub use super::kvp_ext::*;
     pub use super::plugin::NewFn;
+    pub use super::plugin::Pack;
     pub use super::plugin::Plugin;
     pub use crate::AsyncStorageTarget;
     use crate::Attribute;
     pub use crate::AttributeType;
     pub use crate::BlockObject;
+    use crate::FieldPacket;
     use crate::FieldRefController;
-    pub use super::plugin::Pack;
     use crate::ResourceKey;
-    pub use super::context::Remote;
-    pub use super::context::Local;
+    use crate::SetField;
     pub use crate::Shared;
     pub use crate::StorageTarget;
     pub use crate::ToFrame;
@@ -27,20 +29,18 @@ pub mod prelude {
     pub use futures_util::FutureExt;
     pub use std::marker::PhantomData;
     pub use std::ops::DerefMut;
-    use crate::FieldPacket;
-    use crate::SetField;
 
     /// Type alias for the fn passed by the THunk type,
     ///
     pub type ThunkFn = fn(ThunkContext) -> CallOutput;
 
     /// Wrapper struct for the enable frame fn,
-    /// 
+    ///
     #[derive(Clone)]
     pub struct EnableFrame(pub ThunkFn);
 
     /// Wrapper struct for the enable_virtual fn,
-    /// 
+    ///
     #[derive(Clone)]
     pub struct EnableVirtual(pub ThunkFn);
 
@@ -50,10 +50,10 @@ pub mod prelude {
     where
         P: Plugin + Default + Send + Sync + 'static;
 
-    impl<P, In> Plugin for Thunk<P> 
-    where 
+    impl<P, In> Plugin for Thunk<P>
+    where
         P: Plugin<Virtual = In> + Send + Sync + 'static,
-        In: FieldRefController + CallAsync + ToOwned<Owned = P> + NewFn<Inner = P> + Send + Sync
+        In: FieldRefController + CallAsync + ToOwned<Owned = P> + NewFn<Inner = P> + Send + Sync,
     {
         type Virtual = P::Virtual;
     }
@@ -79,7 +79,7 @@ pub mod prelude {
     impl<P> AttributeType<Shared> for Thunk<P>
     where
         P: Plugin + Send + Sync + 'static,
-        P::Virtual: NewFn<Inner = P>
+        P::Virtual: NewFn<Inner = P>,
     {
         fn symbol() -> &'static str {
             <P as AttributeType<Shared>>::symbol()
@@ -88,14 +88,21 @@ pub mod prelude {
         fn parse(parser: &mut crate::AttributeParser<Shared>, content: impl AsRef<str>) {
             <P as AttributeType<Shared>>::parse(parser, content);
 
-            let key = parser.attributes.last().cloned().unwrap_or(ResourceKey::root());
+            let key = parser
+                .attributes
+                .last()
+                .cloned()
+                .unwrap_or(ResourceKey::root());
             if let Some(storage) = parser.storage() {
-                storage
-                    .lazy_put_resource::<ThunkFn>(<P as Plugin>::call, key.transmute());
-                storage
-                    .lazy_put_resource::<EnableFrame>(EnableFrame(<P as Plugin>::enable_frame), key.transmute());
-                storage
-                    .lazy_put_resource::<EnableVirtual>(EnableVirtual(<P as Plugin>::enable_virtual), key.transmute());
+                storage.lazy_put_resource::<ThunkFn>(<P as Plugin>::call, key.transmute());
+                storage.lazy_put_resource::<EnableFrame>(
+                    EnableFrame(<P as Plugin>::enable_frame),
+                    key.transmute(),
+                );
+                storage.lazy_put_resource::<EnableVirtual>(
+                    EnableVirtual(<P as Plugin>::enable_virtual),
+                    key.transmute(),
+                );
             }
         }
     }
@@ -115,7 +122,7 @@ pub mod prelude {
     impl<P> BlockObject<Shared> for Thunk<P>
     where
         P: SetField<FieldPacket> + Plugin + Send + Sync + 'static,
-        P::Virtual: NewFn<Inner = P>
+        P::Virtual: NewFn<Inner = P>,
     {
         /// Called when the block object is being loaded into it's namespace,
         ///
@@ -125,7 +132,10 @@ pub mod prelude {
 
         /// Called when the block object is being unloaded from it's namespace,
         ///
-        async fn on_unload(storage: AsyncStorageTarget<Shared>, rk: Option<ResourceKey<Attribute>>) {
+        async fn on_unload(
+            storage: AsyncStorageTarget<Shared>,
+            rk: Option<ResourceKey<Attribute>>,
+        ) {
             <P as BlockObject<Shared>>::on_unload(storage, rk).await;
         }
 
@@ -139,7 +149,7 @@ pub mod prelude {
     impl<P> ToFrame for Thunk<P>
     where
         P: Plugin + Send + Sync + 'static,
-        P::Virtual: NewFn<Inner = P>
+        P::Virtual: NewFn<Inner = P>,
     {
         fn to_frame(&self, key: crate::ResourceKey<crate::Attribute>) -> crate::Frame {
             crate::Frame {
@@ -175,15 +185,12 @@ pub mod prelude {
                     Err(err) => std::task::Poll::Ready(Err(anyhow::anyhow!("{err}"))),
                 },
                 CallOutput::Skip => std::task::Poll::Ready(Ok(None)),
-                CallOutput::Update(tc) => {
-
-                    std::task::Poll::Ready(Ok(tc.take()))
-                },
+                CallOutput::Update(tc) => std::task::Poll::Ready(Ok(tc.take())),
             }
         }
     }
 
-    impl<P> SetField<FieldPacket> for Thunk<P> 
+    impl<P> SetField<FieldPacket> for Thunk<P>
     where
         P: Plugin + Send + Sync + 'static,
     {

@@ -27,7 +27,7 @@ pub enum CallOutput {
     ///
     Spawn(SpawnResult),
     /// The context has an update,
-    /// 
+    ///
     Update(Option<ThunkContext>),
     /// The plugin has decided to abort further execution,
     ///
@@ -48,4 +48,3 @@ impl From<anyhow::Result<()>> for CallOutput {
         CallOutput::Abort(value)
     }
 }
-

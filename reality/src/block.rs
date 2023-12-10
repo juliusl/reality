@@ -76,11 +76,17 @@ where
 
     /// Called when the block object is being loaded into it's namespace,
     ///
-    async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>, rk: Option<ResourceKey<Attribute>>);
+    async fn on_load(
+        storage: AsyncStorageTarget<Storage::Namespace>,
+        rk: Option<ResourceKey<Attribute>>,
+    );
 
     /// Called when the block object is being unloaded from it's namespace,
     ///
-    async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>, rk: Option<ResourceKey<Attribute>>);
+    async fn on_unload(
+        storage: AsyncStorageTarget<Storage::Namespace>,
+        rk: Option<ResourceKey<Attribute>>,
+    );
 
     /// Called when the block object's parent attribute has completed processing,
     ///
@@ -94,7 +100,7 @@ where
 type BlockObjectFn<Storage> =
     fn(
         AsyncStorageTarget<Storage>,
-        Option<ResourceKey<Attribute>>
+        Option<ResourceKey<Attribute>>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>;
 
 /// Type-alias for a block object event completion fn,
@@ -112,7 +118,7 @@ where
     on_unload: BlockObjectFn<Storage>,
     on_completed: BlockObjectCompletionFn<Storage>,
     namespace: Option<AsyncStorageTarget<Storage>>,
-    resource_key: Option<ResourceKey<Attribute>>
+    resource_key: Option<ResourceKey<Attribute>>,
 }
 
 impl<Storage> Clone for BlockObjectHandler<Storage>
@@ -152,7 +158,11 @@ where {
 
     /// Calls the on_load handler,
     ///
-    pub async fn on_load(&mut self, namespace: AsyncStorageTarget<Storage>, key: Option<ResourceKey<Attribute>>) {
+    pub async fn on_load(
+        &mut self,
+        namespace: AsyncStorageTarget<Storage>,
+        key: Option<ResourceKey<Attribute>>,
+    ) {
         (self.on_load)(namespace.clone(), key.clone()).await;
         self.namespace = Some(namespace);
         self.resource_key = key;

@@ -140,7 +140,7 @@ impl HyperExt for ThunkContext {
     ///
     async fn internal_host_lookup(&mut self, resolve: &Uri) -> Option<Uri> {
         let key = (resolve.scheme(), resolve.host());
-        
+
         if let Some(eh) = self.engine_handle().await {
             let host = if let Ok(host) = eh
                 .hosted_resource(format!("{}://", resolve.scheme_str().unwrap_or_default()))
@@ -323,7 +323,10 @@ impl CallAsync for Request {
             .request(request, uri.scheme_str() == Some("https"))
             .await?;
 
-        context.transient_mut().await.put_resource(response, ResourceKey::root());
+        context
+            .transient_mut()
+            .await
+            .put_resource(response, ResourceKey::root());
 
         Ok(())
     }

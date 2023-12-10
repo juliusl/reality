@@ -123,9 +123,12 @@ impl BackgroundWorkEngineHandle {
         Ok(bg.listen())
     }
 
-    pub fn worker<P>(&mut self, plugin: P) -> anyhow::Result<<Shared as StorageTarget>::BorrowMutResource<'_, BackgroundWorker<P>>> 
+    pub fn worker<P>(
+        &mut self,
+        plugin: P,
+    ) -> anyhow::Result<<Shared as StorageTarget>::BorrowMutResource<'_, BackgroundWorker<P>>>
     where
-        P: Plugin
+        P: Plugin,
     {
         let (_rk, bg) = self.tc.maybe_store_kv(
             P::symbol(),
@@ -134,7 +137,9 @@ impl BackgroundWorkEngineHandle {
             },
         );
 
-        bg.inner.set(plugin).map_err(|_| anyhow!("existing plugin has not been handled yet"))?;
+        bg.inner
+            .set(plugin)
+            .map_err(|_| anyhow!("existing plugin has not been handled yet"))?;
 
         Ok(bg)
     }
@@ -208,7 +213,7 @@ impl BackgroundFuture {
     }
 
     /// Spawn the hosted resource w/ frame updates,
-    /// 
+    ///
     pub fn spawn_with_updates(&mut self, updates: FrameUpdates) -> CallStatus {
         if matches!(self.status(), CallStatus::Enabled) {
             if let Some(eh) = self.tc.cached::<EngineHandle>() {
@@ -221,12 +226,13 @@ impl BackgroundFuture {
                 let call_output = CallOutput::Spawn(Some(handle.spawn(async move {
                     let mut resource = eh.hosted_resource(&address).await?;
 
-                    let rk =  resource.plugin_rk();
+                    let rk = resource.plugin_rk();
                     unsafe {
-                        resource.context_mut().node_mut().await.put_resource::<FrameUpdates>(
-                            updates,
-                            rk.transmute(),
-                        );
+                        resource
+                            .context_mut()
+                            .node_mut()
+                            .await
+                            .put_resource::<FrameUpdates>(updates, rk.transmute());
                     }
 
                     select! {
@@ -362,7 +368,10 @@ where
     }
 
     fn call(&mut self, mut context: ThunkContext) -> Self::Future {
-        let inner = self.inner.take().expect("should be initialized if being called");
+        let inner = self
+            .inner
+            .take()
+            .expect("should be initialized if being called");
 
         Box::pin(async move {
             let mut s = context.node.storage.write().await;

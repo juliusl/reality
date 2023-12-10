@@ -1,9 +1,9 @@
+use crate::Shared;
 use crate::StorageTarget;
 use crate::ThunkContext;
-use crate::Shared;
 
 /// Cache interface for the thunk context,
-/// 
+///
 pub trait CacheExt {
     /// If cached, returns a cached value of R,
     ///
@@ -20,7 +20,7 @@ pub trait CacheExt {
     fn cached_mut<R: Sync + Send + 'static>(
         &mut self,
     ) -> Option<<Shared as StorageTarget>::BorrowMutResource<'_, R>>;
-    
+
     /// Writes a resource to the cache,
     ///
     fn write_cache<R: Sync + Send + 'static>(&mut self, resource: R);
@@ -37,7 +37,7 @@ pub trait CacheExt {
     ) -> <Shared as StorageTarget>::BorrowMutResource<'_, R>;
 
     /// Creates a new cache tx,
-    /// 
+    ///
     fn cached_tx<R: Sync + Send + 'static>(
         &mut self,
     ) -> Option<<Shared as StorageTarget>::BorrowMutResource<'_, R>>;
@@ -52,15 +52,13 @@ impl CacheExt for ThunkContext {
     fn cached_ref<R: Sync + Send + 'static>(
         &self,
     ) -> Option<<Shared as StorageTarget>::BorrowResource<'_, R>> {
-        self.__cached
-            .resource::<R>(self.attribute.transmute())
+        self.__cached.resource::<R>(self.attribute.transmute())
     }
 
     fn cached_mut<R: Sync + Send + 'static>(
         &mut self,
     ) -> Option<<Shared as StorageTarget>::BorrowMutResource<'_, R>> {
-        self.__cached
-            .resource_mut::<R>(self.attribute.transmute())
+        self.__cached.resource_mut::<R>(self.attribute.transmute())
     }
 
     fn write_cache<R: Sync + Send + 'static>(&mut self, resource: R) {
@@ -69,8 +67,7 @@ impl CacheExt for ThunkContext {
     }
 
     fn take_cache<R: Sync + Send + 'static>(&mut self) -> Option<Box<R>> {
-        self.__cached
-            .take_resource(self.attribute.transmute())
+        self.__cached.take_resource(self.attribute.transmute())
     }
 
     fn maybe_write_cache<R: Sync + Send + 'static>(
@@ -83,8 +80,7 @@ impl CacheExt for ThunkContext {
 
     fn cached_tx<R: Sync + Send + 'static>(
         &mut self,
-    ) -> Option<<Shared as StorageTarget>::BorrowMutResource<'_, R>> 
-    {
+    ) -> Option<<Shared as StorageTarget>::BorrowMutResource<'_, R>> {
         todo!()
     }
 }

@@ -8,16 +8,16 @@
 // use super::UiFormatter;
 
 // /// Struct for a button,
-// /// 
+// ///
 // #[derive(Reality, Default, Clone)]
 // #[reality(group = "ui")]
 // pub struct Button {
 //     /// Address this button is connected to,
-//     /// 
+//     ///
 //     #[reality(derive_fromstr)]
 //     address: Address,
 //     /// Name of the button,
-//     /// 
+//     ///
 //     name: String,
 //     /// Background engine handle,
 //     ///

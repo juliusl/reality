@@ -48,12 +48,13 @@ impl BlockProvider for Test {
 }
 
 impl NodeProvider for Test {
-    fn provide(&self, 
-        name: &str, 
-        tag: Option<&str>, 
-        input: Option<&str>, 
-        _node_info: &NodeInfo, 
-        _block_info: &BlockInfo
+    fn provide(
+        &self,
+        name: &str,
+        tag: Option<&str>,
+        input: Option<&str>,
+        _node_info: &NodeInfo,
+        _block_info: &BlockInfo,
     ) -> Option<BoxedNode> {
         trace!(name, tag, input, "provide_node");
         Some(Box::pin(Test))
@@ -62,7 +63,12 @@ impl NodeProvider for Test {
 
 #[async_trait::async_trait]
 impl ExtensionLoader for Test {
-    async fn load_extension(&self, extension: &str, tag: Option<&str>, input: Option<&str>) -> Option<BoxedNode> {
+    async fn load_extension(
+        &self,
+        extension: &str,
+        tag: Option<&str>,
+        input: Option<&str>,
+    ) -> Option<BoxedNode> {
         trace!(extension, input, tag, "load_extension");
         Some(Box::pin(Test))
     }
@@ -73,14 +79,18 @@ impl Node for Test {
     ///
     /// Block info details the location within the block this node belongs,
     ///
-    fn set_info(
-        &mut self,
-        node_info: NodeInfo,
-        block_info: BlockInfo,
-    ) {
-        trace!(block_info=format!("{:?}", block_info), "set_block_info\n{:#?}", node_info);
+    fn set_info(&mut self, node_info: NodeInfo, block_info: BlockInfo) {
+        trace!(
+            block_info = format!("{:?}", block_info),
+            "set_block_info\n{:#?}",
+            node_info
+        );
         if let Some(span) = node_info.span {
-            trace!("\n\nSOURCE[{:?}] => \n---\n{}---", span.clone(), &SOURCE[span]);
+            trace!(
+                "\n\nSOURCE[{:?}] => \n---\n{}---",
+                span.clone(),
+                &SOURCE[span]
+            );
         }
     }
 

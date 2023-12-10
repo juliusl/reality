@@ -14,7 +14,7 @@ pub struct Context<'a> {
     ///
     extension: Option<Extension<'a>>,
     /// Documentation headers,
-    /// 
+    ///
     pub(crate) doc_headers: Vec<&'a str>,
     /// Blocks parsed by this context,
     ///
@@ -170,7 +170,7 @@ impl<'a> Context<'a> {
     }
 
     /// Pushes a doc header to the context,
-    /// 
+    ///
     #[inline]
     pub fn push_doc_header(&mut self, input: &'a str) {
         self.doc_headers.push(input);

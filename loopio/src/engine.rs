@@ -1065,22 +1065,20 @@ impl EngineHandle {
             CallOutput::Spawn(Some(jh)) => {
                 println!("spawning update");
                 jh.await?
-            },
+            }
             CallOutput::Abort(err) => {
                 err?;
                 Err(anyhow!("Call was aborted"))
             }
-            CallOutput::Update(Some(next)) => {
-                Ok(next)
-            }
+            CallOutput::Update(Some(next)) => Ok(next),
             _ => Err(anyhow!("Call was skipped")),
         }
     }
 
     /// Retrieves a hosted resource,
-    /// 
+    ///
     /// TODO: Need to return an error if no thread is running to handle packets
-    /// 
+    ///
     pub async fn hosted_resource(
         &self,
         address: impl Into<String>,

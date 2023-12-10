@@ -27,15 +27,15 @@ pub enum Instruction {
     #[token("<..", on_load_extension_suffix)]
     LoadExtensionSuffix,
     /// Appends input to the last line,
-    /// 
+    ///
     #[token("| ", on_append_input)]
     AppendInput,
     /// Appends a comment to the last line,
-    /// 
+    ///
     #[token("|#", on_append_comment)]
     AppendComment,
     /// Push a documentation header,
-    /// 
+    ///
     #[token("# --", on_push_doc_header)]
     #[token("#--", on_push_doc_header)]
     PushDocHeader,
@@ -48,7 +48,7 @@ pub enum Instruction {
     #[default]
     Noop,
     /// The ignored portion of the source text,
-    /// 
+    ///
     #[regex(r"[^`+:<|#]+", on_ignored)]
     Ignored,
 }
@@ -97,13 +97,11 @@ fn on_block_start(lex: &mut Lexer<Instruction>) {
             (Some(ty), Some(moniker)) => {
                 lex.extras.set_block_ty(ty);
                 lex.extras.set_block_moniker(moniker);
-            },
+            }
             (Some(ty), None) => {
                 lex.extras.set_block_ty(ty);
             }
-            _ => {
-
-            }
+            _ => {}
         }
 
         lex.bump_line();
@@ -116,10 +114,11 @@ fn on_block_end(lex: &mut Lexer<Instruction>) {
 }
 
 #[inline]
-fn on_push_doc_header(lex: &mut Lexer<Instruction>)  {
+fn on_push_doc_header(lex: &mut Lexer<Instruction>) {
     if lex.extras.is_analyzing() {
         if let Some(line) = lex.bump_line() {
-            lex.extras.push_doc_header(line.trim().trim_start_matches("# --").trim());
+            lex.extras
+                .push_doc_header(line.trim().trim_start_matches("# --").trim());
         }
     }
 }
@@ -128,7 +127,8 @@ fn on_push_doc_header(lex: &mut Lexer<Instruction>)  {
 fn on_append_input(lex: &mut Lexer<Instruction>) {
     if lex.extras.is_analyzing() {
         if let Some(input) = lex.bump_line() {
-            lex.extras.append_input(input.trim_start_matches('|').trim());
+            lex.extras
+                .append_input(input.trim_start_matches('|').trim());
         }
     }
 }
@@ -137,7 +137,8 @@ fn on_append_input(lex: &mut Lexer<Instruction>) {
 fn on_append_comment(lex: &mut Lexer<Instruction>) {
     if lex.extras.is_analyzing() {
         if let Some(input) = lex.bump_line() {
-            lex.extras.append_comment(input.trim_start_matches('|').trim_start_matches('#').trim());
+            lex.extras
+                .append_comment(input.trim_start_matches('|').trim_start_matches('#').trim());
         }
     }
 }
@@ -187,7 +188,7 @@ fn on_load_extension_suffix(lex: &mut Lexer<Instruction>) -> Filter<()> {
 }
 
 /// Parses the parameters of an attribute container,
-/// 
+///
 #[inline]
 fn on_attribute(lex: &mut Lexer<Instruction>) {
     // Morph into tokens lexer
@@ -205,7 +206,7 @@ fn on_attribute(lex: &mut Lexer<Instruction>) {
 }
 
 /// Parses the parameters of an extension container,
-/// 
+///
 fn on_extension(lex: &mut Lexer<Instruction>) {
     // Morph into tokens lexer
     let mut tokens: Lexer<Tokens> = lex.clone().morph();
@@ -267,26 +268,58 @@ fn test_add_node_instruction() {
 
     let line = &block.lines[0];
     assert_eq!(line.tag, Some(Tag("example")));
-    assert_eq!(line.attr, Some(Attribute { name: "test", input: Some(Input::EscapedText("hello-world")) }));
+    assert_eq!(
+        line.attr,
+        Some(Attribute {
+            name: "test",
+            input: Some(Input::EscapedText("hello-world"))
+        })
+    );
     assert_eq!(line.comment, Some(vec!["# Test comment"]));
     assert!(line.extension.is_none());
 
     let line = &block.lines[1];
-    assert_eq!(line.attr, Some(Attribute { name: "test", input: Some(Input::Text("hello world 2")) }));
+    assert_eq!(
+        line.attr,
+        Some(Attribute {
+            name: "test",
+            input: Some(Input::Text("hello world 2"))
+        })
+    );
     assert_eq!(line.comment, Some(vec!["# test comment"]));
     assert!(line.extension.is_none());
     assert!(line.tag.is_none());
 
     let line = &block.lines[2];
-    assert_eq!(line.attr, Some(Attribute { name: "test", input: Some(Input::Lines(vec!["hello world 3", "4", "5", "6 test 12345"])) }));
+    assert_eq!(
+        line.attr,
+        Some(Attribute {
+            name: "test",
+            input: Some(Input::Lines(vec![
+                "hello world 3",
+                "4",
+                "5",
+                "6 test 12345"
+            ]))
+        })
+    );
     assert_eq!(line.comment, Some(vec!["# test comment"]));
     assert!(line.extension.is_none());
     assert!(line.tag.is_none());
 
     let line = &block.lines[3];
     println!("{:#?}", line);
-    assert_eq!(line.attr, Some(Attribute { name: "test", input: Some(Input::Text("hello world 4")) }));
-    assert_eq!(line.comment, Some(vec!["# test comment 2", "table=true", "name=Test"]));
+    assert_eq!(
+        line.attr,
+        Some(Attribute {
+            name: "test",
+            input: Some(Input::Text("hello world 4"))
+        })
+    );
+    assert_eq!(
+        line.comment,
+        Some(vec!["# test comment 2", "table=true", "name=Test"])
+    );
     assert_eq!(line.doc_headers, vec!["Test value"]);
     assert!(line.extension.is_none());
     assert!(line.tag.is_none());

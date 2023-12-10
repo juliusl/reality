@@ -14,10 +14,10 @@ use crate::VisitMut;
 use super::attribute::Property;
 use super::visit::Field;
 use super::visit::FieldMut;
-use crate::prelude::FieldPacket;
-use crate::prelude::FieldPacketType;
 use super::AttributeParser;
 use super::StorageTarget;
+use crate::prelude::FieldPacket;
+use crate::prelude::FieldPacketType;
 
 /// Trait to implement a type as an AttributeType,
 ///
@@ -222,7 +222,11 @@ where
         };
 
         let tag = parser.tag().cloned();
-        let key = parser.attributes.last().map(|a| a.transmute::<Owner>()).unwrap_or(ResourceKey::root());
+        let key = parser
+            .attributes
+            .last()
+            .map(|a| a.transmute::<Owner>())
+            .unwrap_or(ResourceKey::root());
 
         let mut properties = vec![];
         match (parser.storage_mut(), parsed) {
@@ -250,9 +254,13 @@ where
             ) => {
                 type ParserError<T> = <T as FromStr>::Err;
 
-                if let Some(cb) = storage.callback_mut::<ParserError<T>>(label.try_into().unwrap_or(ResourceKey::root())) {
+                if let Some(cb) = storage
+                    .callback_mut::<ParserError<T>>(label.try_into().unwrap_or(ResourceKey::root()))
+                {
                     storage.lazy_callback_mut(cb, error)
-                } else if let Some(cb) = storage.callback::<ParserError<T>>(label.try_into().unwrap_or(ResourceKey::root())) {
+                } else if let Some(cb) = storage
+                    .callback::<ParserError<T>>(label.try_into().unwrap_or(ResourceKey::root()))
+                {
                     storage.lazy_callback(cb, error)
                 }
             }
@@ -286,7 +294,11 @@ where
 
         // Get the current tag setting,
         let tag = parser.tag().cloned();
-        let key = parser.attributes.last().map(|a| a.transmute::<Owner>()).unwrap_or(ResourceKey::root());
+        let key = parser
+            .attributes
+            .last()
+            .map(|a| a.transmute::<Owner>())
+            .unwrap_or(ResourceKey::root());
 
         let mut properties = vec![];
         if let Some(mut storage) = parser.storage_mut() {
@@ -328,7 +340,11 @@ where
 
         // Get the current tag setting,
         let tag = parser.tag().cloned();
-        let key = parser.attributes.last().map(|a| a.transmute::<Owner>()).unwrap_or(ResourceKey::root());
+        let key = parser
+            .attributes
+            .last()
+            .map(|a| a.transmute::<Owner>())
+            .unwrap_or(ResourceKey::root());
 
         let mut properties = vec![];
         if let Some(mut storage) = parser.storage_mut() {
@@ -382,7 +398,7 @@ where
     /// Function called when a value is parsed correctly,
     ///
     fn on_parse(&mut self, value: T, tag: Option<&String>) -> ResourceKey<Property>;
-    
+
     /// Returns a reference to the field as the projected type,
     ///
     fn get(&self) -> &Self::ProjectedType;

@@ -267,7 +267,7 @@ async fn create_inspect_action(tc: &mut ThunkContext) -> anyhow::Result<()> {
     }
 }
 
-impl<T: Plugin> UiDisplayMut for FieldRef<T, String, String> 
+impl<T: Plugin> UiDisplayMut for FieldRef<T, String, String>
 where
     T::Virtual: NewFn<Inner = T>,
 {
@@ -306,7 +306,7 @@ where
     }
 }
 
-impl<T: Plugin> UiDisplayMut for FieldRef<T, Decorated<String>, Decorated<String>> 
+impl<T: Plugin> UiDisplayMut for FieldRef<T, Decorated<String>, Decorated<String>>
 where
     T::Virtual: NewFn<Inner = T>,
 {

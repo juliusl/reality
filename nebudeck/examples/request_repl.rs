@@ -5,28 +5,28 @@
 // use nebudeck::terminal::TerminalApp;
 // use nebudeck::terminal::Terminal;
 // /// Minimal example for starting a new terminal repl interaction,
-// /// 
+// ///
 // #[tokio::main]
 // async fn main() {
 //     let mut workspace = Workspace::new();
 //     workspace.add_buffer(
-//         "request_repl.md", 
+//         "request_repl.md",
 //         r#"
 //         ```runmd
 //         + .operation            get
 //         <ux/nebudeck.command>   get
 //         <utility/loopio.ext>
 //         <..hyper.request>       repl://get
-        
+
 //         + .operation            list
-//         <ux/nebudeck>           
+//         <ux/nebudeck>
 //         <..command>             hosts       # List info on hosts found in request history
 //         <..command>             methods     # List info on available request methods
-//         <..terminal.app>        
-//         : .command              hosts       
-//         : .command              methods     
+//         <..terminal.app>
+//         : .command              hosts
+//         : .command              methods
 //         : .repl                 false
-        
+
 //         + .host                 repl
 //         ```
 //         "#
@@ -52,7 +52,7 @@
 //     ) -> Self {
 
 //         for (name, host) in engine.iter_hosts() {
-            
+
 //         }
 
 //         RequestRepl { engine }

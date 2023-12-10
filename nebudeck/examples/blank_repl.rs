@@ -1,31 +1,27 @@
 use loopio::engine::Engine;
 use loopio::engine::EngineHandle;
 use loopio::foreground::ForegroundEngine;
-use nebudeck::ControlBus;
-use nebudeck::terminal::TerminalApp;
 use nebudeck::terminal::Terminal;
+use nebudeck::terminal::TerminalApp;
+use nebudeck::ControlBus;
 /// Minimal example for starting a new terminal repl interaction,
-/// 
+///
 fn main() {
     let engine = Engine::builder();
 
-    BlankRepl.delegate(
-        Terminal::default(),
-        ForegroundEngine::new(engine),
-    );
+    BlankRepl.delegate(Terminal::default(), ForegroundEngine::new(engine));
 }
 
 #[derive(Default)]
 struct BlankRepl;
 
 impl ControlBus for BlankRepl {
-    fn bind(&mut self, _: EngineHandle) {
-    }
+    fn bind(&mut self, _: EngineHandle) {}
 }
 
 impl TerminalApp for BlankRepl {
     fn parse_command(&mut self) -> clap::Command {
-        // If using derive -- 
+        // If using derive --
         // clap::CommandFactory::command();
         // clap::CommandFactory::command_for_update()
 

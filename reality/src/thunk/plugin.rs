@@ -61,7 +61,7 @@ pub trait Plugin: ToFrame + BlockObject<Shared> + CallAsync + Clone + Default {
         CallOutput::Spawn(context.spawn(|c| async {
             debug!("Enabling frame");
             let init = c.initialized::<Self>().await;
-            
+
             debug!("Converting to frame");
             let frame = init.to_frame(c.attribute);
 
