@@ -361,8 +361,6 @@ impl Context {
         let mut init = self.initialized::<P>().await;
         init.sync(self);
 
-        
-
         Initializer {
             initialized: init,
             context: self,

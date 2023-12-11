@@ -407,40 +407,42 @@ where
 }
 
 /// Type-alias for get_ref field of the field v-table,
-/// 
+///
 type GetRefVTableEntry<O, V> = AdapterRef<fn(&O) -> (&str, &V), O, V>;
 
 /// Type-alias for get_mut field of the field v-table,
-/// 
+///
 type GetMutVTableEntry<O, V> = AdapterRef<fn(&mut O) -> (&str, &mut V), O, V>;
 
 /// Type-alias for take field of the field v-table,
-/// 
+///
 type TakeVTableEntry<O, V> = AdapterRef<fn(O) -> V, O, V>;
 
 /// Type-alias for set field of the field v-table,
-/// 
+///
 type SetVTableEntry<O, V> = AdapterRef<fn(&mut O, V) -> bool, O, V>;
 
 /// Type-alias for push field of the field v-table,
-/// 
+///
 type PushVTableEntry<O, V> = AdapterRef<fn(&mut O, V) -> bool, O, V>;
 
 /// Type-alias for insert_entry field of the field v-table,
-/// 
+///
 type InsertEntryVTableEntry<O, V> = AdapterRef<fn(&mut O, String, V) -> bool, O, V>;
 
 /// Type-alias for encode field of the field v-table,
-/// 
+///
 type EncodeEntryVTableEntry<O, V> = AdapterRef<fn(O) -> FieldPacket, O, V>;
 
 /// Type-alias for decode field of the field v-table,
-/// 
-type DecodeEntryVTableEntry<O, OV, V, PV> = AdapterRef<fn(OV, FieldPacket) -> anyhow::Result<FieldRef<O, V, PV>>, O, V>;
+///
+type DecodeEntryVTableEntry<O, OV, V, PV> =
+    AdapterRef<fn(OV, FieldPacket) -> anyhow::Result<FieldRef<O, V, PV>>, O, V>;
 
 /// Type-alias for filter field of the field v-table,
-/// 
-type FilterEntryVTableEntry<O, OV, V, PV> = AdapterRef<fn(&OV, &FieldPacket) -> anyhow::Result<FieldRef<O, V, PV>>, O, V>;
+///
+type FilterEntryVTableEntry<O, OV, V, PV> =
+    AdapterRef<fn(&OV, &FieldPacket) -> anyhow::Result<FieldRef<O, V, PV>>, O, V>;
 
 /// V-Table containing functions for handling fields from the owning type,
 ///
