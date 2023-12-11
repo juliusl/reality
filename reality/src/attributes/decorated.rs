@@ -13,7 +13,7 @@ use crate::ThunkContext;
 /// Wrapper struct to include a tag w/ a parsed value,
 ///
 #[derive(Hash, Debug, Serialize, PartialEq, Eq, Deserialize, Default)]
-pub struct Decorated<T: FromStr + Send + Sync + 'static> {
+pub struct Decorated<T: Send + Sync + 'static> {
     /// Inner value,
     ///
     pub value: Option<T>,
@@ -28,7 +28,7 @@ pub struct Decorated<T: FromStr + Send + Sync + 'static> {
     decoration: Option<Decoration>,
 }
 
-impl<T: PartialOrd + FromStr + Send + Sync + 'static> PartialOrd for Decorated<T> {
+impl<T: PartialOrd + Send + Sync + 'static> PartialOrd for Decorated<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match self.value.partial_cmp(&other.value) {
             Some(core::cmp::Ordering::Equal) => {}
@@ -38,13 +38,13 @@ impl<T: PartialOrd + FromStr + Send + Sync + 'static> PartialOrd for Decorated<T
     }
 }
 
-impl<T: Ord + FromStr + Send + Sync + 'static> Ord for Decorated<T> {
+impl<T: Ord + Send + Sync + 'static> Ord for Decorated<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         (self.value.as_ref(), self.tag.as_ref()).cmp(&(other.value.as_ref(), other.tag.as_ref()))
     }
 }
 
-impl<T: FromStr + Clone + Send + Sync + 'static> Clone for Decorated<T> {
+impl<T: Clone + Send + Sync + 'static> Clone for Decorated<T> {
     fn clone(&self) -> Self {
         Self {
             value: self.value.clone(),
@@ -55,7 +55,7 @@ impl<T: FromStr + Clone + Send + Sync + 'static> Clone for Decorated<T> {
     }
 }
 
-impl<T: FromStr + Send + Sync + 'static> Decorated<T> {
+impl<T: Send + Sync + 'static> Decorated<T> {
     /// Returns the default value for this tag,
     ///
     pub fn value(&self) -> Option<&T> {
@@ -182,8 +182,6 @@ impl<const DELIM: char, T: FromStr + Send + Sync + 'static> Iterator for Delimit
 // TODO: Enabling this would allow for more multi-vector use-cases.
 // /// Struct that contains the parsed inner type as well as the idx
 // /// of the value.
-// ///
-// ///
 // ///
 // pub struct Indexed<T>
 // where

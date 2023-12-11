@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
@@ -9,6 +10,7 @@ use tokio::sync::Notify;
 
 use reality::prelude::*;
 
+use crate::action::RemoteAction;
 use crate::prelude::Action;
 use crate::prelude::Address;
 use crate::prelude::Ext;
@@ -32,8 +34,8 @@ pub struct Host {
     pub start: Option<Decorated<Address>>,
     /// List of events managed by this host,
     ///
-    #[reality(vec_of=Decorated<HostEvent>)]
-    pub event: Vec<Decorated<HostEvent>>,
+    #[reality(vec_of=Decorated<String>)]
+    pub event: Vec<Decorated<String>>,
     /// Binding to an engine,
     ///
     #[reality(ignore)]
@@ -90,6 +92,31 @@ async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
         if let Some(props) = a.decorations().map(|d| d.props()) {
             eprintln!("{:#?}", props);
         }
+    }
+
+    let eh = tc.engine_handle().await.unwrap();
+
+    for e in init.event.iter() {
+        let (_, mut br) = tc.branch();
+
+        let published = RemoteAction
+            .build::<Event>(&mut br)
+            .await
+            .set_address(
+                format!(
+                    "{}://?event={}",
+                    init.name.value().unwrap_or(&"engine".to_string()),
+                    e.value().unwrap_or(&"default".to_string())
+                )
+                .parse::<Address>()?,
+            )
+            .set_entrypoint(Event {
+                name: e.clone(),
+                data: Bytes::new(),
+            })
+            .publish(eh.clone())
+            .await?;
+        eprintln!("published -- {:?}", published);
     }
 
     eprintln!("# Paths");
@@ -349,10 +376,8 @@ async fn test_host_condition() {
 }
 
 #[tokio::test]
+#[tracing_test::traced_test]
 async fn test_host() {
-    use crate::prelude::VirtualBusExt;
-    use futures_util::pin_mut;
-
     let mut workspace = Workspace::new();
     workspace.add_buffer(
         "demo.md",
@@ -430,135 +455,53 @@ async fn test_host() {
     if let Ok(hosted_resource) = eh.hosted_resource("demo://").await {
         eprintln!("Found hosted resource - {}", hosted_resource.address());
         hosted_resource.spawn().unwrap().await.unwrap().unwrap();
-        hosted_resource.spawn().unwrap().await.unwrap().unwrap();
 
-        if let Ok(Some(tc)) = hosted_resource.context().enable_virtual().await {
-            let node = tc.node().await;
-            let virtual_host = node
-                .current_resource::<Arc<tokio::sync::watch::Sender<VirtualHost>>>(
-                    tc.attribute.transmute(),
-                )
-                .expect("should be enabled")
-                .clone();
-            drop(node);
-            let _eh = eh.clone();
+        // Example - getting a virtual bus for an event created by host
+        let mut vbus = eh.event_vbus("demo", "op_b_complete").await.unwrap();
 
-            // Receiver
-            // There are two levels of listening
-            // In this case it is the first level
-            // This example simulates what would happen when a plugin is called that
-            // will listen for events.
+        // Example - writing to an "event" created by host
+        let mut txbus = vbus.clone();
+        tokio::spawn(async move {
+            let transmit = txbus.transmit::<Event>().await;
 
-            let listener = tokio::spawn(async move {
-                if let Ok(hosted_resource) = _eh
-                    .hosted_resource("demo://a/start/loopio.std.io.println")
-                    .await
-                {
-                    eprintln!("{:#?}", hosted_resource.decoration);
+            transmit.write_to_virtual(|r| r.virtual_mut().name.commit())
+        });
 
-                    let mut stream = hosted_resource
-                        .context()
-                        .virtual_bus("demo://".parse::<Address>().unwrap())
-                        .await
-                        .wait_for::<Host>()
-                        .await
-                        .select(|h| &h.virtual_ref().name)
-                        .filter(|h| h.is_committed());
-
-                    let stream = &mut stream;
-
-                    pin_mut!(stream);
-
-                    eprintln!("waiting for committed");
-                    let name_committed = futures_util::StreamExt::next(&mut stream).await;
-
-                    if let Some((field_changed, _latest)) = name_committed {
-                        field_changed.view_value(|v| {
-                            eprintln!("!!!Name was committed!!! {:?}", v);
-                            assert_eq!(v.value.as_ref().unwrap().as_str(), "demo2");
-                        });
-                    }
-
-                    eprintln!("Found hosted resource - {}", hosted_resource.address());
-                    hosted_resource.spawn().unwrap().await.unwrap().unwrap();
-                    hosted_resource.spawn().unwrap().await.unwrap().unwrap();
-                }
-                eprintln!("Host was modified");
-            });
-
-            // let eh = eh.clone();
-            // let listener_2 = tokio::spawn(async move {
-            //     if let Ok(hosted_resource) = eh
-            //         .hosted_resource("demo://a/start/loopio.std.io.println")
-            //         .await
-            //     {
-            //         let mut rx = hosted_resource
-            //             .context()
-            //             .virtual_bus("demo://".parse::<Address>().unwrap())
-            //             .await
-            //             .wait_for::<Host>()
-            //             .await
-            //             .subscribe_raw();
-
-            //         rx.changed().await.unwrap();
-
-            //         eprintln!("Got host change from raw subscription");
-            //         assert_eq!(rx.borrow().clone().name.value().unwrap().as_str(), "demo2");
-            //     }
-            // });
-
-            // Transmitter
-            let tx = virtual_host.clone().borrow().name.clone().start_tx();
-            if let Ok(_) = tx.next(|host| Ok(host)).finish() {
-                // Get a reference to the bus
-                let mut commit = hosted_resource
-                    .context()
-                    .virtual_bus("demo://".parse::<Address>().unwrap())
-                    .await;
-
-                eprintln!("Waiting for sync");
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-                // Create a new commit channel
-                let commit = commit.transmit::<Host>().await;
-
-                // Write a change to the virtual reference
-                // TODO -- improve api ergo, deref mut is to owned so need to figure out how to mutate inner
-                // field ref
-                commit.write_to_virtual(|virt| {
-                    virt.virtual_mut().name.edit_value(|f, v| {
-                        assert_eq!(f, "name");
-                        v.value = Some(String::from("demo2"));
-                        true
-                    });
-                    assert!(virt.virtual_mut().name.commit());
-                    assert!(!virt.virtual_mut().name.commit());
-                    eprintln!("Committed --");
-                    true
-                });
-
-                listener.await.unwrap();
-                // listener_2.await.unwrap();
-
-                let mut node = hosted_resource.context().node.storage.write().await;
-                node.put_resource(virtual_host, hosted_resource.plugin_rk().transmute());
-            } else {
-                panic!("Expecting the listener to be released");
-            }
+        // Example - waiting for an "event" created by host
+        let _event = vbus.wait_for::<Event>().await;
+        let mut port = _event.select(|e| &e.virtual_ref().name);
+        let mut port = futures_util::StreamExt::boxed(&mut port);
+        if let Some((_next, event)) = futures_util::StreamExt::next(&mut port).await {
+            eprintln!("got next - {:#?}", event);
         }
     }
 
-    // if let Ok(mut h) = eh.hosted_resource("engine://test").await {
-    //     let seq =
-    //         crate::action::ActionExt::as_local_plugin::<crate::prelude::Sequence>(&mut h).await;
-    //     eprintln!("{:?}", seq.context().decoration);
-    // }
-
-    // if let Ok(hosted_resource) = eh
-    //     .hosted_resource("demo://a/start/loopio.std.io.println")
-    //     .await
-    // {
-    //     eprintln!("{:#?}", hosted_resource.decoration);
-    // }
     ()
+}
+
+/// Plugin for managing state for a shared event defined on a Host,
+///
+#[derive(Reality, Debug, Default, Clone)]
+#[reality(call=on_event, plugin)]
+pub struct Event {
+    /// Name of this event,
+    ///
+    /// Decorations are passed from the host definition.
+    /// 
+    #[reality(derive_fromstr)]
+    pub name: Decorated<String>,
+    /// Current state of this event,
+    /// 
+    #[reality(ignore)]
+    pub data: Bytes,
+}
+
+async fn on_event(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    use tracing::debug;
+
+    let init = tc.initialized::<Event>().await;
+
+    debug!(name=init.name.value());
+
+    Ok(())
 }

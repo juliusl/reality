@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_stream::stream;
@@ -147,6 +148,17 @@ impl Context {
             .as_ref()
             .and_then(|d| d.comment_properties.as_ref())
             .and_then(|c| c.get(name.as_ref()))
+    }
+
+    /// Sets a property for the current context,
+    /// 
+    pub fn set_property(&mut self, name: impl Into<String>, value: impl Into<String>) {
+        let decoration = self.decoration
+            .get_or_insert(Decoration::default());
+        
+        let properties = decoration.comment_properties.get_or_insert(BTreeMap::new());
+
+        properties.entry(name.into()).or_insert(value.into());
     }
 
     /// Returns the parsed block,

@@ -20,14 +20,6 @@ pub struct Shared {
     resources: HashMap<u64, Arc<RwLock<Box<dyn Send + Sync + 'static>>>>,
 }
 
-impl Shared {
-    /// Unpack a stored type,
-    ///
-    pub fn unpack<T: for<'a> From<&'a mut Shared>>(&mut self) -> T {
-        T::from(self)
-    }
-}
-
 impl StorageTarget for Shared {
     type BorrowResource<'a, T: Send + Sync + 'static> = RwLockReadGuard<'a, T>;
 

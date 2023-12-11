@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use futures_util::Future;
 use std::pin::Pin;
-use tracing::info;
+use tracing::debug;
 use uuid::Uuid;
 
 use reality::attributes;
@@ -288,6 +288,7 @@ impl LocalAction {
     pub async fn build<P>(self, context: &mut ThunkContext) -> ActionFactory
     where
         P: Plugin,
+        P::Virtual: NewFn<Inner = P>
     {
         let inner = context.as_local_plugin::<P>().await;
         let mut transient = context.transient_mut().await;
@@ -305,6 +306,7 @@ impl LocalAction {
         ActionFactory {
             attribute: context.attribute,
             storage: context.transient.clone(),
+            address: None,
         }
         .set_entrypoint(inner)
     }
@@ -320,6 +322,7 @@ impl RemoteAction {
     pub async fn build<P>(self, context: &mut ThunkContext) -> ActionFactory
     where
         P: Plugin,
+        P::Virtual: NewFn<Inner = P>
     {
         let inner = context.as_remote_plugin::<P>().await;
 
@@ -329,7 +332,7 @@ impl RemoteAction {
         {
             let node = context.node().await;
             if let Some(bus) = node.current_resource::<WireBus>(context.attribute.transmute()) {
-                info!("Found wire bus");
+                debug!("Found wire bus");
                 drop(node);
                 transient.put_resource(bus, context.attribute.transmute());
             }
@@ -341,7 +344,7 @@ impl RemoteAction {
             if let Some(change_pipeline) =
                 node.current_resource::<FrameUpdates>(context.attribute.transmute())
             {
-                info!("Found change pipeline");
+                debug!("Found frame updates");
                 drop(node);
                 transient.put_resource(change_pipeline, context.attribute.transmute());
             }
@@ -356,6 +359,7 @@ impl RemoteAction {
             if let Some(parsed_attributes) =
                 node.current_resource::<ParsedAttributes>(ResourceKey::root())
             {
+                debug!("Found parsed attributes");
                 drop(node);
                 transient.put_resource(parsed_attributes, context.attribute.transmute());
                 transient.put_resource(recv, context.attribute.transmute());
@@ -363,10 +367,12 @@ impl RemoteAction {
         }
 
         if let Some(deco) = context.decoration.as_ref() {
+            debug!("Found decorations");
             transient.put_resource(deco.clone(), context.attribute.transmute());
         }
 
         if let Some(block) = context.parsed_block().await {
+            debug!("Found parsed block");
             transient.put_resource(block, ResourceKey::root());
         }
 
@@ -375,6 +381,7 @@ impl RemoteAction {
         ActionFactory {
             attribute: context.attribute,
             storage: context.transient.clone(),
+            address: None,
         }
         .set_entrypoint(inner)
     }
@@ -389,6 +396,9 @@ pub struct ActionFactory {
     /// Thunk context to build action components,
     ///
     pub storage: AsyncStorageTarget<Shared>,
+    /// Optional address to publish this action to,
+    /// 
+    address: Option<Address>,
 }
 
 /// Type-alias for a task future,
@@ -400,19 +410,40 @@ type Task = Pin<Box<dyn Future<Output = anyhow::Result<ThunkContext>> + Send + S
 type TaskFn = Pin<Box<dyn Fn(ThunkContext) -> Task + Send + Sync + 'static>>;
 
 impl ActionFactory {
+    /// Sets the current address,
+    /// 
+    pub fn set_address(mut self, address: Address) -> Self {
+        self.address = Some(address);
+        self
+    }
+
     /// Sets the entrypoint for the action,
     ///
     pub fn set_entrypoint<P>(self, plugin: P) -> Self
     where
         P: Plugin,
+        P::Virtual: NewFn<Inner = P>
     {
         let mut storage = self
             .storage
             .storage
             .try_write()
             .expect("should be able to write");
-        storage.put_resource::<P>(plugin, self.attribute.transmute());
-        storage.put_resource::<ThunkFn>(<P as Plugin>::call, self.attribute.transmute());
+        storage.put_resource::<P>(plugin, self.attribute().transmute());
+        storage.put_resource::<ThunkFn>(<P as Plugin>::call, self.attribute().transmute());
+        storage.put_resource::<EnableFrame>(
+            EnableFrame(<P as Plugin>::enable_frame),
+            self.attribute().transmute(),
+        );
+        storage.put_resource::<EnableVirtual>(
+            EnableVirtual(<P as Plugin>::enable_virtual),
+            self.attribute().transmute(),
+        );
+        if let Some(mut attrs) = storage.resource_mut::<ParsedAttributes>(ResourceKey::root()) {
+            attrs.attributes.push(self.attribute());
+        }
+        storage.put_resource(self.attribute(), ResourceKey::default());
+
         drop(storage);
         self
     }
@@ -422,8 +453,9 @@ impl ActionFactory {
     pub fn enable<P>(self, plugin: P) -> Self
     where
         P: Plugin,
+        P::Virtual: NewFn<Inner = P>
     {
-        let key = self.attribute.branch(P::symbol());
+        let key = self.attribute().branch(P::symbol());
 
         let mut storage = self
             .storage
@@ -432,6 +464,19 @@ impl ActionFactory {
             .expect("should be able to write");
         storage.put_resource::<P>(plugin, key.transmute());
         storage.put_resource::<ThunkFn>(<P as Plugin>::call, key.transmute());
+        storage.put_resource::<EnableFrame>(
+            EnableFrame(<P as Plugin>::enable_frame),
+            self.attribute().transmute(),
+        );
+        storage.put_resource::<EnableVirtual>(
+            EnableVirtual(<P as Plugin>::enable_virtual),
+            self.attribute().transmute(),
+        );
+        if let Some(mut attrs) = storage.resource_mut::<ParsedAttributes>(ResourceKey::root()) {
+            attrs.attributes.push(self.attribute());
+        }
+        storage.put_resource(self.attribute(), ResourceKey::default());
+
         drop(storage);
         self
     }
@@ -447,7 +492,7 @@ impl ActionFactory {
         Self: Sync,
         F: Future<Output = anyhow::Result<ThunkContext>> + Sync + Send + 'static,
     {
-        let key = self.attribute.branch(symbol);
+        let key = self.attribute().branch(symbol);
 
         let mut storage = self
             .storage
@@ -468,7 +513,7 @@ impl ActionFactory {
     /// Binds a function to a symbol,
     ///
     pub fn bind(self, symbol: &str, plugin: fn(ThunkContext) -> CallOutput) -> Self {
-        let key = self.attribute.branch(symbol);
+        let key = self.attribute().branch(symbol);
 
         let mut storage = self
             .storage
@@ -483,7 +528,13 @@ impl ActionFactory {
     /// Publishes this factory,
     ///
     pub async fn publish(self, eh: EngineHandle) -> anyhow::Result<Address> {
-        eh.publish(self.into()).await
+        let mut tc: ThunkContext = self.storage.into();
+        
+        if let Some(address) = self.address.as_ref() {
+            tc.set_property("address", address.to_string());
+        }
+
+        eh.publish(tc).await
     }
 
     /// Publishes this factory and returns the hosted resource,
@@ -493,6 +544,14 @@ impl ActionFactory {
             eh.hosted_resource(address.to_string()).await
         } else {
             Err(anyhow!("Could not publish action factory"))
+        }
+    }
+
+    fn attribute(&self) -> ResourceKey<Attribute> {
+        if let Some(address) = self.address.as_ref() {
+            self.attribute.branch(address.to_string())
+        } else {
+            self.attribute
         }
     }
 }

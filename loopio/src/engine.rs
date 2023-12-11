@@ -31,6 +31,7 @@ use crate::prelude::Action;
 use crate::prelude::Address;
 use crate::prelude::EngineBuildMiddleware;
 use crate::prelude::Ext;
+use crate::prelude::VirtualBus;
 use crate::sequence::Sequence;
 
 #[cfg(feature = "hyper-ext")]
@@ -1150,5 +1151,15 @@ impl EngineHandle {
     ///
     pub fn background(&mut self) -> Option<&mut BackgroundWorkEngineHandle> {
         self.background_work.as_mut()
+    }
+
+    /// Returns a virtual bus for some event,
+    /// 
+    pub async fn event_vbus(&self, host: &str, name: &str) -> anyhow::Result<VirtualBus> {
+        let event = self.hosted_resource(format!("{host}://?event={name}")).await?;
+        
+        let tc = event.spawn_call().await?;
+
+        Ok(VirtualBus::from(tc))
     }
 }

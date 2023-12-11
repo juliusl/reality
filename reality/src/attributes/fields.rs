@@ -1,3 +1,4 @@
+// use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use tokio::sync::watch::Ref;
@@ -35,6 +36,18 @@ where
     ///
     condition: FieldCondition,
 }
+
+// pub struct MappedFieldRef {
+
+// }
+
+// impl MappedFieldRef {
+//     /// Returns a field ref for an element within the map,
+//     ///
+//     fn get(&self, key: &str) {
+
+//     }
+// }
 
 /// TODO -- add noop attribute, allow PAth in call=
 ///
@@ -84,6 +97,36 @@ impl<Owner: Plugin, Value, ProjectedValue> FieldRef<Owner, Value, ProjectedValue
         self.owner.borrow().to_owned()
     }
 }
+
+// impl<Owner: Plugin, Value> FieldRef<Owner, Value, BTreeMap<String, Value>> {
+//     /// Returns a specialized field ref for BTreeMap,
+//     ///
+//     pub fn as_map(&self) {}
+// }
+
+// impl<Owner: Plugin, Value> FieldRef<Owner, Value, Vec<Value>> {
+//     /// Returns a specialized field ref for Vec,
+//     ///
+//     pub fn as_vec(&self) {}
+// }
+
+// impl<Owner: Plugin, Value> FieldRef<Owner, Value, Option<Value>> {
+//     /// Returns a specialized field ref for Option,
+//     ///
+//     pub fn as_option(&self) {}
+// }
+
+// impl<Owner: Plugin, Value> FieldRef<Owner, Value, VecDeque<Value>> {
+//     /// Returns a specialized field ref for VecDeque
+//     ///
+//     pub fn as_vecdeque(&self) {}
+// }
+
+// impl<Owner: Plugin, Value> FieldRef<Owner, Value, BTreeSet<Value>> {
+//     /// Returns a specialized field ref for BTreeSet
+//     ///
+//     pub fn as_set(&self) {}
+// }
 
 /// Enumeration of conditions that fields can be in,
 ///

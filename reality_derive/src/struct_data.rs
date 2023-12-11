@@ -228,7 +228,7 @@ impl StructData {
         let original = self.generics.clone();
         let (impl_generics, ty_generics, where_clause) = original.split_for_impl();
 
-        let field_helpers_impl = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
+        let field_helpers_impl = self.fields.iter().filter(|_| self.replace.is_none()).filter(|f| !f.ignore && !f.not_wire).map(|f| {
             let name = &f.name;
             let field_ident = f.field_name_lit_str();
             let ty = f.field_ty();
@@ -408,7 +408,7 @@ impl StructData {
             }
         });
 
-        let vtable_field_helpers_impl = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
+        let vtable_field_helpers_impl = self.fields.iter().filter(|_| self.replace.is_none()).filter(|f| !f.ignore && !f.not_wire).map(|f| {
             let ty = f.field_ty();
             let absolute_ty = &f.ty;
             let offset = &f.offset;
@@ -449,6 +449,7 @@ impl StructData {
             .fields
             .iter()
             .filter(|_| self.replace.is_none())
+            .filter(|f| !f.ignore && !f.not_wire)
             .map(|f| {
                 let name = &f.name;
                 let ty = f.field_ty();
@@ -459,52 +460,63 @@ impl StructData {
                 }
             });
 
-        let vtable_field_new_impl =
-            self.fields
-                .iter()
-                .filter(|_| self.replace.is_none())
-                .map(|f| {
-                    let name = &f.name;
-                    let offset = f.offset;
-                    let vtable_helper_fn_ident = format_ident!("__field_offset_{}_vtable", offset);
-                    quote_spanned! {f.span=>
-                        #name: FieldRef::new(
-                            owner.clone(),
-                            #ident::#vtable_helper_fn_ident(),
-                        ),
-                    }
-                });
-
-        let on_read_fields = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
-            let offset = &f.offset;
-            let name = &f.name;
-            let ty = f.field_ty();
-
-            quote_spanned!(f.span=>
-                impl #impl_generics OnReadField<#offset> for #ident #ty_generics #where_clause {
-                    type FieldType = #ty;
-
-                    #[inline]
-                    fn read(virt: &Self::Virtual) -> &FieldRef<Self, Self::FieldType, Self::ProjectedType> {
-                        &virt.#name
-                    }
+        let vtable_field_new_impl = self
+            .fields
+            .iter()
+            .filter(|_| self.replace.is_none())
+            .filter(|f| !f.ignore && !f.not_wire)
+            .map(|f| {
+                let name = &f.name;
+                let offset = f.offset;
+                let vtable_helper_fn_ident = format_ident!("__field_offset_{}_vtable", offset);
+                quote_spanned! {f.span=>
+                    #name: FieldRef::new(
+                        owner.clone(),
+                        #ident::#vtable_helper_fn_ident(),
+                    ),
                 }
-            )
-        });
+            });
 
-        let on_write_fields = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
-            let offset = &f.offset;
-            let name = &f.name;
+        let on_read_fields = self
+            .fields
+            .iter()
+            .filter(|_| self.replace.is_none())
+            .filter(|f| !f.ignore && !f.not_wire)
+            .map(|f| {
+                let offset = &f.offset;
+                let name = &f.name;
+                let ty = f.field_ty();
 
-            quote_spanned!(f.span=>
-                impl #impl_generics OnWriteField<#offset> for #ident #ty_generics #where_clause {
-                    #[inline]
-                    fn write(virt: &mut Self::Virtual) -> &mut FieldRef<Self, Self::FieldType, Self::ProjectedType> {
-                        &mut virt.#name
+                quote_spanned!(f.span=>
+                    impl #impl_generics OnReadField<#offset> for #ident #ty_generics #where_clause {
+                        type FieldType = #ty;
+
+                        #[inline]
+                        fn read(virt: &Self::Virtual) -> &FieldRef<Self, Self::FieldType, Self::ProjectedType> {
+                            &virt.#name
+                        }
                     }
-                }
-            )
-        });
+                )
+            });
+
+        let on_write_fields = self
+            .fields
+            .iter()
+            .filter(|_| self.replace.is_none())
+            .filter(|f| !f.ignore && !f.not_wire)
+            .map(|f| {
+                let offset = &f.offset;
+                let name = &f.name;
+
+                quote_spanned!(f.span=>
+                    impl #impl_generics OnWriteField<#offset> for #ident #ty_generics #where_clause {
+                        #[inline]
+                        fn write(virt: &mut Self::Virtual) -> &mut FieldRef<Self, Self::FieldType, Self::ProjectedType> {
+                            &mut virt.#name
+                        }
+                    }
+                )
+            });
 
         let virt_vis = &self.vis;
 

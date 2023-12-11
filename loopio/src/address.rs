@@ -84,6 +84,12 @@ impl Address {
         self.path.trim_start_matches('/')
     }
 
+    /// Returns the filter as a form_urlencoded Parser,
+    /// 
+    pub fn filter(&self) -> Option<url::form_urlencoded::Parse<'_>> {
+        self.filter.as_ref().map(|f| url::form_urlencoded::parse(f.as_bytes()))
+    }
+
     /// TODO: Use the resource key to build paths to fields?
     ///
     fn _apply_filter(&self) -> anyhow::Result<()> {
@@ -111,8 +117,14 @@ impl FromStr for Address {
             filter: Option<&str>,
         ) -> anyhow::Result<Address> {
             match (node, tag, filter) {
-                (None, _, _) if path == "" => { // Node address
+                (None, None, None) if path == "" => { // Node address
                     Ok(Address::new(String::new()).with_host(host))
+                },
+                (None, None, Some(filter)) if path == "" => { // Node address
+                    Ok(Address::new(String::new()).with_host(host).with_filter(filter))
+                },
+                (None, Some(tag), Some(filter)) if path == "" => { // Node address
+                    Ok(Address::new(String::new()).with_host(host).with_tag(tag).with_filter(filter))
                 },
                 (None, _, _) => {
                     Err(anyhow::anyhow!("Address cannot be constructed without a bound engine action -- {host} :// {path} {:?} {:?} {:?}", node, tag, filter))
@@ -189,6 +201,13 @@ fn test_address_from_str() {
         Some("type_name=core::alloc::String".to_string())
     );
     address._apply_filter().unwrap();
+
+    let address = Address::from_str("engine://?event=test-event").unwrap();
+    eprintln!("{}", address);
+
+    for (k, v) in address.filter().unwrap() {
+        eprintln!("{k}: {v}")
+    }
 }
 
 impl Display for Address {

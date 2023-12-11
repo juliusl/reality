@@ -112,6 +112,12 @@ pub struct VirtualBus {
     port_active: BusPortActive,
 }
 
+impl From<ThunkContext> for VirtualBus {
+    fn from(node: ThunkContext) -> Self {
+        Self { node, port_active: BusPortActive::default() }
+    }
+}
+
 impl VirtualBus {
     /// Configures the bus handler to wait for a plugin,
     ///
@@ -121,7 +127,7 @@ impl VirtualBus {
     where
         P::Virtual: NewFn<Inner = P> + FieldRefController<Owner = P>,
     {
-        if let Some(tc) = self.node.find_node_context::<P>().await {
+        if let Some(tc) = self.node.find_node_context::<P>().await.or(Some(self.node.clone())) {
             if let Ok(Some(context)) = tc.enable_virtual().await {
                 let port = self
                     .node
@@ -187,7 +193,7 @@ impl VirtualBus {
     where
         P::Virtual: NewFn<Inner = P> + FieldRefController<Owner = P>,
     {
-        if let Some(tc) = self.node.find_node_context::<P>().await {
+        if let Some(tc) = self.node.find_node_context::<P>().await.or(Some(self.node.clone())) {
             if let Ok(Some(context)) = tc.enable_virtual().await {
                 self.port_active.0.notified().await;
                 debug!("port active notified");
