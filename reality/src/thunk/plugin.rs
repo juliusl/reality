@@ -1,7 +1,7 @@
 use std::pin::Pin;
 
 use tracing::debug;
-use tracing::trace;
+
 
 use super::prelude::CallAsync;
 use super::prelude::CallOutput;
@@ -101,7 +101,7 @@ pub trait Plugin: ToFrame + BlockObject<Shared> + CallAsync + Clone + Default {
     fn listen_one(
         router: std::sync::Arc<PacketRouter<Self>>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
-        Box::pin(async { () })
+        Box::pin(async {  })
     }
 }
 

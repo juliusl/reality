@@ -62,7 +62,7 @@ async fn noop(_: &mut ThunkContext) -> anyhow::Result<()> {
 impl<Owner: Plugin, Value, ProjectedValue> Clone for FieldRef<Owner, Value, ProjectedValue> {
     fn clone(&self) -> Self {
         Self {
-            condition: self.condition.clone(),
+            condition: self.condition,
             owner: self.owner.clone(),
             table: self.table,
         }
@@ -319,6 +319,7 @@ where
 
     /// Encodes the current field into a field packet,
     ///
+    #[inline]
     pub fn encode(&self) -> FieldPacket {
         (self.table.encode.root)(<Owner as Plugin>::Virtual::new(
             self.owner.borrow().to_owned(),
@@ -330,6 +331,7 @@ where
     ///
     /// Otherwise, returns an error in all other cases.
     ///
+    #[inline]
     pub fn decode_and_apply(&self, fp: FieldPacket) -> anyhow::Result<Self> {
         (self.table.decode.root)(
             <Owner as Plugin>::Virtual::new(self.owner.borrow().to_owned()),
@@ -342,6 +344,7 @@ where
     /// If this field ref matches the field packet, then it will return Ok(Self),
     /// otherwise returns an error.
     ///
+    #[inline]
     pub fn filter_packet(&self, fp: &FieldPacket) -> anyhow::Result<Self> {
         (self.table.filter.root)(&<Owner as Plugin>::Virtual::new(self.owner()), fp)
     }
@@ -403,44 +406,72 @@ where
     }
 }
 
+/// Type-alias for get_ref field of the field v-table,
+/// 
+type GetRefVTableEntry<O, V> = AdapterRef<fn(&O) -> (&str, &V), O, V>;
+
+/// Type-alias for get_mut field of the field v-table,
+/// 
+type GetMutVTableEntry<O, V> = AdapterRef<fn(&mut O) -> (&str, &mut V), O, V>;
+
+/// Type-alias for take field of the field v-table,
+/// 
+type TakeVTableEntry<O, V> = AdapterRef<fn(O) -> V, O, V>;
+
+/// Type-alias for set field of the field v-table,
+/// 
+type SetVTableEntry<O, V> = AdapterRef<fn(&mut O, V) -> bool, O, V>;
+
+/// Type-alias for push field of the field v-table,
+/// 
+type PushVTableEntry<O, V> = AdapterRef<fn(&mut O, V) -> bool, O, V>;
+
+/// Type-alias for insert_entry field of the field v-table,
+/// 
+type InsertEntryVTableEntry<O, V> = AdapterRef<fn(&mut O, String, V) -> bool, O, V>;
+
+/// Type-alias for encode field of the field v-table,
+/// 
+type EncodeEntryVTableEntry<O, V> = AdapterRef<fn(O) -> FieldPacket, O, V>;
+
+/// Type-alias for decode field of the field v-table,
+/// 
+type DecodeEntryVTableEntry<O, OV, V, PV> = AdapterRef<fn(OV, FieldPacket) -> anyhow::Result<FieldRef<O, V, PV>>, O, V>;
+
+/// Type-alias for filter field of the field v-table,
+/// 
+type FilterEntryVTableEntry<O, OV, V, PV> = AdapterRef<fn(&OV, &FieldPacket) -> anyhow::Result<FieldRef<O, V, PV>>, O, V>;
+
 /// V-Table containing functions for handling fields from the owning type,
 ///
 pub struct FieldVTable<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 'static> {
     /// Returns a reference to the projected value and field name,
     ///
-    get_ref: AdapterRef<fn(&Owner) -> (&str, &ProjectedValue), Owner, ProjectedValue>,
+    get_ref: GetRefVTableEntry<Owner, ProjectedValue>,
     /// Returns a mutable reference to a projected value and a field name,
     ///
-    get_mut: AdapterRef<fn(&mut Owner) -> (&str, &mut ProjectedValue), Owner, ProjectedValue>,
+    get_mut: GetMutVTableEntry<Owner, ProjectedValue>,
     /// Takes a value from the owner,
     ///
-    take: AdapterRef<fn(Owner) -> ProjectedValue, Owner, ProjectedValue>,
+    take: TakeVTableEntry<Owner, ProjectedValue>,
     /// Sets the value for a field,
     ///
-    set: AdapterRef<fn(&mut Owner, ProjectedValue) -> bool, Owner, ProjectedValue>,
+    set: SetVTableEntry<Owner, ProjectedValue>,
     /// If applicable, pushes a value to a field,
     ///
-    push: AdapterRef<fn(&mut Owner, Value) -> bool, Owner, Value>,
+    push: PushVTableEntry<Owner, Value>,
     /// If applicable, inserts a value with a key to a field,
     ///
-    insert_entry: AdapterRef<fn(&mut Owner, String, Value) -> bool, Owner, Value>,
+    insert_entry: InsertEntryVTableEntry<Owner, Value>,
     /// Encode the current field into a field packet,
     ///
-    encode: AdapterRef<fn(Owner::Virtual) -> FieldPacket, Owner, Value>,
+    encode: EncodeEntryVTableEntry<Owner::Virtual, Value>,
     /// Decode a field packet into a field reference,
     ///
-    decode: AdapterRef<
-        fn(Owner::Virtual, FieldPacket) -> anyhow::Result<FieldRef<Owner, Value, ProjectedValue>>,
-        Owner,
-        Value,
-    >,
+    decode: DecodeEntryVTableEntry<Owner, Owner::Virtual, Value, ProjectedValue>,
     /// Filters a field packet to a field reference,
     ///
-    filter: AdapterRef<
-        fn(&Owner::Virtual, &FieldPacket) -> anyhow::Result<FieldRef<Owner, Value, ProjectedValue>>,
-        Owner,
-        Value,
-    >,
+    filter: FilterEntryVTableEntry<Owner, Owner::Virtual, Value, ProjectedValue>,
 }
 
 impl<Owner: Plugin, Value, ProjectedValue> Clone for FieldVTable<Owner, Value, ProjectedValue> {

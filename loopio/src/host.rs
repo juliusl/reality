@@ -487,11 +487,11 @@ pub struct Event {
     /// Name of this event,
     ///
     /// Decorations are passed from the host definition.
-    /// 
+    ///
     #[reality(derive_fromstr)]
     pub name: Decorated<String>,
     /// Current state of this event,
-    /// 
+    ///
     #[reality(ignore)]
     pub data: Bytes,
 }
@@ -501,7 +501,7 @@ async fn on_event(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
     let init = tc.initialized::<Event>().await;
 
-    debug!(name=init.name.value());
+    debug!(name = init.name.value());
 
     Ok(())
 }

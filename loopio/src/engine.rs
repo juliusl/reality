@@ -1154,10 +1154,12 @@ impl EngineHandle {
     }
 
     /// Returns a virtual bus for some event,
-    /// 
+    ///
     pub async fn event_vbus(&self, host: &str, name: &str) -> anyhow::Result<VirtualBus> {
-        let event = self.hosted_resource(format!("{host}://?event={name}")).await?;
-        
+        let event = self
+            .hosted_resource(format!("{host}://?event={name}"))
+            .await?;
+
         let tc = event.spawn_call().await?;
 
         Ok(VirtualBus::from(tc))

@@ -80,7 +80,7 @@ impl Ext for ThunkContext {
         Ok(())
     }
 
-    async fn notify_host(&self, host: &str) -> anyhow::Result<()> {
+    async fn notify_host(&self, _host: &str) -> anyhow::Result<()> {
         // if let Some(host) = self.host(host).await {
         //     if let Some(host_condition) =
         //         host.current_resource::<HostCondition>(Some(ResourceKey::with_hash(condition)))

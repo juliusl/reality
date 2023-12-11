@@ -288,7 +288,7 @@ impl LocalAction {
     pub async fn build<P>(self, context: &mut ThunkContext) -> ActionFactory
     where
         P: Plugin,
-        P::Virtual: NewFn<Inner = P>
+        P::Virtual: NewFn<Inner = P>,
     {
         let inner = context.as_local_plugin::<P>().await;
         let mut transient = context.transient_mut().await;
@@ -322,7 +322,7 @@ impl RemoteAction {
     pub async fn build<P>(self, context: &mut ThunkContext) -> ActionFactory
     where
         P: Plugin,
-        P::Virtual: NewFn<Inner = P>
+        P::Virtual: NewFn<Inner = P>,
     {
         let inner = context.as_remote_plugin::<P>().await;
 
@@ -397,7 +397,7 @@ pub struct ActionFactory {
     ///
     pub storage: AsyncStorageTarget<Shared>,
     /// Optional address to publish this action to,
-    /// 
+    ///
     address: Option<Address>,
 }
 
@@ -411,7 +411,7 @@ type TaskFn = Pin<Box<dyn Fn(ThunkContext) -> Task + Send + Sync + 'static>>;
 
 impl ActionFactory {
     /// Sets the current address,
-    /// 
+    ///
     pub fn set_address(mut self, address: Address) -> Self {
         self.address = Some(address);
         self
@@ -422,7 +422,7 @@ impl ActionFactory {
     pub fn set_entrypoint<P>(self, plugin: P) -> Self
     where
         P: Plugin,
-        P::Virtual: NewFn<Inner = P>
+        P::Virtual: NewFn<Inner = P>,
     {
         let mut storage = self
             .storage
@@ -453,7 +453,7 @@ impl ActionFactory {
     pub fn enable<P>(self, plugin: P) -> Self
     where
         P: Plugin,
-        P::Virtual: NewFn<Inner = P>
+        P::Virtual: NewFn<Inner = P>,
     {
         let key = self.attribute().branch(P::symbol());
 
@@ -529,7 +529,7 @@ impl ActionFactory {
     ///
     pub async fn publish(self, eh: EngineHandle) -> anyhow::Result<Address> {
         let mut tc: ThunkContext = self.storage.into();
-        
+
         if let Some(address) = self.address.as_ref() {
             tc.set_property("address", address.to_string());
         }

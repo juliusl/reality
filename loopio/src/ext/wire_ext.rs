@@ -69,7 +69,7 @@ async fn enable_wire_bus(tc: &mut ThunkContext) -> anyhow::Result<()> {
     if let Some(mut path) = tc.navigate(&init.path).await {
         info!("Enabling wire bus {}", init.path);
         if let Some(enabled) = path.context().enable_frame().await? {
-            let attr = path.context().attribute.clone();
+            let attr = path.context().attribute;
             let frame = enabled.initialized_frame().await;
             unsafe {
                 // Creates a new wire bus
@@ -114,7 +114,10 @@ pub struct VirtualBus {
 
 impl From<ThunkContext> for VirtualBus {
     fn from(node: ThunkContext) -> Self {
-        Self { node, port_active: BusPortActive::default() }
+        Self {
+            node,
+            port_active: BusPortActive::default(),
+        }
     }
 }
 
@@ -127,7 +130,12 @@ impl VirtualBus {
     where
         P::Virtual: NewFn<Inner = P> + FieldRefController<Owner = P>,
     {
-        if let Some(tc) = self.node.find_node_context::<P>().await.or(Some(self.node.clone())) {
+        if let Some(tc) = self
+            .node
+            .find_node_context::<P>()
+            .await
+            .or(Some(self.node.clone()))
+        {
             if let Ok(Some(context)) = tc.enable_virtual().await {
                 let port = self
                     .node
@@ -193,7 +201,12 @@ impl VirtualBus {
     where
         P::Virtual: NewFn<Inner = P> + FieldRefController<Owner = P>,
     {
-        if let Some(tc) = self.node.find_node_context::<P>().await.or(Some(self.node.clone())) {
+        if let Some(tc) = self
+            .node
+            .find_node_context::<P>()
+            .await
+            .or(Some(self.node.clone()))
+        {
             if let Ok(Some(context)) = tc.enable_virtual().await {
                 self.port_active.0.notified().await;
                 debug!("port active notified");
@@ -378,7 +391,7 @@ where
 
                     let next = virt.virtual_ref().current();
 
-                    if filter(&field) {
+                    if filter(field) {
                         // If field ref is in the committed state, notify any raw listeners
                         if field.is_committed() {
                             debug!("Field committed, notifying listeners of owner actual");

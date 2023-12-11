@@ -182,7 +182,7 @@ impl<P: Plugin> PacketRoutes<P> {
 
     pub fn apply_pending_list(&mut self, list: &[&str]) {
         for l in list {
-            self.inner.set_pending(&l);
+            self.inner.set_pending(l);
         }
     }
 

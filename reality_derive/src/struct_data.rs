@@ -294,7 +294,7 @@ impl StructData {
                     }
                 )
             }).unwrap_or(quote_spanned!(f.span=>
-                let changed = &self.#name != &value;
+                let changed = self.#name != value;
                 self.#name = value;
                 changed
             ));
@@ -358,9 +358,11 @@ impl StructData {
                     let mut owner = vp.current();
 
                     if owner.set_field(fp.into_field_owned()) {
-                        if vp.#name.edit_value(|_, v| {
+                        let applied = vp.#name.edit_value(|_, v| {
                             #set_helper_impl
-                        }) {
+                        });
+
+                        if applied {
                             vp.#name.pending();
                             Ok(vp.#name)
                         } else {

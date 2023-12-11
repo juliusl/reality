@@ -85,9 +85,11 @@ impl Address {
     }
 
     /// Returns the filter as a form_urlencoded Parser,
-    /// 
+    ///
     pub fn filter(&self) -> Option<url::form_urlencoded::Parse<'_>> {
-        self.filter.as_ref().map(|f| url::form_urlencoded::parse(f.as_bytes()))
+        self.filter
+            .as_ref()
+            .map(|f| url::form_urlencoded::parse(f.as_bytes()))
     }
 
     /// TODO: Use the resource key to build paths to fields?

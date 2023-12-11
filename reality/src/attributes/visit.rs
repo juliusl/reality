@@ -83,7 +83,7 @@ where
 {
     /// Returns a vector of field references from the virtual plugin,
     ///
-    fn visit_fields<'a>(virt: &'a PacketRoutes<Self>) -> Vec<&'a FieldRef<Self, T, Projected>>;
+    fn visit_fields(virt: &PacketRoutes<Self>) -> Vec<&FieldRef<Self, T, Projected>>;
 }
 
 /// Trait for visiting fields references on the virtual reference,

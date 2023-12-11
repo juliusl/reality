@@ -151,11 +151,10 @@ impl Context {
     }
 
     /// Sets a property for the current context,
-    /// 
+    ///
     pub fn set_property(&mut self, name: impl Into<String>, value: impl Into<String>) {
-        let decoration = self.decoration
-            .get_or_insert(Decoration::default());
-        
+        let decoration = self.decoration.get_or_insert(Decoration::default());
+
         let properties = decoration.comment_properties.get_or_insert(BTreeMap::new());
 
         properties.entry(name.into()).or_insert(value.into());
@@ -362,12 +361,12 @@ impl Context {
         let mut init = self.initialized::<P>().await;
         init.sync(self);
 
-        let init = Initializer {
+        
+
+        Initializer {
             initialized: init,
             context: self,
-        };
-
-        init
+        }
     }
 
     /// Retrieves the initialized frame state of the plugin,
@@ -600,7 +599,7 @@ impl Context {
         let node = self.node().await;
         if let Some(block) = node.resource::<ParsedBlock>(ResourceKey::root()) {
             eprintln!("Looking for resource at: {}", path.as_ref());
-            if let Some(hosted_resource) = block.find_resource(path.as_ref().to_string()) {
+            if let Some(hosted_resource) = block.find_resource(path.as_ref()) {
                 eprintln!("Found hosted resource: {:?}", hosted_resource);
                 return Some(hosted_resource.clone());
             } else {
@@ -738,7 +737,7 @@ impl Remote {
             .await
             .finish();
 
-        p.sync(&tc);
+        p.sync(tc);
         if let Some(deco) = tc
             .fetch_kv::<Decoration>(tc.attribute)
             .map(|(_, deco)| deco.clone())
@@ -767,7 +766,7 @@ impl Local {
             .await
             .finish();
 
-        plugin.sync(&tc);
+        plugin.sync(tc);
         tc.decoration = tc
             .fetch_kv::<Decoration>(tc.attribute)
             .map(|(_, deco)| deco.clone());

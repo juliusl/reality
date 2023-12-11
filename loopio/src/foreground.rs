@@ -90,8 +90,7 @@ impl ForegroundEngine {
             );
             builder.enable::<BackgroundWork>();
             builder.enable::<Published>();
-            let engine = builder.compile().await;
-            engine
+            builder.compile().await
         });
 
         let engine = runtime.block_on(jh).unwrap();

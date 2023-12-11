@@ -325,7 +325,7 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
             // Setting name
             if let Some(methods) = path
                 .property("methods")
-                .and_then(|m| CommaSeperatedStrings::from_str(&m).ok())
+                .and_then(|m| CommaSeperatedStrings::from_str(m).ok())
             {
                 // Parse the methods from decoration properties
                 let methods = methods
@@ -512,7 +512,7 @@ pub struct ReverseProxy {
 async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = tc.as_remote_plugin::<ReverseProxy>().await;
 
-    let bus = tc.virtual_bus(init.address.parse::<Address>()?).await;
+    let _bus = tc.virtual_bus(init.address.parse::<Address>()?).await;
 
     // TODO -- Get the address of the engine_proxies
 

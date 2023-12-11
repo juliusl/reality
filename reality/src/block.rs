@@ -131,7 +131,7 @@ where
             on_unload: self.on_unload,
             on_completed: self.on_completed,
             namespace: self.namespace.clone(),
-            resource_key: self.resource_key.clone(),
+            resource_key: self.resource_key,
         }
     }
 }
@@ -163,7 +163,7 @@ where {
         namespace: AsyncStorageTarget<Storage>,
         key: Option<ResourceKey<Attribute>>,
     ) {
-        (self.on_load)(namespace.clone(), key.clone()).await;
+        (self.on_load)(namespace.clone(), key).await;
         self.namespace = Some(namespace);
         self.resource_key = key;
     }

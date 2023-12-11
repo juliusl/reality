@@ -105,15 +105,15 @@ impl HyperExt for ThunkContext {
     /// When the scheme/host of the alias uri is received, the scheme/host of the replacement will be applied instead.
     ///
     async fn register_internal_host_alias(&mut self, alias: Uri, replace: Uri) {
-        let key = (alias.scheme(), alias.host());
+        let _key = (alias.scheme(), alias.host());
 
-        let value = (
+        let _value = (
             replace.scheme().cloned(),
             replace.host().map(|s| s.to_string()),
             replace.port_u16(),
         );
 
-        let init = self.initialized::<EngineProxy>().await;
+        let _init = self.initialized::<EngineProxy>().await;
 
         // if let Some(eh) = self.engine_handle().await {
         //     if let Ok(host) = eh

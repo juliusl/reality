@@ -65,7 +65,7 @@ pub struct Op(uuid::Uuid);
 impl Op {
     /// Returns the current instruction mode,
     ///
-    pub fn instruction(self) -> Instruction {
+    pub fn _instruction(self) -> Instruction {
         let (_, i, _, _) = self.0.as_fields();
 
         Instruction::from_bits_truncate(i)
@@ -73,7 +73,7 @@ impl Op {
 
     /// Returns the current operation mode,
     ///
-    pub fn mode(self) -> Mode {
+    pub fn _mode(self) -> Mode {
         let (_, _, m, _) = self.0.as_fields();
 
         Mode::from_bits_truncate(m)
