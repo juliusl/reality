@@ -162,7 +162,6 @@ mod tests {
 
             let _ = tokio::spawn(async move {
                 let tx = txbus.transmit::<TestPlugin2>().await;
-
                 tx.write_to_virtual(|virt| {
                     eprintln!("writing to virtual");
                     virt.virtual_mut().name.commit()

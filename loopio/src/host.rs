@@ -230,149 +230,31 @@ impl Action for Host {
     }
 }
 
-/// An event managed by the host,
+/// Plugin for managing state for a shared event defined on a Host,
 ///
-#[derive(Serialize, Deserialize, Debug)]
-pub struct HostEvent {
-    /// Name of the event
+#[derive(Reality, Debug, Default, Clone)]
+#[reality(call=on_event, plugin)]
+pub struct Event {
+    /// Name of this event,
     ///
-    name: String,
-    /// Last active unix timestamp of this condition,
+    /// Decorations are passed from the host definition.
     ///
-    last_active: (AtomicU64, AtomicU64),
-    /// Notification handle,
+    #[reality(derive_fromstr)]
+    pub name: Decorated<String>,
+    /// Current state of this event,
     ///
-    #[serde(skip)]
-    notify: Arc<Notify>,
+    #[reality(ignore)]
+    pub data: Bytes,
 }
 
-impl HostEvent {
-    /// Creates a new host condition,
-    ///
-    pub fn new(name: impl Into<String>) -> HostEvent {
-        HostEvent {
-            name: name.into(),
-            last_active: (AtomicU64::new(0), AtomicU64::new(0)),
-            notify: Arc::new(Notify::new()),
-        }
-    }
+async fn on_event(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    use tracing::debug;
 
-    /// Notify observers of this condition,
-    ///
-    pub fn notify(&self) {
-        let HostEvent { notify, .. } = self.clone();
-        let (lo, hi) = uuid::Uuid::from_u128(
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis(),
-        )
-        .as_u64_pair();
+    let init = tc.initialized::<Event>().await;
 
-        let (_lo, _hi) = &self.last_active;
-        let rlo = _lo.fetch_update(
-            std::sync::atomic::Ordering::SeqCst,
-            std::sync::atomic::Ordering::SeqCst,
-            |last| {
-                if last != lo {
-                    Some(lo)
-                } else {
-                    None
-                }
-            },
-        );
-        let rhi = _hi.fetch_update(
-            std::sync::atomic::Ordering::SeqCst,
-            std::sync::atomic::Ordering::SeqCst,
-            |last| {
-                if last != hi {
-                    Some(hi)
-                } else {
-                    None
-                }
-            },
-        );
+    debug!(name = init.name.value());
 
-        match (rlo, rhi) {
-            (Ok(_l), Ok(_r)) | (Ok(_l), Err(_r)) | (Err(_l), Ok(_r)) | (Err(_l), Err(_r)) => {
-                notify.notify_waiters();
-            }
-        }
-    }
-
-    /// Observe this condition,
-    ///
-    /// returns when the condition has completed
-    ///
-    pub fn listen(&self) -> Arc<Notify> {
-        let HostEvent { notify, .. } = self.clone();
-        notify.clone()
-    }
-
-    /// Pings any listeners,
-    ///
-    pub fn ping(&self) -> Option<u128> {
-        None
-    }
-}
-
-impl Ord for HostEvent {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.name.cmp(&other.name)
-    }
-}
-
-impl PartialOrd for HostEvent {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for HostEvent {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-    }
-}
-
-impl Clone for HostEvent {
-    fn clone(&self) -> Self {
-        Self {
-            name: self.name.clone(),
-            notify: self.notify.clone(),
-            last_active: (AtomicU64::new(0), AtomicU64::new(0)),
-        }
-    }
-}
-
-impl Eq for HostEvent {}
-
-impl FromStr for HostEvent {
-    type Err = std::convert::Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(HostEvent {
-            name: s.to_string(),
-            notify: Arc::new(Notify::new()),
-            last_active: (AtomicU64::new(0), AtomicU64::new(0)),
-        })
-    }
-}
-
-#[tokio::test]
-async fn test_host_condition() {
-    let condition = HostEvent::new("test_host_condition");
-    let cond = condition.clone();
-    let notified_a = cond.listen();
-    let notified_a = notified_a.notified();
-    let notified_b = cond.listen();
-    let notified_b = notified_b.notified();
-
-    tokio::spawn(async move {
-        condition.notify();
-    });
-    notified_a.await;
-    notified_b.await;
-    ()
+    Ok(())
 }
 
 #[tokio::test]
@@ -382,61 +264,59 @@ async fn test_host() {
     workspace.add_buffer(
         "demo.md",
         r#"
-    ```runmd
-    # -- Example operation that listens for the completion of another
-    # -- 
-    + .operation a
-    |# test = test
+```runmd
+# -- Example operation that listens for the completion of another
+# -- 
++ .operation a
+|# test = test
     
-    <start/loopio.std.io.println>                 Hello World a
-    |# listen =     op_b_complete
+<start/loopio.std.io.println>                 Hello World a
+|# listen =     op_b_complete
 
-    + .operation b
-    <loopio.std.io.println>                 Hello World b
-    |# notify =     op_b_complete
++ .operation b
+<loopio.std.io.println>                 Hello World b
+|# notify =     op_b_complete
 
-    + .operation c
-    <start/loopio.std.io.println>           Hello World c
-    |# notify = test_cond
++ .operation c
+<start/loopio.std.io.println>           Hello World c
+|# notify = test_cond
 
-    + .operation d
-    <loopio.std.io.println>                 Hello World d
++ .operation d
+<loopio.std.io.println>                 Hello World d
 
-    # -- Test sequence decorations
-    + .sequence test
-    |# name = Test sequence
+# -- Test sequence decorations
++ .sequence test
+|# name = Test sequence
     
-    # -- Operations on a step execute all at once
-    :  .step    c/start/loopio.std.io.println,
-    |           a/start/loopio.std.io.println
+# -- Operations on a step execute all at once
+:  .step    c/start/loopio.std.io.println,
+|           a/start/loopio.std.io.println
 
-    :  .step    b, d
-    |# kind     =   once
+:  .step    b, d
+|# kind     =   once
 
-    # -- If this were set to true, then the sequence would automatically loop
-    : .loop false
+# -- If this were set to true, then the sequence would automatically loop
+: .loop false
 
-    # -- # Demo host
-    # -- Placeholder text 
-    + .host demo
-    : .start        test
+# -- # Demo host
+# -- Placeholder text 
++ .host demo
+: .start        test
 
-    # -- # Example of setting up a notifier
-    : .action               c/start/loopio.std.io.println
-    |# help     =           Example of adding help documentation
-    |# notify   =           ob_b_complete
+# -- # Example of setting up a notifier
+: .action               c/start/loopio.std.io.println
+|# help     =           Example of adding help documentation
+|# notify   =           ob_b_complete
 
-    # -- # Example of wiring up a listener
-    : .action               a/start/loopio.std.io.println
-    |# help     =           Example of adding help documentation
-    |# listen   =           ob_b_complete
+# -- # Example of wiring up a listener
+: .action               a/start/loopio.std.io.println
+|# help     =           Example of adding help documentation
+|# listen   =           ob_b_complete
 
-    # -- # Example of an event
-    : .event                op_b_complete
-    |# description  =       Example of an event that can be listened to
-    
-    
-    ```
+# -- # Example of an event
+: .event                op_b_complete
+|# description  =       Example of an event that can be listened to
+```
     "#,
     );
 
@@ -463,7 +343,6 @@ async fn test_host() {
         let mut txbus = vbus.clone();
         tokio::spawn(async move {
             let transmit = txbus.transmit::<Event>().await;
-
             transmit.write_to_virtual(|r| r.virtual_mut().name.commit())
         });
 
@@ -477,31 +356,4 @@ async fn test_host() {
     }
 
     ()
-}
-
-/// Plugin for managing state for a shared event defined on a Host,
-///
-#[derive(Reality, Debug, Default, Clone)]
-#[reality(call=on_event, plugin)]
-pub struct Event {
-    /// Name of this event,
-    ///
-    /// Decorations are passed from the host definition.
-    ///
-    #[reality(derive_fromstr)]
-    pub name: Decorated<String>,
-    /// Current state of this event,
-    ///
-    #[reality(ignore)]
-    pub data: Bytes,
-}
-
-async fn on_event(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    use tracing::debug;
-
-    let init = tc.initialized::<Event>().await;
-
-    debug!(name = init.name.value());
-
-    Ok(())
 }

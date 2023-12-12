@@ -161,7 +161,6 @@ pub mod utility {
     }
 
     async fn noop(_: &mut ThunkContext) -> anyhow::Result<()> {
-        eprintln!("NOOP FROM UTILITY");
         Ok(())
     }
 }

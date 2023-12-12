@@ -27,10 +27,12 @@ mod test {
     use anyhow::anyhow;
     use async_stream::stream;
     use async_trait::async_trait;
-    use futures_util::{pin_mut, StreamExt};
+    use futures_util::StreamExt;
+    use futures_util::pin_mut;
     use serde::Serialize;
     use std::time::Duration;
-    use tokio::{join, time::Instant};
+    use tokio::time::Instant;
+    use tokio::join;
 
     #[derive(Reality, Clone, Serialize, Default)]
     #[reality(call=test_noop, plugin)]

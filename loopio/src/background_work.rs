@@ -7,7 +7,6 @@ use reality::prelude::*;
 use tokio::select;
 use tokio_util::sync::CancellationToken;
 
-use crate::host::HostEvent;
 use crate::prelude::Action;
 use crate::prelude::Address;
 use crate::prelude::EngineHandle;
@@ -75,18 +74,6 @@ pub enum CallStatus {
     /// Whether this call is pending output handling,
     ///
     Pending,
-}
-
-/// Enumeration of event statuses retrieved by this background work,
-///
-#[derive(Debug, Clone)]
-pub enum EventStatus {
-    /// Host event status,
-    ///
-    Host(HostEvent),
-    /// No activity for the event has been seen,
-    ///
-    None,
 }
 
 impl BackgroundWorkEngineHandle {
@@ -324,17 +311,6 @@ impl BackgroundFuture {
     ///
     pub fn cancel(&self) {
         self.cancellation.cancel();
-    }
-
-    /// Returns the current status for an address,
-    ///
-    pub fn event_status(&mut self) -> EventStatus {
-        if let Some((_, event_status)) = self.tc.fetch_kv::<EventStatus>(&self.address.to_string())
-        {
-            event_status.clone()
-        } else {
-            EventStatus::None
-        }
     }
 }
 
