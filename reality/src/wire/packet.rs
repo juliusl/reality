@@ -59,31 +59,31 @@ pub struct FieldPacket {
     ///
     #[serde(skip)]
     pub data: Option<Box<dyn FieldPacketType>>,
-    /// Optional, wire data that can be used to create the field packet type,
-    ///
-    pub wire_data: Option<Vec<u8>>,
-    /// Name of the type of data included
-    ///
-    pub data_type_name: String,
     /// Size of the type of data,
     ///
     pub data_type_size: usize,
     /// Field offset in the owning type,
     ///
     pub field_offset: usize,
+    /// Name of the type of data included
+    ///
+    pub data_type_name: String,
     /// Name of the field,
     ///
     pub field_name: String,
     /// Type name of the owner of this field,
     ///
     pub owner_name: String,
+    /// Operation code,
+    ///
+    #[serde(skip)]
+    pub(crate) op: u128,
     /// Attribute hash value,
     ///
     pub attribute_hash: Option<u128>,
-    /// Operation code,
-    /// (TODO)
-    #[serde(skip)]
-    pub(crate) op: u128,
+    /// Optional, wire data that can be used to create the field packet type,
+    ///
+    pub wire_data: Option<Vec<u8>>,
 }
 
 impl Clone for FieldPacket {
@@ -186,8 +186,10 @@ impl FieldPacket {
             let t = Box::leak(t);
             let t = from_ref_mut(t);
             let t = t.cast::<T>();
+            // SAFETY: This is to ensure Box::leak doesn't leak memory, the pointer doesn't move
+            let v = unsafe { Box::from_raw(t) };
             if !t.is_null() {
-                Some(unsafe { Box::from_raw(t) })
+                Some(v)
             } else {
                 None
             }
@@ -214,14 +216,6 @@ impl FieldPacket {
 
         packet.wire_data = self.into_box::<T>().and_then(|d| d.to_binary().ok());
         packet
-    }
-
-    /// Sets the routing information for this packet,
-    ///
-    pub fn route(mut self, field_offset: usize, attribute: Option<u128>) -> Self {
-        self.field_offset = field_offset;
-        self.attribute_hash = attribute;
-        self
     }
 
     /// Convert the packet into an owned field,

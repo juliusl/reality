@@ -9,6 +9,8 @@ pub mod prelude {
     pub use super::frame::FrameListener;
     pub use super::frame::FrameUpdates;
     pub use super::frame::ToFrame;
+    pub use super::op::Code;
+    pub use super::op::Op;
     pub use super::packet::FieldPacket;
     pub use super::packet::FieldPacketType;
     pub use super::routes::FieldIndex;
@@ -27,12 +29,12 @@ mod test {
     use anyhow::anyhow;
     use async_stream::stream;
     use async_trait::async_trait;
-    use futures_util::StreamExt;
     use futures_util::pin_mut;
+    use futures_util::StreamExt;
     use serde::Serialize;
     use std::time::Duration;
-    use tokio::time::Instant;
     use tokio::join;
+    use tokio::time::Instant;
 
     #[derive(Reality, Clone, Serialize, Default)]
     #[reality(call=test_noop, plugin)]
@@ -57,10 +59,6 @@ mod test {
         let packet = crate::FieldPacket::new_data(String::from("Hello World"));
         let packet = packet.into_box::<Vec<u8>>();
         assert!(packet.is_none());
-
-        let packet = crate::FieldPacket::new_data(String::from("Hello World"));
-        let packet = packet.route(0, None).into_wire::<String>();
-        println!("{:?}", packet.wire_data);
     }
 
     #[tokio::test]

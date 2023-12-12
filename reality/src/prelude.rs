@@ -58,6 +58,7 @@ pub use crate::VisitVirtual;
 pub use crate::VisitVirtualMut;
 pub use crate::WireServer;
 pub use crate::Workspace;
+// pub use crate::SharedFile;
 
 pub use crate::enable_virtual_dependencies;
 

@@ -8,8 +8,8 @@ use anyhow::anyhow;
 use tracing::trace;
 
 use crate::{
-    Dispatcher, FieldRef, FieldRefController, FrameUpdates, NewFn, OnParseField, OnReadField,
-    OnWriteField, Plugin, ResourceKey, Shared, StorageTarget,
+    Dispatcher, FieldRef, FrameUpdates, NewFn, OnParseField, OnReadField, OnWriteField, Plugin,
+    ResourceKey, Shared, StorageTarget,
 };
 
 use super::prelude::FieldPacket;
@@ -177,12 +177,6 @@ impl<P: Plugin> PacketRoutes<P> {
     {
         PacketRoutes {
             inner: P::Virtual::new(inner),
-        }
-    }
-
-    pub fn apply_pending_list(&mut self, list: &[&str]) {
-        for l in list {
-            self.inner.set_pending(l);
         }
     }
 

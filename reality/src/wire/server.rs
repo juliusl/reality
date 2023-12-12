@@ -1,31 +1,24 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
 use reality_derive::Reality;
-use tokio::{
-    select,
-    sync::{broadcast::error::SendError, watch::Ref},
-};
+use tokio::select;
+use tokio::sync::broadcast::error::SendError;
+use tokio::sync::watch::Ref;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error};
-
-use crate::prelude::*;
+use tracing::debug;
+use tracing::error;
 
 use anyhow::anyhow;
 
+use crate::prelude::*;
+
+/// Field ref controller implemented by the virtual plugin type,
+///
 pub trait FieldRefController {
     /// Field owner type,
     ///
     type Owner: Plugin;
-
-    /// Sets a field by name to the pending state,
-    ///
-    /// Returns true if the field was found and set to pending.
-    ///
-    fn set_pending(&mut self, field_name: &str) -> bool;
-
-    /// Returns a list of pending fields,
-    ///
-    fn list_pending(&self) -> Vec<&str>;
 
     /// Returns a channel receiver to watch for changes to the field ref owner,
     ///

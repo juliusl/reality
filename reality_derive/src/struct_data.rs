@@ -522,37 +522,6 @@ impl StructData {
 
         let virt_vis = &self.vis;
 
-        let set_pending_impl = self
-            .fields
-            .iter()
-            .filter(|f| self.replace.is_none() && !f.ignore && !f.not_wire)
-            .map(|f| {
-                let name = &f.name;
-                let name_lit = f.field_name_lit_str();
-
-                quote_spanned!(f.span=>
-                    #name_lit => {
-                        self.#name.pending();
-                        true
-                    }
-                )
-            });
-
-        let list_pending_impl = self
-            .fields
-            .iter()
-            .filter(|f| self.replace.is_none() && !f.ignore && !f.not_wire)
-            .map(|f| {
-                let name = &f.name;
-                let name_lit = f.field_name_lit_str();
-
-                quote_spanned!(f.span=>
-                    if self.#name.is_pending() {
-                        results.push(#name_lit);
-                    }
-                )
-            });
-
         let virtual_ref = quote_spanned!(self.span=>
             /// Virtual interface over plugin,
             ///
@@ -565,19 +534,6 @@ impl StructData {
 
             impl FieldRefController for #virtual_ident {
                 type Owner = #ident;
-
-                fn set_pending(&mut self, field_name: &str) -> bool {
-                    match field_name {
-                        #(#set_pending_impl),*
-                        _ => false
-                    }
-                }
-
-                fn list_pending(&self) -> Vec<&str> {
-                    let mut results = vec![];
-                    #(#list_pending_impl)*
-                    results
-                }
 
                 fn listen_raw(&self) -> tokio::sync::watch::Receiver<Self::Owner> {
                     self.owner.subscribe()

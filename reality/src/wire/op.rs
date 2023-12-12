@@ -62,13 +62,77 @@
 #[derive(Copy, Hash, PartialEq, PartialOrd, Clone, Eq, Ord, Debug, Default)]
 pub struct Op(uuid::Uuid);
 
+impl Op {
+    /// Creates a new load operation,
+    ///
+    pub const fn load() -> Self {
+        Self(uuid::Uuid::nil())
+    }
+
+    /// Creates a new load_replace operation,
+    ///
+    pub const fn load_replace() -> Self {
+        Code::LoadReplace.op()
+    }
+
+    /// Creates a new load_parse operation,
+    ///
+    pub const fn load_parse() -> Self {
+        Code::LoadParse.op()
+    }
+
+    /// Creates a new load_merge operation,
+    ///
+    pub const fn load_merge() -> Self {
+        Code::LoadMerge.op()
+    }
+
+    /// Creates a new load_append operation,
+    ///
+    pub const fn load_append() -> Self {
+        Code::LoadAppend.op()
+    }
+
+    /// Creates a new read operation,
+    ///
+    pub const fn read() -> Self {
+        Code::Read.op()
+    }
+
+    /// Creates a new read String operation,
+    ///
+    pub const fn read_string() -> Self {
+        Code::ReadString.op()
+    }
+
+    /// Creates a new read Decorated<String> operation,
+    ///
+    pub const fn read_decor_string() -> Self {
+        Code::ReadDecoratedString.op()
+    }
+
+    /// Sets the hash value setting,
+    ///
+    pub fn set_hash_value(&mut self, hash: u64) {
+        let (code, ra, rb, _) = self.0.as_fields();
+
+        self.0 = uuid::Uuid::from_fields(code, ra, rb, &hash.to_be_bytes())
+    }
+}
+
+impl From<Code> for Op {
+    fn from(value: Code) -> Self {
+        Self(uuid::Uuid::from_fields(value.bits(), 0, 0, &[0; 8]))
+    }
+}
+
 bitflags::bitflags! {
     /// Code-set, consists of 16-bit operations w/ 16-bit modes each.
-    /// 
+    ///
     /// Code-set maps to actual language verbs.
-    /// 
+    ///
     /// # Language Definition:
-    /// 
+    ///
     /// | op     |    mode    | description |
     /// | ------ | ---------- | ---------------------------- |
     /// | Op0    |            | Load operations              |
@@ -85,8 +149,9 @@ bitflags::bitflags! {
     /// | ------ | ---------- | ---------------------------- |
     /// | Op2    |            | Util operations              |
     /// | ------ | ---------- | ---------------------------- |
-    /// 
-    /// 
+    ///
+    ///
+    #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
     pub struct Code: u32 {
         const Op0 = 0;
         const Op1 = 1 << 1;
@@ -122,34 +187,52 @@ bitflags::bitflags! {
         const ModeF = 1 << 31;
 
         /// Load value operation,
-        /// 
+        ///
         const Load = Self::Op0.bits();
         /// Load value by replacing existing value,
-        /// 
-        const Replace = Self::Load.bits() | Self::Mode0.bits();
+        ///
+        const LoadReplace = Self::Load.bits() | Self::Mode0.bits();
         /// Load value by parsing input data as string input,
-        /// 
-        const Parse = Self::Load.bits() | Self::Mode1.bits();
+        ///
+        const LoadParse = Self::Load.bits() | Self::Mode1.bits();
         /// Load value by merging input data,
-        /// 
-        const Merge = Self::Load.bits() | Self::Mode2.bits();
+        ///
+        const LoadMerge = Self::Load.bits() | Self::Mode2.bits();
         /// Load value by appending input data,
-        /// 
-        const Append = Self::Load.bits() | Self::Mode3.bits();
+        ///
+        const LoadAppend = Self::Load.bits() | Self::Mode3.bits();
 
         /// Read value operation,
-        /// 
+        ///
         const Read = Self::Op1.bits();
         /// Read value as a bincode utf8 string,
-        /// 
-        const String = Self::Op1.bits() | Self::Mode0.bits();
+        ///
+        const ReadString = Self::Op1.bits() | Self::Mode0.bits();
         /// Read value as a bincode Decorated<String>,
-        /// 
-        const DecoratedString = Self::Op1.bits() | Self::Mode1.bits();
+        ///
+        const ReadDecoratedString = Self::Op1.bits() | Self::Mode1.bits();
 
         /// Util operation,
-        /// 
+        ///
         const Util = Self::Op2.bits();
-        
+
+        /// Clear operation,
+        ///
+        const Clear = Self::OpF.bits();
+    }
+}
+
+impl Code {
+    /// Converts the Code into an Op,
+    ///
+    pub const fn op(self) -> Op {
+        Op(uuid::Uuid::from_fields(self.bits(), 0, 0, &[0; 8]))
+    }
+}
+
+#[test]
+fn test_op() {
+    for c in (Code::ReadString).iter_names() {
+        eprintln!("{:?}", c);
     }
 }
