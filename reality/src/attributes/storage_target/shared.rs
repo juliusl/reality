@@ -85,15 +85,13 @@ impl StorageTarget for Shared {
                     let backup = r;
                     let r = r.cast::<T>();
 
-                    // SAFETY: Pointers were just leaked and didn't move
-                    let backup = unsafe { Box::from_raw(backup) };
                     let _r = unsafe { Box::from_raw(r) };
 
                     // SAFETY: Check that the pointer being returned can successfully be returned
                     if unsafe { r.as_ref().is_none() } {
                         // Note: This code path should technically be impossible since the cast type is associated to the key itself
                         // However, in case there is an edge case that exists, this defends against a possible memory leak
-                        let restoring = Arc::new(RwLock::new(backup));
+                        let restoring = Arc::new(RwLock::new(unsafe { Box::from_raw(backup) }));
                         self.resources.insert(key, restoring);
                         None
                     } else {
