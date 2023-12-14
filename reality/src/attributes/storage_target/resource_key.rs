@@ -110,7 +110,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
     pub fn new() -> Self {
         let type_key = Self::type_key();
 
-        uuid::Uuid::from_fields(0, 0, 0, &type_key.to_ne_bytes()).into()
+        uuid::Uuid::from_fields(0, 0, 0, &type_key.to_be_bytes()).into()
     }
 
     /// Creates a new resource-key derived from hashable input,
@@ -123,7 +123,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         let type_key = Self::type_key();
         let key = type_key ^ key;
 
-        uuid::Uuid::from_fields(0, 0, ResourceKeyFlags::HASHED.bits(), &key.to_ne_bytes()).into()
+        uuid::Uuid::from_fields(0, 0, ResourceKeyFlags::HASHED.bits(), &key.to_be_bytes()).into()
     }
 
     /// Creates a new resource_key set w/ a hash value,
@@ -133,7 +133,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         let type_key = Self::type_key();
         let key = type_key ^ key;
 
-        uuid::Uuid::from_fields(0, 0, ResourceKeyFlags::HASHED.bits(), &key.to_ne_bytes()).into()
+        uuid::Uuid::from_fields(0, 0, ResourceKeyFlags::HASHED.bits(), &key.to_be_bytes()).into()
     }
 
     /// Transmute a resource-key to a different resource key type,
@@ -170,6 +170,12 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         hash_builder.finish()
     }
 
+    /// Decodes the key from data,
+    ///
+    pub fn key(&self) -> u64 {
+        u64::from_be_bytes(*uuid::Uuid::from_u128(self.data).as_fields().3)
+    }
+
     /// Returns the hash value from the resource-key,
     ///
     fn hashed_parts(&self) -> Option<u64> {
@@ -177,15 +183,8 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
             None
         } else {
             let hashed = self.key() ^ Self::type_key();
-
             Some(hashed)
         }
-    }
-
-    /// Decodes the key from data,
-    ///
-    pub fn key(&self) -> u64 {
-        u64::from_ne_bytes(*uuid::Uuid::from_u128(self.data).as_fields().3)
     }
 
     /// Returns the type key value,
