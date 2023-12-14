@@ -54,7 +54,7 @@ fn test_input_lexer() {
     let mut lex = Input::lexer(r"  hello  world # Test comment");
     assert_eq!(lex.next(), Some(Ok(Input::Text("hello  world"))));
 
-    let mut lex = Input::lexer(r"   'hello-world'   # Test comment");
+    let mut lex = Input::lexer(r"   `hello-world`   # Test comment");
     assert_eq!(lex.next(), Some(Ok(Input::EscapedText("hello-world"))));
 
     let mut lex = Input::lexer(r"   `hello-world`   # Test comment");
@@ -64,10 +64,10 @@ fn test_input_lexer() {
     assert_eq!(lex.next(), Some(Ok(Input::EscapedText("hello world"))));
 
     let mut lex = Input::lexer(
-        r##"'
+        r##"`
         
         hello world 
-        '"##,
+        `"##,
     );
     assert_eq!(
         lex.next(),

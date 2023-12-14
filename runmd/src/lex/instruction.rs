@@ -235,7 +235,7 @@ fn test_add_node_instruction() {
 
     let mut lex = Instruction::lexer_with_extras(
         r"
-    + example .test 'hello-world' # Test comment
+    + example .test `hello-world` # Test comment
     + .test hello world 2 # test comment
     + .test hello world 3 # test comment
     | 4 

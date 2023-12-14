@@ -252,34 +252,6 @@ impl<const OFFSET: usize, T> From<FieldKey<OFFSET>> for FieldIndex<OFFSET, T> {
 
 /// Convert field_name to base resource_key
 /// 
-/// resource_key
-/// 
-/// let process = ResourceKey::root()
-///     .transmute::<Process>();
-/// 
-///     process.field("program").find_mut(storage_target);
-///     process.field("env").find_mut(storage_target);
-/// 
-///     let property = process.as_property<0, String>();
-/// 
-/// resource_key
-///     .as_property::<FieldType>()
-///     .find(
-///         storage_target
-///     ) -> 
-/// 
-/// resource_key
-///     .field("test")
-///     .find_mut(
-///         storage_target
-///         ) -> 
-/// 
-/// resource_key
-///     .as_attribute::<Owner>()
-///     .read(
-///         storage_target
-///      ) -> 
-/// 
 struct Routes<P: Plugin>(PacketRoutes<P>);
 
 impl<P> Index<&str> for Routes<P> where
