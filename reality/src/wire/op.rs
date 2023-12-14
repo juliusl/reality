@@ -150,7 +150,6 @@ bitflags::bitflags! {
     /// | Op2    |            | Util operations              |
     /// | ------ | ---------- | ---------------------------- |
     ///
-    ///
     #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
     pub struct Code: u32 {
         const Op0 = 0;

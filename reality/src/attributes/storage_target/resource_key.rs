@@ -52,6 +52,24 @@ impl<T: Send + Sync + 'static> ResourceKeyHashBuilder<T, DefaultHasher> {
 ///
 #[derive(Debug, Serialize, Deserialize, Hash, Eq, PartialEq, PartialOrd)]
 pub struct ResourceKey<T: Send + Sync + 'static> {
+    /// Resource key data,
+    /// 
+    /// # Layout
+    /// 
+    /// u32 - reserved
+    /// u16 - reserved
+    /// u16 - reserved
+    /// 
+    /// [u8; 8] - key
+    /// 
+    /// # Operations 
+    /// 
+    /// key = ty ^ hash_value
+    /// 
+    /// transmute = key ^ ty ^ next_ty
+    /// 
+    /// hash_value = hash(idx) + hash(tag) + hash(label)
+    /// 
     pub data: u128,
     #[serde(skip)]
     _t: PhantomData<T>,

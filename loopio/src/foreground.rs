@@ -115,6 +115,8 @@ impl ForegroundEngine {
         let bg = eh
             .background()
             .expect("should be able to create a background handle");
+
+        // This tests that the bg engine is working properly
         if let Ok(mut bg) = bg.call("engine://test_background_work") {
             loop {
                 match bg.status() {

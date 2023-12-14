@@ -8,12 +8,9 @@ pub mod resource_key;
 pub mod shared;
 pub mod target;
 
-// pub mod fs;
-
 pub mod prelude {
     use futures_util::Future;
     use std::pin::Pin;
-
     // pub use super::fs::SharedFile;
 
     /// Type-alias for a thread safe dispatch queue,

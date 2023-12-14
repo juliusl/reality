@@ -15,6 +15,7 @@ use nebudeck::widgets::UiDisplayMut;
 use nebudeck::widgets::UiFormatter;
 use nebudeck::ControlBus;
 use std::time::Instant;
+use tracing::trace;
 
 /// Demonstrates how to build on top of the WgpuSystem Desktop App implementation,
 ///
@@ -93,6 +94,8 @@ fn main() -> anyhow::Result<()> {
 
     # -- # Example of an action to show a frame editor
     : .action   show_frame_editor/b/nebudeck.frame-editor
+
+    : .event test_event
     ```
     ",
     );
@@ -138,13 +141,17 @@ struct ProcessWizard;
 
 impl ProcessWizard {
     async fn edit_program_name(mut tc: ThunkContext) -> anyhow::Result<ThunkContext> {
-        let process = Remote.create::<Process>(&mut tc).await;
+        let mut process = Remote.create::<Process>(&mut tc).await;
+
+        process.program = String::from("ls");
 
         let wire_server = WireServer::<Process>::new(&mut tc).await?;
 
         tc.write_cache(VirtualProcess::new(process.clone()));
         tc.write_cache(process);
-        tc.write_cache(wire_server);
+        tc.write_cache(wire_server.clone());
+
+        // tokio::spawn(async move { wire_server.clone().start().await });
 
         tc.push_ui_node(|ui| {
             if let Err(err) = ProcessWizard.fmt(ui) {
@@ -209,39 +216,34 @@ impl UiDisplayMut for ProcessWizard {
             // Prepare current frame updates
             let mut pending_changes = vec![];
 
-            // TODO: Currently this is the most straightforward way of applying this pattern
             if let Some(mut cached) = ui
                 .tc
                 .lock()
                 .unwrap()
                 .get_mut()
                 .unwrap()
-                .cached_mut::<VirtualProcess>()
+                .cached_mut::<std::sync::Arc<WireServer<Process>>>()
             {
-                // cached["program"].clone().start_tx()
-                let tx = cached.program.clone().start_tx();
+                let server = cached.deref_mut();
 
-                if let Ok(next) = tx
-                    .next(|mut n| {
-                        n.fmt(ui)?;
-                        Ok(n)
-                    })
-                    .finish()
-                {
-                    next.view_value(|r| {
-                        eprintln!("Change -- {:?} {r}", Instant::now());
-                        cached.program.pending();
-                    });
+                let client = server.clone().new_client();
 
-                    if cached.program.is_pending() {
-                        let packet = cached.program.encode();
-                        pending_changes.push(("process_wizard", packet));
+                client.routes().send_if_modified(|r| {
+                    let modified = r.route_mut::<0>().fmt(ui).is_ok();
+
+                    if modified {
+                        let packet = r.route::<0>().encode();
+                        pending_changes.push(
+                            (packet.field_name.to_string(), packet)
+                        );
                     }
-                }
+
+                    modified
+                });
             }
 
             for (label, packet) in pending_changes.drain(..) {
-                ui.push_pending_change(label, packet);
+                ui.push_pending_change(label.as_str(), packet);
             }
         });
 
