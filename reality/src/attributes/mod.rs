@@ -95,6 +95,7 @@ pub use prelude::*;
 
 mod tests {
     use std::collections::BTreeMap;
+    use std::convert::Infallible;
 
     use super::*;
     use crate::prelude::*;
@@ -175,6 +176,14 @@ mod tests {
 
     #[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Default, Debug)]
     pub struct Test2 {}
+
+    impl FromStr for Test2 {
+        type Err = Infallible;
+
+        fn from_str(_s: &str) -> Result<Self, Self::Err> {
+            Ok(Test2 {})
+        }
+    }
 
     impl<S: StorageTarget + Send + Sync + 'static> AttributeType<S> for Test2 {
         fn symbol() -> &'static str {

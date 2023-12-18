@@ -467,7 +467,7 @@ impl Context {
                 let mut clone = self.clone();
                 clone.attribute = attr;
 
-                if let Some(_) = clone.scan_node_for::<P>().await {
+                if clone.scan_node_for::<P>().await.is_some() {
                     acc.push(attr);
                 }
                 acc

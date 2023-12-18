@@ -530,6 +530,7 @@ impl<Owner: Plugin + 'static, Value: 'static, ProjectedValue: 'static>
 {
     /// Creates a new field vtable,
     ///
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         get_ref: fn(&Owner) -> (&str, &ProjectedValue),
         get_mut: fn(&mut Owner) -> (&str, &mut ProjectedValue),

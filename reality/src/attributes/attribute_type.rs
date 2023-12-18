@@ -7,6 +7,10 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::BlockObject;
+use crate::FieldRef;
+use crate::OnReadField;
+use crate::OnWriteField;
+use crate::Plugin;
 use crate::ResourceKey;
 use crate::Visit;
 use crate::VisitMut;
@@ -93,36 +97,35 @@ impl<S: StorageTarget + 'static> AttributeTypeParser<S> {
 
     /// Returns an attribute parser for a parseable type field,
     ///
-    pub fn parseable_field<const IDX: usize, Owner, T>() -> Self
+    pub fn parseable_field<const IDX: usize, Owner>() -> Self
     where
         S: Send + Sync + 'static,
-        <T as FromStr>::Err: Send + Sync + 'static,
-        Owner: OnParseField<IDX, T> + Send + Sync + 'static,
-        T: FromStr + Send + Sync + 'static,
+        Owner: OnParseField<IDX> + Send + Sync + 'static,
+        <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
-        Self::new::<ParsableField<IDX, Owner, T>>()
+        Self::new::<ParsableField<IDX, Owner>>()
     }
 
     /// Returns an attribute parser for a parseable attribute type field,
     ///
-    pub fn parseable_attribute_type_field<const IDX: usize, Owner, T>() -> Self
+    pub fn parseable_attribute_type_field<const IDX: usize, Owner>() -> Self
     where
         S: Send + Sync + 'static,
-        Owner: OnParseField<IDX, T> + Send + Sync + 'static,
-        T: AttributeType<S> + Send + Sync + 'static,
+        Owner: OnParseField<IDX> + Send + Sync + 'static,
+        Owner::ParseType: AttributeType<S>,
     {
-        Self::new::<ParsableAttributeTypeField<IDX, S, Owner, T>>()
+        Self::new::<ParsableAttributeTypeField<IDX, S, Owner>>()
     }
 
     /// Returns an attribute parser for a parseable attribute type field,
     ///
-    pub fn parseable_object_type_field<const IDX: usize, Owner, T>() -> Self
+    pub fn parseable_object_type_field<const IDX: usize, Owner>() -> Self
     where
         S: Send + Sync + 'static,
-        Owner: OnParseField<IDX, T> + Send + Sync + 'static,
-        T: BlockObject<S> + Send + Sync + 'static,
+        Owner: OnParseField<IDX> + Send + Sync + 'static,
+        Owner::ParseType: BlockObject<S>,
     {
-        Self::new::<ParsableObjectTypeField<IDX, S, Owner, T>>()
+        Self::new::<ParsableObjectTypeField<IDX, S, Owner>>()
     }
 }
 
@@ -140,22 +143,19 @@ impl<S: StorageTarget> Debug for AttributeTypeParser<S> {
 
 /// Adapter for types that implement FromStr into an AttributeType,
 ///
-pub struct ParsableField<const FIELD_OFFSET: usize, Owner, T>
+pub struct ParsableField<const FIELD_OFFSET: usize, Owner>
 where
-    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-    T: FromStr + Send + Sync + 'static,
+    Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
 {
     /// Optional, label for use w/ resource keys
     ///
     label: Option<&'static str>,
     /// Parsed value,
     ///
-    value: Option<T>,
+    value: Option<Owner::ParseType>,
     /// Parsing error,
     ///
-    error: Option<<T as FromStr>::Err>,
-    /// Called when this field is parsed successfully and the owner exists,
-    ///
+    error: Option<<Owner::ParseType as FromStr>::Err>,
     _owner: PhantomData<Owner>,
 }
 
@@ -164,13 +164,12 @@ where
 /// Applies the attribute type's parse fn, and then queues removal and transfer to the owning type,
 ///
 #[derive(Default)]
-pub struct ParsableAttributeTypeField<const FIELD_OFFSET: usize, S, Owner, T>
+pub struct ParsableAttributeTypeField<const FIELD_OFFSET: usize, S, Owner>
 where
     S: StorageTarget,
-    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-    T: AttributeType<S> + Send + Sync + 'static,
+    Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+    Owner::ParseType: AttributeType<S> + Send + Sync + 'static,
 {
-    _inner: PhantomData<T>,
     _owner: PhantomData<Owner>,
     _storage: PhantomData<S>,
 }
@@ -180,42 +179,41 @@ where
 /// Applies the attribute type's parse fn, and then queues removal and transfer to the owning type,
 ///
 #[derive(Default)]
-pub struct ParsableObjectTypeField<const FIELD_OFFSET: usize, S, Owner, T>
+pub struct ParsableObjectTypeField<const FIELD_OFFSET: usize, S, Owner>
 where
     S: StorageTarget + 'static,
-    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-    T: BlockObject<S> + Send + Sync + 'static,
+    Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+    Owner::ParseType: BlockObject<S> + Send + Sync + 'static,
 {
-    _inner: PhantomData<T>,
     _owner: PhantomData<Owner>,
     _storage: PhantomData<S>,
 }
 
-impl<const FIELD_OFFSET: usize, Owner, S, T> AttributeType<S>
-    for ParsableField<FIELD_OFFSET, Owner, T>
+impl<const FIELD_OFFSET: usize, Owner, S> AttributeType<S> for ParsableField<FIELD_OFFSET, Owner>
 where
-    <T as FromStr>::Err: Send + Sync + 'static,
-    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
     S: StorageTarget + Send + Sync + 'static,
-    T: FromStr + Send + Sync + 'static,
+    Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+    <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
 {
     fn symbol() -> &'static str {
         Owner::field_name()
     }
 
     fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
+        let input = content.as_ref();
+
         let label = Some(<Self as AttributeType<S>>::symbol());
 
-        let parsed = match content.as_ref().parse::<T>() {
+        let parsed = match content.as_ref().parse::<Owner::ParseType>() {
             Ok(value) => ParsableField {
                 label,
                 value: Some(value),
-                error: None::<<T as FromStr>::Err>,
+                error: None::<<Owner::ParseType as FromStr>::Err>,
                 _owner: PhantomData::<Owner>,
             },
             Err(err) => ParsableField {
                 label,
-                value: None::<T>,
+                value: None::<Owner::ParseType>,
                 error: Some(err),
                 _owner: PhantomData,
             },
@@ -239,7 +237,7 @@ where
                 },
             ) => {
                 borrow_mut!(storage, Owner, key, |owner| => {
-                    let property = owner.on_parse(value, tag.as_ref());
+                    let property = owner.on_parse(value, input, tag.as_ref());
                     properties.push((property, Owner::empty_packet()));
                 });
             }
@@ -254,13 +252,13 @@ where
             ) => {
                 type ParserError<T> = <T as FromStr>::Err;
 
-                if let Some(cb) = storage
-                    .callback_mut::<ParserError<T>>(label.try_into().unwrap_or(ResourceKey::root()))
-                {
+                if let Some(cb) = storage.callback_mut::<ParserError<Owner::ParseType>>(
+                    label.try_into().unwrap_or(ResourceKey::root()),
+                ) {
                     storage.lazy_callback_mut(cb, error)
-                } else if let Some(cb) = storage
-                    .callback::<ParserError<T>>(label.try_into().unwrap_or(ResourceKey::root()))
-                {
+                } else if let Some(cb) = storage.callback::<ParserError<Owner::ParseType>>(
+                    label.try_into().unwrap_or(ResourceKey::root()),
+                ) {
                     storage.lazy_callback(cb, error)
                 }
             }
@@ -277,20 +275,22 @@ where
     }
 }
 
-impl<const FIELD_OFFSET: usize, Owner, S, T> AttributeType<S>
-    for ParsableAttributeTypeField<FIELD_OFFSET, S, Owner, T>
+impl<const FIELD_OFFSET: usize, Owner, S> AttributeType<S>
+    for ParsableAttributeTypeField<FIELD_OFFSET, S, Owner>
 where
-    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
     S: StorageTarget + Send + Sync + 'static,
-    T: AttributeType<S> + Send + Sync + 'static,
+    Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+    Owner::ParseType: AttributeType<S> + Send + Sync + 'static,
 {
     fn symbol() -> &'static str {
         Owner::field_name()
     }
 
     fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
+        let input = content.as_ref();
+
         // If the parse method did not initialize T, then it won't be able to found by the subsequent dispatch,
-        T::parse(parser, content);
+        Owner::ParseType::parse(parser, input);
 
         // Get the current tag setting,
         let tag = parser.tag().cloned();
@@ -303,11 +303,11 @@ where
         let mut properties = vec![];
         if let Some(mut storage) = parser.storage_mut() {
             // If set by parse, it must be set w/ a resource key set to None
-            let resource = { storage.take_resource::<T>(ResourceKey::root()) };
+            let resource = { storage.take_resource::<Owner::ParseType>(ResourceKey::root()) };
 
             if let Some(resource) = resource {
                 borrow_mut!(storage, Owner, key, |owner| => {
-                    let prop = owner.on_parse(*resource, tag.as_ref());
+                    let prop = owner.on_parse(*resource, input, tag.as_ref());
                     properties.push((prop, Owner::empty_packet()));
                 });
             }
@@ -323,20 +323,22 @@ where
     }
 }
 
-impl<const FIELD_OFFSET: usize, Owner, S, T> AttributeType<S>
-    for ParsableObjectTypeField<FIELD_OFFSET, S, Owner, T>
+impl<const FIELD_OFFSET: usize, Owner, S> AttributeType<S>
+    for ParsableObjectTypeField<FIELD_OFFSET, S, Owner>
 where
-    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
     S: StorageTarget + Send + Sync + 'static,
-    T: BlockObject<S> + Send + Sync + 'static,
+    Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+    Owner::ParseType: BlockObject<S>,
 {
     fn symbol() -> &'static str {
         Owner::field_name()
     }
 
     fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
+        let input = content.as_ref();
+
         // If the parse method did not initialize T, then it won't be able to found by the subsequent dispatch,
-        T::parse(parser, content);
+        Owner::ParseType::parse(parser, input);
 
         // Get the current tag setting,
         let tag = parser.tag().cloned();
@@ -349,11 +351,11 @@ where
         let mut properties = vec![];
         if let Some(mut storage) = parser.storage_mut() {
             // If set by parse, it must be set w/ a resource key set to None
-            let resource = { storage.take_resource::<T>(ResourceKey::root()) };
+            let resource = { storage.take_resource::<Owner::ParseType>(ResourceKey::root()) };
 
             if let Some(resource) = resource {
                 borrow_mut!(storage, Owner, key, |owner| => {
-                    let prop = owner.on_parse(*resource, tag.as_ref());
+                    let prop = owner.on_parse(*resource, input, tag.as_ref());
                     properties.push((prop, Owner::empty_packet()));
                 });
             }
@@ -383,21 +385,18 @@ pub trait Handler<S: StorageTarget, Arg: Send + Sync + 'static> {
 
 /// Trait to allow for deriving an AttributeType implementation w/ each callback as a seperate resource,
 ///
-pub trait OnParseField<const FIELD_OFFSET: usize, T: Send + Sync + 'static>
+pub trait OnParseField<const FIELD_OFFSET: usize> 
 where
-    Self: Send + Sync + Sized + 'static,
+    Self: runir::prelude::Field<FIELD_OFFSET> + Send + Sync + Sized + 'static,
 {
-    /// Projected type to use w/ `get`/`get_mut`
-    ///
-    type ProjectedType: Send + Sync + 'static;
-
-    /// Name of the field,
-    ///
-    fn field_name() -> &'static str;
-
     /// Function called when a value is parsed correctly,
     ///
-    fn on_parse(&mut self, value: T, tag: Option<&String>) -> ResourceKey<Property>;
+    fn on_parse(
+        &mut self,
+        value: Self::ParseType,
+        input: &str,
+        tag: Option<&String>,
+    ) -> ResourceKey<Property>;
 
     /// Returns a reference to the field as the projected type,
     ///
@@ -432,7 +431,7 @@ where
     /// Returns an empty packet for this field,
     ///
     fn empty_packet() -> FieldPacket {
-        let mut packet = FieldPacket::new::<T>();
+        let mut packet = FieldPacket::new::<Self::ParseType>();
         packet.field_offset = FIELD_OFFSET;
         packet.field_name = Self::field_name().to_string();
         packet.owner_name = std::any::type_name::<Self>().to_string();
@@ -454,17 +453,40 @@ where
 
     /// Returns a field_packet for wire transport,
     ///
-    fn to_wire(data: &T) -> anyhow::Result<FieldPacket>
+    fn to_wire(data: &Self::ParseType) -> anyhow::Result<FieldPacket>
     where
-        T: FieldPacketType + Serialize + DeserializeOwned,
+        Self::ParseType: FieldPacketType + Serialize + DeserializeOwned,
     {
         let bincode = bincode::serialize(data)?;
-        let mut data = FieldPacket::new::<T>();
+        let mut data = FieldPacket::new::<Self::ParseType>();
         data.field_offset = FIELD_OFFSET;
         data.field_name = Self::field_name().to_string();
         data.owner_name = std::any::type_name::<Self>().to_string();
         data.wire_data = Some(bincode);
         Ok(data)
+    }
+
+    /// Returns a field ref for the current field offset,
+    ///
+    fn field_ref(v: &Self::Virtual) -> &FieldRef<Self, Self::ParseType, Self::ProjectedType>
+    where
+        Self: Plugin,
+        Self: OnReadField<FIELD_OFFSET>,
+    {
+        Self::read(v)
+    }
+
+    /// Returns a mutable field ref for the current field offset,
+    ///
+    fn field_ref_mut(
+        v: &mut Self::Virtual,
+    ) -> &mut FieldRef<Self, Self::ParseType, Self::ProjectedType>
+    where
+        Self: Plugin,
+        Self: OnReadField<FIELD_OFFSET>,
+        Self: OnWriteField<FIELD_OFFSET>,
+    {
+        Self::write(v)
     }
 }
 

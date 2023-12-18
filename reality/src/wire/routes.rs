@@ -5,11 +5,12 @@ use std::{
 };
 
 use anyhow::anyhow;
+use runir::prelude::Field;
 use tracing::trace;
 
 use crate::{
     Dispatcher, FieldRef, FrameUpdates, NewFn, OnParseField, OnReadField, OnWriteField, Plugin,
-    ResourceKey, Shared, StorageTarget, Properties, Property,
+    Property, ResourceKey, Shared, StorageTarget,
 };
 
 use super::prelude::FieldPacket;
@@ -103,10 +104,7 @@ where
     ///
     pub async fn route_one<const OFFSET: usize>(&self) -> anyhow::Result<()>
     where
-        P: OnWriteField<OFFSET>
-            + OnReadField<OFFSET>
-            + OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>
-            + Plugin,
+        P: OnWriteField<OFFSET> + OnReadField<OFFSET> + OnParseField<OFFSET> + Plugin,
         P::Virtual: NewFn<Inner = P>,
     {
         if self.dispatcher.get().is_some() {
@@ -129,10 +127,7 @@ where
     ///
     pub async fn try_route<const OFFSET: usize>(&self, packet: FieldPacket) -> anyhow::Result<()>
     where
-        P: OnReadField<OFFSET>
-            + OnWriteField<OFFSET>
-            + OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>
-            + Plugin,
+        P: OnReadField<OFFSET> + OnWriteField<OFFSET> + OnParseField<OFFSET> + Plugin,
         P::Virtual: NewFn<Inner = P>,
     {
         if let Some(mut dispatcher) = self.dispatcher.get().cloned() {
@@ -186,14 +181,11 @@ impl<P: Plugin> PacketRoutes<P> {
         &self,
     ) -> &FieldRef<
         P,
-        <P as OnReadField<OFFSET>>::FieldType,
-        <P as OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>>::ProjectedType,
+        <P as Field<OFFSET>>::ParseType,
+        <P as Field<OFFSET>>::ProjectedType,
     >
     where
-        P: OnReadField<OFFSET>
-            + OnWriteField<OFFSET>
-            + OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>
-            + Plugin,
+        P: OnReadField<OFFSET> + OnWriteField<OFFSET> + OnParseField<OFFSET> + Plugin,
     {
         &self[FieldKey::<OFFSET>.into()]
     }
@@ -202,14 +194,11 @@ impl<P: Plugin> PacketRoutes<P> {
         &'a mut self,
     ) -> &'b mut FieldRef<
         P,
-        <P as OnReadField<OFFSET>>::FieldType,
-        <P as OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>>::ProjectedType,
+        <P as Field<OFFSET>>::ParseType,
+        <P as Field<OFFSET>>::ProjectedType,
     >
     where
-        P: OnReadField<OFFSET>
-            + OnWriteField<OFFSET>
-            + OnParseField<OFFSET, <P as OnReadField<OFFSET>>::FieldType>
-            + Plugin,
+        P: OnReadField<OFFSET> + OnWriteField<OFFSET> + OnParseField<OFFSET> + Plugin,
     {
         &mut self[FieldKey::<OFFSET>.into()]
     }
@@ -218,10 +207,7 @@ impl<P: Plugin> PacketRoutes<P> {
 impl<const OFFSET: usize, P, T> IndexMut<FieldIndex<OFFSET, T>> for PacketRoutes<P>
 where
     T: Send + Sync + 'static,
-    P: OnReadField<OFFSET, FieldType = T>
-        + OnWriteField<OFFSET, FieldType = T>
-        + OnParseField<OFFSET, T>
-        + Plugin,
+    P: OnReadField<OFFSET> + OnWriteField<OFFSET> + Field<OFFSET, ParseType = T> + Plugin,
 {
     fn index_mut(&mut self, _: FieldIndex<OFFSET, T>) -> &mut Self::Output {
         P::write(&mut self.inner)
@@ -231,12 +217,9 @@ where
 impl<const OFFSET: usize, P, T> Index<FieldIndex<OFFSET, T>> for PacketRoutes<P>
 where
     T: Send + Sync + 'static,
-    P: OnReadField<OFFSET, FieldType = T>
-        + OnWriteField<OFFSET, FieldType = T>
-        + OnParseField<OFFSET, T>
-        + Plugin,
+    P: OnReadField<OFFSET> + OnWriteField<OFFSET> + Field<OFFSET, ParseType = T> + Plugin,
 {
-    type Output = FieldRef<P, T, <P as OnParseField<OFFSET, T>>::ProjectedType>;
+    type Output = FieldRef<P, T, <P as Field<OFFSET>>::ProjectedType>;
 
     #[inline]
     fn index(&self, _: FieldIndex<OFFSET, T>) -> &Self::Output {
@@ -251,11 +234,12 @@ impl<const OFFSET: usize, T> From<FieldKey<OFFSET>> for FieldIndex<OFFSET, T> {
 }
 
 /// Convert field_name to base resource_key
-/// 
+///
 struct Routes<P: Plugin>(PacketRoutes<P>);
 
-impl<P> Index<&str> for Routes<P> where
-    P: Plugin
+impl<P> Index<&str> for Routes<P>
+where
+    P: Plugin,
 {
     type Output = ResourceKey<Property>;
 

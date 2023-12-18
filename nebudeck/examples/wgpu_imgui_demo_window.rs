@@ -233,9 +233,7 @@ impl UiDisplayMut for ProcessWizard {
 
                     if modified {
                         let packet = r.route::<0>().encode();
-                        pending_changes.push(
-                            (packet.field_name.to_string(), packet)
-                        );
+                        pending_changes.push((packet.field_name.to_string(), packet));
                     }
 
                     modified

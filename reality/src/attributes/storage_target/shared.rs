@@ -11,6 +11,23 @@ use crate::prelude::*;
 
 use super::target::StorageTargetKey;
 
+// /// Struct containing a handle to a shared resource pointer,
+// ///
+// #[derive(Clone)]
+// pub struct ResourceCell {
+//     inner: Arc<RwLock<Box<dyn Send + Sync + 'static>>>,
+// }
+
+// impl ResourceCell {
+//     /// Creates a new resource cell,
+//     ///
+//     pub fn new<T: Send + Sync + 'static>(resource: T) -> ResourceCell {
+//         ResourceCell {
+//             inner: Arc::new(RwLock::new(Box::new(resource))),
+//         }
+//     }
+// }
+
 /// Shared thread-safe storage target using Arc and tokio::RwLock,
 ///
 #[derive(Clone, Default)]

@@ -34,6 +34,9 @@ bincode = "1.3.3"
 [dependencies.runmd]
 path = "../runmd"
 
+[dependencies.runir]
+path = "../runir"
+
 [dependencies.reality_derive]
 path = "../reality_derive"
 optional = true

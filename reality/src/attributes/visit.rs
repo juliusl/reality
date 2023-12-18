@@ -115,29 +115,23 @@ pub trait SetField<T> {
 ///
 pub trait OnReadField<const OFFSET: usize>
 where
-    Self: Plugin + OnParseField<OFFSET, <Self as OnReadField<OFFSET>>::FieldType>,
+    Self: Plugin + OnParseField<OFFSET>,
 {
-    /// The field type being read,
-    ///
-    type FieldType: Send + Sync + 'static;
-
     /// Reads a field reference from this type,
     ///
-    fn read(virt: &Self::Virtual) -> &FieldRef<Self, Self::FieldType, Self::ProjectedType>;
+    fn read(virt: &Self::Virtual) -> &FieldRef<Self, Self::ParseType, Self::ProjectedType>;
 }
 
 /// Trait for returning mutable field references by offset,
 ///
 pub trait OnWriteField<const OFFSET: usize>
 where
-    Self: Plugin
-        + OnReadField<OFFSET>
-        + OnParseField<OFFSET, <Self as OnReadField<OFFSET>>::FieldType>,
+    Self: Plugin + OnReadField<OFFSET> + OnParseField<OFFSET>,
 {
     /// Writes to a field reference from this type,
     ///
     fn write(virt: &mut Self::Virtual)
-        -> &mut FieldRef<Self, Self::FieldType, Self::ProjectedType>;
+        -> &mut FieldRef<Self, Self::ParseType, Self::ProjectedType>;
 }
 
 #[allow(unused_imports)]

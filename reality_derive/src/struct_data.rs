@@ -311,11 +311,11 @@ impl StructData {
 
             let encode_helper_impl = quote_spanned!(f.span=>
                 fn #encode_helper_fn_ident(vp: #virtual_ident) -> FieldPacket {
-                    let mut packet =  <Self as OnParseField<#offset, #ty>>::empty_packet();
+                    let mut packet =  <Self as OnParseField<#offset>>::empty_packet();
                     vp.#name.view_value(|v| {
-                        let mut current = <Self as OnParseField<#offset, #ty>>::into_packet(v.to_owned());
+                        let mut current = <Self as OnParseField<#offset>>::into_packet(v.to_owned());
                         current.owner_name = std::any::type_name::<#ident #ty_generics>().to_string();
-                        current.field_name = <Self as OnParseField<#offset, #ty>>::field_name().to_string();
+                        current.field_name = <Self as runir::prelude::Field<#offset>>::field_name().to_string();
                         packet = current.into_wire::<#absolute_ty>()
                     });
                     packet
@@ -487,14 +487,12 @@ impl StructData {
             .map(|f| {
                 let offset = &f.offset;
                 let name = &f.name;
-                let ty = f.field_ty();
+                // let ty = f.field_ty();
 
                 quote_spanned!(f.span=>
                     impl #impl_generics OnReadField<#offset> for #ident #ty_generics #where_clause {
-                        type FieldType = #ty;
-
                         #[inline]
-                        fn read(virt: &Self::Virtual) -> &FieldRef<Self, Self::FieldType, Self::ProjectedType> {
+                        fn read(virt: &Self::Virtual) -> &FieldRef<Self, Self::ParseType, Self::ProjectedType> {
                             &virt.#name
                         }
                     }
@@ -513,7 +511,7 @@ impl StructData {
                 quote_spanned!(f.span=>
                     impl #impl_generics OnWriteField<#offset> for #ident #ty_generics #where_clause {
                         #[inline]
-                        fn write(virt: &mut Self::Virtual) -> &mut FieldRef<Self, Self::FieldType, Self::ProjectedType> {
+                        fn write(virt: &mut Self::Virtual) -> &mut FieldRef<Self, Self::ParseType, Self::ProjectedType> {
                             &mut virt.#name
                         }
                     }
@@ -622,10 +620,10 @@ impl StructData {
             let owner = &self.name;
 
             let _fields = fields.iter().map(|f| {
-                let ty = f.field_ty();
+                // let ty = f.field_ty();
                 let offset = &f.offset;
                 quote_spanned!(f.span=>
-                    <Self as OnParseField<#offset, #ty>>::get_field(self)
+                    <Self as OnParseField<#offset>>::get_field(self)
                 )
             });
 
@@ -644,11 +642,11 @@ impl StructData {
             });
 
             let _set_field_cases = fields.iter().map(|f| {
-                let ty = f.field_ty();
+                // let ty = f.field_ty();
                 let offset = &f.offset;
                 let field_name_lit = f.field_name_lit_str();
                 quote_spanned!(f.span=>
-                    (#field_name_lit, #offset) => { *<Self as OnParseField<#offset, #ty>>::get_field_mut(self).value = field.value; true }
+                    (#field_name_lit, #offset) => { *<Self as OnParseField<#offset>>::get_field_mut(self).value = field.value; true }
                 )
             });
 
@@ -782,14 +780,14 @@ impl StructData {
         let symbol = self.attr_symbol(ident);
         let fields = self.fields.clone();
         let fields = fields.iter().enumerate().map(|(offset, f)| {
-            let ty = &f.field_ty();
-            if let Some(attribute_type) = f.attribute_type.as_ref() {
+            // let ty = &f.field_ty();
+            if let Some(_) = f.attribute_type.as_ref() {
                 quote_spanned! {f.span=>
-                    parser.add_parseable_attribute_type_field::<#offset, Self, #attribute_type>();
+                    parser.add_parseable_attribute_type_field::<#offset, Self>();
                 }
             } else if f.ext {
                 quote_spanned! {f.span=>
-                    parser.add_parseable_extension_type_field::<#offset, Self, #ty>();
+                    parser.add_parseable_extension_type_field::<#offset, Self>();
                 }
             } else {
                 let comment = LitStr::new(
@@ -798,7 +796,7 @@ impl StructData {
                 );
                 quote_spanned! {f.span=>
                     let _ = #comment;
-                    parser.add_parseable_field::<#offset, Self, #ty>();
+                    parser.add_parseable_field::<#offset, Self>();
                 }
             }
         });
@@ -819,15 +817,19 @@ impl StructData {
             let mut_value = f.set_of.as_ref().or(f.map_of.as_ref()).map(|_| quote!(mut));
 
             quote_spanned! {f.span=>
-                impl #original_impl_generics OnParseField<#offset, #ty> for #ident #ty_generics #where_clause {
+                impl #original_impl_generics runir::prelude::Field<#offset> for #ident #ty_generics #where_clause {
+                    type ParseType = #ty;
+    
                     type ProjectedType = #absolute_ty;
 
                     fn field_name() -> &'static str {
                         #field_ident
                     }
+                }
 
+                impl #original_impl_generics OnParseField<#offset> for #ident #ty_generics #where_clause {
                     #[allow(unused_variables)]
-                    fn on_parse(&mut self, #mut_value value: #ty, _tag: Option<&String>) -> ResourceKey<Property> {
+                    fn on_parse(&mut self, #mut_value value: #ty, _input: &str, _tag: Option<&String>) -> ResourceKey<Property> {
                         let mut hasher = ResourceKeyHashBuilder::new_default_hasher();
                         hasher.hash(_tag);
                         hasher.hash(#offset);
@@ -963,7 +965,7 @@ impl StructData {
 
         let to_frame = self.fields.iter().filter(|f| !f.ignore && !f.not_wire && self.replace.is_none()).map(|f| {
             let offset = f.offset;
-            let ty = f.field_ty();
+            // let ty = f.field_ty();
             let pty = &f.ty;
             let _name = &f.name;
 
@@ -971,9 +973,9 @@ impl StructData {
                 quote_spanned!(f.span=>
                     if let #enum_ty::#variant { #_name, .. } = self {
                         {
-                            let mut packet = <Self as OnParseField<#offset, #ty>>::into_packet(#_name.clone());
+                            let mut packet = <Self as OnParseField<#offset>>::into_packet(#_name.clone());
                             packet.owner_name = std::any::type_name::<#name #ty_generics>().to_string();
-                            packet.field_name = <Self as OnParseField<#offset, #ty>>::field_name().to_string();
+                            packet.field_name = <Self as runir::prelude::Field<#offset>>::field_name().to_string();
                             packet.attribute_hash = Some(key.data);
                             packet.into_wire::<#pty>()
                         }
@@ -983,9 +985,9 @@ impl StructData {
                 )
                 }).unwrap_or(quote_spanned!(f.span=>
                 {
-                    let mut packet = <Self as OnParseField<#offset, #ty>>::into_packet(self.#_name.clone());
+                    let mut packet = <Self as OnParseField<#offset>>::into_packet(self.#_name.clone());
                     packet.owner_name = std::any::type_name::<#name #ty_generics>().to_string();
-                    packet.field_name = <Self as OnParseField<#offset, #ty>>::field_name().to_string();
+                    packet.field_name = <Self as runir::prelude::Field<#offset>>::field_name().to_string();
                     packet.attribute_hash = Some(key.data);
                     packet.into_wire::<#pty>()
                 }))

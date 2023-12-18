@@ -80,6 +80,8 @@ pub use std::str::FromStr;
 
 pub use async_trait::async_trait;
 
+pub use runir;
+
 /// Returns the latest value of a reference,
 ///
 #[async_trait::async_trait]

@@ -1,9 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
+    "nebudeck",
     "loopio",
     "reality",
     "reality_derive",
+    "runir",
     "runmd",
-    "nebudeck",
 ]

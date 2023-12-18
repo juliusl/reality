@@ -599,117 +599,109 @@ impl<S: StorageTarget> AttributeParser<S> {
 
     /// Returns attribute parser with a parseable type, chainable
     ///
-    pub fn with_parseable_field<const FIELD_OFFSET: usize, Owner, T>(&mut self) -> &mut Self
+    pub fn with_parseable_field<const FIELD_OFFSET: usize, Owner>(&mut self) -> &mut Self
     where
         S: StorageTarget + Send + Sync + 'static,
-        <T as FromStr>::Err: Send + Sync + 'static,
-        Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-        T: FromStr + Send + Sync + 'static,
+        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
-        self.add_parseable_field::<FIELD_OFFSET, Owner, T>();
+        self.add_parseable_field::<FIELD_OFFSET, Owner>();
         self
     }
 
     /// Adds an attribute type that implements FromStr,
     ///
-    pub fn add_parseable_field<const FIELD_OFFSET: usize, Owner, T>(&mut self)
+    pub fn add_parseable_field<const FIELD_OFFSET: usize, Owner>(&mut self)
     where
         S: StorageTarget + Send + Sync + 'static,
-        <T as FromStr>::Err: Send + Sync + 'static,
-        Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-        T: FromStr + Send + Sync + 'static,
+        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
-        self.add_type(AttributeTypeParser::parseable_field::<FIELD_OFFSET, Owner, T>());
+        self.add_type(AttributeTypeParser::parseable_field::<FIELD_OFFSET, Owner>());
     }
 
     /// Returns attribute parser with a parseable type, registered to ident, chainable
     ///
-    pub fn with_parseable_as<const FIELD_OFFSET: usize, Owner, T>(
+    pub fn with_parseable_as<const FIELD_OFFSET: usize, Owner>(
         &mut self,
         ident: impl Into<String>,
     ) -> &mut Self
     where
         S: StorageTarget + Send + Sync + 'static,
-        <T as FromStr>::Err: Send + Sync + 'static,
-        Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-        T: FromStr + Send + Sync + 'static,
+        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
-        self.add_parseable_with::<FIELD_OFFSET, Owner, T>(ident.into());
+        self.add_parseable_with::<FIELD_OFFSET, Owner>(ident.into());
         self
     }
 
     /// Adds an attribute type that implements FromStr w/ ident
     ///
-    pub fn add_parseable_with<const FIELD_OFFSET: usize, Owner, T>(
-        &mut self,
-        ident: impl Into<String>,
-    ) where
+    pub fn add_parseable_with<const FIELD_OFFSET: usize, Owner>(&mut self, ident: impl Into<String>)
+    where
         S: StorageTarget + Send + Sync + 'static,
-        <T as FromStr>::Err: Send + Sync + 'static,
-        Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-        T: FromStr + Send + Sync + 'static,
+        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
-        self.add_type_with(ident.into(), ParsableField::<FIELD_OFFSET, Owner, T>::parse);
+        self.add_type_with(ident.into(), ParsableField::<FIELD_OFFSET, Owner>::parse);
     }
 
     /// Adds an attribute type that implements FromStr,
     ///
-    pub fn add_parseable_attribute_type_field<const FIELD_OFFSET: usize, Owner, T>(&mut self)
+    pub fn add_parseable_attribute_type_field<const FIELD_OFFSET: usize, Owner>(&mut self)
     where
         S: StorageTarget + Send + Sync + 'static,
-        Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-        T: AttributeType<S> + Send + Sync + 'static,
+        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        Owner::ParseType: AttributeType<S> + Send + Sync + 'static,
     {
         self.add_type(AttributeTypeParser::parseable_attribute_type_field::<
             FIELD_OFFSET,
             Owner,
-            T,
         >());
     }
 
     /// Adds an attribute type that implements FromStr,
     ///
-    pub fn add_parseable_extension_type_field<const FIELD_OFFSET: usize, Owner, T>(&mut self)
+    pub fn add_parseable_extension_type_field<const FIELD_OFFSET: usize, Owner>(&mut self)
     where
         S: StorageTarget + Send + Sync + 'static,
-        Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-        T: BlockObject<S> + Send + Sync + 'static,
+        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        Owner::ParseType: BlockObject<S> + Send + Sync + 'static,
     {
         self.add_type(AttributeTypeParser::parseable_object_type_field::<
             FIELD_OFFSET,
             Owner,
-            T,
         >());
     }
 
     /// Returns attribute parser with a parseable type, registered to ident, chainable
     ///
-    pub fn with_parseable_attribute_type_field_as<const FIELD_OFFSET: usize, Owner, T>(
+    pub fn with_parseable_attribute_type_field_as<const FIELD_OFFSET: usize, Owner>(
         &mut self,
         ident: impl Into<String>,
     ) -> &mut Self
     where
         S: StorageTarget + Send + Sync + 'static,
-        Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-        T: AttributeType<S> + Send + Sync + 'static,
+        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        Owner::ParseType: AttributeType<S> + Send + Sync + 'static,
     {
-        self.add_parseable_attribute_type_field_with::<FIELD_OFFSET, Owner, T>(ident.into());
+        self.add_parseable_attribute_type_field_with::<FIELD_OFFSET, Owner>(ident.into());
         self
     }
 
     /// Adds an attribute type that implements FromStr w/ ident
     ///
-    pub fn add_parseable_attribute_type_field_with<const FIELD_OFFSET: usize, Owner, T>(
+    pub fn add_parseable_attribute_type_field_with<const FIELD_OFFSET: usize, Owner>(
         &mut self,
         ident: impl Into<String>,
     ) where
         S: StorageTarget + Send + Sync + 'static,
-        Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-        T: AttributeType<S> + Send + Sync + 'static,
+        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        Owner::ParseType: AttributeType<S> + Send + Sync + 'static,
     {
         self.add_type_with(
             ident.into(),
-            ParsableAttributeTypeField::<FIELD_OFFSET, S, Owner, T>::parse,
+            ParsableAttributeTypeField::<FIELD_OFFSET, S, Owner>::parse,
         );
     }
 

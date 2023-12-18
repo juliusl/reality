@@ -19,7 +19,7 @@ impl<T: Send + Sync + 'static, H: Hasher + Default> From<ResourceKeyHashBuilder<
     for ResourceKey<T>
 {
     fn from(val: ResourceKeyHashBuilder<T, H>) -> Self {
-        ResourceKey::with_hash_value(val.hasher.finish())
+        ResourceKey::with_hash_key(val.hasher.finish())
     }
 }
 
@@ -51,23 +51,23 @@ impl<T: Send + Sync + 'static> ResourceKeyHashBuilder<T, DefaultHasher> {
 #[derive(Debug, Serialize, Deserialize, Hash, Eq, PartialEq, PartialOrd)]
 pub struct ResourceKey<T: Send + Sync + 'static> {
     /// Resource key data,
-    /// 
+    ///
     /// # Layout
-    /// 
+    ///
     /// u32 - reserved
     /// u16 - reserved
     /// u16 - reserved
-    /// 
+    ///
     /// [u8; 8] - key
-    /// 
-    /// # Operations 
-    /// 
+    ///
+    /// # Operations
+    ///
     /// key = ty ^ hash_value
-    /// 
+    ///
     /// transmute = key ^ ty ^ next_ty
-    /// 
+    ///
     /// hash_value = hash(idx) + hash(tag) + hash(label)
-    /// 
+    ///
     pub data: u128,
     #[serde(skip)]
     _t: PhantomData<T>,
@@ -126,10 +126,9 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         uuid::Uuid::from_fields(0, 0, ResourceKeyFlags::HASHED.bits(), &key.to_be_bytes()).into()
     }
 
-    /// Creates a new resource_key set w/ a hash value,
+    /// Creates a new resource_key set w/ a hash-key value,
     ///
-    pub fn with_hash_value(hash: u64) -> Self {
-        let key = hash;
+    pub fn with_hash_key(key: u64) -> Self {
         let type_key = Self::type_key();
         let key = type_key ^ key;
 
@@ -150,7 +149,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
             to = std::any::type_name::<B>()
         );
         if let Some(hash) = self.hashed_parts() {
-            ResourceKey::<B>::with_hash_value(hash)
+            ResourceKey::<B>::with_hash_key(hash)
         } else {
             ResourceKey::<B>::new()
         }
@@ -251,24 +250,24 @@ bitflags::bitflags! {
     struct ResourceKeyFlags: u16 {
         /// Resource key was created from hashing a value,
         ///
-        const HASHED = 1 << 3;
+        const HASHED = 1;
         /// If set, the type name of the resource has been hashed into the resource key,
         ///
-        const HASH_TYPE_NAME = 1 << 5;
+        const HASH_TYPE_NAME = 1 << 1;
         /// If set the type name of an owning type has been hashed into the resource key,
         ///
-        const HASH_OWNER_TYPE_NAME = 1 << 6;
+        const HASH_OWNER_TYPE_NAME = 1 << 2;
         /// If set, the field offset has been hashed into the resource key,
         ///
-        const HASH_OFFSET_TYPE_NAME = 1 << 7;
+        const HASH_OFFSET_TYPE_NAME = 1 << 3;
         /// If set, the field name has been hashed into the resource key,
         ///
-        const HASH_FIELD_NAME = 1 << 8;
+        const HASH_FIELD_NAME = 1 << 4;
         /// If set, the tag value has been hashed into the resource key,
         ///
-        const HASH_TAG_VALUE = 1 << 9;
+        const HASH_TAG_VALUE = 1 << 5;
         /// If set, the length of the field name was hashed into the resoruce key,
         ///
-        const HASH_FIELD_NAME_LEN = 1 << 10;
+        const HASH_FIELD_NAME_LEN = 1 << 6;
     }
 }
