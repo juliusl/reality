@@ -43,6 +43,9 @@ define_intern_table!(INPUT: String);
 // Intern table for tag values
 define_intern_table!(TAG: String);
 
+// Intern table for node index values
+define_intern_table!(NODE_IDX: usize);
+
 // Intern table for address values
 define_intern_table!(ADDRESS: String);
 
@@ -250,34 +253,39 @@ impl Level for FieldLevel {
     }
 }
 
-/// Input level is a dynamic level of representation,
+/// Node level is a dynamic level of representation,
 ///
-/// Input level asserts and records the input paramters for some resource.
+/// Node level asserts and records the input paramters for some resource as well as ordinality.
 ///
-pub struct InputLevel {
+pub struct NodeLevel {
     /// Runmd expression representing this resource,
     ///
     input: Tag<String, Arc<String>>,
     /// Tag value assigned to this resource,
     ///
     tag: Tag<String, Arc<String>>,
+    /// Node idx,
+    /// 
+    idx: Tag<usize, Arc<usize>>,
 }
 
-impl InputLevel {
+impl NodeLevel {
     /// Creates a new input level representation,
     ///
-    pub fn new(input: impl Into<String>, tag: impl Into<String>) -> Self {
+    pub fn new(input: impl Into<String>, tag: impl Into<String>, idx: usize) -> Self {
         Self {
             input: Tag::new(&INPUT, Arc::new(input.into())),
             tag: Tag::new(&TAG, Arc::new(tag.into())),
+            idx: Tag::new(&NODE_IDX, Arc::new(idx)),
         }
     }
 }
 
-impl Level for InputLevel {
+impl Level for NodeLevel {
     fn configure(&self, interner: &mut impl InternerFactory) -> InternResult {
         push_tag!(dyn interner, &self.input);
         push_tag!(dyn interner, &self.tag);
+        push_tag!(dyn interner, &self.idx);
 
         interner.set_level_flags(LevelFlags::LEVEL_2);
 

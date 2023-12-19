@@ -105,12 +105,9 @@ impl InternHandle {
         self.link > 0
     }
 
-    /// Returns a node view of the current intern handle,
+    /// Returns a split view of the current intern handle providing the current and previous nodes,
     /// 
     pub fn node(&self) -> (Option<InternHandle>, InternHandle) {
-        let mut current = self.clone();
-        current.link = 0;
-
         let prev = self.link ^ self.register();
         
         let [lo, hi] = bytemuck::cast::<u32, [u16; 2]>(prev);
@@ -122,6 +119,9 @@ impl InternHandle {
             let _ = prev_handle.insert(InternHandle { link: 0, register_hi: hi, register_lo: lo });
         }
 
+        let mut current = self.clone();
+        current.link = 0;
+        
         (prev_handle, current)
     }
 
@@ -381,7 +381,7 @@ impl<T: Send + Sync + 'static> InternTable<T> {
 }
 
 bitflags::bitflags! {
-    /// Level flags,
+    /// Representation level flags,
     ///
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
     pub struct LevelFlags : u16 {
@@ -404,5 +404,17 @@ bitflags::bitflags! {
         /// Representation level 4
         ///
         const LEVEL_4 = 0x0100 << 4;
+
+        /// Representation level 5
+        /// 
+        const LEVEL_5 = 0x0100 << 5;
+        
+        /// Representation level 6
+        /// 
+        const LEVEL_6 = 0x0100 << 6;
+        
+        /// Representation level 7
+        /// 
+        const LEVEL_7 = 0x0100 << 7;
     }
 }

@@ -54,7 +54,7 @@ pub mod prelude {
 
     pub use super::repr::ResourceLevel;
     pub use super::repr::FieldLevel;
-    pub use super::repr::InputLevel;
+    pub use super::repr::NodeLevel;
     pub use super::repr::HostLevel;
     pub use super::repr::ReprFactory;
     pub use super::repr::Repr;
@@ -186,7 +186,7 @@ mod tests {
 
         let resource = ResourceLevel::new::<String>().configure(&mut interner).result().unwrap();
         let field = FieldLevel::new::<0, Test>().configure(&mut interner).result().unwrap();
-        let input = InputLevel::new("hello world", "").configure(&mut interner).result().unwrap();
+        let input = NodeLevel::new("hello world", "", 0).configure(&mut interner).result().unwrap();
 
         let from = Tag::new(&HANDLES, Arc::new(resource));
         let to = Tag::new(&HANDLES, Arc::new(field));

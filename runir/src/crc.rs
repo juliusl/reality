@@ -140,7 +140,7 @@ mod tests {
     use crate::{
         interner::LevelFlags,
         prelude::*,
-        repr::{FieldLevel, HostLevel, InputLevel, Level, ResourceLevel},
+        repr::{FieldLevel, HostLevel, NodeLevel, Level, ResourceLevel},
     };
 
     struct Test;
@@ -178,12 +178,12 @@ mod tests {
         assert_eq!(LevelFlags::LEVEL_1, handle.level_flags());
 
         // Test input level
-        let handle_1 = InputLevel::new("hello world", "")
+        let handle_1 = NodeLevel::new("hello world", "", 0)
             .configure(&mut interner)
             .wait_for_ready()
             .await;
         // Test no unexpected side effects exist
-        let handle_2 = InputLevel::new("hello world", "")
+        let handle_2 = NodeLevel::new("hello world", "", 0)
             .configure(&mut interner)
             .wait_for_ready()
             .await;
@@ -218,7 +218,7 @@ mod tests {
         repr.push_level(FieldLevel::new::<0, Test>()).unwrap();
         repr.push_level(FieldLevel::new::<0, Test>())
             .expect_err("should be an error");
-        repr.push_level(InputLevel::new("hello world", "")).unwrap();
+        repr.push_level(NodeLevel::new("hello world", "", 0)).unwrap();
         repr.push_level(HostLevel::new("engine://")).unwrap();
 
         assert_eq!(3, repr.level());
