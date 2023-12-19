@@ -1,4 +1,5 @@
 use std::any::TypeId;
+use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -45,6 +46,9 @@ define_intern_table!(TAG: String);
 
 // Intern table for node index values
 define_intern_table!(NODE_IDX: usize);
+
+// Intern table for node level annotations
+define_intern_table!(ANNOTATIONS: BTreeMap<String, String>);
 
 // Intern table for address values
 define_intern_table!(ADDRESS: String);
@@ -265,18 +269,27 @@ pub struct NodeLevel {
     ///
     tag: Tag<String, Arc<String>>,
     /// Node idx,
-    /// 
+    ///
     idx: Tag<usize, Arc<usize>>,
+    /// Node annotations,
+    ///
+    annotations: Tag<BTreeMap<String, String>, Arc<BTreeMap<String, String>>>,
 }
 
 impl NodeLevel {
     /// Creates a new input level representation,
     ///
-    pub fn new(input: impl Into<String>, tag: impl Into<String>, idx: usize) -> Self {
+    pub fn new(
+        input: impl Into<String>,
+        tag: impl Into<String>,
+        idx: usize,
+        annotations: BTreeMap<String, String>,
+    ) -> Self {
         Self {
             input: Tag::new(&INPUT, Arc::new(input.into())),
             tag: Tag::new(&TAG, Arc::new(tag.into())),
             idx: Tag::new(&NODE_IDX, Arc::new(idx)),
+            annotations: Tag::new(&ANNOTATIONS, Arc::new(annotations)),
         }
     }
 }
@@ -286,6 +299,7 @@ impl Level for NodeLevel {
         push_tag!(dyn interner, &self.input);
         push_tag!(dyn interner, &self.tag);
         push_tag!(dyn interner, &self.idx);
+        push_tag!(dyn interner, &self.annotations);
 
         interner.set_level_flags(LevelFlags::LEVEL_2);
 
@@ -382,7 +396,7 @@ impl<I: InternerFactory + Default> ReprFactory<I> {
     }
 
     /// Constructs and returns a new representation,
-    /// 
+    ///
     pub async fn repr(&self) -> anyhow::Result<Repr> {
         use futures::TryStreamExt;
 
@@ -393,9 +407,10 @@ impl<I: InternerFactory + Default> ReprFactory<I> {
                 |from, to| async move {
                     let _ = from.link(to).await?;
 
-                    Ok(to.clone()) 
+                    Ok(to.clone())
                 },
-            ).await?;
+            )
+            .await?;
 
         let tail = tail.value();
         eprintln!("Tail -- {:?}", tail);
@@ -423,15 +438,15 @@ pub struct Repr {
 
 impl Repr {
     /// Returns as a u64 value,
-    /// 
+    ///
     pub fn as_u64(&self) -> u64 {
         self.tail.as_u64()
     }
 
     /// Return a vector containing an intern handle pointing to each level of this representation,
-    /// 
+    ///
     /// The vector is ordered w/ the first element as the root and the last as the tail.
-    /// 
+    ///
     pub(crate) fn _levels(&self) -> Vec<InternHandle> {
         let mut levels = vec![];
         let mut cursor = self.tail.node();
@@ -441,7 +456,7 @@ impl Repr {
                     let prev = HANDLES.try_copy(&prev).unwrap();
                     levels.push(current);
                     cursor = prev.node();
-                },
+                }
                 (None, current) => {
                     levels.push(current);
                     levels.reverse();

@@ -57,7 +57,7 @@ pub struct InternHandle {
     ///
     pub(crate) link: u32,
     /// Upper register,
-    /// 
+    ///
     /// **Note on CrcInterner impl**: The first half of the upper register contains the level bits.
     ///
     pub(crate) register_hi: u16,
@@ -87,41 +87,45 @@ impl InternHandle {
     ///
     pub fn register(&self) -> u32 {
         let register = bytemuck::cast::<[u16; 2], u32>([self.register_lo, self.register_hi]);
-    
+
         register
     }
 
     /// Returns true if the current handle is a root handle,
-    /// 
+    ///
     pub fn is_root(&self) -> bool {
         self.level_flags() == LevelFlags::ROOT
     }
 
     /// Returns true if the current handle is a node handle,
-    /// 
+    ///
     /// **Note** A node handle contains a non-zero link value.
-    /// 
+    ///
     pub fn is_node(&self) -> bool {
         self.link > 0
     }
 
     /// Returns a split view of the current intern handle providing the current and previous nodes,
-    /// 
+    ///
     pub fn node(&self) -> (Option<InternHandle>, InternHandle) {
         let prev = self.link ^ self.register();
-        
+
         let [lo, hi] = bytemuck::cast::<u32, [u16; 2]>(prev);
 
         let prev_level = LevelFlags::from_bits_truncate(hi);
 
         let mut prev_handle = None;
         if prev_level.bits() << 1 == self.level_flags().bits() {
-            let _ = prev_handle.insert(InternHandle { link: 0, register_hi: hi, register_lo: lo });
+            let _ = prev_handle.insert(InternHandle {
+                link: 0,
+                register_hi: hi,
+                register_lo: lo,
+            });
         }
 
         let mut current = self.clone();
         current.link = 0;
-        
+
         (prev_handle, current)
     }
 
@@ -223,6 +227,9 @@ impl InternResult {
     }
 
     /// Returns as std result,
+    /// 
+    /// **Note** Since this is not waiting for the intern handle to be ready, it's possible trying to use this handle
+    /// will not return anything.
     ///
     pub fn result(mut self) -> anyhow::Result<InternHandle> {
         if let Some(err) = self.error.take() {
@@ -406,15 +413,15 @@ bitflags::bitflags! {
         const LEVEL_4 = 0x0100 << 4;
 
         /// Representation level 5
-        /// 
+        ///
         const LEVEL_5 = 0x0100 << 5;
-        
+
         /// Representation level 6
-        /// 
+        ///
         const LEVEL_6 = 0x0100 << 6;
-        
+
         /// Representation level 7
-        /// 
+        ///
         const LEVEL_7 = 0x0100 << 7;
     }
 }

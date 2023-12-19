@@ -69,19 +69,22 @@ This is the next dynamic level of representation and contains information provid
 **Defined Tags** - The following table are all currently defined tags.
 
 | Level | LevelName     | Name          | Type          | Description |
-| ----- | ------------- | ------------- | ------------- | --------------------------------------------------------------------------------- |
-| 0     | ResourceLevel | type_id       | TypeId        | The type id value assigned by the compiler/runtime.                               |
-| 0     | ResourceLevel | type_name     | &'static str  | The name of the type assigned by the compiler/runtime.                            |
-| 0     | ResourceLevel | type_size     | usize         | The size of the type.                                                             |
-| 1     | FieldLevel    | owner_type_id | TypeId        | The type id value assigned by the compiler/runtime for the owner of this field.   |
-| 1     | FieldLevel    | owner_name    | &'static str  | The type name value assigned by the compiler/runtime for the owner of this field. |
-| 1     | FieldLevel    | owner_size    | usize         | The size of the type for the owner of this field.                                 |
-| 1     | FieldLevel    | field_offset  | usize         | The offset of this field according to the owner of this field.                    |
-| 1     | FieldLevel    | field_name    | &'static str  | The name of the field according to the owner of this field.                       |
-| 2     | NodeLevel     | input         | String        | The input value passed to the node that initialized this representation.          |
-| 2     | NodeLevel     | tag           | String        | The tag value passed to the node that initialized this representation.            |
-| 2     | NodeLevel     | idx           | usize         | The index or ordinal position of this node, with respect to it's parent node.     |
-| 3     | HostLevel     | address       | String        | The address assigned to this representation managed by a host namespace.          |
+| ----- | ------------- | ------------- | ------------- | ------------------------------------------------------------------------------------- |
+| 0     | ResourceLevel | type_id       | TypeId        | The type id value assigned by the compiler/runtime.                                   |
+| 0     | ResourceLevel | type_name     | &'static str  | The name of the type assigned by the compiler/runtime.                                |
+| 0     | ResourceLevel | type_size     | usize         | The size of the type.                                                                 |
+| 1     | FieldLevel    | owner_type_id | TypeId        | The type id value assigned by the compiler/runtime for the owner of this field.       |
+| 1     | FieldLevel    | owner_name    | &'static str  | The type name value assigned by the compiler/runtime for the owner of this field.     |
+| 1     | FieldLevel    | owner_size    | usize         | The size of the type for the owner of this field.                                     |
+| 1     | FieldLevel    | field_offset  | usize         | The offset of this field according to the owner of this field.                        |
+| 1     | FieldLevel    | field_name    | &'static str  | The name of the field according to the owner of this field.                           |
+| 2     | NodeLevel     | input         | String        | The input value passed to the node that initialized this representation.              |
+| 2     | NodeLevel     | tag           | String        | The tag value passed to the node that initialized this representation.                |
+| 2     | NodeLevel     | idx           | usize         | The index or ordinal position of this node, with respect to it's parent node.         |
+| 2     | NodeLevel     | annotations   | Map*          | Ordered map of annotations passed to the node that initialized this representation.   |
+| 3     | HostLevel     | address       | String        | The address assigned to this representation managed by a host namespace.              |
+
+***Map type is `BTreeMap<String, String>`**
 
 Consumers of this library can defined their own level/tag which start at representation Level 3 or 4 depending on use case. 
 

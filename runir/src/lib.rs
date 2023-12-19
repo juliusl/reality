@@ -52,12 +52,12 @@ pub mod prelude {
 
     pub use super::field::Field;
 
-    pub use super::repr::ResourceLevel;
     pub use super::repr::FieldLevel;
-    pub use super::repr::NodeLevel;
     pub use super::repr::HostLevel;
-    pub use super::repr::ReprFactory;
+    pub use super::repr::NodeLevel;
     pub use super::repr::Repr;
+    pub use super::repr::ReprFactory;
+    pub use super::repr::ResourceLevel;
 
     #[cfg(feature = "crc-interner")]
     pub use super::crc::CrcInterner;
@@ -76,9 +76,9 @@ pub mod prelude {
 #[allow(dead_code)]
 #[allow(unused)]
 mod tests {
-    use std::sync::Arc;
+    use std::{collections::BTreeMap, sync::Arc};
 
-    use crate::repr::{Tag, HANDLES, Level};
+    use crate::repr::{Level, Tag, HANDLES, ANNOTATIONS};
 
     use super::prelude::*;
 
@@ -184,19 +184,32 @@ mod tests {
 
         let mut interner = CrcInterner::default();
 
-        let resource = ResourceLevel::new::<String>().configure(&mut interner).result().unwrap();
-        let field = FieldLevel::new::<0, Test>().configure(&mut interner).result().unwrap();
-        let input = NodeLevel::new("hello world", "", 0).configure(&mut interner).result().unwrap();
+        let resource = ResourceLevel::new::<String>()
+            .configure(&mut interner)
+            .result()
+            .unwrap();
+        let field = FieldLevel::new::<0, Test>()
+            .configure(&mut interner)
+            .result()
+            .unwrap();
+
+        let mut annotations = BTreeMap::new();
+        annotations.insert("description".to_string(), "really cool node".to_string());
+
+        let input = NodeLevel::new("hello world", "", 0, annotations)
+            .configure(&mut interner)
+            .wait_for_ready()
+            .await;
 
         let from = Tag::new(&HANDLES, Arc::new(resource));
         let to = Tag::new(&HANDLES, Arc::new(field));
 
-        let linked = from.link(&to).await.unwrap();
+        // TODO: convert eprintlns to asserts
 
+        let linked = from.link(&to).await.unwrap();
         eprintln!("{:x?}", linked);
 
-        let (prev, current) = linked.node(); 
-
+        let (prev, current) = linked.node();
         eprintln!("{:x?} -> {:x?}", prev, current);
 
         let linked = &HANDLES.try_get(&current).unwrap();
@@ -212,6 +225,9 @@ mod tests {
 
         let linked = &HANDLES.try_get(&prev.unwrap()).unwrap();
         eprintln!("{:x?}", linked.upgrade());
+
+        let a = ANNOTATIONS.try_strong_ref(&input).unwrap();
+        eprintln!("{:?}", a);
 
         ()
     }
