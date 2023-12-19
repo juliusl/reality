@@ -1,7 +1,6 @@
+mod field;
 mod interner;
 mod repr;
-
-mod field;
 
 #[cfg(feature = "crc-interner")]
 mod crc;
