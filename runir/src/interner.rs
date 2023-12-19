@@ -12,8 +12,15 @@ use serde::Serialize;
 use tokio::sync::Notify;
 
 use crate::repr::ADDRESS;
+use crate::repr::ANNOTATIONS;
 use crate::repr::FIELD_NAME;
 use crate::repr::FIELD_OFFSET;
+use crate::repr::INPUT;
+use crate::repr::NODE_IDX;
+use crate::repr::OWNER_ID;
+use crate::repr::OWNER_NAME;
+use crate::repr::OWNER_SIZE;
+use crate::repr::TAG;
 use crate::repr::TYPE_ID;
 use crate::repr::TYPE_NAME;
 use crate::repr::TYPE_SIZE;
@@ -165,6 +172,42 @@ impl InternHandle {
         TYPE_SIZE.try_copy(self)
     }
 
+    /// Returns the type id of the owner of this field,
+    /// 
+    pub async fn owner_type_id(&self) -> Option<TypeId> {
+        OWNER_ID.copy(self).await
+    }
+
+    /// Tries to return the type id of the owner of this field,
+    /// 
+    pub fn try_owner_type_id(&self) -> Option<TypeId> {
+        OWNER_ID.try_copy(self)
+    }
+
+    /// Returns the type name of the owner of this field,
+    /// 
+    pub async fn owner_name(&self) -> Option<&'static str> {
+        OWNER_NAME.copy(self).await
+    }
+
+    /// Tries to return the type name of the owner of this field,
+    /// 
+    pub fn try_owner_name(&self) -> Option<&'static str> {
+        OWNER_NAME.try_copy(self)
+    }
+
+    /// Returns the type size of the owner of this field,
+    /// 
+    pub async fn owner_size(&self) -> Option<usize> {
+        OWNER_SIZE.copy(self).await
+    }
+
+    /// Tries to return the type size of the owner of this field,
+    /// 
+    pub fn try_owner_size(&self) -> Option<usize> {
+        OWNER_SIZE.try_copy(self)
+    }
+
     /// Returns the field offset,
     ///
     pub async fn field_offset(&self) -> Option<usize> {
@@ -187,6 +230,54 @@ impl InternHandle {
     ///
     pub fn try_field_name(&self) -> Option<&'static str> {
         FIELD_NAME.try_copy(self)
+    }
+
+    /// Returns a strong reference to the input,
+    /// 
+    pub async fn input(&self) -> Option<Arc<String>> {
+        INPUT.strong_ref(self).await
+    }
+
+    /// Tries to return a strong reference to the input,
+    /// 
+    pub fn try_input(&self) -> Option<Arc<String>> {
+        INPUT.try_strong_ref(self)
+    }
+
+    /// Returns a strong reference to the tag,
+    /// 
+    pub async fn tag(&self) -> Option<Arc<String>> {
+        TAG.strong_ref(self).await
+    }
+
+    /// Tries to return a strong reference to the tag,
+    /// 
+    pub fn try_tag(&self) -> Option<Arc<String>> {
+        TAG.try_strong_ref(self)
+    }
+
+    /// Returns a strong reference to the node idx,
+    /// 
+    pub async fn node_idx(&self) -> Option<usize> {
+        NODE_IDX.copy(self).await
+    }
+
+    /// Tries to return a strong reference to the node idx,
+    /// 
+    pub fn try_node_idx(&self) -> Option<usize> {
+        NODE_IDX.try_copy(self)
+    }
+
+    /// Returns a strong reference to annotations,
+    /// 
+    pub async fn annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
+        ANNOTATIONS.strong_ref(self).await
+    }
+
+    /// Tries to return a strong reference to annotations,
+    /// 
+    pub fn try_annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
+        ANNOTATIONS.try_strong_ref(self)
     }
 
     /// Returns the address,
