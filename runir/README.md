@@ -89,3 +89,7 @@ This is the next dynamic level of representation and contains information provid
 Consumers of this library can defined their own level/tag which start at representation Level 3 or 4 depending on use case. 
 
 The max allowed representation levels is 8 (including the root level).
+
+# Roadmap
+- **Phase 0** Integrate into reality.
+- **Phase 1** Initialize intern tables from filesystem.
