@@ -3,6 +3,9 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use anyhow::anyhow;
+use futures::StreamExt;
+use serde::Deserialize;
+use serde::Serialize;
 
 use crate::interner::InternResult;
 use crate::interner::LevelFlags;
@@ -107,6 +110,32 @@ impl<T: ToOwned<Owned = T> + Send + Sync + 'static> Tag<T, Arc<T>> {
     ///
     pub fn value(&self) -> T {
         self.create_value.deref().to_owned()
+    }
+}
+
+impl Tag<InternHandle, Arc<InternHandle>> {
+    /// Creates and assigns an intern handle representing the link between the current intern handle and the
+    /// next intern handle.
+    ///
+    pub async fn link(
+        &self,
+        next: &Tag<InternHandle, Arc<InternHandle>>,
+    ) -> anyhow::Result<InternHandle> {
+        let from = self.create_value.clone();
+        let to = next.create_value.clone();
+
+        // if from.level_flags().bits() << 1 != to.level_flags().bits() {
+        //     Err(anyhow!("Trying to link an intern handle out of order"))?;
+        // }
+
+        let link = from.register() ^ to.register();
+
+        let mut out = *to.clone();
+        out.link = link;
+
+        Tag::new(&HANDLES, Arc::new(out)).assign(*to).await?;
+
+        Ok(out)
     }
 }
 
@@ -318,6 +347,7 @@ impl<I: InternerFactory + Default> ReprFactory<I> {
     /// Pushes a level to the current stack of levels,
     ///
     pub fn push_level(&mut self, level: impl Level) -> anyhow::Result<()> {
+        // Configure a new handle
         let handle = level.configure(&mut self.interner).result()?;
 
         // Handle errors
@@ -327,10 +357,11 @@ impl<I: InternerFactory + Default> ReprFactory<I> {
             if flag != LevelFlags::from_bits_truncate(handle.level_flags().bits() >> 1) {
                 Err(anyhow!("Expected next level"))?;
             }
-        } else if handle.level_flags().bits() != 0 {
+        } else if handle.level_flags() != LevelFlags::ROOT {
             Err(anyhow!("Expected root level"))?;
         }
 
+        // Push the level to the stack
         self.levels.push(Tag::new(&HANDLES, Arc::new(handle)));
 
         Ok(())
@@ -340,5 +371,75 @@ impl<I: InternerFactory + Default> ReprFactory<I> {
     ///
     pub fn level(&self) -> usize {
         self.levels.len() - 1
+    }
+
+    /// Constructs and returns a new representation,
+    /// 
+    pub async fn repr(&self) -> anyhow::Result<Repr> {
+        use futures::TryStreamExt;
+
+        let tail = futures::stream::iter(self.levels.iter())
+            .map(Ok::<_, anyhow::Error>)
+            .try_fold(
+                Tag::new(&HANDLES, Arc::new(InternHandle::default())),
+                |from, to| async move {
+                    let _ = from.link(to).await?;
+
+                    Ok(to.clone()) 
+                },
+            ).await?;
+
+        let tail = tail.value();
+        eprintln!("Tail -- {:?}", tail);
+
+        if let Some(tail) = HANDLES.copy(&tail).await {
+            Ok(Repr { tail })
+        } else {
+            Err(anyhow!("Could not create representation"))
+        }
+    }
+}
+
+/// Struct containing the tail reference of the representation,
+///
+/// A repr is a linked list of intern handle nodes that can unravel back into
+/// a repr factory. This allows the repr to store and pass around a single u64 value
+/// which can be used to query interned tags from each level.
+///
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Repr {
+    /// Tail end of the linked list,
+    ///
+    pub(crate) tail: InternHandle,
+}
+
+impl Repr {
+    /// Returns as a u64 value,
+    /// 
+    pub fn as_u64(&self) -> u64 {
+        self.tail.as_u64()
+    }
+
+    /// Return a vector containing an intern handle pointing to each level of this representation,
+    /// 
+    /// The vector is ordered w/ the first element as the root and the last as the tail.
+    /// 
+    pub(crate) fn _levels(&self) -> Vec<InternHandle> {
+        let mut levels = vec![];
+        let mut cursor = self.tail.node();
+        loop {
+            match cursor {
+                (Some(prev), current) => {
+                    let prev = HANDLES.try_copy(&prev).unwrap();
+                    levels.push(current);
+                    cursor = prev.node();
+                },
+                (None, current) => {
+                    levels.push(current);
+                    levels.reverse();
+                    return levels;
+                }
+            }
+        }
     }
 }

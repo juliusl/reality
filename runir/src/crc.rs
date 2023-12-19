@@ -22,7 +22,7 @@ pub struct CrcInterner {
     flags: RefCell<LevelFlags>,
     /// Stack of tags being interned,
     ///
-    tags: Vec<FutureThunk>,
+    tags: Vec<InternHandleFutureThunk>,
 }
 
 impl Default for CrcInterner {
@@ -157,7 +157,6 @@ mod tests {
     #[tokio::test]
     async fn test_interner() {
         let mut interner = CrcInterner::new();
-
         /*
            NOTE: These are "canary" tests so may be unstable initially. The idea is to assert
            if the inner type representation from the compiler has changed unexpectedly. In theory, this
@@ -209,8 +208,8 @@ mod tests {
         ()
     }
 
-    #[test]
-    fn test_repr_factory() {
+    #[tokio::test]
+    async fn test_repr_factory() {
         let mut repr = ReprFactory::<CrcInterner>::describe_resource::<String>();
 
         // Assert the level is at the root
@@ -223,5 +222,15 @@ mod tests {
         repr.push_level(HostLevel::new("engine://")).unwrap();
 
         assert_eq!(3, repr.level());
+
+        let repr = repr.repr().await.unwrap();
+        eprintln!("{:x?}", repr);
+
+        let levels = repr._levels();
+        eprintln!("{:#x?}", levels);
+
+        eprintln!("{:x?}", repr.as_u64());
+
+        ()
     }
 }

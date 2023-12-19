@@ -49,8 +49,6 @@ pub trait InternerFactory {
 
 /// Handle which can be converted into a 64-bit key,
 ///
-/// The handle is modular
-///
 #[derive(
     Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
@@ -59,6 +57,8 @@ pub struct InternHandle {
     ///
     pub(crate) link: u32,
     /// Upper register,
+    /// 
+    /// **Note on CrcInterner impl**: The first half of the upper register contains the level bits.
     ///
     pub(crate) register_hi: u16,
     /// Lower register,
@@ -75,10 +75,54 @@ impl InternHandle {
 
     /// Converts the handle to a u64 value,
     ///
+    /// **Note**: This contains the full handle value.
+    ///
     pub fn as_u64(&self) -> u64 {
         uuid::Uuid::from_fields(self.link, self.register_hi, self.register_lo, &[0; 8])
             .as_u64_pair()
             .0
+    }
+
+    /// Returns the register value of the current handle,
+    ///
+    pub fn register(&self) -> u32 {
+        let register = bytemuck::cast::<[u16; 2], u32>([self.register_lo, self.register_hi]);
+    
+        register
+    }
+
+    /// Returns true if the current handle is a root handle,
+    /// 
+    pub fn is_root(&self) -> bool {
+        self.level_flags() == LevelFlags::ROOT
+    }
+
+    /// Returns true if the current handle is a node handle,
+    /// 
+    /// **Note** A node handle contains a non-zero link value.
+    /// 
+    pub fn is_node(&self) -> bool {
+        self.link > 0
+    }
+
+    /// Returns a node view of the current intern handle,
+    /// 
+    pub fn node(&self) -> (Option<InternHandle>, InternHandle) {
+        let mut current = self.clone();
+        current.link = 0;
+
+        let prev = self.link ^ self.register();
+        
+        let [lo, hi] = bytemuck::cast::<u32, [u16; 2]>(prev);
+
+        let prev_level = LevelFlags::from_bits_truncate(hi);
+
+        let mut prev_handle = None;
+        if prev_level.bits() << 1 == self.level_flags().bits() {
+            let _ = prev_handle.insert(InternHandle { link: 0, register_hi: hi, register_lo: lo });
+        }
+
+        (prev_handle, current)
     }
 
     /// Returns the resource type id,
@@ -125,7 +169,7 @@ impl InternHandle {
 
     /// Tries to return the field offset,
     ///
-    pub async fn try_field_offset(&self) -> Option<usize> {
+    pub fn try_field_offset(&self) -> Option<usize> {
         FIELD_OFFSET.try_copy(self)
     }
 
@@ -343,7 +387,7 @@ bitflags::bitflags! {
     pub struct LevelFlags : u16 {
         /// Root representation level
         ///
-        const ROOT = 0x0000;
+        const ROOT = 0x0100;
 
         /// Representation Level 1
         ///
