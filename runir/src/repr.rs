@@ -23,6 +23,12 @@ define_intern_table!(TYPE_SIZE: usize);
 // Intern table for resource type ids
 define_intern_table!(TYPE_ID: TypeId);
 
+// Intern table for dependency names
+define_intern_table!(DEPENDENCY_NAME: String);
+
+// Intern table for parents of dependencies
+define_intern_table!(DEPENDENCY_PARENT: Repr);
+
 // Intern table for owner type ids
 define_intern_table!(OWNER_ID: TypeId);
 
@@ -80,6 +86,7 @@ pub(crate) struct Tag<T: Send + Sync + 'static, F: Sync = fn() -> T> {
 impl<T: Send + Sync + 'static, F: Sync> Tag<T, F> {
     /// Returns a new tag,
     ///
+    #[inline]
     pub const fn new(intern_table: &'static InternTable<T>, create_value: F) -> Self {
         Self {
             intern_table,
@@ -91,6 +98,7 @@ impl<T: Send + Sync + 'static, F: Sync> Tag<T, F> {
 impl<T: Send + Sync + 'static> Tag<T> {
     /// Assigns a value to an intern handle,
     ///
+    #[inline]
     pub async fn assign(&self, handle: InternHandle) -> anyhow::Result<()> {
         self.intern_table
             .assign_intern(handle, (self.create_value)())
@@ -99,6 +107,7 @@ impl<T: Send + Sync + 'static> Tag<T> {
 
     /// Returns the inner value,
     ///
+    #[inline]
     pub fn value(&self) -> T {
         (self.create_value)()
     }
@@ -107,6 +116,7 @@ impl<T: Send + Sync + 'static> Tag<T> {
 impl<T: ToOwned<Owned = T> + Send + Sync + 'static> Tag<T, Arc<T>> {
     /// Assign a value to an intern handle,
     ///
+    #[inline]
     pub async fn assign(&self, handle: InternHandle) -> anyhow::Result<()> {
         self.intern_table
             .assign_intern(handle, self.create_value.deref().to_owned())
@@ -115,6 +125,7 @@ impl<T: ToOwned<Owned = T> + Send + Sync + 'static> Tag<T, Arc<T>> {
 
     /// Returns the inner value,
     ///
+    #[inline]
     pub fn value(&self) -> T {
         self.create_value.deref().to_owned()
     }
@@ -131,9 +142,11 @@ impl Tag<InternHandle, Arc<InternHandle>> {
         let from = self.create_value.clone();
         let to = next.create_value.clone();
 
-        // if from.level_flags().bits() << 1 != to.level_flags().bits() {
-        //     Err(anyhow!("Trying to link an intern handle out of order"))?;
-        // }
+        if !from.level_flags().is_empty() {
+            if from.level_flags().bits() << 1 != to.level_flags().bits() {
+                Err(anyhow!("Trying to link an intern handle out of order"))?;
+            }
+        }
 
         let link = from.register() ^ to.register();
 
@@ -184,6 +197,7 @@ pub struct ResourceLevel {
 impl ResourceLevel {
     /// Creates a new type level representation,
     ///
+    #[inline]
     pub fn new<T: Send + Sync + 'static>() -> Self {
         Self {
             type_id: Tag::new(&TYPE_ID, std::any::TypeId::of::<T>),
@@ -198,6 +212,52 @@ impl Level for ResourceLevel {
         push_tag!(interner, self.type_id);
         push_tag!(interner, self.type_size);
         push_tag!(interner, self.type_name);
+
+        interner.set_level_flags(LevelFlags::ROOT);
+
+        interner.interner()
+    }
+}
+
+/// Dependency level contains tags identifying a dependency,
+///
+pub struct DependencyLevel {
+    /// Parent of this dependency,
+    ///
+    parent: Option<Tag<Repr, Arc<Repr>>>,
+    /// Name of the dependency,
+    ///
+    name: Tag<String, Arc<String>>,
+}
+
+impl DependencyLevel {
+    /// Returns a new dependency level w/ name,
+    ///
+    #[inline]
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            parent: None,
+            name: Tag::new(&DEPENDENCY_NAME, Arc::new(name.into())),
+        }
+    }
+
+    /// Sets the parent of this dependency,
+    ///
+    #[inline]
+    pub fn with_parent(mut self, parent: Repr) -> Self {
+        self.parent = Some(Tag::new(&DEPENDENCY_PARENT, Arc::new(parent)));
+        self
+    }
+}
+
+impl Level for DependencyLevel {
+    fn configure(&self, interner: &mut impl InternerFactory) -> InternResult {
+        if let Some(parent) = self.parent.as_ref() {
+            push_tag!(dyn interner, parent);
+        }
+        push_tag!(dyn interner, &self.name);
+
+        interner.set_level_flags(LevelFlags::LEVEL_1);
 
         interner.interner()
     }
@@ -322,6 +382,7 @@ pub struct HostLevel {
 impl HostLevel {
     /// Creates a new host level representation,
     ///
+    #[inline]
     pub fn new(address: impl Into<String>) -> Self {
         Self {
             address: Tag::new(&ADDRESS, Arc::new(address.into())),
@@ -357,6 +418,7 @@ where
 impl<I: InternerFactory + Default> ReprFactory<I> {
     /// Creates a new repr w/ the root as the ResourceLevel,
     ///
+    #[inline]
     pub fn describe_resource<T: Send + Sync + 'static>() -> Self {
         let mut repr = ReprFactory::default();
 
@@ -413,7 +475,6 @@ impl<I: InternerFactory + Default> ReprFactory<I> {
             .await?;
 
         let tail = tail.value();
-        eprintln!("Tail -- {:?}", tail);
 
         if let Some(tail) = HANDLES.copy(&tail).await {
             Ok(Repr { tail })
@@ -429,7 +490,9 @@ impl<I: InternerFactory + Default> ReprFactory<I> {
 /// a repr factory. This allows the repr to store and pass around a single u64 value
 /// which can be used to query interned tags from each level.
 ///
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Hash, Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub struct Repr {
     /// Tail end of the linked list,
     ///
@@ -439,6 +502,7 @@ pub struct Repr {
 impl Repr {
     /// Returns as a u64 value,
     ///
+    #[inline]
     pub fn as_u64(&self) -> u64 {
         self.tail.as_u64()
     }
@@ -447,7 +511,7 @@ impl Repr {
     ///
     /// The vector is ordered w/ the first element as the root and the last as the tail.
     ///
-    pub(crate) fn _levels(&self) -> Vec<InternHandle> {
+    pub(crate) fn try_get_levels(&self) -> Vec<InternHandle> {
         let mut levels = vec![];
         let mut cursor = self.tail.node();
         loop {
@@ -464,5 +528,267 @@ impl Repr {
                 }
             }
         }
+    }
+
+    /// Returns the repr as a dependency repr,
+    ///
+    #[inline]
+    pub fn as_dependency(&self) -> Option<DependencyRepr> {
+        // TODO: Check if this is actually DependencyLevel?
+        self.try_get_levels().get(1).copied().map(DependencyRepr)
+    }
+
+    /// Returns the repr as a field repr,
+    ///
+    #[inline]
+    pub fn as_field(&self) -> Option<FieldRepr> {
+        self.try_get_levels().get(1).copied().map(FieldRepr)
+    }
+
+    /// Returns the repr as a resource repr,
+    ///
+    #[inline]
+    pub fn as_resource(&self) -> Option<ResourceRepr> {
+        self.try_get_levels().get(0).copied().map(ResourceRepr)
+    }
+
+    /// Returns the repr as a node repr,
+    ///
+    #[inline]
+    pub fn as_node(&self) -> Option<NodeRepr> {
+        self.try_get_levels().get(2).copied().map(NodeRepr)
+    }
+
+    /// Returns the repr as a host repr,
+    ///
+    #[inline]
+    pub fn as_host(&self) -> Option<HostRepr> {
+        self.try_get_levels().get(3).copied().map(HostRepr)
+    }
+}
+
+/// Wrapper struct to access resource tags,
+///
+pub struct ResourceRepr(InternHandle);
+
+impl ResourceRepr {
+    /// Returns the tag value of the resource type name,
+    ///
+    #[inline]
+    pub async fn type_name(&self) -> Option<&'static str> {
+        self.0.resource_type_name().await
+    }
+
+    /// Returns the tag value of the resource type size,
+    ///
+    #[inline]
+    pub async fn type_size(&self) -> Option<usize> {
+        self.0.resource_type_size().await
+    }
+
+    /// Returns the tage value of the resource type id,
+    ///
+    #[inline]
+    pub async fn type_id(&self) -> Option<TypeId> {
+        self.0.resource_type_id().await
+    }
+
+    /// Returns the tag value of the resource type name,
+    ///
+    #[inline]
+    pub fn try_type_name(&self) -> Option<&'static str> {
+        self.0.try_resource_type_name()
+    }
+
+    /// Returns the tag value of the resource type size,
+    ///
+    #[inline]
+    pub fn try_type_size(&self) -> Option<usize> {
+        self.0.try_resource_type_size()
+    }
+
+    /// Returns the tage value of the resource type id,
+    ///
+    #[inline]
+    pub fn try_type_id(&self) -> Option<TypeId> {
+        self.0.try_resource_type_id()
+    }
+}
+
+/// Wrapper struct to access field tags,
+///
+pub struct FieldRepr(InternHandle);
+
+impl FieldRepr {
+    /// Returns the tag value of the field name,
+    ///
+    #[inline]
+    pub async fn name(&self) -> Option<&'static str> {
+        self.0.field_name().await
+    }
+
+    /// Returns the tag value of the field offset,
+    ///
+    #[inline]
+    pub async fn offset(&self) -> Option<usize> {
+        self.0.field_offset().await
+    }
+
+    /// Returns the tag value of the owner type name,
+    ///  
+    #[inline]
+    pub async fn owner_name(&self) -> Option<&'static str> {
+        self.0.owner_name().await
+    }
+
+    /// Returns the tag value of the owner type size,
+    ///
+    #[inline]
+    pub async fn owner_size(&self) -> Option<usize> {
+        self.0.owner_size().await
+    }
+
+    /// Returns the tag value of the owner's type id,
+    ///
+    #[inline]
+    pub async fn owner_type_id(&self) -> Option<TypeId> {
+        self.0.owner_type_id().await
+    }
+
+    /// Returns the tag value of the field name,
+    ///
+    #[inline]
+    pub fn try_name(&self) -> Option<&'static str> {
+        self.0.try_field_name()
+    }
+
+    /// Returns the tag value of the field offset,
+    ///
+    #[inline]
+    pub fn try_offset(&self) -> Option<usize> {
+        self.0.try_field_offset()
+    }
+
+    /// Returns the tag value of the owner type name,
+    ///  
+    #[inline]
+    pub fn try_owner_name(&self) -> Option<&'static str> {
+        self.0.try_owner_name()
+    }
+
+    /// Returns the tag value of the owner type size,
+    ///
+    #[inline]
+    pub fn try_owner_size(&self) -> Option<usize> {
+        self.0.try_owner_size()
+    }
+
+    /// Returns the tag value of the owner's type id,
+    ///
+    #[inline]
+    pub fn try_owner_type_id(&self) -> Option<TypeId> {
+        self.0.try_owner_type_id()
+    }
+}
+
+/// Wrapper struct with access to dependency tags,
+///
+pub struct DependencyRepr(InternHandle);
+
+impl DependencyRepr {
+    /// Returns the name of this dependency,
+    ///
+    #[inline]
+    pub async fn name(&self) -> Option<Arc<String>> {
+        self.0.dependency_name().await
+    }
+
+    /// Returns the parent of this dependency,
+    ///
+    #[inline]
+    pub async fn parent(&self) -> Option<Repr> {
+        self.0.dependency_parent().await
+    }
+
+    /// Returns the name of this dependency,
+    ///
+    #[inline]
+    pub fn try_name(&self) -> Option<Arc<String>> {
+        self.0.try_dependency_name()
+    }
+
+    /// Returns the parent of this dependency,
+    ///
+    #[inline]
+    pub fn try_parent(&self) -> Option<Repr> {
+        self.0.try_dependency_parent()
+    }
+}
+
+/// Wrapper struct with access to node tags,
+///
+pub struct NodeRepr(InternHandle);
+
+impl NodeRepr {
+    /// Returns node annotations,
+    ///
+    #[inline]
+    pub async fn annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
+        self.0.annotations().await
+    }
+
+    /// Returns node input,
+    ///
+    #[inline]
+    pub async fn input(&self) -> Option<Arc<String>> {
+        self.0.input().await
+    }
+
+    /// Returns node tag,
+    ///
+    #[inline]
+    pub async fn tag(&self) -> Option<Arc<String>> {
+        self.0.tag().await
+    }
+
+    /// Returns node annotations,
+    ///
+    #[inline]
+    pub fn try_annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
+        self.0.try_annotations()
+    }
+
+    /// Returns node input,
+    ///
+    #[inline]
+    pub fn try_input(&self) -> Option<Arc<String>> {
+        self.0.try_input()
+    }
+
+    /// Returns node tag,
+    ///
+    #[inline]
+    pub fn try_tag(&self) -> Option<Arc<String>> {
+        self.0.try_tag()
+    }
+}
+
+/// Wrapper struct with access to host tags,
+///
+pub struct HostRepr(InternHandle);
+
+impl HostRepr {
+    /// Returns the address provided by the host,
+    ///
+    #[inline]
+    pub async fn address(&self) -> Option<Arc<String>> {
+        self.0.address().await
+    }
+
+    /// Returns the address provided by the host,
+    ///
+    #[inline]
+    pub fn try_address(&self) -> Option<Arc<String>> {
+        self.0.try_address()
     }
 }

@@ -11,8 +11,11 @@ use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::Notify;
 
+use crate::prelude::Repr;
 use crate::repr::ADDRESS;
 use crate::repr::ANNOTATIONS;
+use crate::repr::DEPENDENCY_NAME;
+use crate::repr::DEPENDENCY_PARENT;
 use crate::repr::FIELD_NAME;
 use crate::repr::FIELD_OFFSET;
 use crate::repr::INPUT;
@@ -76,6 +79,7 @@ pub struct InternHandle {
 impl InternHandle {
     /// Returns the current level flag enabled for this intern handle,
     ///
+    #[inline]
     pub fn level_flags(&self) -> LevelFlags {
         LevelFlags::from_bits_truncate(self.register_hi)
     }
@@ -84,6 +88,7 @@ impl InternHandle {
     ///
     /// **Note**: This contains the full handle value.
     ///
+    #[inline]
     pub fn as_u64(&self) -> u64 {
         uuid::Uuid::from_fields(self.link, self.register_hi, self.register_lo, &[0; 8])
             .as_u64_pair()
@@ -92,6 +97,7 @@ impl InternHandle {
 
     /// Returns the register value of the current handle,
     ///
+    #[inline]
     pub fn register(&self) -> u32 {
         let register = bytemuck::cast::<[u16; 2], u32>([self.register_lo, self.register_hi]);
 
@@ -100,6 +106,7 @@ impl InternHandle {
 
     /// Returns true if the current handle is a root handle,
     ///
+    #[inline]
     pub fn is_root(&self) -> bool {
         self.level_flags() == LevelFlags::ROOT
     }
@@ -108,6 +115,7 @@ impl InternHandle {
     ///
     /// **Note** A node handle contains a non-zero link value.
     ///
+    #[inline]
     pub fn is_node(&self) -> bool {
         self.link > 0
     }
@@ -138,156 +146,210 @@ impl InternHandle {
 
     /// Returns the resource type id,
     ///
+    #[inline]
     pub async fn resource_type_id(&self) -> Option<TypeId> {
         TYPE_ID.copy(self).await
     }
 
     /// Tries to return the resource type id,
     ///
+    #[inline]
     pub fn try_resource_type_id(&self) -> Option<TypeId> {
         TYPE_ID.try_copy(self)
     }
 
     /// Returns the resource type name,
     ///
+    #[inline]
     pub async fn resource_type_name(&self) -> Option<&'static str> {
         TYPE_NAME.copy(self).await
     }
 
     /// Tries to return the resource type name,
     ///
+    #[inline]
     pub fn try_resource_type_name(&self) -> Option<&'static str> {
         TYPE_NAME.try_copy(self)
     }
 
     /// Returns the resource type size,
     ///
+    #[inline]
     pub async fn resource_type_size(&self) -> Option<usize> {
         TYPE_SIZE.copy(self).await
     }
 
     /// Tries to return the resource type size,
     ///
+    #[inline]
     pub fn try_resource_type_size(&self) -> Option<usize> {
         TYPE_SIZE.try_copy(self)
     }
 
+    /// Returns the parent of the dependency,
+    ///
+    #[inline]
+    pub async fn dependency_parent(&self) -> Option<Repr> {
+        DEPENDENCY_PARENT.copy(self).await
+    }
+
+    /// Tries to return the parent of the dependency,
+    ///
+    #[inline]
+    pub fn try_dependency_parent(&self) -> Option<Repr> {
+        DEPENDENCY_PARENT.try_copy(self)
+    }
+
+    /// Returns the name of the dependency,
+    ///
+    #[inline]
+    pub async fn dependency_name(&self) -> Option<Arc<String>> {
+        DEPENDENCY_NAME.strong_ref(self).await
+    }
+
+    /// Tries to return the name of the dependency,
+    ///
+    #[inline]
+    pub fn try_dependency_name(&self) -> Option<Arc<String>> {
+        DEPENDENCY_NAME.try_strong_ref(self)
+    }
+
     /// Returns the type id of the owner of this field,
-    /// 
+    ///
+    #[inline]
     pub async fn owner_type_id(&self) -> Option<TypeId> {
         OWNER_ID.copy(self).await
     }
 
     /// Tries to return the type id of the owner of this field,
-    /// 
+    ///
+    #[inline]
     pub fn try_owner_type_id(&self) -> Option<TypeId> {
         OWNER_ID.try_copy(self)
     }
 
     /// Returns the type name of the owner of this field,
-    /// 
+    ///
+    #[inline]
     pub async fn owner_name(&self) -> Option<&'static str> {
         OWNER_NAME.copy(self).await
     }
 
     /// Tries to return the type name of the owner of this field,
-    /// 
+    ///
+    #[inline]
     pub fn try_owner_name(&self) -> Option<&'static str> {
         OWNER_NAME.try_copy(self)
     }
 
     /// Returns the type size of the owner of this field,
-    /// 
+    ///
+    #[inline]
     pub async fn owner_size(&self) -> Option<usize> {
         OWNER_SIZE.copy(self).await
     }
 
     /// Tries to return the type size of the owner of this field,
-    /// 
+    ///
+    #[inline]
     pub fn try_owner_size(&self) -> Option<usize> {
         OWNER_SIZE.try_copy(self)
     }
 
     /// Returns the field offset,
     ///
+    #[inline]
     pub async fn field_offset(&self) -> Option<usize> {
         FIELD_OFFSET.copy(self).await
     }
 
     /// Tries to return the field offset,
     ///
+    #[inline]
     pub fn try_field_offset(&self) -> Option<usize> {
         FIELD_OFFSET.try_copy(self)
     }
 
     /// Returns the field name,
     ///
+    #[inline]
     pub async fn field_name(&self) -> Option<&'static str> {
         FIELD_NAME.copy(self).await
     }
 
     /// Tries to return the field name,
     ///
+    #[inline]
     pub fn try_field_name(&self) -> Option<&'static str> {
         FIELD_NAME.try_copy(self)
     }
 
     /// Returns a strong reference to the input,
-    /// 
+    ///
+    #[inline]
     pub async fn input(&self) -> Option<Arc<String>> {
         INPUT.strong_ref(self).await
     }
 
     /// Tries to return a strong reference to the input,
-    /// 
+    ///
+    #[inline]
     pub fn try_input(&self) -> Option<Arc<String>> {
         INPUT.try_strong_ref(self)
     }
 
     /// Returns a strong reference to the tag,
-    /// 
+    ///
+    #[inline]
     pub async fn tag(&self) -> Option<Arc<String>> {
         TAG.strong_ref(self).await
     }
 
     /// Tries to return a strong reference to the tag,
-    /// 
+    ///
+    #[inline]
     pub fn try_tag(&self) -> Option<Arc<String>> {
         TAG.try_strong_ref(self)
     }
 
     /// Returns a strong reference to the node idx,
-    /// 
+    ///
+    #[inline]
     pub async fn node_idx(&self) -> Option<usize> {
         NODE_IDX.copy(self).await
     }
 
     /// Tries to return a strong reference to the node idx,
-    /// 
+    ///
+    #[inline]
     pub fn try_node_idx(&self) -> Option<usize> {
         NODE_IDX.try_copy(self)
     }
 
     /// Returns a strong reference to annotations,
-    /// 
+    ///
+    #[inline]
     pub async fn annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
         ANNOTATIONS.strong_ref(self).await
     }
 
     /// Tries to return a strong reference to annotations,
-    /// 
+    ///
+    #[inline]
     pub fn try_annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
         ANNOTATIONS.try_strong_ref(self)
     }
 
     /// Returns the address,
     ///
+    #[inline]
     pub async fn address(&self) -> Option<Arc<String>> {
         ADDRESS.strong_ref(self).await
     }
 
     /// Tries to return the address,
     ///
+    #[inline]
     pub fn try_address(&self) -> Option<Arc<String>> {
         ADDRESS.try_strong_ref(self)
     }
@@ -318,7 +380,7 @@ impl InternResult {
     }
 
     /// Returns as std result,
-    /// 
+    ///
     /// **Note** Since this is not waiting for the intern handle to be ready, it's possible trying to use this handle
     /// will not return anything.
     ///
@@ -343,6 +405,7 @@ pub struct InternTable<T: Send + Sync + 'static> {
 impl<T: Send + Sync + 'static> InternTable<T> {
     /// Creates a new empty intern table,
     ///
+    #[inline]
     pub const fn new() -> Self {
         Self {
             inner: tokio::sync::RwLock::const_new(BTreeMap::new()),

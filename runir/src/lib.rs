@@ -52,12 +52,18 @@ pub mod prelude {
 
     pub use super::field::Field;
 
+    pub use super::repr::DependencyLevel;
+    pub use super::repr::DependencyRepr;
     pub use super::repr::FieldLevel;
+    pub use super::repr::FieldRepr;
     pub use super::repr::HostLevel;
+    pub use super::repr::HostRepr;
     pub use super::repr::NodeLevel;
+    pub use super::repr::NodeRepr;
     pub use super::repr::Repr;
     pub use super::repr::ReprFactory;
     pub use super::repr::ResourceLevel;
+    pub use super::repr::ResourceRepr;
 
     #[cfg(feature = "crc-interner")]
     pub use super::crc::CrcInterner;
@@ -78,7 +84,7 @@ pub mod prelude {
 mod tests {
     use std::{collections::BTreeMap, sync::Arc};
 
-    use crate::repr::{Level, Tag, HANDLES, ANNOTATIONS};
+    use crate::repr::{Level, Tag, ANNOTATIONS, HANDLES};
 
     use super::prelude::*;
 

@@ -224,13 +224,47 @@ mod tests {
 
         assert_eq!(3, repr.level());
 
+        // TODO: convert eprintln to assert_eq
         let repr = repr.repr().await.unwrap();
         eprintln!("{:x?}", repr);
 
-        let levels = repr._levels();
+        let levels = repr.try_get_levels();
         eprintln!("{:#x?}", levels);
-
         eprintln!("{:x?}", repr.as_u64());
+
+        let mut drepr = ReprFactory::<CrcInterner>::describe_resource::<String>();
+        drepr
+            .push_level(DependencyLevel::new("cool dep").with_parent(repr))
+            .unwrap();
+
+        let drepr = drepr.repr().await.unwrap();
+        eprintln!("{:x?}", drepr);
+
+        let levels = drepr.try_get_levels();
+        eprintln!("{:#x?}", levels);
+        eprintln!("{:x?}", drepr.as_u64());
+
+        let drepr = drepr.as_dependency().unwrap();
+
+        // Give some time for the background interning to catch up
+        tokio::time::sleep(Duration::from_millis(13)).await;
+
+        // ketchup().await;
+
+        let parent = drepr.parent().await;
+        eprintln!("{:x?}", parent);
+
+        let name = drepr.name().await;
+        eprintln!("{:?}", name);
+
+        let parent_type_name = parent
+            .unwrap()
+            .as_resource()
+            .unwrap()
+            .type_name()
+            .await
+            .unwrap();
+        eprintln!("{}", parent_type_name);
 
         ()
     }
