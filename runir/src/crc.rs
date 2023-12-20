@@ -10,6 +10,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::sync::Notify;
+use tracing::trace;
 
 /// Interner that uses crc to build intern handles,
 ///
@@ -85,7 +86,7 @@ impl InternerFactory for CrcInterner {
         };
 
         // Peek at converter state
-        eprintln!("Creating {:04x?}", handle);
+        trace!("Creating {:04x?}", handle);
 
         let ready = Arc::new(Notify::new());
 
@@ -99,7 +100,7 @@ impl InternerFactory for CrcInterner {
                     let fut = (tag)(handle);
                     fut.await?;
                 }
-                ready.notify_waiters();
+                ready.notify_one();
 
                 Ok::<_, anyhow::Error>(())
             });
@@ -178,12 +179,12 @@ mod tests {
         assert_eq!(LevelFlags::LEVEL_1, handle.level_flags());
 
         // Test input level
-        let handle_1 = NodeLevel::new("hello world", "", 0, BTreeMap::new())
+        let handle_1 = NodeLevel::new_with(Some("hello world"), Some(""), Some(0), None)
             .configure(&mut interner)
             .wait_for_ready()
             .await;
         // Test no unexpected side effects exist
-        let handle_2 = NodeLevel::new("hello world", "", 0, BTreeMap::new())
+        let handle_2 = NodeLevel::new_with(Some("hello world"), Some(""), Some(0), None)
             .configure(&mut interner)
             .wait_for_ready()
             .await;
@@ -218,8 +219,13 @@ mod tests {
         repr.push_level(FieldLevel::new::<0, Test>()).unwrap();
         repr.push_level(FieldLevel::new::<0, Test>())
             .expect_err("should be an error");
-        repr.push_level(NodeLevel::new("hello world", "", 0, BTreeMap::new()))
-            .unwrap();
+        repr.push_level(NodeLevel::new_with(
+            Some("hello world"),
+            Some(""),
+            Some(0),
+            Some(BTreeMap::new()),
+        ))
+        .unwrap();
         repr.push_level(HostLevel::new("engine://")).unwrap();
 
         assert_eq!(3, repr.level());
@@ -237,14 +243,14 @@ mod tests {
             .push_level(DependencyLevel::new("cool dep").with_parent(repr))
             .unwrap();
 
-        let drepr = drepr.repr().await.unwrap();
-        eprintln!("{:x?}", drepr);
+        let mut _drepr = drepr.repr().await.unwrap();
+        eprintln!("{:x?}", _drepr);
 
-        let levels = drepr.try_get_levels();
+        let levels = _drepr.try_get_levels();
         eprintln!("{:#x?}", levels);
-        eprintln!("{:x?}", drepr.as_u64());
+        eprintln!("{:x?}", _drepr.as_u64());
 
-        let drepr = drepr.as_dependency().unwrap();
+        let drepr = _drepr.as_dependency().unwrap();
 
         // Give some time for the background interning to catch up
         tokio::time::sleep(Duration::from_millis(13)).await;
@@ -265,6 +271,15 @@ mod tests {
             .await
             .unwrap();
         eprintln!("{}", parent_type_name);
+
+        let upgrade = NodeLevel::new().with_input("hello world");
+        _drepr
+            .upgrade(CrcInterner::default(), upgrade)
+            .await
+            .unwrap();
+
+        let input = _drepr.as_node().unwrap().input().await.unwrap();
+        eprintln!("{:?}", input);
 
         ()
     }

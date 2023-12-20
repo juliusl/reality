@@ -153,6 +153,7 @@ pub trait StorageTarget {
             resource_key.key()
         }
     }
+
     /// Enables built-in dispatch queues,
     ///
     /// -- **Note** --

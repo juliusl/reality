@@ -7,6 +7,7 @@ use anyhow::anyhow;
 use futures::StreamExt;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio::sync::Notify;
 
 use crate::interner::InternResult;
 use crate::interner::LevelFlags;
@@ -178,6 +179,14 @@ macro_rules! push_tag {
     };
 }
 
+// /// TODO (Phase1 - Bootstrap): This should end up replacing both block_info and node_info,
+// /// 
+// /// Parsing is converting SourceLevel -> ResourceLevel?
+// /// 
+// pub struct SourceLevel {
+
+// }
+
 /// Resource level is the lowest level of representation,
 ///
 /// Resource level asserts compiler information for the resource.
@@ -324,42 +333,102 @@ impl Level for FieldLevel {
 pub struct NodeLevel {
     /// Runmd expression representing this resource,
     ///
-    input: Tag<String, Arc<String>>,
+    input: Option<Tag<String, Arc<String>>>,
     /// Tag value assigned to this resource,
     ///
-    tag: Tag<String, Arc<String>>,
+    tag: Option<Tag<String, Arc<String>>>,
     /// Node idx,
     ///
-    idx: Tag<usize, Arc<usize>>,
+    idx: Option<Tag<usize, Arc<usize>>>,
     /// Node annotations,
     ///
-    annotations: Tag<BTreeMap<String, String>, Arc<BTreeMap<String, String>>>,
+    annotations: Option<Tag<BTreeMap<String, String>, Arc<BTreeMap<String, String>>>>,
 }
 
 impl NodeLevel {
+    /// Returns a new empty node level,
+    ///
+    pub fn new() -> Self {
+        Self {
+            input: None,
+            tag: None,
+            idx: None,
+            annotations: None,
+        }
+    }
+
     /// Creates a new input level representation,
     ///
-    pub fn new(
-        input: impl Into<String>,
-        tag: impl Into<String>,
-        idx: usize,
-        annotations: BTreeMap<String, String>,
+    pub fn new_with(
+        input: Option<impl Into<String>>,
+        tag: Option<impl Into<String>>,
+        idx: Option<usize>,
+        annotations: Option<BTreeMap<String, String>>,
     ) -> Self {
-        Self {
-            input: Tag::new(&INPUT, Arc::new(input.into())),
-            tag: Tag::new(&TAG, Arc::new(tag.into())),
-            idx: Tag::new(&NODE_IDX, Arc::new(idx)),
-            annotations: Tag::new(&ANNOTATIONS, Arc::new(annotations)),
+        let mut node = Self::new();
+
+        if let Some(input) = input {
+            node = node.with_input(input);
         }
+        if let Some(tag) = tag {
+            node = node.with_tag(tag)
+        }
+        if let Some(idx) = idx {
+            node = node.with_idx(idx);
+        }
+        if let Some(annotations) = annotations {
+            node = node.with_annotations(annotations);
+        }
+
+        node
+    }
+
+    /// Returns the node level w/ input tag set,
+    ///
+    pub fn with_input(mut self, input: impl Into<String>) -> Self {
+        self.input = Some(Tag::new(&INPUT, Arc::new(input.into())));
+        self
+    }
+
+    /// Returns the node level w/ tag tag set,
+    ///
+    pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
+        self.tag = Some(Tag::new(&TAG, Arc::new(tag.into())));
+        self
+    }
+
+    /// Returns the node level w/ idx tag set,
+    ///
+    pub fn with_idx(mut self, idx: usize) -> Self {
+        self.idx = Some(Tag::new(&NODE_IDX, Arc::new(idx)));
+        self
+    }
+
+    /// Returns the node level w/ annotations set,
+    ///
+    pub fn with_annotations(mut self, annotations: BTreeMap<String, String>) -> Self {
+        self.annotations = Some(Tag::new(&ANNOTATIONS, Arc::new(annotations)));
+        self
     }
 }
 
 impl Level for NodeLevel {
     fn configure(&self, interner: &mut impl InternerFactory) -> InternResult {
-        push_tag!(dyn interner, &self.input);
-        push_tag!(dyn interner, &self.tag);
-        push_tag!(dyn interner, &self.idx);
-        push_tag!(dyn interner, &self.annotations);
+        if let Some(input) = self.input.as_ref() {
+            push_tag!(dyn interner, input);
+        }
+
+        if let Some(tag) = self.tag.as_ref() {
+            push_tag!(dyn interner, tag);
+        }
+
+        if let Some(idx) = self.idx.as_ref() {
+            push_tag!(dyn interner, idx);
+        }
+
+        if let Some(annotations) = self.annotations.as_ref() {
+            push_tag!(dyn interner, annotations);
+        }
 
         interner.set_level_flags(LevelFlags::LEVEL_2);
 
@@ -413,6 +482,9 @@ where
     /// Vector of intern handles tags for each level of the current representation,
     ///
     levels: Vec<Tag<InternHandle, Arc<InternHandle>>>,
+    ///
+    ///
+    ready_notify: Vec<Arc<Notify>>,
 }
 
 impl<I: InternerFactory + Default> ReprFactory<I> {
@@ -432,7 +504,9 @@ impl<I: InternerFactory + Default> ReprFactory<I> {
     ///
     pub fn push_level(&mut self, level: impl Level) -> anyhow::Result<()> {
         // Configure a new handle
-        let handle = level.configure(&mut self.interner).result()?;
+        let (ready, handle) = level.configure(&mut self.interner).result()?;
+
+        self.ready_notify.push(ready);
 
         // Handle errors
         if let Some(last) = self.levels.last() {
@@ -461,6 +535,14 @@ impl<I: InternerFactory + Default> ReprFactory<I> {
     ///
     pub async fn repr(&self) -> anyhow::Result<Repr> {
         use futures::TryStreamExt;
+
+        tracing::trace!("Creating repr, waiting for background interning to catch up");
+        // Since these levels aren't shared once the factory takes ownership,
+        // notify_one will reserve a permit and Notified should return immediately
+        for r in self.ready_notify.iter() {
+            r.notified().await;
+        }
+        tracing::trace!("Background interning is all caught up");
 
         let tail = futures::stream::iter(self.levels.iter())
             .map(Ok::<_, anyhow::Error>)
@@ -499,12 +581,49 @@ pub struct Repr {
     pub(crate) tail: InternHandle,
 }
 
+impl From<u64> for Repr {
+    fn from(value: u64) -> Self {
+        Repr {
+            tail: InternHandle::from(value),
+        }
+    }
+}
+
 impl Repr {
     /// Returns as a u64 value,
     ///
     #[inline]
     pub fn as_u64(&self) -> u64 {
         self.tail.as_u64()
+    }
+
+    /// Upgrades a representation in place w/ a new level,
+    ///
+    pub async fn upgrade(
+        &mut self,
+        mut interner: impl InternerFactory,
+        level: impl Level,
+    ) -> anyhow::Result<()> {
+        // Configure a new handle
+        let handle = level.configure(&mut interner).wait_for_ready().await;
+
+        // TODO -- error handling
+        // 1) Need verify the interner factory is the same as what was previously used
+        // 2) Need to verify the next level is indeed the next level
+
+        let to = Tag::new(&HANDLES, Arc::new(handle));
+
+        let mut from = self.tail.clone();
+        from.link = 0;
+
+        let _ = Tag::new(&HANDLES, Arc::new(from)).link(&to).await?;
+
+        if let Some(tail) = HANDLES.copy(&to.create_value.clone()).await {
+            self.tail = tail;
+            Ok(())
+        } else {
+            Err(anyhow!("Could not upgrade representation"))
+        }
     }
 
     /// Return a vector containing an intern handle pointing to each level of this representation,

@@ -1,3 +1,4 @@
+use runir::prelude::Repr;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
@@ -123,7 +124,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         let type_key = Self::type_key();
         let key = type_key ^ key;
 
-        uuid::Uuid::from_fields(0, 0, ResourceKeyFlags::HASHED.bits(), &key.to_be_bytes()).into()
+        uuid::Uuid::from_fields(0, 0, 0, &key.to_be_bytes()).into()
     }
 
     /// Creates a new resource_key set w/ a hash-key value,
@@ -132,7 +133,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         let type_key = Self::type_key();
         let key = type_key ^ key;
 
-        uuid::Uuid::from_fields(0, 0, ResourceKeyFlags::HASHED.bits(), &key.to_be_bytes()).into()
+        uuid::Uuid::from_fields(0, 0, 0, &key.to_be_bytes()).into()
     }
 
     /// Transmute a resource-key to a different resource key type,
@@ -148,10 +149,10 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
             from = std::any::type_name::<T>(),
             to = std::any::type_name::<B>()
         );
-        if let Some(hash) = self.hashed_parts() {
-            ResourceKey::<B>::with_hash_key(hash)
-        } else {
+        if self.data == 0 {
             ResourceKey::<B>::new()
+        } else {
+            ResourceKey::<B>::with_hash_key(self.hash_key())   
         }
     }
 
@@ -175,15 +176,36 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         u64::from_be_bytes(*uuid::Uuid::from_u128(self.data).as_fields().3)
     }
 
+    /// Sets the repr for this key,
+    ///
+    pub fn set_repr(&mut self, repr: runir::prelude::Repr) {
+        let u = uuid::Uuid::from_u128(self.data);
+
+        let (_, r) = u.as_u64_pair();
+
+        let u = uuid::Uuid::from_u64_pair(repr.as_u64(), r);
+
+        self.data = u.as_u128();
+    }
+
+    /// Returns the repr handle if it is set,
+    ///
+    pub fn repr(&self) -> Option<runir::prelude::Repr> {
+        let u = uuid::Uuid::from_u128(self.data);
+
+        let (l, _) = u.as_u64_pair();
+
+        if l > 0 {
+            Some(Repr::from(l))
+        } else {
+            None
+        }
+    }
+
     /// Returns the hash value from the resource-key,
     ///
-    fn hashed_parts(&self) -> Option<u64> {
-        if !self.flags().contains(ResourceKeyFlags::HASHED) {
-            None
-        } else {
-            let hashed = self.key() ^ Self::type_key();
-            Some(hashed)
-        }
+    fn hash_key(&self) -> u64 {
+        self.key() ^ Self::type_key()
     }
 
     /// Returns the type key value,
@@ -198,12 +220,6 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         type_id.hash(hasher);
 
         hasher.finish() ^ type_name.as_ptr() as u64
-    }
-
-    /// Decodes the resource key flags,
-    ///
-    fn flags(&self) -> ResourceKeyFlags {
-        ResourceKeyFlags::from_bits_truncate(uuid::Uuid::from_u128(self.data).as_fields().2)
     }
 }
 
@@ -246,28 +262,38 @@ impl<T: Send + Sync + 'static> Clone for ResourceKey<T> {
     }
 }
 
-bitflags::bitflags! {
-    struct ResourceKeyFlags: u16 {
-        /// Resource key was created from hashing a value,
-        ///
-        const HASHED = 1;
-        /// If set, the type name of the resource has been hashed into the resource key,
-        ///
-        const HASH_TYPE_NAME = 1 << 1;
-        /// If set the type name of an owning type has been hashed into the resource key,
-        ///
-        const HASH_OWNER_TYPE_NAME = 1 << 2;
-        /// If set, the field offset has been hashed into the resource key,
-        ///
-        const HASH_OFFSET_TYPE_NAME = 1 << 3;
-        /// If set, the field name has been hashed into the resource key,
-        ///
-        const HASH_FIELD_NAME = 1 << 4;
-        /// If set, the tag value has been hashed into the resource key,
-        ///
-        const HASH_TAG_VALUE = 1 << 5;
-        /// If set, the length of the field name was hashed into the resoruce key,
-        ///
-        const HASH_FIELD_NAME_LEN = 1 << 6;
-    }
+#[tokio::test]
+async fn test_set_repr() {
+    use crate::Attribute;
+    use runir::prelude::CrcInterner;
+    use runir::prelude::DependencyLevel;
+    use runir::prelude::ReprFactory;
+
+    // TODO: Convert eprintln to asserts
+
+    let mut rk = ResourceKey::<Attribute>::new();
+    eprintln!("{:x?}", uuid::Uuid::from_u128(rk.data));
+
+    let mut repr = ReprFactory::<CrcInterner>::describe_resource::<String>();
+    repr.push_level(DependencyLevel::new("test")).unwrap();
+
+    let repr = repr.repr().await.unwrap();
+    rk.set_repr(repr);
+    eprintln!("{:x?}", uuid::Uuid::from_u128(rk.data));
+
+    let repr = rk.repr();
+    eprintln!("{:04x?}", repr);
+
+    // tokio::time::sleep(Duration::from_millis(16)).await;
+
+    let name = repr
+        .unwrap()
+        .as_resource()
+        .unwrap()
+        .type_name()
+        .await
+        .unwrap();
+    eprintln!("{}", name);
+
+    ()
 }

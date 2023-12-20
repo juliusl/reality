@@ -819,7 +819,7 @@ impl StructData {
             quote_spanned! {f.span=>
                 impl #original_impl_generics runir::prelude::Field<#offset> for #ident #ty_generics #where_clause {
                     type ParseType = #ty;
-    
+
                     type ProjectedType = #absolute_ty;
 
                     fn field_name() -> &'static str {

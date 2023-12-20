@@ -174,6 +174,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[tracing_test::traced_test]
     async fn test_intern_handle_link() {
         struct Test;
 
@@ -191,17 +192,19 @@ mod tests {
 
         let resource = ResourceLevel::new::<String>()
             .configure(&mut interner)
-            .result()
-            .unwrap();
+            .wait_for_ready()
+            .await;
         let field = FieldLevel::new::<0, Test>()
             .configure(&mut interner)
-            .result()
-            .unwrap();
+            .wait_for_ready()
+            .await;
 
         let mut annotations = BTreeMap::new();
         annotations.insert("description".to_string(), "really cool node".to_string());
 
-        let input = NodeLevel::new("hello world", "", 0, annotations)
+        let input = NodeLevel::new()
+            .with_input("hello world")
+            .with_annotations(annotations)
             .configure(&mut interner)
             .wait_for_ready()
             .await;
@@ -210,7 +213,6 @@ mod tests {
         let to = Tag::new(&HANDLES, Arc::new(field));
 
         // TODO: convert eprintlns to asserts
-
         let linked = from.link(&to).await.unwrap();
         eprintln!("{:x?}", linked);
 
@@ -234,6 +236,8 @@ mod tests {
         let a = ANNOTATIONS.try_strong_ref(&input).unwrap();
         eprintln!("{:?}", a);
 
+        let test = Test::create_repr::<CrcInterner>().unwrap();
+        eprintln!("{:x?}", test.repr().await.unwrap());
         ()
     }
 }

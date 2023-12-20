@@ -179,11 +179,7 @@ impl<P: Plugin> PacketRoutes<P> {
     ///
     pub fn route<const OFFSET: usize>(
         &self,
-    ) -> &FieldRef<
-        P,
-        <P as Field<OFFSET>>::ParseType,
-        <P as Field<OFFSET>>::ProjectedType,
-    >
+    ) -> &FieldRef<P, <P as Field<OFFSET>>::ParseType, <P as Field<OFFSET>>::ProjectedType>
     where
         P: OnReadField<OFFSET> + OnWriteField<OFFSET> + OnParseField<OFFSET> + Plugin,
     {
@@ -192,11 +188,7 @@ impl<P: Plugin> PacketRoutes<P> {
 
     pub fn route_mut<'a: 'b, 'b, const OFFSET: usize>(
         &'a mut self,
-    ) -> &'b mut FieldRef<
-        P,
-        <P as Field<OFFSET>>::ParseType,
-        <P as Field<OFFSET>>::ProjectedType,
-    >
+    ) -> &'b mut FieldRef<P, <P as Field<OFFSET>>::ParseType, <P as Field<OFFSET>>::ProjectedType>
     where
         P: OnReadField<OFFSET> + OnWriteField<OFFSET> + OnParseField<OFFSET> + Plugin,
     {

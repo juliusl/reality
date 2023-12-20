@@ -385,7 +385,7 @@ pub trait Handler<S: StorageTarget, Arg: Send + Sync + 'static> {
 
 /// Trait to allow for deriving an AttributeType implementation w/ each callback as a seperate resource,
 ///
-pub trait OnParseField<const FIELD_OFFSET: usize> 
+pub trait OnParseField<const FIELD_OFFSET: usize>
 where
     Self: runir::prelude::Field<FIELD_OFFSET> + Send + Sync + Sized + 'static,
 {

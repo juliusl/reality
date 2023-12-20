@@ -76,6 +76,20 @@ pub struct InternHandle {
     pub(crate) register_lo: u16,
 }
 
+impl From<u64> for InternHandle {
+    fn from(value: u64) -> Self {
+        let u = uuid::Uuid::from_u64_pair(value, 0);
+
+        let (link, register_hi, register_lo, _) = u.as_fields();
+
+        Self {
+            link,
+            register_hi,
+            register_lo,
+        }
+    }
+}
+
 impl InternHandle {
     /// Returns the current level flag enabled for this intern handle,
     ///
@@ -384,11 +398,11 @@ impl InternResult {
     /// **Note** Since this is not waiting for the intern handle to be ready, it's possible trying to use this handle
     /// will not return anything.
     ///
-    pub fn result(mut self) -> anyhow::Result<InternHandle> {
+    pub fn result(mut self) -> anyhow::Result<(Arc<Notify>, InternHandle)> {
         if let Some(err) = self.error.take() {
             Err(err)
         } else {
-            Ok(self.handle)
+            Ok((self.ready, self.handle))
         }
     }
 }
