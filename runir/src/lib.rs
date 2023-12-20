@@ -1,6 +1,7 @@
 mod field;
 mod interner;
 mod repr;
+mod recv;
 
 #[cfg(feature = "crc-interner")]
 mod crc;
@@ -49,8 +50,10 @@ pub mod prelude {
     pub use super::interner::InternTable;
     pub use super::interner::InternerFactory;
 
+    pub use super::recv::Recv;
     pub use super::field::Field;
 
+    pub use super::repr::Level;
     pub use super::repr::DependencyLevel;
     pub use super::repr::DependencyRepr;
     pub use super::repr::FieldLevel;

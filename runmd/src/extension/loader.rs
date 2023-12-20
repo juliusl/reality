@@ -2,7 +2,7 @@ use crate::prelude::*;
 
 /// Trait for types that are able to load extensions,
 ///
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 pub trait Loader {
     /// Loads an extension, if successful returns a boxed Node which represents the extension,
     ///

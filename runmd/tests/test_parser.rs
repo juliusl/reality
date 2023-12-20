@@ -61,7 +61,7 @@ impl NodeProvider for Test {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl ExtensionLoader for Test {
     async fn load_extension(
         &self,

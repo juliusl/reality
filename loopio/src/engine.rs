@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use reality::AttributeTypeParser;
 use reality::BlockObjectType;
+use reality::prelude::runir::prelude::ResourceLevel;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -123,7 +124,7 @@ impl EngineBuilder {
                             key.transmute(),
                         );
                     }
-                });
+                }, ResourceLevel::new::<P>(), None);
 
             parser.add_object_type_with(P::symbol(), block_obj);
         });

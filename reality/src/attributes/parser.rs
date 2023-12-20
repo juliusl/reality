@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tracing::debug;
 use tracing::trace;
 
+use runir::prelude::*;
 use runmd::prelude::*;
 
 use super::attribute;
@@ -471,6 +472,8 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     /// Attributes parsed,
     ///
     pub attributes: ParsedAttributes,
+
+    nodes: Vec<NodeLevel>,
 }
 
 impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
@@ -483,6 +486,7 @@ impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
             handlers: Default::default(),
             storage: Default::default(),
             attributes: ParsedAttributes::default(),
+            nodes: vec![],
         }
     }
 }
@@ -497,6 +501,7 @@ impl<S: StorageTarget + 'static> Clone for AttributeParser<S> {
             handlers: self.handlers.clone(),
             storage: self.storage.clone(),
             attributes: self.attributes.clone(),
+            nodes: self.nodes.clone(),
         }
     }
 }
@@ -569,7 +574,7 @@ impl<S: StorageTarget> AttributeParser<S> {
     ///
     pub fn with_type<C>(&mut self) -> &mut Self
     where
-        C: AttributeType<S>,
+        C: AttributeType<S> + Send + Sync + 'static,
     {
         self.add_type(AttributeTypeParser::new::<C>());
         self
@@ -591,8 +596,10 @@ impl<S: StorageTarget> AttributeParser<S> {
         &mut self,
         ident: impl AsRef<str>,
         parse: fn(&mut AttributeParser<S>, String),
+        resource: ResourceLevel,
+        field: FieldLevel,
     ) -> AttributeTypeParser<S> {
-        let attr = AttributeTypeParser::new_with(ident, parse);
+        let attr = AttributeTypeParser::new_with(ident, parse, resource, Some(field));
         self.add_type(attr.clone());
         attr
     }
@@ -643,7 +650,12 @@ impl<S: StorageTarget> AttributeParser<S> {
         Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
         <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
-        self.add_type_with(ident.into(), ParsableField::<FIELD_OFFSET, Owner>::parse);
+        self.add_type_with(
+            ident.into(),
+            ParsableField::<FIELD_OFFSET, Owner>::parse,
+            ResourceLevel::new::<Owner::ProjectedType>(),
+            FieldLevel::new::<FIELD_OFFSET, Owner>(),
+        );
     }
 
     /// Adds an attribute type that implements FromStr,
@@ -702,6 +714,8 @@ impl<S: StorageTarget> AttributeParser<S> {
         self.add_type_with(
             ident.into(),
             ParsableAttributeTypeField::<FIELD_OFFSET, S, Owner>::parse,
+            ResourceLevel::new::<Owner::ProjectedType>(),
+            FieldLevel::new::<FIELD_OFFSET, Owner>(),
         );
     }
 
@@ -816,6 +830,12 @@ where
             let last = self.attributes.attributes.last();
             trace!("Add node {:?} {:?}", _node_info, last);
         }
+
+        // Create and push a new node level
+        let node = NodeLevel::new()
+            .with_annotations(_node_info.line.comment_properties)
+            .with_idx(_node_info.idx);
+        self.nodes.push(node);
     }
 
     fn parsed_line(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {
@@ -825,6 +845,16 @@ where
 
     fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>) {
         self.reset();
+
+        // Configure the current node
+        if let Some(last) = self.nodes[..].last_mut() {
+            if let Some(input) = input {
+                last.set_input(input);
+            }
+            if let Some(tag) = tag {
+                last.set_input(tag);
+            }
+        }
 
         if let Some(tag) = tag.as_ref() {
             self.set_tag(tag);
@@ -858,7 +888,7 @@ where
     }
 }
 
-#[runmd::prelude::async_trait]
+#[runmd::prelude::async_trait(?Send)]
 impl<S> ExtensionLoader for super::AttributeParser<S>
 where
     S: StorageTarget + Send + Sync + Unpin + 'static,
@@ -872,14 +902,14 @@ where
     ) -> Option<BoxedNode> {
         let mut parser = self.clone();
 
+        // Drain any dispatches before trying to load the rest of the resources
+        if let Some(mut storage) = parser.storage_mut() {
+            storage.drain_dispatch_queues();
+        }
+
         // If there was a handler on the stack, call it's unload fn
         if let Some(handler) = parser.handlers.last() {
             handler.on_unload().await;
-
-            // Drain any dispatches before trying to load the rest of the resources
-            if let Some(mut storage) = parser.storage_mut() {
-                storage.drain_dispatch_queues();
-            }
         }
 
         // Clear any pre-existing attribute types
@@ -901,6 +931,19 @@ where
             parser.block_object_types.get(extension).cloned(),
             parser.namespace(extension),
         ) {
+            // // Prepare the repr factory for all properties
+            // let mut factory = runir::prelude::ReprFactory::<CrcInterner>::default();
+            // factory.push_level(attribute_type.resource).unwrap();
+            // if let Some(field) = attribute_type.field {
+            //     factory.push_level(field).unwrap();
+            // }
+            // let mut node = NodeLevel::new().with_input(input.unwrap_or_default());
+            // if let Some(tag) = tag {
+            //     node = node.with_tag(tag);
+            // }
+            // factory.push_level(node).unwrap();
+            // let _repr = factory.repr().await.unwrap();
+
             attribute_type.parse(&mut parser, input.unwrap_or_default());
 
             // Drain any dispatches before trying to load the rest of the resources
@@ -912,6 +955,7 @@ where
             handler
                 .on_load(namespace, parser.attributes.last().copied())
                 .await;
+
             parser.handlers.push(handler);
 
             // Drain any dispatches before trying to load the rest of the resources
@@ -921,5 +965,68 @@ where
         }
 
         Some(Box::pin(parser))
+    }
+}
+
+#[allow(unused)]
+mod test {
+    use super::*;
+    use crate::Project;
+    use crate::Shared;
+    use crate::Workspace;
+
+    #[tokio::test]
+    async fn test_parser() {
+        // Define a test resource
+        struct Test;
+
+        impl runir::prelude::Field<0> for Test {
+            type ParseType = String;
+            type ProjectedType = String;
+            fn field_name() -> &'static str {
+                "test"
+            }
+        }
+
+        let mut project = Project::new(Shared::default());
+
+        project.add_node_plugin("example", |_, _, parser| {
+            parser.add_type_with(
+                "test",
+                |parser, input| {
+                    assert_eq!(2, parser.nodes.len(), "should be 2 nodes");
+
+                    if let Some(node) = parser.nodes.last() {
+                        let (input, tag, annotations) = node.mount();
+                        assert!(input.is_none());
+                        assert_eq!(tag.unwrap().as_str(), "world");
+                        assert_eq!(
+                            annotations.unwrap().get("description").unwrap().as_str(),
+                            "A really cool description"
+                        );
+                    }
+                },
+                ResourceLevel::new::<String>(),
+                FieldLevel::new::<0, Test>(),
+            );
+        });
+
+        let mut workspace = Workspace::new();
+
+        workspace.add_buffer(
+            "test.md",
+            r#"
+    ```runmd
+    + .example hello-world
+    : world .test hello
+    |# name = test
+    |# description = A really cool description
+    ```
+    "#,
+        );
+
+        let _ = workspace.compile(project).await.unwrap();
+
+        ()
     }
 }

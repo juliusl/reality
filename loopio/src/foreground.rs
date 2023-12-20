@@ -60,87 +60,88 @@ impl ForegroundEngine {
     /// Creates a new foreground engine from a workspace,
     ///
     pub fn new(mut builder: EngineBuilder) -> ForegroundEngine {
-        let runtime = builder.runtime_builder.build().unwrap();
+        // let runtime = builder.runtime_builder.build().unwrap();
 
-        let jh = runtime.spawn(async {
-            // Create/Test engine plugins
-            builder.workspace.add_buffer(
-                "background-work.md",
-                r#"
-        ```runmd
-        # -- # Test the background work
-        + .operation test_background_work
-        <loopio.std.io.println> Hello world a
+        // let jh = runtime.spawn(async {
+        //     // Create/Test engine plugins
+        //     builder.workspace.add_buffer(
+        //         "background-work.md",
+        //         r#"
+        // ```runmd
+        // # -- # Test the background work
+        // + .operation test_background_work
+        // <loopio.std.io.println> Hello world a
     
-        # -- # Default engine operation plugins
-        + .operation default
-        <handle/loopio.background-work>
-        <list/loopio.published>
+        // # -- # Default engine operation plugins
+        // + .operation default
+        // <handle/loopio.background-work>
+        // <list/loopio.published>
         
-        # -- # Default host engine tasks
-        + .host engine
+        // # -- # Default host engine tasks
+        // + .host engine
 
-        # -- # Creates a new background work engine handle
-        : .action   default/handle/loopio.background-work
+        // # -- # Creates a new background work engine handle
+        // : .action   default/handle/loopio.background-work
 
-        # -- # Retrieves current published resources
-        : .action   default/list/loopio.published
-        ```
-        "#,
-            );
-            builder.enable::<BackgroundWork>();
-            builder.enable::<Published>();
-            builder.compile().await
-        });
+        // # -- # Retrieves current published resources
+        // : .action   default/list/loopio.published
+        // ```
+        // "#,
+        //     );
+        //     builder.enable::<BackgroundWork>();
+        //     builder.enable::<Published>();
+        //     builder.compile().await
+        // });
 
-        let engine = runtime.block_on(jh).unwrap();
-        let mut eh = engine.engine_handle();
+        // let engine = runtime.block_on(jh).unwrap();
+        // let mut eh = engine.engine_handle();
 
-        let __engine_listener = runtime.spawn(async move {
-            let (_, pk) = engine.spawn(|_, p| Some(p));
-            pk.await
-        });
+        // let __engine_listener = runtime.spawn(async move {
+        //     let (_, pk) = engine.spawn(|_, p| Some(p));
+        //     pk.await
+        // });
 
-        eh = runtime.block_on(async move {
-            let tc = eh.run("engine://default").await.unwrap();
-            let transient = tc.transient().await;
-            let handle =
-                transient.current_resource::<BackgroundWorkEngineHandle>(ResourceKey::root());
-            assert!(handle.is_some());
-            eh.background_work = Some(handle.unwrap());
-            eh
-        });
+        // eh = runtime.block_on(async move {
+        //     let tc = eh.run("engine://default").await.unwrap();
+        //     let transient = tc.transient().await;
+        //     let handle =
+        //         transient.current_resource::<BackgroundWorkEngineHandle>(ResourceKey::root());
+        //     assert!(handle.is_some());
+        //     eh.background_work = Some(handle.unwrap());
+        //     eh
+        // });
 
-        // Run diagnostics before returning the foreground engine
-        let bg = eh
-            .background()
-            .expect("should be able to create a background handle");
+        // // Run diagnostics before returning the foreground engine
+        // let bg = eh
+        //     .background()
+        //     .expect("should be able to create a background handle");
 
-        // This tests that the bg engine is working properly
-        if let Ok(mut bg) = bg.call("engine://test_background_work") {
-            loop {
-                match bg.status() {
-                    CallStatus::Enabled => {
-                        bg.spawn();
-                    }
-                    CallStatus::Disabled => {
-                        eprintln!("disabled");
-                        break;
-                    }
-                    CallStatus::Running => std::thread::yield_now(),
-                    CallStatus::Pending => {
-                        bg.clone().into_foreground().ok();
-                        break;
-                    }
-                }
-            }
-        }
+        // // This tests that the bg engine is working properly
+        // if let Ok(mut bg) = bg.call("engine://test_background_work") {
+        //     loop {
+        //         match bg.status() {
+        //             CallStatus::Enabled => {
+        //                 bg.spawn();
+        //             }
+        //             CallStatus::Disabled => {
+        //                 eprintln!("disabled");
+        //                 break;
+        //             }
+        //             CallStatus::Running => std::thread::yield_now(),
+        //             CallStatus::Pending => {
+        //                 bg.clone().into_foreground().ok();
+        //                 break;
+        //             }
+        //         }
+        //     }
+        // }
 
-        ForegroundEngine {
-            eh,
-            runtime,
-            __engine_listener,
-        }
+        // ForegroundEngine {
+        //     eh,
+        //     runtime,
+        //     __engine_listener,
+        // }
+        todo!()
     }
 }
 

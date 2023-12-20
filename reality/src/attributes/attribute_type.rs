@@ -3,6 +3,8 @@ use std::marker::PhantomData;
 use std::ops::DerefMut;
 use std::str::FromStr;
 
+use runir::prelude::FieldLevel;
+use runir::prelude::ResourceLevel;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -60,31 +62,52 @@ pub trait AttributeType<S: StorageTarget> {
 ///
 /// Allows the parse function to be stored and recalled
 ///
-pub struct AttributeTypeParser<S: StorageTarget + 'static>(
+pub struct AttributeTypeParser<S: StorageTarget + 'static> {
     /// Identifier
-    String,
+    ident: String,
     /// Parse function
-    fn(&mut AttributeParser<S>, String),
-);
+    parse: fn(&mut AttributeParser<S>, String),
+    /// Resource level
+    pub resource: ResourceLevel,
+    /// Field level
+    pub field: Option<FieldLevel>,
+}
 
 impl<S: StorageTarget> AttributeTypeParser<S> {
     /// Creates a new parser
     ///
     pub fn new<A>() -> Self
     where
-        A: AttributeType<S>,
+        A: AttributeType<S> + Send + Sync + 'static,
     {
-        Self(A::symbol().to_string(), A::parse)
+        let resource_level = runir::prelude::ResourceLevel::new::<A>();
+
+        Self {
+            ident: A::symbol().to_string(),
+            parse: A::parse,
+            resource: resource_level,
+            field: None,
+        }
     }
 
-    pub fn new_with(ident: impl AsRef<str>, parse: fn(&mut AttributeParser<S>, String)) -> Self {
-        Self(ident.as_ref().to_string(), parse)
+    pub fn new_with(
+        ident: impl AsRef<str>,
+        parse: fn(&mut AttributeParser<S>, String),
+        resource: ResourceLevel,
+        field: Option<FieldLevel>,
+    ) -> Self {
+        Self {
+            ident: ident.as_ref().to_string(),
+            parse,
+            resource,
+            field,
+        }
     }
 
     /// Returns a reference to this ident,
     ///
     pub fn ident(&self) -> &str {
-        self.0.as_str()
+        self.ident.as_str()
     }
 }
 
@@ -92,7 +115,7 @@ impl<S: StorageTarget + 'static> AttributeTypeParser<S> {
     /// Executes the stored parse function,
     ///
     pub fn parse(&self, parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
-        (self.1)(parser, content.as_ref().trim().to_string())
+        (self.parse)(parser, content.as_ref().trim().to_string())
     }
 
     /// Returns an attribute parser for a parseable type field,
@@ -131,13 +154,20 @@ impl<S: StorageTarget + 'static> AttributeTypeParser<S> {
 
 impl<S: StorageTarget> Clone for AttributeTypeParser<S> {
     fn clone(&self) -> Self {
-        Self(self.0.clone(), self.1)
+        Self {
+            ident: self.ident.clone(),
+            parse: self.parse.clone(),
+            resource: self.resource.clone(),
+            field: self.field.clone(),
+        }
     }
 }
 
 impl<S: StorageTarget> Debug for AttributeTypeParser<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("AttributeTypeParser").field(&self.0).finish()
+        f.debug_struct("AttributeTypeParser")
+            .field("ident", &self.ident)
+            .finish()
     }
 }
 

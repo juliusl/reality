@@ -152,7 +152,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         if self.data == 0 {
             ResourceKey::<B>::new()
         } else {
-            ResourceKey::<B>::with_hash_key(self.hash_key())   
+            ResourceKey::<B>::with_hash_key(self.hash_key())
         }
     }
 

@@ -67,9 +67,15 @@ define_intern_table!(HANDLES: InternHandle);
 /// each level configures the intern handle representing a resource.
 ///
 pub trait Level {
+    type Mount;
+
     /// Configures the representation state,
     ///
     fn configure(&self, interner: &mut impl InternerFactory) -> InternResult;
+
+    /// Mounts the current level and returns the current state,
+    /// 
+    fn mount(&self) -> Self::Mount;
 }
 
 /// Each level of runtime representation is defined by a set of tags,
@@ -180,9 +186,9 @@ macro_rules! push_tag {
 }
 
 // /// TODO (Phase1 - Bootstrap): This should end up replacing both block_info and node_info,
-// /// 
+// ///
 // /// Parsing is converting SourceLevel -> ResourceLevel?
-// /// 
+// ///
 // pub struct SourceLevel {
 
 // }
@@ -191,6 +197,7 @@ macro_rules! push_tag {
 ///
 /// Resource level asserts compiler information for the resource.
 ///
+#[derive(Clone, Copy)]
 pub struct ResourceLevel {
     /// Rust type id assigned by the compiler,
     ///
@@ -225,6 +232,12 @@ impl Level for ResourceLevel {
         interner.set_level_flags(LevelFlags::ROOT);
 
         interner.interner()
+    }
+
+    type Mount = ();
+
+    fn mount(&self) -> Self::Mount {
+        ()
     }
 }
 
@@ -270,6 +283,12 @@ impl Level for DependencyLevel {
 
         interner.interner()
     }
+
+    type Mount = ();
+
+    fn mount(&self) -> Self::Mount {
+        ()
+    }
 }
 
 /// Field level is the next level of representation,
@@ -277,6 +296,7 @@ impl Level for DependencyLevel {
 /// Field level asserts the relationship between some owning resource and a field
 /// this resource owns.
 ///
+#[derive(Clone, Copy)]
 pub struct FieldLevel {
     /// Owner type id,
     ///
@@ -324,12 +344,19 @@ impl Level for FieldLevel {
 
         interner.interner()
     }
+
+    type Mount = ();
+
+    fn mount(&self) -> Self::Mount {
+        ()
+    }
 }
 
 /// Node level is a dynamic level of representation,
 ///
 /// Node level asserts and records the input paramters for some resource as well as ordinality.
 ///
+#[derive(Clone)]
 pub struct NodeLevel {
     /// Runmd expression representing this resource,
     ///
@@ -410,6 +437,30 @@ impl NodeLevel {
         self.annotations = Some(Tag::new(&ANNOTATIONS, Arc::new(annotations)));
         self
     }
+
+    /// Returns the node level w/ tag tag set,
+    ///
+    pub fn set_input(&mut self, input: impl Into<String>) {
+        self.tag = Some(Tag::new(&INPUT, Arc::new(input.into())));
+    }
+
+    /// Returns the node level w/ tag tag set,
+    ///
+    pub fn set_tag(&mut self, tag: impl Into<String>) {
+        self.tag = Some(Tag::new(&TAG, Arc::new(tag.into())));
+    }
+
+    /// Returns the node level w/ idx tag set,
+    ///
+    pub fn set_idx(&mut self, idx: usize) {
+        self.idx = Some(Tag::new(&NODE_IDX, Arc::new(idx)));
+    }
+
+    /// Returns the node level w/ annotations set,
+    ///
+    pub fn set_annotations(&mut self, annotations: BTreeMap<String, String>) {
+        self.annotations = Some(Tag::new(&ANNOTATIONS, Arc::new(annotations)));
+    }
 }
 
 impl Level for NodeLevel {
@@ -433,6 +484,23 @@ impl Level for NodeLevel {
         interner.set_level_flags(LevelFlags::LEVEL_2);
 
         interner.interner()
+    }
+
+    type Mount = (
+        // Input
+        Option<Arc<String>>,
+        // Tag
+        Option<Arc<String>>,
+        // Annotations
+        Option<Arc<BTreeMap<String, String>>>,
+    );
+
+    fn mount(&self) -> Self::Mount {
+        (
+            self.input.as_ref().map(|i| i.create_value.clone()),
+            self.tag.as_ref().map(|t| t.create_value.clone()),
+            self.annotations.as_ref().map(|a| a.create_value.clone())
+        )
     }
 }
 
@@ -466,6 +534,12 @@ impl Level for HostLevel {
         interner.set_level_flags(LevelFlags::LEVEL_3);
 
         interner.interner()
+    }
+
+    type Mount = ();
+
+    fn mount(&self) -> Self::Mount {
+        ()
     }
 }
 
@@ -868,6 +942,13 @@ impl NodeRepr {
     #[inline]
     pub async fn tag(&self) -> Option<Arc<String>> {
         self.0.tag().await
+    }
+
+    /// Returns the node idx,
+    ///
+    #[inline]
+    pub async fn idx(&self) -> Option<usize> {
+        self.0.node_idx().await
     }
 
     /// Returns node annotations,
