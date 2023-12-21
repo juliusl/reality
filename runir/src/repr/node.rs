@@ -1,0 +1,224 @@
+use std::{sync::Arc, collections::BTreeMap};
+
+use crate::{prelude::*, define_intern_table, push_tag};
+
+// Intern table for input values
+define_intern_table!(INPUT: String);
+
+// Intern table for tag values
+define_intern_table!(TAG: String);
+
+// Intern table for node index values
+define_intern_table!(NODE_IDX: usize);
+
+// Intern table for node level annotations
+define_intern_table!(ANNOTATIONS: BTreeMap<String, String>);
+
+/// Node level is a dynamic level of representation,
+///
+/// Node level asserts and records the input paramters for some resource as well as ordinality.
+///
+#[derive(Clone)]
+pub struct NodeLevel {
+    /// Runmd expression representing this resource,
+    ///
+    input: Option<Tag<String, Arc<String>>>,
+    /// Tag value assigned to this resource,
+    ///
+    tag: Option<Tag<String, Arc<String>>>,
+    /// Node idx,
+    ///
+    idx: Option<Tag<usize, Arc<usize>>>,
+    /// Node annotations,
+    ///
+    annotations: Option<Tag<BTreeMap<String, String>, Arc<BTreeMap<String, String>>>>,
+}
+
+impl NodeLevel {
+    /// Returns a new empty node level,
+    ///
+    pub fn new() -> Self {
+        Self {
+            input: None,
+            tag: None,
+            idx: None,
+            annotations: None,
+        }
+    }
+
+    /// Creates a new input level representation,
+    ///
+    pub fn new_with(
+        input: Option<impl Into<String>>,
+        tag: Option<impl Into<String>>,
+        idx: Option<usize>,
+        annotations: Option<BTreeMap<String, String>>,
+    ) -> Self {
+        let mut node = Self::new();
+
+        if let Some(input) = input {
+            node = node.with_input(input);
+        }
+        if let Some(tag) = tag {
+            node = node.with_tag(tag)
+        }
+        if let Some(idx) = idx {
+            node = node.with_idx(idx);
+        }
+        if let Some(annotations) = annotations {
+            node = node.with_annotations(annotations);
+        }
+
+        node
+    }
+
+    /// Returns the node level w/ input tag set,
+    ///
+    pub fn with_input(mut self, input: impl Into<String>) -> Self {
+        self.input = Some(Tag::new(&INPUT, Arc::new(input.into())));
+        self
+    }
+
+    /// Returns the node level w/ tag tag set,
+    ///
+    pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
+        self.tag = Some(Tag::new(&TAG, Arc::new(tag.into())));
+        self
+    }
+
+    /// Returns the node level w/ idx tag set,
+    ///
+    pub fn with_idx(mut self, idx: usize) -> Self {
+        self.idx = Some(Tag::new(&NODE_IDX, Arc::new(idx)));
+        self
+    }
+
+    /// Returns the node level w/ annotations set,
+    ///
+    pub fn with_annotations(mut self, annotations: BTreeMap<String, String>) -> Self {
+        self.annotations = Some(Tag::new(&ANNOTATIONS, Arc::new(annotations)));
+        self
+    }
+
+    /// Returns the node level w/ tag tag set,
+    ///
+    pub fn set_input(&mut self, input: impl Into<String>) {
+        self.tag = Some(Tag::new(&INPUT, Arc::new(input.into())));
+    }
+
+    /// Returns the node level w/ tag tag set,
+    ///
+    pub fn set_tag(&mut self, tag: impl Into<String>) {
+        self.tag = Some(Tag::new(&TAG, Arc::new(tag.into())));
+    }
+
+    /// Returns the node level w/ idx tag set,
+    ///
+    pub fn set_idx(&mut self, idx: usize) {
+        self.idx = Some(Tag::new(&NODE_IDX, Arc::new(idx)));
+    }
+
+    /// Returns the node level w/ annotations set,
+    ///
+    pub fn set_annotations(&mut self, annotations: BTreeMap<String, String>) {
+        self.annotations = Some(Tag::new(&ANNOTATIONS, Arc::new(annotations)));
+    }
+}
+
+impl Level for NodeLevel {
+    fn configure(&self, interner: &mut impl InternerFactory) -> InternResult {
+        if let Some(input) = self.input.as_ref() {
+            push_tag!(dyn interner, input);
+        }
+
+        if let Some(tag) = self.tag.as_ref() {
+            push_tag!(dyn interner, tag);
+        }
+
+        if let Some(idx) = self.idx.as_ref() {
+            push_tag!(dyn interner, idx);
+        }
+
+        if let Some(annotations) = self.annotations.as_ref() {
+            push_tag!(dyn interner, annotations);
+        }
+
+        interner.set_level_flags(LevelFlags::LEVEL_2);
+
+        interner.interner()
+    }
+
+    type Mount = (
+        // Input
+        Option<Arc<String>>,
+        // Tag
+        Option<Arc<String>>,
+        // Annotations
+        Option<Arc<BTreeMap<String, String>>>,
+    );
+
+    fn mount(&self) -> Self::Mount {
+        (
+            self.input.as_ref().map(|i| i.create_value.clone()),
+            self.tag.as_ref().map(|t| t.create_value.clone()),
+            self.annotations.as_ref().map(|a| a.create_value.clone())
+        )
+    }
+}
+
+
+/// Wrapper struct with access to node tags,
+///
+pub struct NodeRepr(pub(crate) InternHandle);
+
+impl NodeRepr {
+    /// Returns node annotations,
+    ///
+    #[inline]
+    pub async fn annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
+        self.0.annotations().await
+    }
+
+    /// Returns node input,
+    ///
+    #[inline]
+    pub async fn input(&self) -> Option<Arc<String>> {
+        self.0.input().await
+    }
+
+    /// Returns node tag,
+    ///
+    #[inline]
+    pub async fn tag(&self) -> Option<Arc<String>> {
+        self.0.tag().await
+    }
+
+    /// Returns the node idx,
+    ///
+    #[inline]
+    pub async fn idx(&self) -> Option<usize> {
+        self.0.node_idx().await
+    }
+
+    /// Returns node annotations,
+    ///
+    #[inline]
+    pub fn try_annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
+        self.0.try_annotations()
+    }
+
+    /// Returns node input,
+    ///
+    #[inline]
+    pub fn try_input(&self) -> Option<Arc<String>> {
+        self.0.try_input()
+    }
+
+    /// Returns node tag,
+    ///
+    #[inline]
+    pub fn try_tag(&self) -> Option<Arc<String>> {
+        self.0.try_tag()
+    }
+}
+

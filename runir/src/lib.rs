@@ -1,7 +1,8 @@
-mod field;
-mod interner;
 mod repr;
 mod recv;
+mod tag;
+mod level;
+mod interner;
 
 #[cfg(feature = "crc-interner")]
 mod crc;
@@ -40,32 +41,39 @@ mod macros {
             pub static $table: InternTable<$ty> = InternTable::<$ty>::new();
         };
     }
+
+    /// Pushes a tag and a future that can assign an intern handle for a value,
+    ///
+    #[macro_export]
+    macro_rules! push_tag {
+        ($interner:ident, $tag:expr) => {
+            let tag = $tag;
+            $interner.push_tag(tag.value(), move |h| {
+                Box::pin(async move { tag.assign(h).await })
+            });
+        };
+        (dyn $interner:ident, $tag:expr) => {
+            let tag = $tag;
+    
+            let inner = tag.clone();
+            $interner.push_tag(tag.value(), move |h| {
+                Box::pin(async move { inner.assign(h).await })
+            });
+        };
+    }
 }
 
 pub mod prelude {
     #[allow(unused_imports)]
     pub use super::macros::*;
+    pub use crate::repr::prelude::*;
 
     pub use super::interner::InternHandle;
     pub use super::interner::InternTable;
     pub use super::interner::InternerFactory;
 
     pub use super::recv::Recv;
-    pub use super::field::Field;
-
-    pub use super::repr::Level;
-    pub use super::repr::DependencyLevel;
-    pub use super::repr::DependencyRepr;
-    pub use super::repr::FieldLevel;
-    pub use super::repr::FieldRepr;
-    pub use super::repr::HostLevel;
-    pub use super::repr::HostRepr;
-    pub use super::repr::NodeLevel;
-    pub use super::repr::NodeRepr;
-    pub use super::repr::Repr;
-    pub use super::repr::ReprFactory;
-    pub use super::repr::ResourceLevel;
-    pub use super::repr::ResourceRepr;
+    pub use super::level::Level;
 
     #[cfg(feature = "crc-interner")]
     pub use super::crc::CrcInterner;
@@ -79,6 +87,10 @@ pub mod prelude {
                 Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send>,
             > + Send,
     >;
+    
+    pub(crate) use super::interner::LevelFlags;
+    pub(crate) use super::interner::InternResult;
+    pub(crate) use super::tag::Tag;
 }
 
 #[allow(dead_code)]
@@ -86,7 +98,7 @@ pub mod prelude {
 mod tests {
     use std::{collections::BTreeMap, sync::Arc};
 
-    use crate::repr::{Level, Tag, ANNOTATIONS, HANDLES};
+    use crate::repr::{HANDLES};
 
     use super::prelude::*;
 
@@ -236,7 +248,7 @@ mod tests {
         let linked = &HANDLES.try_get(&prev.unwrap()).unwrap();
         eprintln!("{:x?}", linked.upgrade());
 
-        let a = ANNOTATIONS.try_strong_ref(&input).unwrap();
+        let a = crate::repr::node::ANNOTATIONS.try_strong_ref(&input).unwrap();
         eprintln!("{:?}", a);
 
         let test = Test::create_repr::<CrcInterner>().unwrap();

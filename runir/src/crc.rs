@@ -141,7 +141,6 @@ mod tests {
     use crate::{
         interner::LevelFlags,
         prelude::*,
-        repr::{FieldLevel, HostLevel, Level, NodeLevel, ResourceLevel},
     };
 
     struct Test;
