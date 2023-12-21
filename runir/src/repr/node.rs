@@ -1,6 +1,16 @@
-use std::{sync::Arc, collections::BTreeMap};
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
-use crate::{prelude::*, define_intern_table, push_tag};
+use crate::define_intern_table;
+use crate::push_tag;
+
+use crate::prelude::*;
+
+// Intern table for doc headers
+define_intern_table!(DOC_HEADERS: Vec<String>);
+
+// Intern table for symbol values
+define_intern_table!(SYMBOL: String);
 
 // Intern table for input values
 define_intern_table!(INPUT: String);
@@ -20,6 +30,9 @@ define_intern_table!(ANNOTATIONS: BTreeMap<String, String>);
 ///
 #[derive(Clone)]
 pub struct NodeLevel {
+    /// Symbol representing this node,
+    ///
+    symbol: Option<Tag<String, Arc<String>>>,
     /// Runmd expression representing this resource,
     ///
     input: Option<Tag<String, Arc<String>>>,
@@ -29,6 +42,9 @@ pub struct NodeLevel {
     /// Node idx,
     ///
     idx: Option<Tag<usize, Arc<usize>>>,
+    /// Node doc headers,
+    ///
+    doc_headers: Option<Tag<Vec<String>, Arc<Vec<String>>>>,
     /// Node annotations,
     ///
     annotations: Option<Tag<BTreeMap<String, String>, Arc<BTreeMap<String, String>>>>,
@@ -39,9 +55,11 @@ impl NodeLevel {
     ///
     pub fn new() -> Self {
         Self {
+            symbol: None,
             input: None,
             tag: None,
             idx: None,
+            doc_headers: None,
             annotations: None,
         }
     }
@@ -49,13 +67,18 @@ impl NodeLevel {
     /// Creates a new input level representation,
     ///
     pub fn new_with(
+        symbol: Option<impl Into<String>>,
         input: Option<impl Into<String>>,
         tag: Option<impl Into<String>>,
         idx: Option<usize>,
+        doc_headers: Option<Vec<impl Into<String>>>,
         annotations: Option<BTreeMap<String, String>>,
     ) -> Self {
         let mut node = Self::new();
 
+        if let Some(symbol) = symbol {
+            node = node.with_symbol(symbol);
+        }
         if let Some(input) = input {
             node = node.with_input(input);
         }
@@ -65,6 +88,9 @@ impl NodeLevel {
         if let Some(idx) = idx {
             node = node.with_idx(idx);
         }
+        if let Some(doc_headers) = doc_headers {
+            node = node.with_doc_headers(doc_headers);
+        }
         if let Some(annotations) = annotations {
             node = node.with_annotations(annotations);
         }
@@ -72,54 +98,95 @@ impl NodeLevel {
         node
     }
 
+    /// Returns the node level w/ symbol tag set,
+    ///
+    #[inline]
+    pub fn with_symbol(mut self, symbol: impl Into<String>) -> Self {
+        self.set_symbol(symbol);
+        self
+    }
+
     /// Returns the node level w/ input tag set,
     ///
+    #[inline]
     pub fn with_input(mut self, input: impl Into<String>) -> Self {
-        self.input = Some(Tag::new(&INPUT, Arc::new(input.into())));
+        self.set_input(input);
         self
     }
 
     /// Returns the node level w/ tag tag set,
     ///
+    #[inline]
     pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
-        self.tag = Some(Tag::new(&TAG, Arc::new(tag.into())));
+        self.set_tag(tag);
         self
     }
 
     /// Returns the node level w/ idx tag set,
     ///
+    #[inline]
     pub fn with_idx(mut self, idx: usize) -> Self {
-        self.idx = Some(Tag::new(&NODE_IDX, Arc::new(idx)));
+        self.set_idx(idx);
+        self
+    }
+
+    /// Returns the node level w/ doc headers set,
+    ///
+    #[inline]
+    pub fn with_doc_headers(mut self, doc_headers: Vec<impl Into<String>>) -> Self {
+        self.set_doc_headers(doc_headers);
         self
     }
 
     /// Returns the node level w/ annotations set,
     ///
+    #[inline]
     pub fn with_annotations(mut self, annotations: BTreeMap<String, String>) -> Self {
-        self.annotations = Some(Tag::new(&ANNOTATIONS, Arc::new(annotations)));
+        self.set_annotations(annotations);
         self
+    }
+
+    /// Sets the symbol tag for the node level,
+    ///
+    #[inline]
+    pub fn set_symbol(&mut self, symbol: impl Into<String>) {
+        self.symbol = Some(Tag::new(&SYMBOL, Arc::new(symbol.into())));
     }
 
     /// Returns the node level w/ tag tag set,
     ///
+    #[inline]
     pub fn set_input(&mut self, input: impl Into<String>) {
         self.tag = Some(Tag::new(&INPUT, Arc::new(input.into())));
     }
 
     /// Returns the node level w/ tag tag set,
     ///
+    #[inline]
     pub fn set_tag(&mut self, tag: impl Into<String>) {
         self.tag = Some(Tag::new(&TAG, Arc::new(tag.into())));
     }
 
     /// Returns the node level w/ idx tag set,
     ///
+    #[inline]
     pub fn set_idx(&mut self, idx: usize) {
         self.idx = Some(Tag::new(&NODE_IDX, Arc::new(idx)));
     }
 
+    /// Sets the doc headers tag for the node level,
+    ///
+    #[inline]
+    pub fn set_doc_headers(&mut self, mut headers: Vec<impl Into<String>>) {
+        self.doc_headers = Some(Tag::new(
+            &DOC_HEADERS,
+            Arc::new(headers.drain(..).map(|s| s.into()).collect()),
+        ))
+    }
+
     /// Returns the node level w/ annotations set,
     ///
+    #[inline]
     pub fn set_annotations(&mut self, annotations: BTreeMap<String, String>) {
         self.annotations = Some(Tag::new(&ANNOTATIONS, Arc::new(annotations)));
     }
@@ -127,6 +194,10 @@ impl NodeLevel {
 
 impl Level for NodeLevel {
     fn configure(&self, interner: &mut impl InternerFactory) -> InternResult {
+        if let Some(symbol) = self.symbol.as_ref() {
+            push_tag!(dyn interner, symbol);
+        }
+
         if let Some(input) = self.input.as_ref() {
             push_tag!(dyn interner, input);
         }
@@ -149,34 +220,39 @@ impl Level for NodeLevel {
     }
 
     type Mount = (
+        // Symbol
+        Option<Arc<String>>,
         // Input
         Option<Arc<String>>,
         // Tag
         Option<Arc<String>>,
+        // Doc headers
+        Option<Arc<Vec<String>>>,
         // Annotations
         Option<Arc<BTreeMap<String, String>>>,
     );
 
+    #[inline]
     fn mount(&self) -> Self::Mount {
         (
+            self.symbol.as_ref().map(|i| i.create_value.clone()),
             self.input.as_ref().map(|i| i.create_value.clone()),
             self.tag.as_ref().map(|t| t.create_value.clone()),
-            self.annotations.as_ref().map(|a| a.create_value.clone())
+            self.doc_headers.as_ref().map(|t| t.create_value.clone()),
+            self.annotations.as_ref().map(|a| a.create_value.clone()),
         )
     }
 }
-
 
 /// Wrapper struct with access to node tags,
 ///
 pub struct NodeRepr(pub(crate) InternHandle);
 
 impl NodeRepr {
-    /// Returns node annotations,
+    /// Returns the node symbol,
     ///
-    #[inline]
-    pub async fn annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
-        self.0.annotations().await
+    pub async fn symbol(&self) -> Option<Arc<String>> {
+        self.0.symbol().await
     }
 
     /// Returns node input,
@@ -200,25 +276,52 @@ impl NodeRepr {
         self.0.node_idx().await
     }
 
+    /// Returns node doc_headers,
+    ///
+    #[inline]
+    pub async fn doc_headers(&self) -> Option<Arc<Vec<String>>> {
+        self.0.doc_headers().await
+    }
+
     /// Returns node annotations,
     ///
     #[inline]
-    pub fn try_annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
-        self.0.try_annotations()
+    pub async fn annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
+        self.0.annotations().await
     }
 
-    /// Returns node input,
+    /// Tries to return the symbol,
+    ///
+    #[inline]
+    pub fn try_symbol(&self) -> Option<Arc<String>> {
+        self.0.try_symbol()
+    }
+
+    /// Tries to returns node input,
     ///
     #[inline]
     pub fn try_input(&self) -> Option<Arc<String>> {
         self.0.try_input()
     }
 
-    /// Returns node tag,
+    /// Tries to return node tag,
     ///
     #[inline]
     pub fn try_tag(&self) -> Option<Arc<String>> {
         self.0.try_tag()
     }
-}
 
+    /// Tries to return node doc_headers,
+    ///
+    #[inline]
+    pub fn try_doc_headers(&self) -> Option<Arc<Vec<String>>> {
+        self.0.try_doc_headers()
+    }
+
+    /// Tries to return node annotations,
+    ///
+    #[inline]
+    pub fn try_annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
+        self.0.try_annotations()
+    }
+}

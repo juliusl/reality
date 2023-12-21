@@ -203,7 +203,9 @@ impl InternHandle {
     ///
     #[inline]
     pub async fn dependency_name(&self) -> Option<Arc<String>> {
-        crate::repr::dependency::DEPENDENCY_NAME.strong_ref(self).await
+        crate::repr::dependency::DEPENDENCY_NAME
+            .strong_ref(self)
+            .await
     }
 
     /// Tries to return the name of the dependency,
@@ -283,6 +285,20 @@ impl InternHandle {
         crate::repr::field::FIELD_NAME.try_copy(self)
     }
 
+    /// Returns the node symbol,
+    ///
+    #[inline]
+    pub async fn symbol(&self) -> Option<Arc<String>> {
+        crate::repr::node::SYMBOL.strong_ref(self).await
+    }
+
+    /// Tries to return the node symbol,
+    ///
+    #[inline]
+    pub fn try_symbol(&self) -> Option<Arc<String>> {
+        crate::repr::node::SYMBOL.try_strong_ref(self)
+    }
+
     /// Returns a strong reference to the input,
     ///
     #[inline]
@@ -323,6 +339,20 @@ impl InternHandle {
     #[inline]
     pub fn try_node_idx(&self) -> Option<usize> {
         crate::repr::node::NODE_IDX.try_copy(self)
+    }
+
+    /// Returns a strong reference to doc_headers,
+    ///
+    #[inline]
+    pub async fn doc_headers(&self) -> Option<Arc<Vec<String>>> {
+        crate::repr::node::DOC_HEADERS.strong_ref(self).await
+    }
+
+    /// Tries to return a strong reference to doc_headers,
+    ///
+    #[inline]
+    pub fn try_doc_headers(&self) -> Option<Arc<Vec<String>>> {
+        crate::repr::node::DOC_HEADERS.try_strong_ref(self)
     }
 
     /// Returns a strong reference to annotations,

@@ -260,6 +260,21 @@ impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::NodeProvide
             let mut parser = self.create_parser_for_block(block_info, Some(key.transmute()));
             parser.set_storage(target.storage);
 
+            // Create and push a new node level
+            let mut node = runir::prelude::NodeLevel::new()
+                .with_symbol(name)
+                .with_doc_headers(node_info.line.doc_headers.clone())
+                .with_annotations(node_info.line.comment_properties.clone())
+                .with_idx(node_info.idx);
+
+            if let Some(input) = input {
+                node.set_input(input);
+            }
+            if let Some(tag) = tag{
+                node.set_tag(tag);
+            }
+            parser.nodes.push(node);
+
             self.apply_plugin(name, input, tag, &mut parser);
 
             if let Some(storage) = parser.clone_storage() {

@@ -472,8 +472,9 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     /// Attributes parsed,
     ///
     pub attributes: ParsedAttributes,
-
-    nodes: Vec<NodeLevel>,
+    /// Nodes parsed from source,
+    ///
+    pub(crate) nodes: Vec<NodeLevel>,
 }
 
 impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
@@ -829,13 +830,14 @@ where
         if _node_info.parent_idx.is_none() {
             let last = self.attributes.attributes.last();
             trace!("Add node {:?} {:?}", _node_info, last);
+        } else {
+            // When adding a node, the node level is set before this fn
+            let node = NodeLevel::new()
+                .with_doc_headers(_node_info.line.doc_headers)
+                .with_annotations(_node_info.line.comment_properties)
+                .with_idx(_node_info.idx);
+            self.nodes.push(node);
         }
-
-        // Create and push a new node level
-        let node = NodeLevel::new()
-            .with_annotations(_node_info.line.comment_properties)
-            .with_idx(_node_info.idx);
-        self.nodes.push(node);
     }
 
     fn parsed_line(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {
@@ -848,11 +850,12 @@ where
 
         // Configure the current node
         if let Some(last) = self.nodes[..].last_mut() {
+            last.set_symbol(name);
             if let Some(input) = input {
                 last.set_input(input);
             }
             if let Some(tag) = tag {
-                last.set_input(tag);
+                last.set_tag(tag);
             }
         }
 
@@ -919,6 +922,18 @@ where
             parser.set_tag(tag);
         }
 
+        // // Configure node properties
+        if let Some(node) = parser.nodes[..].last_mut() {
+            node.set_symbol(extension);
+
+            if let Some(input) = input {
+                node.set_input(input);
+            }
+            if let Some(tag) = tag {
+                node.set_tag(tag);
+            }
+        }
+
         // If an block object-type exists, then begin to load
         if let (
             Some(BlockObjectType {
@@ -931,19 +946,6 @@ where
             parser.block_object_types.get(extension).cloned(),
             parser.namespace(extension),
         ) {
-            // // Prepare the repr factory for all properties
-            // let mut factory = runir::prelude::ReprFactory::<CrcInterner>::default();
-            // factory.push_level(attribute_type.resource).unwrap();
-            // if let Some(field) = attribute_type.field {
-            //     factory.push_level(field).unwrap();
-            // }
-            // let mut node = NodeLevel::new().with_input(input.unwrap_or_default());
-            // if let Some(tag) = tag {
-            //     node = node.with_tag(tag);
-            // }
-            // factory.push_level(node).unwrap();
-            // let _repr = factory.repr().await.unwrap();
-
             attribute_type.parse(&mut parser, input.unwrap_or_default());
 
             // Drain any dispatches before trying to load the rest of the resources
@@ -970,7 +972,10 @@ where
 
 #[allow(unused)]
 mod test {
+    use reality_derive::Reality;
+
     use super::*;
+    use crate::prelude::*;
     use crate::Project;
     use crate::Shared;
     use crate::Workspace;
@@ -978,7 +983,13 @@ mod test {
     #[tokio::test]
     async fn test_parser() {
         // Define a test resource
+        #[derive(Reality, Clone, Default, Debug)]
+        #[reality(call = noop, plugin)]
         struct Test;
+
+        async fn noop(_: &mut ThunkContext) -> anyhow::Result<()> {
+            Ok(())
+        }
 
         impl runir::prelude::Field<0> for Test {
             type ParseType = String;
@@ -990,14 +1001,15 @@ mod test {
 
         let mut project = Project::new(Shared::default());
 
-        project.add_node_plugin("example", |_, _, parser| {
+        project.add_node_plugin("example", |input, tag, parser| {
             parser.add_type_with(
                 "test",
                 |parser, input| {
                     assert_eq!(2, parser.nodes.len(), "should be 2 nodes");
 
                     if let Some(node) = parser.nodes.last() {
-                        let (input, tag, annotations) = node.mount();
+                        let (symbol, input, tag, doc_headers, annotations) = node.mount();
+                        assert_eq!(symbol.unwrap().as_str(), "test");
                         assert!(input.is_none());
                         assert_eq!(tag.unwrap().as_str(), "world");
                         assert_eq!(
@@ -1005,10 +1017,16 @@ mod test {
                             "A really cool description"
                         );
                     }
+
+                    if let Some(node) = parser.nodes.first() {
+                        eprintln!("{:?}", node.mount());
+                    }
                 },
                 ResourceLevel::new::<String>(),
                 FieldLevel::new::<0, Test>(),
             );
+
+            parser.with_object_type::<Test>();
         });
 
         let mut workspace = Workspace::new();
@@ -1017,10 +1035,18 @@ mod test {
             "test.md",
             r#"
     ```runmd
+    # -- Example of adding a node
     + .example hello-world
+    |# description = A really cool description about an example
+
+    # -- Example of defining a property called `test`
     : world .test hello
     |# name = test
     |# description = A really cool description
+
+    # -- Example of adding an extension to the current node
+    <reality.test>  hello-ext
+    |# description = A really cool description of an extension
     ```
     "#,
         );

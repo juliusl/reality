@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use futures::StreamExt;
 use super::HANDLES;
 use crate::prelude::*;
+use futures::StreamExt;
+use std::sync::Arc;
 
 /// Factory for constructing a repr,
 ///
@@ -22,50 +22,6 @@ where
 }
 
 impl<I: InternerFactory + Default> ReprFactory<I> {
-    /// Creates a new repr w/ the root as the ResourceLevel,
-    ///
-    #[inline]
-    pub fn describe_resource<T: Send + Sync + 'static>() -> Self {
-        let mut repr = ReprFactory::default();
-
-        repr.push_level(ResourceLevel::new::<T>())
-            .expect("should be able to push since the repr is empty");
-
-        repr
-    }
-
-    /// Pushes a level to the current stack of levels,
-    ///
-    pub fn push_level(&mut self, level: impl Level) -> anyhow::Result<()> {
-        // Configure a new handle
-        let (ready, handle) = level.configure(&mut self.interner).result()?;
-
-        self.ready_notify.push(ready);
-
-        // Handle errors
-        if let Some(last) = self.levels.last() {
-            let flag = last.create_value.level_flags();
-
-            if flag != LevelFlags::from_bits_truncate(handle.level_flags().bits() >> 1) {
-                Err(anyhow::anyhow!("Expected next level"))?;
-            }
-        } else if handle.level_flags() != LevelFlags::ROOT {
-            Err(anyhow::anyhow!("Expected root level"))?;
-        }
-
-        // Push the level to the stack
-        self.levels.push(Tag::new(&HANDLES, Arc::new(handle)));
-
-        Ok(())
-    }
-
-    /// Returns the current representation level,
-    ///
-    #[inline]
-    pub fn level(&self) -> usize {
-        self.levels.len() - 1
-    }
-
     /// Constructs and returns a new representation,
     ///
     pub async fn repr(&self) -> anyhow::Result<Repr> {
@@ -98,5 +54,49 @@ impl<I: InternerFactory + Default> ReprFactory<I> {
         } else {
             Err(anyhow::anyhow!("Could not create representation"))
         }
+    }
+
+    /// Pushes a level to the current stack of levels,
+    ///
+    pub fn push_level(&mut self, level: impl Level) -> anyhow::Result<()> {
+        // Configure a new handle
+        let (ready, handle) = level.configure(&mut self.interner).result()?;
+
+        self.ready_notify.push(ready);
+
+        // Handle errors
+        if let Some(last) = self.levels.last() {
+            let flag = last.create_value.level_flags();
+
+            if flag != LevelFlags::from_bits_truncate(handle.level_flags().bits() >> 1) {
+                Err(anyhow::anyhow!("Expected next level"))?;
+            }
+        } else if handle.level_flags() != LevelFlags::ROOT {
+            Err(anyhow::anyhow!("Expected root level"))?;
+        }
+
+        // Push the level to the stack
+        self.levels.push(Tag::new(&HANDLES, Arc::new(handle)));
+
+        Ok(())
+    }
+
+    /// Creates a new repr w/ the root as the ResourceLevel,
+    ///
+    #[inline]
+    pub fn describe_resource<T: Send + Sync + 'static>() -> Self {
+        let mut repr = ReprFactory::default();
+
+        repr.push_level(ResourceLevel::new::<T>())
+            .expect("should be able to push since the repr is empty");
+
+        repr
+    }
+
+    /// Returns the current representation level,
+    ///
+    #[inline]
+    pub fn level(&self) -> usize {
+        self.levels.len() - 1
     }
 }

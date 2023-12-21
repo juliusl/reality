@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use crate::{prelude::*, define_intern_table, repr::Tag, interner::{InternResult, LevelFlags}, push_tag};
+use crate::define_intern_table;
+use crate::prelude::*;
+use crate::push_tag;
 
 // Intern table for address values
 define_intern_table!(ADDRESS: String);
@@ -39,6 +41,7 @@ impl Level for HostLevel {
 
     type Mount = Arc<String>;
 
+    #[inline]
     fn mount(&self) -> Self::Mount {
         self.address.create_value.clone()
     }

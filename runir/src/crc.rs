@@ -138,10 +138,7 @@ impl Hasher for CrcInterner {
 mod tests {
     use std::{collections::BTreeMap, time::Duration};
 
-    use crate::{
-        interner::LevelFlags,
-        prelude::*,
-    };
+    use crate::{interner::LevelFlags, prelude::*};
 
     struct Test;
 
@@ -178,15 +175,29 @@ mod tests {
         assert_eq!(LevelFlags::LEVEL_1, handle.level_flags());
 
         // Test input level
-        let handle_1 = NodeLevel::new_with(Some("hello world"), Some(""), Some(0), None)
-            .configure(&mut interner)
-            .wait_for_ready()
-            .await;
+        let handle_1 = NodeLevel::new_with(
+            Some("test"),
+            Some("hello world"),
+            Some(""),
+            Some(0),
+            Some(vec![""]),
+            None,
+        )
+        .configure(&mut interner)
+        .wait_for_ready()
+        .await;
         // Test no unexpected side effects exist
-        let handle_2 = NodeLevel::new_with(Some("hello world"), Some(""), Some(0), None)
-            .configure(&mut interner)
-            .wait_for_ready()
-            .await;
+        let handle_2 = NodeLevel::new_with(
+            Some("test"),
+            Some("hello world"),
+            Some(""),
+            Some(0),
+            Some(vec![""]),
+            None,
+        )
+        .configure(&mut interner)
+        .wait_for_ready()
+        .await;
 
         assert_eq!(LevelFlags::LEVEL_2, handle_1.level_flags());
         assert_eq!(LevelFlags::LEVEL_2, handle_2.level_flags());
@@ -219,9 +230,11 @@ mod tests {
         repr.push_level(FieldLevel::new::<0, Test>())
             .expect_err("should be an error");
         repr.push_level(NodeLevel::new_with(
+            Some("test"),
             Some("hello world"),
             Some(""),
             Some(0),
+            Some(vec!["hello"]),
             Some(BTreeMap::new()),
         ))
         .unwrap();

@@ -1,13 +1,13 @@
-pub(crate) mod resource;
-pub(crate) mod field;
-pub(crate) mod node;
-pub(crate) mod host;
 pub(crate) mod dependency;
 mod factory;
+pub(crate) mod field;
+pub(crate) mod host;
+pub(crate) mod node;
+pub(crate) mod resource;
 
 pub mod prelude {
-    pub use super::Repr;
     pub use super::factory::ReprFactory;
+    pub use super::Repr;
 
     pub use super::resource::ResourceLevel;
     pub use super::resource::ResourceRepr;
@@ -26,12 +26,12 @@ pub mod prelude {
     pub use super::host::HostRepr;
 }
 
-use std::sync::Arc;
+use crate::define_intern_table;
+use crate::prelude::*;
 use anyhow::anyhow;
 use serde::Deserialize;
 use serde::Serialize;
-use crate::prelude::*;
-use crate::define_intern_table;
+use std::sync::Arc;
 
 use self::host::HostRepr;
 

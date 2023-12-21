@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use crate::push_tag;
 use crate::define_intern_table;
 use crate::prelude::*;
+use crate::push_tag;
 
 // Intern table for dependency names
 define_intern_table!(DEPENDENCY_NAME: String);
@@ -53,15 +53,13 @@ impl Level for DependencyLevel {
         interner.interner()
     }
 
-    type Mount = (
-        Option<Repr>,
-        Arc<String>,
-    );
+    type Mount = (Option<Repr>, Arc<String>);
 
+    #[inline]
     fn mount(&self) -> Self::Mount {
         (
             self.parent.as_ref().map(|p| p.value()),
-            self.name.create_value.clone()
+            self.name.create_value.clone(),
         )
     }
 }

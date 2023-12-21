@@ -2,11 +2,8 @@ use std::any::TypeId;
 use std::str::FromStr;
 
 use crate::define_intern_table;
-use crate::interner::{InternResult, LevelFlags};
 use crate::prelude::*;
-use crate::interner::InternerFactory;
 use crate::push_tag;
-use crate::repr::Tag;
 
 // Intern table for owner type ids
 define_intern_table!(OWNER_ID: TypeId);
@@ -43,7 +40,7 @@ pub trait Field<const OFFSET: usize>: Send + Sync + 'static {
     fn field_name() -> &'static str;
 
     /// Creates and returns a representation factory at repr level 1,
-    /// 
+    ///
     fn create_repr<I: InternerFactory + Default>() -> anyhow::Result<ReprFactory<I>>
     where
         Self: Sized,
@@ -110,14 +107,9 @@ impl Level for FieldLevel {
         interner.interner()
     }
 
-    type Mount = (
-        TypeId,
-        &'static str,
-        usize,
-        usize,
-        &'static str,
-    );
+    type Mount = (TypeId, &'static str, usize, usize, &'static str);
 
+    #[inline]
     fn mount(&self) -> Self::Mount {
         (
             self.owner_type_id.value(),

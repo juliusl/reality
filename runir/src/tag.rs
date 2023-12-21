@@ -1,8 +1,8 @@
 use std::ops::Deref;
 use std::sync::Arc;
 
-use crate::repr::HANDLES;
 use crate::prelude::*;
+use crate::repr::HANDLES;
 
 /// Each level of runtime representation is defined by a set of tags,
 ///
@@ -77,7 +77,9 @@ impl Tag<InternHandle, Arc<InternHandle>> {
 
         if !from.level_flags().is_empty() {
             if from.level_flags().bits() << 1 != to.level_flags().bits() {
-                Err(anyhow::anyhow!("Trying to link an intern handle out of order"))?;
+                Err(anyhow::anyhow!(
+                    "Trying to link an intern handle out of order"
+                ))?;
             }
         }
 

@@ -1,8 +1,8 @@
-mod repr;
-mod recv;
-mod tag;
-mod level;
 mod interner;
+mod level;
+mod recv;
+mod repr;
+mod tag;
 
 #[cfg(feature = "crc-interner")]
 mod crc;
@@ -54,7 +54,7 @@ mod macros {
         };
         (dyn $interner:ident, $tag:expr) => {
             let tag = $tag;
-    
+
             let inner = tag.clone();
             $interner.push_tag(tag.value(), move |h| {
                 Box::pin(async move { inner.assign(h).await })
@@ -72,8 +72,8 @@ pub mod prelude {
     pub use super::interner::InternTable;
     pub use super::interner::InternerFactory;
 
-    pub use super::recv::Recv;
     pub use super::level::Level;
+    pub use super::recv::Recv;
 
     #[cfg(feature = "crc-interner")]
     pub use super::crc::CrcInterner;
@@ -87,9 +87,9 @@ pub mod prelude {
                 Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send>,
             > + Send,
     >;
-    
-    pub(crate) use super::interner::LevelFlags;
+
     pub(crate) use super::interner::InternResult;
+    pub(crate) use super::interner::LevelFlags;
     pub(crate) use super::tag::Tag;
 }
 
@@ -98,7 +98,7 @@ pub mod prelude {
 mod tests {
     use std::{collections::BTreeMap, sync::Arc};
 
-    use crate::repr::{HANDLES};
+    use crate::repr::HANDLES;
 
     use super::prelude::*;
 
@@ -248,7 +248,9 @@ mod tests {
         let linked = &HANDLES.try_get(&prev.unwrap()).unwrap();
         eprintln!("{:x?}", linked.upgrade());
 
-        let a = crate::repr::node::ANNOTATIONS.try_strong_ref(&input).unwrap();
+        let a = crate::repr::node::ANNOTATIONS
+            .try_strong_ref(&input)
+            .unwrap();
         eprintln!("{:?}", a);
 
         let test = Test::create_repr::<CrcInterner>().unwrap();

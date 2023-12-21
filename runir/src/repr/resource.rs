@@ -1,6 +1,9 @@
 use std::any::TypeId;
 
-use crate::{prelude::*, define_intern_table, repr::Tag, interner::{InternResult, LevelFlags}, push_tag};
+use crate::define_intern_table;
+use crate::push_tag;
+
+use crate::prelude::*;
 
 // Intern table for resource type names
 define_intern_table!(TYPE_NAME: &'static str);
@@ -54,6 +57,7 @@ impl Level for ResourceLevel {
 
     type Mount = (TypeId, &'static str, usize);
 
+    #[inline]
     fn mount(&self) -> Self::Mount {
         (
             self.type_id.value(),
