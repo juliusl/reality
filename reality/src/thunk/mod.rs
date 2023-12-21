@@ -16,6 +16,7 @@ pub mod prelude {
     pub use super::plugin::Plugin;
     pub use crate::AsyncStorageTarget;
     use crate::Attribute;
+    use crate::AttributeParser;
     pub use crate::AttributeType;
     pub use crate::BlockObject;
     use crate::FieldPacket;
@@ -48,11 +49,11 @@ pub mod prelude {
     ///
     pub struct Thunk<P>(pub PhantomData<P>)
     where
-        P: Plugin + Default + Send + Sync + 'static;
+        P: Plugin + runir::prelude::Recv + Default + Send + Sync + 'static;
 
     impl<P, In> Plugin for Thunk<P>
     where
-        P: Plugin<Virtual = In> + Send + Sync + 'static,
+        P: Plugin<Virtual = In> + runir::prelude::Recv + Send + Sync + 'static,
         In: FieldRefController + CallAsync + ToOwned<Owned = P> + NewFn<Inner = P> + Send + Sync,
     {
         type Virtual = P::Virtual;
@@ -76,15 +77,21 @@ pub mod prelude {
         }
     }
 
-    impl<P> AttributeType<Shared> for Thunk<P>
+    impl<P> runir::prelude::Recv for Thunk<P>
     where
         P: Plugin + Send + Sync + 'static,
         P::Virtual: NewFn<Inner = P>,
     {
         fn symbol() -> &'static str {
-            <P as AttributeType<Shared>>::symbol()
+            P::symbol()
         }
+    }
 
+    impl<P> AttributeType<Shared> for Thunk<P>
+    where
+        P: Plugin + Send + Sync + 'static,
+        P::Virtual: NewFn<Inner = P>,
+    {
         fn parse(parser: &mut crate::AttributeParser<Shared>, content: impl AsRef<str>) {
             <P as AttributeType<Shared>>::parse(parser, content);
 
@@ -118,31 +125,32 @@ pub mod prelude {
         }
     }
 
-    #[async_trait::async_trait]
-    impl<P> BlockObject<Shared> for Thunk<P>
+    #[async_trait::async_trait(?Send)]
+    impl<P> BlockObject for Thunk<P>
     where
         P: SetField<FieldPacket> + Plugin + Send + Sync + 'static,
         P::Virtual: NewFn<Inner = P>,
     {
         /// Called when the block object is being loaded into it's namespace,
         ///
-        async fn on_load(storage: AsyncStorageTarget<Shared>, rk: Option<ResourceKey<Attribute>>) {
-            <P as BlockObject<Shared>>::on_load(storage, rk).await;
+        async fn on_load(parser: AttributeParser<Shared>, storage: AsyncStorageTarget<Shared>, rk: Option<ResourceKey<Attribute>>) -> AttributeParser<Shared> {
+            <P as BlockObject>::on_load(parser, storage, rk).await
         }
 
         /// Called when the block object is being unloaded from it's namespace,
         ///
         async fn on_unload(
+            parser: AttributeParser<Shared>,
             storage: AsyncStorageTarget<Shared>,
             rk: Option<ResourceKey<Attribute>>,
-        ) {
-            <P as BlockObject<Shared>>::on_unload(storage, rk).await;
+        ) -> AttributeParser<Shared> {
+            <P as BlockObject>::on_unload(parser, storage, rk).await
         }
 
         /// Called when the block object's parent attribute has completed processing,
         ///
         fn on_completed(storage: AsyncStorageTarget<Shared>) -> Option<AsyncStorageTarget<Shared>> {
-            <P as BlockObject<Shared>>::on_completed(storage)
+            <P as BlockObject>::on_completed(storage)
         }
     }
 

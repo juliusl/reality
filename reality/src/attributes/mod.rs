@@ -33,26 +33,8 @@ pub mod prelude {
     pub use super::visit::OnReadField;
     pub use super::visit::OnWriteField;
     pub use super::visit::SetField;
-    pub use super::visit::Visit;
-    pub use super::visit::VisitMut;
     pub use super::visit::VisitVirtual;
     pub use super::visit::VisitVirtualMut;
-
-    /// Returns fields for an attribute type,
-    ///
-    pub fn visitor<S: StorageTarget, T>(
-        attr_ty: &(impl AttributeType<S> + Visit<T>),
-    ) -> Vec<Field<'_, T>> {
-        attr_ty.visitor::<T>()
-    }
-
-    /// Returns mutable fields for an attribute type,
-    ///
-    pub fn visitor_mut<'a: 'b, 'b, S: StorageTarget, T>(
-        attr_ty: &'a mut (impl AttributeType<S> + VisitMut<T>),
-    ) -> Vec<FieldMut<'b, T>> {
-        attr_ty.visitor_mut::<T>()
-    }
 
     pub trait FindField<T> {
         type Output;
@@ -150,13 +132,13 @@ mod tests {
     /// Called when loading this object,
     ///
     #[allow(dead_code)]
-    async fn on_load<S>(storage: AsyncStorageTarget<S>, _: Option<ResourceKey<Attribute>>)
-    where
-        S: StorageTarget + Send + Sync + 'static,
+    async fn on_load(parser: AttributeParser<Shared>, storage: AsyncStorageTarget<Shared>, _: Option<ResourceKey<Attribute>>) -> AttributeParser<Shared>
     {
         storage
             .maybe_intialize_dispatcher::<u64>(ResourceKey::root())
             .await;
+
+        parser
     }
 
     #[allow(dead_code)]
@@ -185,12 +167,16 @@ mod tests {
         }
     }
 
-    impl<S: StorageTarget + Send + Sync + 'static> AttributeType<S> for Test2 {
+    impl runir::prelude::Recv for Test2 {
+        #[doc = r" Symbol for this receiver,"]
+        #[doc = r""]
         fn symbol() -> &'static str {
             "test2"
         }
+    }
 
-        fn parse(parser: &mut AttributeParser<S>, _content: impl AsRef<str>) {
+    impl AttributeType<Shared> for Test2 {
+        fn parse(parser: &mut AttributeParser<Shared>, _content: impl AsRef<str>) {
             if let Some(_storage) = parser.storage_mut() {}
         }
     }
@@ -217,8 +203,6 @@ mod tests {
     fn test_visit() {
         let mut test = Test::default();
 
-        let fields = <Test as VisitMut<BTreeMap<String, String>>>::visit_mut(&mut test);
-        println!("{:#?}", fields);
         test.set_field(FieldOwned {
             owner: std::any::type_name::<Test>().to_string(),
             name: "name".to_string(),

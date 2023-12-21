@@ -215,6 +215,34 @@ impl InternHandle {
         crate::repr::dependency::DEPENDENCY_NAME.try_strong_ref(self)
     }
 
+    /// Returns the name of the receiver,
+    ///
+    #[inline]
+    pub async fn recv_name(&self) -> Option<Arc<String>> {
+        crate::repr::recv::RECV_NAMES.strong_ref(self).await
+    }
+
+    /// Tries to return the name of the receiver,
+    ///
+    #[inline]
+    pub fn try_recv_name(&self) -> Option<Arc<String>> {
+        crate::repr::recv::RECV_NAMES.try_strong_ref(self)
+    }
+
+    /// Returns the name of the receiver fields,
+    ///
+    #[inline]
+    pub async fn recv_fields(&self) -> Option<Arc<Vec<Repr>>> {
+        crate::repr::recv::RECV_FIELDS.strong_ref(self).await
+    }
+
+    /// Tries to return the receiver fields,
+    ///
+    #[inline]
+    pub fn try_recv_fields(&self) -> Option<Arc<Vec<Repr>>> {
+        crate::repr::recv::RECV_FIELDS.try_strong_ref(self)
+    }
+
     /// Returns the type id of the owner of this field,
     ///
     #[inline]

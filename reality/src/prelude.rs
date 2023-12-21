@@ -52,8 +52,6 @@ pub use crate::Source;
 pub use crate::StorageTarget;
 pub use crate::ToFrame;
 pub use crate::Transform;
-pub use crate::Visit;
-pub use crate::VisitMut;
 pub use crate::VisitVirtual;
 pub use crate::VisitVirtualMut;
 pub use crate::WireServer;

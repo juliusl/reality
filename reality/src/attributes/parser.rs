@@ -19,6 +19,7 @@ use super::attribute_type::ParsableAttributeTypeField;
 use super::attribute_type::ParsableField;
 use super::AttributeTypeParser;
 use super::StorageTarget;
+use crate::Shared;
 use crate::block::BlockObjectHandler;
 use crate::AsyncStorageTarget;
 use crate::AttributeType;
@@ -28,6 +29,8 @@ use crate::CallAsync;
 use crate::Decoration;
 use crate::FieldPacket;
 use crate::KvpExt;
+use crate::LinkFieldFn;
+use crate::LinkRecvFn;
 use crate::ResourceKey;
 use crate::SetIdentifiers;
 use crate::ThunkContext;
@@ -459,13 +462,13 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     tag: Option<String>,
     /// Block object types,
     ///
-    block_object_types: BTreeMap<String, BlockObjectType<Storage>>,
+    block_object_types: BTreeMap<String, BlockObjectType>,
     /// Table of attribute type parsers,
     ///
     attribute_types: BTreeMap<String, AttributeTypeParser<Storage>>,
     /// Stack of block object handlers to call on specific events,
     ///
-    handlers: Vec<BlockObjectHandler<Storage::Namespace>>,
+    handlers: Vec<BlockObjectHandler>,
     /// Reference to centralized-storage,
     ///
     storage: Option<Arc<tokio::sync::RwLock<Storage>>>,
@@ -475,6 +478,9 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     /// Nodes parsed from source,
     ///
     pub(crate) nodes: Vec<NodeLevel>,
+    /// Fields that have been parsed,
+    /// 
+    pub(crate) fields: Vec<Repr>,
 }
 
 impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
@@ -488,6 +494,7 @@ impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
             storage: Default::default(),
             attributes: ParsedAttributes::default(),
             nodes: vec![],
+            fields: vec![],
         }
     }
 }
@@ -503,6 +510,7 @@ impl<S: StorageTarget + 'static> Clone for AttributeParser<S> {
             storage: self.storage.clone(),
             attributes: self.attributes.clone(),
             nodes: self.nodes.clone(),
+            fields: self.fields.clone(),
         }
     }
 }
@@ -515,11 +523,12 @@ impl<S: StorageTarget> std::fmt::Debug for AttributeParser<S> {
             .field("attribute_table", &self.attribute_types)
             .field("storage", &self.storage.is_some())
             .field("attributes", &self.attributes)
+            .field("fields", &self.fields)
             .finish()
     }
 }
 
-impl<S: StorageTarget> AttributeParser<S> {
+impl AttributeParser<Shared> {
     /// Parses an attribute and if successful returns the resource key used,
     ///
     pub fn parse_attribute<T: FromStr + Send + Sync + 'static>(
@@ -551,21 +560,21 @@ impl<S: StorageTarget> AttributeParser<S> {
 
     /// Adds an object type to the parser,
     ///
-    pub fn with_object_type<O: BlockObject<S>>(&mut self) -> &mut Self {
+    pub fn with_object_type<O: BlockObject>(&mut self) -> &mut Self {
         self.add_object_type(BlockObjectType::new::<O>());
         self
     }
 
     /// Adds an object type to the parser,
     ///
-    pub fn add_object_type(&mut self, object_ty: impl Into<BlockObjectType<S>>) {
+    pub fn add_object_type(&mut self, object_ty: impl Into<BlockObjectType>) {
         let object_ty = object_ty.into();
         debug!("Enabling object type {}", object_ty.ident);
         self.block_object_types
             .insert(object_ty.ident.to_string(), object_ty);
     }
 
-    pub fn add_object_type_with(&mut self, ident: &str, object_ty: impl Into<BlockObjectType<S>>) {
+    pub fn add_object_type_with(&mut self, ident: &str, object_ty: impl Into<BlockObjectType>) {
         let object_ty = object_ty.into();
         debug!("Enabling object type {}", object_ty.ident);
         self.block_object_types.insert(ident.to_string(), object_ty);
@@ -575,7 +584,7 @@ impl<S: StorageTarget> AttributeParser<S> {
     ///
     pub fn with_type<C>(&mut self) -> &mut Self
     where
-        C: AttributeType<S> + Send + Sync + 'static,
+        C: AttributeType<Shared> + Send + Sync + 'static,
     {
         self.add_type(AttributeTypeParser::new::<C>());
         self
@@ -583,7 +592,7 @@ impl<S: StorageTarget> AttributeParser<S> {
 
     /// Adds a custom attribute parser,
     ///
-    pub fn add_type(&mut self, attr_ty: impl Into<AttributeTypeParser<S>>) {
+    pub fn add_type(&mut self, attr_ty: impl Into<AttributeTypeParser<Shared>>) {
         let custom_attr = attr_ty.into();
         self.attribute_types
             .insert(custom_attr.ident().to_string(), custom_attr);
@@ -596,11 +605,20 @@ impl<S: StorageTarget> AttributeParser<S> {
     pub fn add_type_with(
         &mut self,
         ident: impl AsRef<str>,
-        parse: fn(&mut AttributeParser<S>, String),
+        parse: fn(&mut AttributeParser<Shared>, String),
+        link_recv: LinkRecvFn,
+        link_field: LinkFieldFn,
         resource: ResourceLevel,
         field: FieldLevel,
-    ) -> AttributeTypeParser<S> {
-        let attr = AttributeTypeParser::new_with(ident, parse, resource, Some(field));
+    ) -> AttributeTypeParser<Shared> {
+        let attr = AttributeTypeParser::new_with(
+            ident,
+            parse,
+            link_recv,
+            link_field,
+            resource,
+            Some(field),
+        );
         self.add_type(attr.clone());
         attr
     }
@@ -609,7 +627,6 @@ impl<S: StorageTarget> AttributeParser<S> {
     ///
     pub fn with_parseable_field<const FIELD_OFFSET: usize, Owner>(&mut self) -> &mut Self
     where
-        S: StorageTarget + Send + Sync + 'static,
         Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
         <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
@@ -621,7 +638,6 @@ impl<S: StorageTarget> AttributeParser<S> {
     ///
     pub fn add_parseable_field<const FIELD_OFFSET: usize, Owner>(&mut self)
     where
-        S: StorageTarget + Send + Sync + 'static,
         Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
         <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
@@ -635,8 +651,7 @@ impl<S: StorageTarget> AttributeParser<S> {
         ident: impl Into<String>,
     ) -> &mut Self
     where
-        S: StorageTarget + Send + Sync + 'static,
-        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
         <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
         self.add_parseable_with::<FIELD_OFFSET, Owner>(ident.into());
@@ -647,13 +662,14 @@ impl<S: StorageTarget> AttributeParser<S> {
     ///
     pub fn add_parseable_with<const FIELD_OFFSET: usize, Owner>(&mut self, ident: impl Into<String>)
     where
-        S: StorageTarget + Send + Sync + 'static,
-        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
         <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
         self.add_type_with(
             ident.into(),
             ParsableField::<FIELD_OFFSET, Owner>::parse,
+            Owner::link_recv,
+            Owner::link_field,
             ResourceLevel::new::<Owner::ProjectedType>(),
             FieldLevel::new::<FIELD_OFFSET, Owner>(),
         );
@@ -663,9 +679,8 @@ impl<S: StorageTarget> AttributeParser<S> {
     ///
     pub fn add_parseable_attribute_type_field<const FIELD_OFFSET: usize, Owner>(&mut self)
     where
-        S: StorageTarget + Send + Sync + 'static,
         Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
-        Owner::ParseType: AttributeType<S> + Send + Sync + 'static,
+        Owner::ParseType: AttributeType<Shared> + Send + Sync + 'static,
     {
         self.add_type(AttributeTypeParser::parseable_attribute_type_field::<
             FIELD_OFFSET,
@@ -677,9 +692,8 @@ impl<S: StorageTarget> AttributeParser<S> {
     ///
     pub fn add_parseable_extension_type_field<const FIELD_OFFSET: usize, Owner>(&mut self)
     where
-        S: StorageTarget + Send + Sync + 'static,
         Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
-        Owner::ParseType: BlockObject<S> + Send + Sync + 'static,
+        Owner::ParseType: BlockObject + Send + Sync + 'static,
     {
         self.add_type(AttributeTypeParser::parseable_object_type_field::<
             FIELD_OFFSET,
@@ -694,9 +708,8 @@ impl<S: StorageTarget> AttributeParser<S> {
         ident: impl Into<String>,
     ) -> &mut Self
     where
-        S: StorageTarget + Send + Sync + 'static,
-        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
-        Owner::ParseType: AttributeType<S> + Send + Sync + 'static,
+        Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        Owner::ParseType: AttributeType<Shared> + Send + Sync + 'static,
     {
         self.add_parseable_attribute_type_field_with::<FIELD_OFFSET, Owner>(ident.into());
         self
@@ -708,13 +721,14 @@ impl<S: StorageTarget> AttributeParser<S> {
         &mut self,
         ident: impl Into<String>,
     ) where
-        S: StorageTarget + Send + Sync + 'static,
-        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
-        Owner::ParseType: AttributeType<S> + Send + Sync + 'static,
+        Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        Owner::ParseType: AttributeType<Shared> + Send + Sync + 'static,
     {
         self.add_type_with(
             ident.into(),
-            ParsableAttributeTypeField::<FIELD_OFFSET, S, Owner>::parse,
+            ParsableAttributeTypeField::<FIELD_OFFSET, Owner>::parse,
+            Owner::link_recv,
+            Owner::link_field,
             ResourceLevel::new::<Owner::ProjectedType>(),
             FieldLevel::new::<FIELD_OFFSET, Owner>(),
         );
@@ -734,7 +748,7 @@ impl<S: StorageTarget> AttributeParser<S> {
 
     /// Sets the current storage,
     ///
-    pub fn set_storage(&mut self, storage: Arc<tokio::sync::RwLock<S>>) {
+    pub fn set_storage(&mut self, storage: Arc<tokio::sync::RwLock<Shared>>) {
         self.storage = Some(storage);
     }
 
@@ -759,13 +773,13 @@ impl<S: StorageTarget> AttributeParser<S> {
 
     /// Returns a clone of storage,
     ///
-    pub fn clone_storage(&self) -> Option<Arc<tokio::sync::RwLock<S>>> {
+    pub fn clone_storage(&self) -> Option<Arc<tokio::sync::RwLock<Shared>>> {
         self.storage.clone()
     }
 
     /// Returns an immutable reference to centralized-storage,
     ///
-    pub fn storage<'a: 'b, 'b>(&'a self) -> Option<tokio::sync::RwLockReadGuard<'b, S>> {
+    pub fn storage<'a: 'b, 'b>(&'a self) -> Option<tokio::sync::RwLockReadGuard<'b, Shared>> {
         if let Some(storage) = self.storage.as_ref() {
             storage.try_read().ok()
         } else {
@@ -775,7 +789,7 @@ impl<S: StorageTarget> AttributeParser<S> {
 
     /// Returns a mutable reference to centralized storage,
     ///
-    pub fn storage_mut<'a: 'b, 'b>(&'a mut self) -> Option<tokio::sync::RwLockWriteGuard<'b, S>> {
+    pub fn storage_mut<'a: 'b, 'b>(&'a mut self) -> Option<tokio::sync::RwLockWriteGuard<'b, Shared>> {
         if let Some(storage) = self.storage.as_ref() {
             storage.try_write().ok()
         } else {
@@ -791,16 +805,14 @@ impl<S: StorageTarget> AttributeParser<S> {
     pub fn namespace(
         &mut self,
         namespace: impl Into<String>,
-    ) -> Option<AsyncStorageTarget<S::Namespace>>
-    where
-        S: 'static,
+    ) -> Option<AsyncStorageTarget<Shared>>
     {
         let namespace = namespace.into();
 
         // Check if an async_target already exists,
         //
         let async_target =
-            resource_owned!(self, AsyncStorageTarget<S::Namespace>, namespace.clone());
+            resource_owned!(self, AsyncStorageTarget<Shared>, namespace.clone());
         if async_target.is_some() {
             return async_target;
         }
@@ -817,9 +829,8 @@ impl<S: StorageTarget> AttributeParser<S> {
     }
 }
 
-impl<S> Node for super::AttributeParser<S>
-where
-    S: StorageTarget + StorageTarget + Send + Sync + Unpin + 'static,
+#[async_trait(?Send)]
+impl Node for super::AttributeParser<Shared>
 {
     fn assign_path(&mut self, path: String) {
         self.attributes.bind_last_to_path(path);
@@ -845,7 +856,7 @@ where
         self.attributes.add_line(&_node_info.line);
     }
 
-    fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>) {
+    async fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>) {
         self.reset();
 
         // Configure the current node
@@ -869,6 +880,12 @@ where
         match self.attribute_types.get(name).cloned() {
             Some(cattr) => {
                 cattr.parse(self, input.unwrap_or_default());
+
+                if let Some(last) = self.nodes.last() {
+                    if let Ok(field_repr) = cattr.link_field(last.clone()).await {
+                        self.fields.push(field_repr);
+                    }
+                }
             }
             None => {
                 trace!(attr_ty = name, "Did not have attribute");
@@ -892,10 +909,7 @@ where
 }
 
 #[runmd::prelude::async_trait(?Send)]
-impl<S> ExtensionLoader for super::AttributeParser<S>
-where
-    S: StorageTarget + Send + Sync + Unpin + 'static,
-    <S as StorageTarget>::Namespace: Send + Sync + 'static,
+impl ExtensionLoader for super::AttributeParser<Shared>
 {
     async fn load_extension(
         &self,
@@ -910,9 +924,9 @@ where
             storage.drain_dispatch_queues();
         }
 
-        // If there was a handler on the stack, call it's unload fn
-        if let Some(handler) = parser.handlers.last() {
-            handler.on_unload().await;
+        let handler =  parser.handlers.last().cloned();
+        if handler.is_some() {
+            parser = handler.unwrap().on_unload(parser).await;
         }
 
         // Clear any pre-existing attribute types
@@ -953,9 +967,10 @@ where
                 storage.drain_dispatch_queues();
             }
 
+            let rk = parser.attributes.last().copied();
             // Extension has been loaded to a namespace
-            handler
-                .on_load(namespace, parser.attributes.last().copied())
+            parser = handler
+                .on_load(parser, namespace, rk)
                 .await;
 
             parser.handlers.push(handler);
@@ -972,6 +987,7 @@ where
 
 #[allow(unused)]
 mod test {
+    use anyhow::Ok;
     use reality_derive::Reality;
 
     use super::*;
@@ -1022,6 +1038,13 @@ mod test {
                         eprintln!("{:?}", node.mount());
                     }
                 },
+                |_, _| Box::pin(async { Ok(Repr::default()) }),
+                |r, f, n| Box::pin(async move { 
+                    eprintln!("{:?}", r.mount());
+                    eprintln!("{:?}", f.mount());
+                    eprintln!("{:?}", n.mount());
+                    Ok(Repr::default()) 
+                }),
                 ResourceLevel::new::<String>(),
                 FieldLevel::new::<0, Test>(),
             );

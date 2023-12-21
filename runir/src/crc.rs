@@ -243,7 +243,7 @@ mod tests {
         assert_eq!(3, repr.level());
 
         // TODO: convert eprintln to assert_eq
-        let repr = repr.repr().await.unwrap();
+        let repr = repr.link().await.unwrap();
         eprintln!("{:x?}", repr);
 
         let levels = repr.try_get_levels();
@@ -255,7 +255,7 @@ mod tests {
             .push_level(DependencyLevel::new("cool dep").with_parent(repr))
             .unwrap();
 
-        let mut _drepr = drepr.repr().await.unwrap();
+        let mut _drepr = drepr.link().await.unwrap();
         eprintln!("{:x?}", _drepr);
 
         let levels = _drepr.try_get_levels();

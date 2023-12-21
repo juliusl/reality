@@ -1,4 +1,5 @@
 mod provider;
+use async_trait::async_trait;
 pub use provider::Provider;
 
 mod info;
@@ -12,6 +13,7 @@ pub type BoxedNode = std::pin::Pin<Box<dyn Node + Unpin + Send + Sync>>;
 
 /// Trait for types that consume instructions from a runmd block,
 ///
+#[async_trait(?Send)]
 pub trait Node: crate::prelude::ExtensionLoader + std::fmt::Debug {
     /// Assigns a path to this node,
     ///
@@ -27,14 +29,14 @@ pub trait Node: crate::prelude::ExtensionLoader + std::fmt::Debug {
     ///
     fn parsed_line(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {}
 
-    /// Define a property for this node,
-    ///
-    fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>);
-
     /// Called when the **entire** block this node belongs to has completed parsing,
     ///
     /// **Note**: At this final step, the node will be un-pinned and references to it will be dropped
     /// from parser state.
     ///
     fn completed(self: Box<Self>);
+
+    /// Define a property for this node,
+    ///
+    async fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>);
 }

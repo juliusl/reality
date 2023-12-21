@@ -1,16 +1,16 @@
 use anyhow::Error;
-use reality::ResourceKey;
-use reality::StorageTarget;
+// use reality::ResourceKey;
+// use reality::StorageTarget;
 use tokio::task::JoinError;
 use tokio::task::JoinHandle;
 
-use crate::background_work::BackgroundWork;
-use crate::background_work::BackgroundWorkEngineHandle;
-use crate::background_work::CallStatus;
+// use crate::background_work::BackgroundWork;
+// use crate::background_work::BackgroundWorkEngineHandle;
+// use crate::background_work::CallStatus;
 use crate::engine::EngineBuilder;
 use crate::prelude::Engine;
 use crate::prelude::EngineHandle;
-use crate::prelude::Published;
+// use crate::prelude::Published;
 
 /// Type-alias for the background task listening for new engine packets,
 ///
@@ -59,7 +59,7 @@ impl ForegroundEngine {
 
     /// Creates a new foreground engine from a workspace,
     ///
-    pub fn new(mut builder: EngineBuilder) -> ForegroundEngine {
+    pub fn new(mut _builder: EngineBuilder) -> ForegroundEngine {
         // let runtime = builder.runtime_builder.build().unwrap();
 
         // let jh = runtime.spawn(async {
@@ -147,5 +147,5 @@ impl ForegroundEngine {
 
 #[test]
 fn test_foreground_engine() {
-    let _mt_engine = ForegroundEngine::new(crate::prelude::Engine::builder());
+    // let _mt_engine = ForegroundEngine::new(crate::prelude::Engine::builder());
 }

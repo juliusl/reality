@@ -47,8 +47,9 @@ impl BlockProvider for Test {
     }
 }
 
+#[async_trait(?Send)]
 impl NodeProvider for Test {
-    fn provide(
+    async fn provide(
         &self,
         name: &str,
         tag: Option<&str>,
@@ -74,6 +75,7 @@ impl ExtensionLoader for Test {
     }
 }
 
+#[async_trait(?Send)]
 impl Node for Test {
     /// Sets the block info for this node,
     ///
@@ -96,7 +98,7 @@ impl Node for Test {
 
     /// Define a property for this node,
     ///
-    fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>) {
+    async fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>) {
         trace!(name, tag, input, "define_property");
     }
 

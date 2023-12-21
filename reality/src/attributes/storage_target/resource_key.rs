@@ -277,7 +277,7 @@ async fn test_set_repr() {
     let mut repr = ReprFactory::<CrcInterner>::describe_resource::<String>();
     repr.push_level(DependencyLevel::new("test")).unwrap();
 
-    let repr = repr.repr().await.unwrap();
+    let repr = repr.link().await.unwrap();
     rk.set_repr(repr);
     eprintln!("{:x?}", uuid::Uuid::from_u128(rk.data));
 

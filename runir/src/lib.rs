@@ -1,8 +1,8 @@
 mod interner;
 mod level;
-mod recv;
 mod repr;
 mod tag;
+mod entity;
 
 #[cfg(feature = "crc-interner")]
 mod crc;
@@ -73,7 +73,6 @@ pub mod prelude {
     pub use super::interner::InternerFactory;
 
     pub use super::level::Level;
-    pub use super::recv::Recv;
 
     #[cfg(feature = "crc-interner")]
     pub use super::crc::CrcInterner;
@@ -254,7 +253,7 @@ mod tests {
         eprintln!("{:?}", a);
 
         let test = Test::create_repr::<CrcInterner>().unwrap();
-        eprintln!("{:x?}", test.repr().await.unwrap());
+        eprintln!("{:x?}", test.link().await.unwrap());
         ()
     }
 }

@@ -24,7 +24,7 @@ where
 impl<I: InternerFactory + Default> ReprFactory<I> {
     /// Constructs and returns a new representation,
     ///
-    pub async fn repr(&self) -> anyhow::Result<Repr> {
+    pub async fn link(&self) -> anyhow::Result<Repr> {
         use futures::TryStreamExt;
 
         tracing::trace!("Creating repr, waiting for background interning to catch up");

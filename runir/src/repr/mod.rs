@@ -3,6 +3,7 @@ mod factory;
 pub(crate) mod field;
 pub(crate) mod host;
 pub(crate) mod node;
+pub(crate) mod recv;
 pub(crate) mod resource;
 
 pub mod prelude {
@@ -15,6 +16,10 @@ pub mod prelude {
     pub use super::field::Field;
     pub use super::field::FieldLevel;
     pub use super::field::FieldRepr;
+
+    pub use super::recv::Recv;
+    pub use super::recv::RecvLevel;
+    pub use super::recv::RecvRepr;
 
     pub use super::node::NodeLevel;
     pub use super::node::NodeRepr;
@@ -128,6 +133,13 @@ impl Repr {
         }
     }
 
+    /// Returns the repr as a resource repr,
+    ///
+    #[inline]
+    pub fn as_resource(&self) -> Option<ResourceRepr> {
+        self.try_get_levels().get(0).copied().map(ResourceRepr)
+    }
+
     /// Returns the repr as a dependency repr,
     ///
     #[inline]
@@ -136,18 +148,18 @@ impl Repr {
         self.try_get_levels().get(1).copied().map(DependencyRepr)
     }
 
+    /// Returns the repr as a receiver repr,
+    /// 
+    #[inline]
+    pub fn as_recv(&self) -> Option<RecvRepr> {
+        self.try_get_levels().get(1).copied().map(RecvRepr)
+    }
+
     /// Returns the repr as a field repr,
     ///
     #[inline]
     pub fn as_field(&self) -> Option<FieldRepr> {
         self.try_get_levels().get(1).copied().map(FieldRepr)
-    }
-
-    /// Returns the repr as a resource repr,
-    ///
-    #[inline]
-    pub fn as_resource(&self) -> Option<ResourceRepr> {
-        self.try_get_levels().get(0).copied().map(ResourceRepr)
     }
 
     /// Returns the repr as a node repr,

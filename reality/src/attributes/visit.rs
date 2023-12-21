@@ -57,22 +57,6 @@ pub struct FieldOwned<T> {
     pub value: T,
 }
 
-/// Trait for visiting fields w/ read-only access,
-///
-pub trait Visit<T> {
-    /// Returns a vector of fields,
-    ///
-    fn visit(&self) -> Vec<Field<'_, T>>;
-}
-
-/// Trait for visiting fields w/ mutable access,
-///
-pub trait VisitMut<T> {
-    /// Returns a vector of fields w/ mutable access,
-    ///
-    fn visit_mut<'a: 'b, 'b>(&'a mut self) -> Vec<FieldMut<'b, T>>;
-}
-
 /// Trait for visiting fields references on the virtual reference,
 ///
 pub trait VisitVirtual<T, Projected>
@@ -132,66 +116,4 @@ where
     ///
     fn write(virt: &mut Self::Virtual)
         -> &mut FieldRef<Self, Self::ParseType, Self::ProjectedType>;
-}
-
-#[allow(unused_imports)]
-mod tests {
-    use std::{
-        ops::Index,
-        sync::{Arc, OnceLock},
-        time::Duration,
-    };
-
-    use super::FieldMut;
-    use crate::{prelude::*, FieldKey, FrameListener, PacketRoutes};
-
-    pub mod reality {
-        pub use crate::*;
-        pub mod prelude {
-            pub use crate::prelude::*;
-        }
-    }
-
-    use anyhow::anyhow;
-    use async_stream::stream;
-    use async_trait::async_trait;
-    use futures_util::{pin_mut, StreamExt};
-    use serde::Serialize;
-    use tokio::{join, time::Instant};
-
-    #[derive(Reality, Clone, Serialize, Default)]
-    #[reality(call=test_noop, plugin)]
-    struct Test {
-        #[reality(derive_fromstr)]
-        name: String,
-        other: String,
-    }
-
-    async fn test_noop(_tc: &mut ThunkContext) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    #[test]
-    fn test_visit() {
-        let mut test = Test {
-            name: String::from(""),
-            other: String::new(),
-        };
-        {
-            let mut fields = test.visit_mut();
-            let mut fields = fields.drain(..);
-            if let Some(FieldMut { name, value, .. }) = fields.next() {
-                assert_eq!("name", name);
-                *value = String::from("hello-world");
-            }
-
-            if let Some(FieldMut { name, value, .. }) = fields.next() {
-                assert_eq!("other", name);
-                *value = String::from("hello-world-2");
-            }
-        }
-
-        assert_eq!("hello-world", test.name.as_str());
-        assert_eq!("hello-world-2", test.other.as_str());
-    }
 }

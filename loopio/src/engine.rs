@@ -1,7 +1,7 @@
 use anyhow::anyhow;
+use reality::prelude::runir::prelude::ResourceLevel;
 use reality::AttributeTypeParser;
 use reality::BlockObjectType;
-use reality::prelude::runir::prelude::ResourceLevel;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -102,10 +102,11 @@ impl EngineBuilder {
         Inner::Virtual: NewFn<Inner = Inner>,
     {
         self.register_with(|parser| {
-            let mut block_obj = BlockObjectType::<Shared>::new::<Thunk<Inner>>();
+            let mut block_obj = BlockObjectType::new::<Thunk<Inner>>();
 
-            block_obj.attribute_type =
-                AttributeTypeParser::<Shared>::new_with(P::symbol(), |parser, input| {
+            block_obj.attribute_type = AttributeTypeParser::<Shared>::new_with(
+                P::symbol(),
+                |parser, input| {
                     P::parse(parser, input);
 
                     let key = parser
@@ -124,7 +125,12 @@ impl EngineBuilder {
                             key.transmute(),
                         );
                     }
-                }, ResourceLevel::new::<P>(), None);
+                },
+                P::link_recv,
+                P::link_field,
+                ResourceLevel::new::<P>(),
+                None,
+            );
 
             parser.add_object_type_with(P::symbol(), block_obj);
         });
@@ -348,7 +354,7 @@ impl Engine {
         tag: Option<&str>,
         target: &mut AttributeParser<Shared>,
     ) where
-        T: Plugin + BlockObject<Shared> + crate::prelude::Action + SetIdentifiers,
+        T: Plugin + BlockObject + crate::prelude::Action + SetIdentifiers,
         T::Virtual: NewFn<Inner = T>,
     {
         let name = name

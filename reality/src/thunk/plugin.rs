@@ -23,7 +23,7 @@ pub trait NewFn {
 
 /// Allows users to export logic as a simple fn,
 ///
-pub trait Plugin: ToFrame + BlockObject<Shared> + CallAsync + Clone + Default {
+pub trait Plugin: ToFrame + BlockObject + CallAsync + Clone + Default {
     /// Associated type of the virtual version of this plugin,
     ///
     /// **Note** If the derive macro is used, this type will be auto-generated w/ the plugin impl,

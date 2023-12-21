@@ -11,7 +11,7 @@ use crate::prelude::Ext;
 /// A Host contains a broadly shared storage context,
 ///
 #[derive(Reality, Default, Clone)]
-#[reality(call = debug, plugin, unload=on_unload)]
+#[reality(call = debug, plugin)]
 pub struct Host {
     /// Name for this host,
     ///
@@ -41,25 +41,6 @@ pub struct Host {
     ///
     #[reality(ignore)]
     plugin: ResourceKey<reality::attributes::Attribute>,
-}
-
-async fn on_unload<S: StorageTarget>(
-    storage: AsyncStorageTarget<S>,
-    _: Option<ResourceKey<Attribute>>,
-) {
-    let storage = storage.storage.read().await;
-
-    eprintln!("on unload being called");
-    if let Some(init) = storage.resource::<Host>(ResourceKey::root()) {
-        let _v_proxy = VirtualHost::new(init.to_owned());
-
-        _v_proxy.name.view_value(|v| {
-            eprintln!("{:?}", v);
-        });
-    } else {
-        eprintln!("did not find initialized resource");
-    }
-    ()
 }
 
 async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {

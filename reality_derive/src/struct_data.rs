@@ -12,7 +12,6 @@ use syn::spanned::Spanned;
 use syn::Data;
 use syn::DeriveInput;
 use syn::FieldsNamed;
-use syn::GenericParam;
 use syn::Generics;
 use syn::ImplGenerics;
 use syn::LitStr;
@@ -671,22 +670,6 @@ impl StructData {
             quote_spanned!(self.span=>
                 #_fromstr_derive
 
-                impl #impl_generics Visit<#ty> for #owner #ty_generics #where_clause {
-                    fn visit<'a>(&'a self) -> Vec<Field<'a, #ty>> {
-                        vec![
-                            #(#_fields),*
-                        ]
-                    }
-                }
-
-                impl #impl_generics VisitMut<#ty> for #owner #ty_generics #where_clause {
-                    fn visit_mut<'a: 'b, 'b>(&'a mut self) -> Vec<FieldMut<'b, #ty>> {
-                        vec![
-                            #(#_fields_mut),*
-                        ]
-                    }
-                }
-
                 impl #impl_generics SetField<#ty> for #owner #ty_generics #where_clause {
                     fn set_field(&mut self, field: FieldOwned<#ty>) -> bool {
                         if field.owner.as_str() != std::any::type_name::<Self>() {
@@ -764,18 +747,10 @@ impl StructData {
     pub(crate) fn attribute_type_trait(self) -> TokenStream {
         let ident = &self.name;
         let original = self.generics.clone();
-        let (original_impl_generics, ty_generics, _) = original.split_for_impl();
+        let (impl_generics, ty_generics, where_clause) = original.split_for_impl();
         let ty_generics = ty_generics.clone();
 
-        let mut with_st = self.generics.clone();
-        with_st.params.push(
-            parse2::<GenericParam>(quote!(S: StorageTarget + Send + Sync + 'static))
-                .expect("should be able to tokenize"),
-        );
-
-        let (impl_generics, _, where_clause) = &with_st.split_for_impl();
-
-        let visit_impl = self.visit_trait(&original_impl_generics, &ty_generics, where_clause);
+        let visit_impl = self.visit_trait(&impl_generics, &ty_generics, &where_clause);
 
         let symbol = self.attr_symbol(ident);
         let fields = self.fields.clone();
@@ -817,7 +792,7 @@ impl StructData {
             let mut_value = f.set_of.as_ref().or(f.map_of.as_ref()).map(|_| quote!(mut));
 
             quote_spanned! {f.span=>
-                impl #original_impl_generics runir::prelude::Field<#offset> for #ident #ty_generics #where_clause {
+                impl #impl_generics runir::prelude::Field<#offset> for #ident #ty_generics #where_clause {
                     type ParseType = #ty;
 
                     type ProjectedType = #absolute_ty;
@@ -827,7 +802,7 @@ impl StructData {
                     }
                 }
 
-                impl #original_impl_generics OnParseField<#offset> for #ident #ty_generics #where_clause {
+                impl #impl_generics OnParseField<#offset> for #ident #ty_generics #where_clause {
                     #[allow(unused_variables)]
                     fn on_parse(&mut self, #mut_value value: #ty, _input: &str, _tag: Option<&String>) -> ResourceKey<Property> {
                         let mut hasher = ResourceKeyHashBuilder::new_default_hasher();
@@ -855,13 +830,15 @@ impl StructData {
 
         if let Some(replace) = self.replace.as_ref() {
             quote_spanned! {self.span=>
-                impl #impl_generics AttributeType<S> for #ident #ty_generics #where_clause {
+                impl #impl_generics runir::prelude::Recv for #ident #ty_generics #where_clause {
                     fn symbol() -> &'static str {
                         #symbol
                     }
+                }
 
-                    fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
-                        <#replace as AttributeType<S>>::parse(parser, content)
+                impl #impl_generics AttributeType<Shared> for #ident #ty_generics #where_clause {
+                    fn parse(parser: &mut AttributeParser<Shared>, content: impl AsRef<str>) {
+                        <#replace as AttributeType<Shared>>::parse(parser, content)
                     }
                 }
             }
@@ -869,12 +846,14 @@ impl StructData {
             let virtual_impl = self.virtual_plugin();
 
             quote_spanned! {self.span=>
-                impl #impl_generics AttributeType<S> for #ident #ty_generics #where_clause {
+                impl #impl_generics runir::prelude::Recv for #ident #ty_generics #where_clause {
                     fn symbol() -> &'static str {
                         #symbol
                     }
+                }
 
-                    fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
+                impl #impl_generics AttributeType<Shared> for #ident #ty_generics #where_clause {
+                    fn parse(parser: &mut AttributeParser<Shared>, content: impl AsRef<str>) {
                         let mut enable = parser.parse_attribute::<Self>(content.as_ref());
 
                         if enable.is_ok() {
@@ -915,26 +894,18 @@ impl StructData {
     pub(crate) fn object_type_trait(self) -> TokenStream {
         let name = self.name.clone();
         let original = self.generics.clone();
-        let (_impl_generics, ty_generics, _) = original.split_for_impl();
-        let ty_generics = ty_generics.clone();
-        let mut generics = self.generics.clone();
-        generics.params.push(
-            parse2::<GenericParam>(quote!(Storage: StorageTarget + Send + Sync + 'static))
-                .expect("should be able to tokenize"),
-        );
-
-        let (impl_generics, _, where_clause) = &generics.split_for_impl();
+        let (impl_generics, ty_generics, where_clause) = original.split_for_impl();
 
         let on_load = self
             .on_load
             .clone()
-            .map(|p| quote!(#p(storage, rk).await;))
-            .unwrap_or_default();
+            .map(|p| quote!(#p(parser, storage, rk).await))
+            .unwrap_or(quote!(parser));
         let on_unload = self
             .on_unload
             .clone()
-            .map(|p| quote!(#p(storage, rk).await;))
-            .unwrap_or_default();
+            .map(|p| quote!(#p(parser, storage, rk).await))
+            .unwrap_or(quote!(parser));
         let on_completed = self
             .on_completed
             .clone()
@@ -1059,7 +1030,7 @@ impl StructData {
                     }
                 }
 
-                impl #_impl_generics #name #ty_generics #where_clause {
+                impl #impl_generics #name #ty_generics #where_clause {
                     pub fn to_virtual(self) -> #virtual_ident {
                         #virtual_ident::new(self)
                     }
@@ -1096,7 +1067,7 @@ impl StructData {
                 });
 
             quote!(
-            impl #_impl_generics Plugin for #name #ty_generics #where_clause  {
+            impl #impl_generics Plugin for #name #ty_generics #where_clause  {
                 type Virtual = #virtual_ident;
 
                 #[allow(unused_variables)]
@@ -1113,7 +1084,7 @@ impl StructData {
 
             #init_virt_plugin
 
-            impl #_impl_generics #name #ty_generics #where_clause  {
+            impl #impl_generics #name #ty_generics #where_clause  {
                 pub fn register(mut host: &mut impl RegisterWith) {
                   #(#plugins)*
                   host.register_with(|_parser| {
@@ -1124,7 +1095,7 @@ impl StructData {
             )
         } else if self.ext {
             quote!(
-                impl #_impl_generics #name #ty_generics #where_clause  {
+                impl #impl_generics #name #ty_generics #where_clause  {
                     pub fn register(mut host: &mut impl RegisterWith) {
                         #(#plugins)*
                         host.register_with(|_parser| {
@@ -1140,7 +1111,7 @@ impl StructData {
         let call = self.call.as_ref().map(|ref c| {
             quote_spanned!(c.span()=>
                 #[async_trait]
-                impl #_impl_generics CallAsync for #name #ty_generics #where_clause {
+                impl #impl_generics CallAsync for #name #ty_generics #where_clause {
                     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
                         #c(context).await
                     }
@@ -1150,7 +1121,7 @@ impl StructData {
 
         let unit_from_str = if self.fields.is_empty() {
             quote_spanned!(name.span()=>
-                impl #_impl_generics FromStr for #name #ty_generics #where_clause {
+                impl #impl_generics FromStr for #name #ty_generics #where_clause {
                     type Err = anyhow::Error;
 
                     fn from_str(_: &str) -> std::result::Result<Self, Self::Err> {
@@ -1168,22 +1139,22 @@ impl StructData {
         }
 
         let object_type_trait = quote_spanned!(self.span=>
-            #[async_trait]
-            impl #impl_generics BlockObject<Storage> for #name #ty_generics #where_clause {
-                async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>, rk: Option<ResourceKey<Attribute>>) {
+            #[async_trait(?Send)]
+            impl #impl_generics BlockObject for #name #ty_generics #where_clause {
+                async fn on_load(parser: AttributeParser<Shared>, storage: AsyncStorageTarget<Shared>, rk: Option<ResourceKey<Attribute>>) -> AttributeParser<Shared> {
                     #on_load
                 }
 
-                async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>, rk: Option<ResourceKey<Attribute>>) {
+                async fn on_unload(parser: AttributeParser<Shared>, storage: AsyncStorageTarget<Shared>, rk: Option<ResourceKey<Attribute>>) -> AttributeParser<Shared> {
                     #on_unload
                 }
 
-                fn on_completed(storage: AsyncStorageTarget<Storage::Namespace>) -> Option<AsyncStorageTarget<Storage::Namespace>> {
+                fn on_completed(storage: AsyncStorageTarget<Shared>) -> Option<AsyncStorageTarget<Shared>> {
                     #on_completed
                 }
             }
 
-            impl #_impl_generics ToFrame for #name #ty_generics #where_clause {
+            impl #impl_generics ToFrame for #name #ty_generics #where_clause {
                 fn to_frame(&self, key: ResourceKey<Attribute>) -> Frame {
                     Frame {
                         recv: self.receiver_packet(key),

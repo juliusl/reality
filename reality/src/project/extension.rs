@@ -6,7 +6,6 @@ use futures_util::Future;
 
 use crate::BlockObject;
 use crate::ResourceKey;
-use crate::Shared;
 use crate::StorageTarget;
 use crate::StorageTargetKey;
 use crate::ThunkContext;
@@ -81,7 +80,7 @@ pub type IntermediateTransform<C, T> = anyhow::Result<(C, anyhow::Result<T>)>;
 pub struct Transform<C, T>
 where
     C: Send + Sync + 'static,
-    T: BlockObject<Shared>,
+    T: BlockObject,
 {
     /// Middleware controller,
     ///
@@ -109,7 +108,7 @@ where
     user_task: Option<MiddlewareAsync<C, T>>,
 }
 
-impl<C: Clone + Send + Sync + 'static, T: BlockObject<Shared>> Clone for Transform<C, T> {
+impl<C: Clone + Send + Sync + 'static, T: BlockObject> Clone for Transform<C, T> {
     fn clone(&self) -> Self {
         Self {
             controller: self.controller.clone(),
@@ -127,7 +126,7 @@ impl<C: Clone + Send + Sync + 'static, T: BlockObject<Shared>> Clone for Transfo
 impl<C, T> Transform<C, T>
 where
     C: Send + Sync + 'static,
-    T: BlockObject<Shared>,
+    T: BlockObject,
 {
     /// Runs the extension processing the pipeline,
     ///

@@ -115,7 +115,7 @@ impl Parser {
                             span,
                         };
                         // last = Some((node_info.clone(), block_info.clone()));
-                        self.on_add_node(node_info, block_info.clone())
+                        self.on_add_node(node_info, block_info.clone()).await
                     }
                     Instruction::DefineProperty => {
                         let node_info = NodeInfo {
@@ -124,7 +124,7 @@ impl Parser {
                             line,
                             span,
                         };
-                        self.on_define_property(node_info, block_info.clone());
+                        self.on_define_property(node_info, block_info.clone()).await;
                     }
                     Instruction::LoadExtension | Instruction::LoadExtensionSuffix => {
                         let node_info = NodeInfo {
@@ -158,7 +158,7 @@ impl Parser {
 
     /// Callback when processing an AddNode instruction,
     ///
-    fn on_add_node(&mut self, node_info: NodeInfo, block_info: BlockInfo) {
+    async fn on_add_node(&mut self, node_info: NodeInfo<'_>, block_info: BlockInfo<'_>) {
         // Reset the current node index
         self.current_node_idx.take();
 
@@ -170,7 +170,7 @@ impl Parser {
                 attr.input.clone().map(|i| i.input_str()).as_deref(),
                 &node_info,
                 &block_info,
-            );
+            ).await;
             if let Some(mut node) = node {
                 {
                     let node = node.deref_mut();
@@ -218,7 +218,7 @@ impl Parser {
 
     /// Callback when processing a DefineProperty instruction,
     ///
-    fn on_define_property(&mut self, node_info: NodeInfo<'_>, block_info: BlockInfo<'_>) {
+    async fn on_define_property(&mut self, node_info: NodeInfo<'_>, block_info: BlockInfo<'_>) {
         if let Some(last) = self.graph.last_mut() {
             let line = node_info.clone();
             last.set_info(node_info.clone(), block_info.clone());
@@ -228,7 +228,7 @@ impl Parser {
                     attr.name,
                     node_info.line.tag.map(|t| t.0),
                     attr.input.take().map(|i| i.input_str()).as_deref(),
-                );
+                ).await;
                 last.parsed_line(line, block_info);
             } else {
                 panic!("Line is missing attribute parameters to define property")

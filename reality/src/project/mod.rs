@@ -10,9 +10,11 @@ use crate::ParsedAttributes;
 use crate::ParsedBlock;
 use crate::ResourceKey;
 use crate::ResourceKeyHashBuilder;
+use crate::Shared;
 use crate::StorageTarget;
 
 mod node;
+use async_trait::async_trait;
 pub use node::Node;
 
 mod extension;
@@ -59,10 +61,10 @@ pub struct Project<Storage: StorageTarget + 'static> {
     pub nodes: tokio::sync::RwLock<NodeTable<Storage::Namespace>>,
 }
 
-impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
+impl Project<Shared> {
     /// Creates a new project,
     ///
-    pub fn new(root: Storage) -> Self {
+    pub fn new(root: Shared) -> Self {
         Self {
             root,
             nodes: Default::default(),
@@ -77,7 +79,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
         &mut self,
         ty: Option<&str>,
         moniker: Option<&str>,
-        plugin: impl Fn(&mut AttributeParser<Storage::Namespace>) + Send + Sync + 'static,
+        plugin: impl Fn(&mut AttributeParser<Shared>) + Send + Sync + 'static,
     ) {
         let block_info = BlockInfo {
             idx: 0,
@@ -87,7 +89,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
         let key = ResourceKey::with_hash(block_info);
 
         self.root
-            .put_resource::<BlockPlugin<Storage::Namespace>>(Arc::new(plugin), key);
+            .put_resource::<BlockPlugin<Shared>>(Arc::new(plugin), key);
     }
 
     /// Adds a node plugin,
@@ -95,7 +97,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
     pub fn add_node_plugin(
         &mut self,
         name: &str,
-        plugin: impl Fn(Option<&str>, Option<&str>, &mut AttributeParser<Storage::Namespace>)
+        plugin: impl Fn(Option<&str>, Option<&str>, &mut AttributeParser<Shared>)
             + Send
             + Sync
             + 'static,
@@ -103,7 +105,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
         let key = ResourceKey::with_hash(name);
 
         self.root
-            .put_resource::<NodePlugin<Storage::Namespace>>(Arc::new(plugin), key);
+            .put_resource::<NodePlugin<Shared>>(Arc::new(plugin), key);
     }
 
     /// Load a file into the project,
@@ -117,7 +119,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Project<Storage> {
     /// Load content into the project,
     ///
     pub async fn load_content(self, content: impl AsRef<str>) -> anyhow::Result<Self> {
-        let loading: Loading<Storage> = self.into();
+        let loading: Loading<Shared> = self.into();
 
         let mut parser = runmd::prelude::Parser::new(loading.clone(), loading.clone());
 
@@ -229,8 +231,8 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Loading<Storage> {
     }
 }
 
-impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::BlockProvider
-    for Loading<Storage>
+impl runmd::prelude::BlockProvider
+    for Loading<Shared>
 {
     fn provide(&self, block_info: BlockInfo) -> Option<runmd::prelude::BoxedNode> {
         let parser = self.create_parser_for_block(&block_info, None);
@@ -239,10 +241,11 @@ impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::BlockProvid
     }
 }
 
-impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::NodeProvider
-    for Loading<Storage>
+#[async_trait(?Send)]
+impl runmd::prelude::NodeProvider
+    for Loading<Shared>
 {
-    fn provide(
+    async fn provide(
         &self,
         name: &str,
         tag: Option<&str>,
@@ -270,7 +273,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> runmd::prelude::NodeProvide
             if let Some(input) = input {
                 node.set_input(input);
             }
-            if let Some(tag) = tag{
+            if let Some(tag) = tag {
                 node.set_tag(tag);
             }
             parser.nodes.push(node);
@@ -478,30 +481,8 @@ mod tests {
         println!("{:#?}", _project.nodes.read().await.keys());
 
         for (k, node) in _project.nodes.write().await.iter_mut() {
-            let node = node.read().await;
+            let _node = node.read().await;
             println!("{:?}", k);
-
-            let attributes = node.resource::<ParsedAttributes>(ResourceKey::root());
-
-            if let Some(attributes) = attributes {
-                println!("{:#?}", attributes);
-
-                for attr in attributes.parsed() {
-                    let test = node.resource::<Test>(attr.transmute());
-                    println!("{:?}", test);
-                    if let Some(test) = test {
-                        let fields =
-                            crate::visitor::<crate::Shared, PathBuf>(std::ops::Deref::deref(&test));
-                        println!("{:#?}", fields);
-                        println!(
-                            "Find field: {:#?}",
-                            crate::FindField::find_field::<()>(&fields, "file")
-                        );
-                    }
-                    let test = node.resource::<Test2>(attr.transmute());
-                    println!("{:?}", test);
-                }
-            }
         }
         ()
     }
