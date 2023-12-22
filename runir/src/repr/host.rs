@@ -20,7 +20,7 @@ pub struct HostLevel {
     ///
     address: Tag<String, Arc<String>>,
     /// Extensions that have been added under this host,
-    /// 
+    ///
     extensions: Option<Tag<Vec<Repr>, Arc<Vec<Repr>>>>,
 }
 
@@ -36,7 +36,7 @@ impl HostLevel {
     }
 
     /// Sets extensions on the host,
-    /// 
+    ///
     #[inline]
     pub fn set_extensions(&mut self, extensions: Vec<Repr>) {
         self.extensions = Some(Tag::new(&EXTENSIONS, Arc::new(extensions)));
@@ -86,7 +86,7 @@ impl HostRepr {
         self.0.try_host_address()
     }
 
-     /// Returns the address provided by the host,
+    /// Returns the address provided by the host,
     ///
     #[inline]
     pub async fn extensions(&self) -> Option<Arc<Vec<Repr>>> {

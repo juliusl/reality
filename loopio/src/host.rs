@@ -56,8 +56,12 @@ async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let block = tc.parsed_block().await.expect("should have parsed block");
 
     if let Some(node) = block.nodes.get(&init.node) {
-        for (_, d) in node.doc_headers.iter() {
-            d.iter().for_each(|e| eprintln!("{}", e));
+        if let Some(node) = node.node.repr().and_then(|r| r.as_node()) {
+            if let Some(docs) = node.doc_headers().await {
+                for d in docs.iter() {
+                    eprintln!("{d}");
+                }
+            }
         }
     }
 
@@ -300,8 +304,6 @@ async fn test_host() {
 
     let block = engine.block().unwrap();
     let eh = engine.engine_handle();
-    let _deck = crate::deck::Deck::from(block);
-    // eprintln!("{:#?}", deck);
     let _e = engine.spawn(|_, p| {
         eprintln!("{:?}", p);
         Some(p)

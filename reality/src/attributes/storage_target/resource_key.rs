@@ -149,11 +149,17 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
             from = std::any::type_name::<T>(),
             to = std::any::type_name::<B>()
         );
-        if self.data == 0 {
+        let mut rk = if self.data == 0 {
             ResourceKey::<B>::new()
         } else {
             ResourceKey::<B>::with_hash_key(self.hash_key())
+        };
+
+        if let Some(repr) = self.repr() {
+            rk.set_repr(repr);
         }
+
+        rk
     }
 
     /// Creates a branch of the current resource-key,

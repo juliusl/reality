@@ -831,11 +831,11 @@ where
         // Index decorations into the current cache,
         {
             let node = self.context.node().await;
-            if let Some(parsed) = node.current_resource::<ParsedAttributes>(ResourceKey::root()) {
+            if let Some(_) = node.current_resource::<ParsedAttributes>(ResourceKey::root()) {
                 drop(node);
-                parsed
-                    .index_decorations(self.context.attribute, self.context)
-                    .await;
+                // parsed
+                //     .index_decorations(self.context.attribute, self.context)
+                //     .await;
             }
         }
 

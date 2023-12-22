@@ -238,13 +238,13 @@ impl Parser {
 
             if let Some(mut attr) = node_info.line.attr {
                 last.assign_path(format!("?prop={}", attr.name));
+                last.parsed_line(line, block_info);
                 last.define_property(
                     attr.name,
                     node_info.line.tag.map(|t| t.0),
                     attr.input.take().map(|i| i.input_str()).as_deref(),
                 )
                 .await;
-                last.parsed_line(line, block_info);
             } else {
                 panic!("Line is missing attribute parameters to define property")
             }

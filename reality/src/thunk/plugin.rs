@@ -1,5 +1,4 @@
 use std::pin::Pin;
-
 use tracing::debug;
 
 use super::prelude::CallAsync;
@@ -118,4 +117,126 @@ pub trait Pack {
     fn unpack<S>(self, value: &mut S) -> Self
     where
         S: StorageTarget;
+}
+
+pub mod repr {
+    use std::sync::Arc;
+
+    use anyhow::anyhow;
+    use runir::define_intern_table;
+    use runir::prelude::*;
+    use runir::push_tag;
+
+    use crate::NewFn;
+    use crate::Plugin;
+    use crate::ThunkFn;
+
+    define_intern_table!(CALL: ThunkFn);
+    define_intern_table!(ENABLE_FRAME: ThunkFn);
+    define_intern_table!(ENABLE_VIRTUAL: ThunkFn);
+
+    /// Repr level containing plugin thunks,
+    ///
+    #[derive(Clone)]
+    pub struct PluginLevel {
+        /// Call thunk fn tag,
+        ///
+        call: Tag<ThunkFn, Arc<ThunkFn>>,
+        /// Enable frame thunk fn tag,
+        ///
+        enable_frame: Tag<ThunkFn, Arc<ThunkFn>>,
+        /// Enable virtual thunk fn tag,
+        ///
+        enable_virtual: Tag<ThunkFn, Arc<ThunkFn>>,
+    }
+
+    impl PluginLevel {
+        /// Returns a new thunk level,
+        ///
+        pub fn new<P>() -> Self
+        where
+            P: Plugin,
+            P::Virtual: NewFn<Inner = P>,
+        {
+            Self {
+                call: Tag::new(&CALL, Arc::new(<P as Plugin>::call)),
+                enable_frame: Tag::new(&ENABLE_FRAME, Arc::new(<P as Plugin>::enable_frame)),
+                enable_virtual: Tag::new(&ENABLE_VIRTUAL, Arc::new(<P as Plugin>::enable_virtual)),
+            }
+        }
+    }
+
+    impl Level for PluginLevel {
+        fn configure(&self, interner: &mut impl InternerFactory) -> InternResult {
+            push_tag!(dyn interner, &self.call);
+            push_tag!(dyn interner, &self.enable_frame);
+            push_tag!(dyn interner, &self.enable_virtual);
+
+            interner.set_level_flags(LevelFlags::LEVEL_4);
+
+            interner.interner()
+        }
+
+        type Mount = ();
+
+        fn mount(&self) -> Self::Mount {
+            ()
+        }
+    }
+
+    impl TryFrom<Repr> for PluginRepr {
+        type Error = anyhow::Error;
+
+        fn try_from(value: Repr) -> Result<Self, Self::Error> {
+            if let Some(l) = value.try_get_levels().get(4) {
+                Ok(PluginRepr(*l))
+            } else {
+                Err(anyhow!(
+                    "Could not convert repr to plugin repr, missing level 4 representation"
+                ))
+            }
+        }
+    }
+
+    /// Wrapper struct over intern handle providing access to plugin thunks,
+    ///
+    pub struct PluginRepr(InternHandle);
+
+    impl PluginRepr {
+        /// Returns the call thunk,
+        ///
+        pub async fn call(&self) -> Option<ThunkFn> {
+            CALL.copy(&self.0).await
+        }
+
+        /// Returns the enable_frame thunk,
+        ///
+        pub async fn enable_frame(&self) -> Option<ThunkFn> {
+            ENABLE_FRAME.copy(&self.0).await
+        }
+
+        /// Returns the enable_virtual thunk,
+        ///
+        pub async fn enable_virtual(&self) -> Option<ThunkFn> {
+            ENABLE_VIRTUAL.copy(&self.0).await
+        }
+
+        /// Tries to return the call thunk,
+        ///
+        pub fn try_call(&self) -> Option<ThunkFn> {
+            CALL.try_copy(&self.0)
+        }
+
+        /// Tries to return the enable frame thunk,
+        ///
+        pub fn try_enable_frame(&self) -> Option<ThunkFn> {
+            ENABLE_FRAME.try_copy(&self.0)
+        }
+
+        /// Tries to return the enable virtual thunk,
+        ///
+        pub fn try_enable_virtual(&self) -> Option<ThunkFn> {
+            ENABLE_VIRTUAL.try_copy(&self.0)
+        }
+    }
 }

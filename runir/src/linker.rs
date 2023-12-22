@@ -1,11 +1,11 @@
 use futures::StreamExt;
 use std::sync::Arc;
 
-use crate::repr::HANDLES;
 use crate::prelude::*;
+use crate::repr::HANDLES;
 
 /// Struct for linking together levels into a single representation,
-/// 
+///
 #[derive(Default)]
 pub struct Linker<I = CrcInterner>
 where

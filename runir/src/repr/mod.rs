@@ -112,7 +112,7 @@ impl Repr {
     ///
     /// The vector is ordered w/ the first element as the root and the last as the tail.
     ///
-    pub(crate) fn try_get_levels(&self) -> Vec<InternHandle> {
+    pub fn try_get_levels(&self) -> Vec<InternHandle> {
         let mut levels = vec![];
         let mut cursor = self.tail.node();
         loop {

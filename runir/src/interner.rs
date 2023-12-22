@@ -383,6 +383,20 @@ impl InternHandle {
         crate::repr::node::NODE_IDX.try_copy(self)
     }
 
+    /// Returns a strong reference to node source,
+    ///
+    #[inline]
+    pub async fn node_source(&self) -> Option<Arc<String>> {
+        crate::repr::node::SOURCE.strong_ref(self).await
+    }
+
+    /// Tries to return a strong reference to node source,
+    ///
+    #[inline]
+    pub fn try_node_source(&self) -> Option<Arc<String>> {
+        crate::repr::node::SOURCE.try_strong_ref(self)
+    }
+
     /// Returns a strong reference to doc_headers,
     ///
     #[inline]
@@ -426,14 +440,14 @@ impl InternHandle {
     }
 
     /// Returns extensions added to this host,
-    /// 
+    ///
     #[inline]
     pub async fn host_extensions(&self) -> Option<Arc<Vec<Repr>>> {
         crate::repr::host::EXTENSIONS.strong_ref(self).await
     }
 
     /// Tries to return extensions added to this host,
-    /// 
+    ///
     #[inline]
     pub fn try_host_extensions(&self) -> Option<Arc<Vec<Repr>>> {
         crate::repr::host::EXTENSIONS.try_strong_ref(self)

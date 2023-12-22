@@ -181,6 +181,7 @@ mod tests {
             Some(""),
             Some(""),
             Some(0),
+            Some(""),
             Some(vec![""]),
             None,
         )
@@ -194,6 +195,7 @@ mod tests {
             Some(""),
             Some(""),
             Some(0),
+            Some(""),
             Some(vec![""]),
             None,
         )
@@ -237,6 +239,7 @@ mod tests {
             Some(""),
             Some(""),
             Some(0),
+            Some(""),
             Some(vec!["hello"]),
             Some(BTreeMap::new()),
         ))

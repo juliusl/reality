@@ -1,9 +1,9 @@
 mod entity;
 mod interner;
 mod level;
+mod linker;
 mod repr;
 mod tag;
-mod linker;
 
 #[cfg(feature = "crc-interner")]
 mod crc;

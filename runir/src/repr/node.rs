@@ -21,6 +21,9 @@ define_intern_table!(PATH: String);
 // Intern table for node index values
 define_intern_table!(NODE_IDX: usize);
 
+// Intern table for source
+define_intern_table!(SOURCE: String);
+
 // Intern table for doc headers
 define_intern_table!(DOC_HEADERS: Vec<String>);
 
@@ -48,6 +51,9 @@ pub struct NodeLevel {
     /// Node idx,
     ///
     idx: Option<Tag<usize, Arc<usize>>>,
+    /// Node source,
+    ///
+    source: Option<Tag<String, Arc<String>>>,
     /// Node doc headers,
     ///
     doc_headers: Option<Tag<Vec<String>, Arc<Vec<String>>>>,
@@ -66,6 +72,7 @@ impl NodeLevel {
             tag: None,
             path: None,
             idx: None,
+            source: None,
             doc_headers: None,
             annotations: None,
         }
@@ -79,6 +86,7 @@ impl NodeLevel {
         tag: Option<impl Into<String>>,
         path: Option<impl Into<String>>,
         idx: Option<usize>,
+        source: Option<impl Into<String>>,
         doc_headers: Option<Vec<impl Into<String>>>,
         annotations: Option<BTreeMap<String, String>>,
     ) -> Self {
@@ -98,6 +106,9 @@ impl NodeLevel {
         }
         if let Some(idx) = idx {
             node = node.with_idx(idx);
+        }
+        if let Some(source) = source {
+            node = node.with_source(source);
         }
         if let Some(doc_headers) = doc_headers {
             node = node.with_doc_headers(doc_headers);
@@ -146,6 +157,14 @@ impl NodeLevel {
     #[inline]
     pub fn with_idx(mut self, idx: usize) -> Self {
         self.set_idx(idx);
+        self
+    }
+
+    /// Returns the node level w/ source set,
+    ///
+    #[inline]
+    pub fn with_source(mut self, source: impl Into<String>) -> Self {
+        self.set_source(source);
         self
     }
 
@@ -200,6 +219,13 @@ impl NodeLevel {
         self.idx = Some(Tag::new(&NODE_IDX, Arc::new(idx)));
     }
 
+    /// Sets the source tag for the node level,
+    ///
+    #[inline]
+    pub fn set_source(&mut self, source: impl Into<String>) {
+        self.source = Some(Tag::new(&SOURCE, Arc::new(source.into())));
+    }
+
     /// Sets the doc headers tag for the node level,
     ///
     #[inline]
@@ -238,6 +264,14 @@ impl Level for NodeLevel {
 
         if let Some(idx) = self.idx.as_ref() {
             push_tag!(dyn interner, idx);
+        }
+
+        if let Some(docs) = self.doc_headers.as_ref() {
+            push_tag!(dyn interner, docs);
+        }
+
+        if let Some(source) = self.source.as_ref() {
+            push_tag!(dyn interner, source);
         }
 
         if let Some(annotations) = self.annotations.as_ref() {
@@ -316,6 +350,13 @@ impl NodeRepr {
         self.0.node_idx().await
     }
 
+    /// Returns the node source,
+    ///
+    #[inline]
+    pub async fn source(&self) -> Option<Arc<String>> {
+        self.0.node_source().await
+    }
+
     /// Returns node doc_headers,
     ///
     #[inline]
@@ -356,6 +397,13 @@ impl NodeRepr {
     #[inline]
     pub fn try_path(&self) -> Option<Arc<String>> {
         self.0.try_path()
+    }
+
+    /// Tries to return the node source,
+    ///
+    #[inline]
+    pub fn try_source(&self) -> Option<Arc<String>> {
+        self.0.try_node_source()
     }
 
     /// Tries to return node doc_headers,

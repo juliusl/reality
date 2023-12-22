@@ -27,8 +27,6 @@ use crate::BlockObject;
 use crate::BlockObjectType;
 use crate::CallAsync;
 use crate::Decoration;
-use crate::FieldPacket;
-use crate::KvpExt;
 use crate::LinkFieldFn;
 use crate::LinkRecvFn;
 use crate::ResourceKey;
@@ -180,15 +178,6 @@ pub struct ParsedAttributes {
     /// Properties defined by parsed attributes,
     ///
     pub properties: Properties,
-    /// Parsed lines,
-    ///
-    pub lines: Vec<String>,
-    /// Map of labeled comments,
-    ///
-    pub comment_properties: HashMap<ResourceKey<Attribute>, BTreeMap<String, String>>,
-    ///  Map of doc headers found for attributes,
-    ///
-    pub doc_headers: HashMap<ResourceKey<Attribute>, Vec<String>>,
 }
 
 /// Defined properties,
@@ -264,181 +253,6 @@ impl ParsedAttributes {
     pub fn define_property(&mut self, attr: ResourceKey<Attribute>, prop: ResourceKey<Property>) {
         let defined = self.properties.defined.entry(attr).or_default();
         defined.push(prop);
-    }
-
-    /// Adds a comment to the last property,
-    ///
-    #[inline]
-    pub fn add_line(&mut self, line: &Line) {
-        for line in line.to_string().lines() {
-            self.lines.push(line.to_string());
-        }
-
-        if !line.comment_properties.is_empty() {
-            if line.attr.is_some() && line.extension.is_some() {
-                if let Some(last) = self.last() {
-                    if let Some(last) = self.properties.defined.get(last).and_then(|l| l.last()) {
-                        self.properties
-                            .comment_properties
-                            .insert(*last, line.comment_properties.clone());
-                    } else {
-                        eprintln!("a -- skipped {:?}", line)
-                    }
-                } else {
-                    eprintln!("b -- skipped {:?}", line)
-                }
-            } else if line.extension.is_some() && line.attr.is_none() {
-                if let Some(last) = self.last().cloned() {
-                    self.comment_properties
-                        .insert(last, line.comment_properties.clone());
-                } else if line.extension.is_none() && line.attr.is_some() {
-                    if let Some(last) = self.last().cloned() {
-                        self.comment_properties
-                            .insert(last, line.comment_properties.clone());
-                    } else {
-                        eprintln!("c -- skipped {:?}", line)
-                    }
-                } else {
-                    eprintln!("d -- skipped {:?}", line)
-                }
-            } else if line.extension.is_none() && line.attr.is_some() {
-                if let Some(last) = self.last() {
-                    if let Some(last) = self.properties.defined.get(last).and_then(|l| l.last()) {
-                        self.properties
-                            .comment_properties
-                            .insert(*last, line.comment_properties.clone());
-                    } else {
-                        self.comment_properties
-                            .insert(self.node, line.comment_properties.clone());
-                    }
-                } else if line.extension.is_none() && line.attr.is_some() {
-                    if let Some(last) = self.last().cloned() {
-                        self.comment_properties
-                            .insert(last, line.comment_properties.clone());
-                    } else {
-                        // eprintln!("f -- skipped {:?}", line);
-                        // eprintln!("{:?}", self);
-                        self.comment_properties
-                            .insert(self.node, line.comment_properties.clone());
-                    }
-                }
-            } else {
-                eprintln!("g -- skipped {:?}", line)
-            }
-        }
-
-        if !line.doc_headers.is_empty() {
-            if line.attr.is_some() && line.extension.is_some() {
-                if let Some(last) = self.last() {
-                    if let Some(last) = self.properties.defined.get(last).and_then(|l| l.last()) {
-                        self.properties.doc_headers.insert(
-                            *last,
-                            line.doc_headers.iter().map(|h| h.to_string()).collect(),
-                        );
-                    } else {
-                        eprintln!("h -- skipped {:?}", line)
-                    }
-                } else {
-                    eprintln!("i -- skipped {:?}", line)
-                }
-            } else if line.extension.is_some() && line.attr.is_none() {
-                if let Some(last) = self.last().cloned() {
-                    self.doc_headers.insert(
-                        last,
-                        line.doc_headers.iter().map(|h| h.to_string()).collect(),
-                    );
-                } else if line.extension.is_none() && line.attr.is_some() {
-                    if let Some(last) = self.last().cloned() {
-                        self.doc_headers.insert(
-                            last,
-                            line.doc_headers.iter().map(|h| h.to_string()).collect(),
-                        );
-                    } else {
-                        eprintln!("j -- skipped {:?}", line)
-                    }
-                } else {
-                    //  eprintln!("l -- skipped {:?}", line)
-                    self.doc_headers.insert(
-                        self.node,
-                        line.doc_headers.iter().map(|h| h.to_string()).collect(),
-                    );
-                }
-            } else if line.extension.is_none() && line.attr.is_some() {
-                if let Some(last) = self.last() {
-                    if let Some(last) = self.properties.defined.get(last).and_then(|l| l.last()) {
-                        self.properties.doc_headers.insert(
-                            *last,
-                            line.doc_headers.iter().map(|h| h.to_string()).collect(),
-                        );
-                    } else {
-                        // eprintln!("m -- skipped {:?}", line)
-                        self.doc_headers.insert(
-                            self.node,
-                            line.doc_headers.iter().map(|h| h.to_string()).collect(),
-                        );
-                    }
-                } else if line.extension.is_none() && line.attr.is_some() {
-                    if let Some(last) = self.last().cloned() {
-                        self.doc_headers.insert(
-                            last,
-                            line.doc_headers.iter().map(|h| h.to_string()).collect(),
-                        );
-                    } else {
-                        // eprintln!("n -- skipped {:?}", line);
-                        // eprintln!("{:?}", self);
-                        self.doc_headers.insert(
-                            self.node,
-                            line.doc_headers.iter().map(|h| h.to_string()).collect(),
-                        );
-                    }
-                } else {
-                    eprintln!("o -- skipped {:?}", line)
-                }
-            } else {
-                eprintln!("p -- skipped {:?}", line)
-            }
-        }
-    }
-
-    /// Finds any parsed extras for a resource key,
-    ///
-    #[inline]
-    pub async fn index_decorations(&self, rk: ResourceKey<Attribute>, tc: &mut ThunkContext) {
-        tc.store_kv(
-            rk,
-            Decoration {
-                comment_properties: self.comment_properties.get(&rk).cloned(),
-                doc_headers: self.doc_headers.get(&rk).cloned(),
-            },
-        );
-
-        let mut props = vec![];
-        if let Some(properties) = self.properties.defined.get(&rk) {
-            for prop in properties {
-                tc.store_kv(
-                    prop,
-                    Decoration {
-                        comment_properties: self.properties.comment_properties.get(prop).cloned(),
-                        doc_headers: self.properties.doc_headers.get(prop).cloned(),
-                    },
-                );
-                props.push(prop);
-            }
-        }
-
-        let mut packets = vec![];
-        {
-            let node = tc.node().await;
-            for prop in props {
-                if let Some(fp) = node.current_resource::<FieldPacket>(prop.transmute()) {
-                    packets.push((*prop, fp));
-                }
-            }
-        }
-
-        for (pk, fp) in packets {
-            tc.store_kv(pk, fp);
-        }
     }
 
     /// Upgrades the node w/ a host level assigned,
@@ -894,7 +708,9 @@ impl Node for super::AttributeParser<Shared> {
 
     fn parsed_line(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {
         trace!("[PARSED]\n\n{}\n", _node_info.line);
-        self.attributes.add_line(&_node_info.line);
+        if let Some(last) = self.nodes.last_mut() {
+            last.set_source(_node_info.line.to_string());
+        }
     }
 
     async fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>) {
@@ -1174,6 +990,25 @@ mod test {
                 .resource::<ParsedAttributes>(ResourceKey::root())
                 .unwrap();
 
+            let mut attributes = attributes.clone();
+
+            if let Some(tl) = store.resource::<PluginLevel>(ResourceKey::root()) {
+                for a in attributes.attributes.iter_mut() {
+                    if let Some(mut repr) = a.repr() {
+                        if let Some(path) = repr.as_node().and_then(|n| n.try_path()) {
+                            repr.upgrade(CrcInterner::default(), HostLevel::new(path.to_string()))
+                                .await
+                                .unwrap();
+
+                            repr.upgrade(CrcInterner::default(), tl.to_owned())
+                                .await
+                                .unwrap();
+                        }
+                        a.set_repr(repr);
+                    }
+                }
+            }
+
             for node in attributes.attributes.iter() {
                 eprintln!("-- {:x?}", node.repr());
 
@@ -1183,6 +1018,16 @@ mod test {
 
                     let s = node.as_node().unwrap().annotations().await;
                     eprintln!("{:?}", s);
+
+                    let s = node.as_node().unwrap().source().await;
+                    eprintln!("{}", s.unwrap_or_default());
+
+                    // let s = node.as_host().unwrap().address().await;
+                    // eprintln!("Address -- {:?}", s);
+
+                    if let Some(t) = PluginRepr::try_from(node).ok() {
+                        eprintln!("tl found");
+                    }
                 }
             }
 
@@ -1193,6 +1038,7 @@ mod test {
                 let recv_node = node.as_node().unwrap();
                 eprintln!("{:?}", recv_node.try_symbol());
                 eprintln!("{:#010x?}", recv.try_fields());
+                eprintln!("{}", recv_node.try_source().unwrap_or_default());
             }
 
             eprintln!("{:#?}", attributes);

@@ -22,10 +22,7 @@ pub trait Recv {
 
     /// Links a node level to a receiver and returns a new Repr,
     ///
-    async fn link_recv(
-        node: NodeLevel,
-        fields: Vec<Repr>,
-    ) -> anyhow::Result<Repr>
+    async fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
     where
         Self: Sized + Send + Sync + 'static,
     {

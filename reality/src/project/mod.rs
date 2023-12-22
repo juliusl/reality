@@ -306,7 +306,7 @@ mod tests {
     }
 
     #[derive(Debug, Default, Serialize, Clone, Reality)]
-    #[reality(group = "reality", call = test_noop, plugin)]
+    #[reality(group = "reality", call = test_call, plugin)]
     pub struct Test {
         pub name: String,
         pub file: PathBuf,
@@ -317,7 +317,7 @@ mod tests {
     }
 
     #[derive(Debug, Serialize, Default, Deserialize, Clone, Reality)]
-    #[reality(group = "reality", call = test_noop, plugin)]
+    #[reality(group = "reality", call = test_call, plugin)]
     pub struct Test2 {
         name: String,
         file: PathBuf,
@@ -326,7 +326,7 @@ mod tests {
     }
 
     #[derive(Reality, Default, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-    #[reality(call = test_noop, plugin)]
+    #[reality(call = test_call, plugin)]
     pub enum Test3 {
         A {
             a: String,
@@ -348,6 +348,7 @@ mod tests {
 
     use async_trait::async_trait;
     use runir::prelude::CrcInterner;
+    use runir::prelude::HostLevel;
     use runir::prelude::Linker;
     use runir::prelude::NodeLevel;
     use runir::prelude::Recv;
@@ -359,6 +360,7 @@ mod tests {
     pub struct Test4;
 
     pub async fn test_call(_: &mut ThunkContext) -> anyhow::Result<()> {
+        eprintln!("test call");
         Ok(())
     }
 
@@ -442,9 +444,9 @@ mod tests {
         }
 
         project.add_node_plugin("test", |_, _, parser| {
-            parser.with_object_type::<Test>();
-            parser.with_object_type::<Test2>();
-            parser.with_object_type::<Test3>();
+            parser.with_object_type::<Thunk<Test>>();
+            parser.with_object_type::<Thunk<Test2>>();
+            parser.with_object_type::<Thunk<Test3>>();
 
             parser.link_recv.push(|n, f| {
                 Box::pin(async move {
@@ -498,6 +500,7 @@ mod tests {
         .await
         .unwrap();
 
+        // TODO: Add asserts
         let mut _project = project.load_file(".test/v2v2test.md").await.unwrap();
 
         eprintln!("{:#?}", _project.nodes.read().await.keys());
@@ -510,45 +513,80 @@ mod tests {
                 .resource::<ParsedAttributes>(ResourceKey::root())
                 .unwrap();
 
-            if let Some(node) = parsed.node.repr() {
-                let recv = node.as_recv().unwrap();
-                eprintln!("{:?}", recv.try_name());
+            let mut parsed = parsed.clone();
 
-                let fields = recv.fields().await;
-                eprintln!("{:#?}", fields);
+            // TODO: This is a useful fn move it
+            for a in parsed.attributes.iter_mut() {
+                if let Some(plugin) = node.read().await.resource::<PluginLevel>(a.transmute()) {
+                    eprintln!("found thunk level");
+                    if let Some(mut repr) = a.repr() {
+                        if let Some(path) = repr.as_node().and_then(|n| n.try_path()) {
+                            repr.upgrade(CrcInterner::default(), HostLevel::new(path.to_string()))
+                                .await
+                                .unwrap();
+
+                            repr.upgrade(CrcInterner::default(), plugin.to_owned())
+                                .await
+                                .unwrap();
+                        }
+
+                        eprintln!("upgraded attr");
+                        a.set_repr(repr);
+                    }
+                }
             }
+
+            // if let Some(node) = parsed.node.repr() {
+            //     let recv = node.as_recv().unwrap();
+            //     eprintln!("{:?}", recv.try_name());
+
+            //     let fields = recv.fields().await;
+            //     eprintln!("{:#?}", fields);
+            // }
 
             for a in parsed.attributes.iter() {
                 if let Some(s) = a.repr() {
-                    let recv = s.as_recv().unwrap();
-
-                    if let Some(name) = recv
-                        .find_field("name")
-                        .as_ref()
-                        .and_then(runir::prelude::Repr::as_node)
-                    {
-                        eprintln!("{:?}", name.try_path());
+                    if let Some(host) = s.as_host() {
+                        let addr = host.try_address();
+                        eprintln!("{:?}", addr);
                     }
 
-                    let name = recv.try_name();
-                    let fields = recv.try_fields();
-                    eprintln!("{:#?}\n{:#?}", name, fields.clone());
-
-                    let p = s.as_node().unwrap().try_path();
-                    eprintln!("{:?}", p);
-
-                    for f in fields.unwrap_or_default().iter() {
-                        let n = f.as_field().unwrap().try_name();
-                        eprintln!("{:?}", n);
-
-                        let node = f.as_node().unwrap();
-                        eprintln!("{:?}", node.try_input());
-                        eprintln!(
-                            "{}{}",
-                            p.clone().unwrap_or_default(),
-                            node.try_path().unwrap_or_default()
-                        );
+                    if let Some(tr) = PluginRepr::try_from(s).ok() {
+                        eprintln!("found thunk repr");
+                        if let Some(call) = tr.call().await {
+                            let tc = call(ThunkContext::default()).await.unwrap();
+                        }
                     }
+
+                    // let recv = s.as_recv().unwrap();
+
+                    // if let Some(name) = recv
+                    //     .find_field("name")
+                    //     .as_ref()
+                    //     .and_then(runir::prelude::Repr::as_node)
+                    // {
+                    //     eprintln!("{:?}", name.try_path());
+                    // }
+
+                    // let name = recv.try_name();
+                    // let fields = recv.try_fields();
+                    // eprintln!("{:#?}\n{:#?}", name, fields.clone());
+
+                    // let p = s.as_node().unwrap().try_path();
+                    // eprintln!("{:?}", p);
+
+                    // for f in fields.unwrap_or_default().iter() {
+                    //     let n = f.as_field().unwrap().try_name();
+                    //     eprintln!("{:?}", n);
+
+                    //     let node = f.as_node().unwrap();
+                    //     eprintln!("{:?}", node.try_input());
+                    //     eprintln!(
+                    //         "{}{}",
+                    //         p.clone().unwrap_or_default(),
+                    //         node.try_path().unwrap_or_default()
+                    //     );
+                    // }
                 }
             }
 

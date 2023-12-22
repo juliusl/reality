@@ -11,18 +11,14 @@ pub mod prelude {
     pub use super::context::Local;
     pub use super::context::Remote;
     pub use super::kvp_ext::*;
+    pub use super::plugin::repr::PluginLevel;
+    pub use super::plugin::repr::PluginRepr;
     pub use super::plugin::NewFn;
     pub use super::plugin::Pack;
     pub use super::plugin::Plugin;
     pub use crate::AsyncStorageTarget;
-    use crate::Attribute;
-    use crate::AttributeParser;
     pub use crate::AttributeType;
     pub use crate::BlockObject;
-    use crate::FieldPacket;
-    use crate::FieldRefController;
-    use crate::ResourceKey;
-    use crate::SetField;
     pub use crate::Shared;
     pub use crate::StorageTarget;
     pub use crate::ToFrame;
@@ -30,6 +26,16 @@ pub mod prelude {
     pub use futures_util::FutureExt;
     pub use std::marker::PhantomData;
     pub use std::ops::DerefMut;
+
+    use crate::Attribute;
+    use crate::AttributeParser;
+    use crate::FieldPacket;
+    use crate::FieldRefController;
+    use crate::ParsedAttributes;
+    use crate::ResourceKey;
+    use crate::SetField;
+    use runir::prelude::CrcInterner;
+    use tracing::error;
 
     /// Type alias for the fn passed by the THunk type,
     ///
@@ -101,15 +107,7 @@ pub mod prelude {
                 .cloned()
                 .unwrap_or(ResourceKey::root());
             if let Some(storage) = parser.storage() {
-                storage.lazy_put_resource::<ThunkFn>(<P as Plugin>::call, key.transmute());
-                storage.lazy_put_resource::<EnableFrame>(
-                    EnableFrame(<P as Plugin>::enable_frame),
-                    key.transmute(),
-                );
-                storage.lazy_put_resource::<EnableVirtual>(
-                    EnableVirtual(<P as Plugin>::enable_virtual),
-                    key.transmute(),
-                );
+                storage.lazy_put_resource(PluginLevel::new::<P>(), key.transmute())
             }
         }
     }
@@ -148,7 +146,30 @@ pub mod prelude {
             storage: AsyncStorageTarget<Shared>,
             rk: Option<ResourceKey<Attribute>>,
         ) -> AttributeParser<Shared> {
-            <P as BlockObject>::on_unload(parser, storage, rk).await
+            let parser = <P as BlockObject>::on_unload(parser, storage.clone(), rk).await;
+            let _storage = storage.storage.read().await;
+
+            if let Some(tl) = _storage.current_resource::<PluginLevel>(ResourceKey::root()) {
+                drop(_storage);
+
+                if let Some(mut parsed) = storage
+                    .storage
+                    .write()
+                    .await
+                    .resource_mut::<ParsedAttributes>(ResourceKey::root())
+                {
+                    if let Some(mut repr) = parsed.node.repr() {
+                        if let Err(err) = repr.upgrade(CrcInterner::default(), tl).await {
+                            error!("{err}");
+                        }
+
+                        parsed.node.set_repr(repr);
+                    }
+                    drop(parsed);
+                }
+            }
+
+            parser
         }
 
         /// Called when the block object's parent attribute has completed processing,
