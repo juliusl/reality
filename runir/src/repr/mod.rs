@@ -149,7 +149,7 @@ impl Repr {
     }
 
     /// Returns the repr as a receiver repr,
-    /// 
+    ///
     #[inline]
     pub fn as_recv(&self) -> Option<RecvRepr> {
         self.try_get_levels().get(1).copied().map(RecvRepr)

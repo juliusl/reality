@@ -6,6 +6,7 @@ use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
 use tracing::debug;
+use tracing::error;
 use tracing::trace;
 
 use runir::prelude::*;
@@ -19,7 +20,6 @@ use super::attribute_type::ParsableAttributeTypeField;
 use super::attribute_type::ParsableField;
 use super::AttributeTypeParser;
 use super::StorageTarget;
-use crate::Shared;
 use crate::block::BlockObjectHandler;
 use crate::AsyncStorageTarget;
 use crate::AttributeType;
@@ -33,6 +33,7 @@ use crate::LinkFieldFn;
 use crate::LinkRecvFn;
 use crate::ResourceKey;
 use crate::SetIdentifiers;
+use crate::Shared;
 use crate::ThunkContext;
 
 /// Represents a resource that has been assigned a path,
@@ -479,7 +480,7 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     ///
     pub(crate) nodes: Vec<NodeLevel>,
     /// Fields that have been parsed,
-    /// 
+    ///
     pub(crate) fields: Vec<Repr>,
 }
 
@@ -789,7 +790,9 @@ impl AttributeParser<Shared> {
 
     /// Returns a mutable reference to centralized storage,
     ///
-    pub fn storage_mut<'a: 'b, 'b>(&'a mut self) -> Option<tokio::sync::RwLockWriteGuard<'b, Shared>> {
+    pub fn storage_mut<'a: 'b, 'b>(
+        &'a mut self,
+    ) -> Option<tokio::sync::RwLockWriteGuard<'b, Shared>> {
         if let Some(storage) = self.storage.as_ref() {
             storage.try_write().ok()
         } else {
@@ -805,14 +808,12 @@ impl AttributeParser<Shared> {
     pub fn namespace(
         &mut self,
         namespace: impl Into<String>,
-    ) -> Option<AsyncStorageTarget<Shared>>
-    {
+    ) -> Option<AsyncStorageTarget<Shared>> {
         let namespace = namespace.into();
 
         // Check if an async_target already exists,
         //
-        let async_target =
-            resource_owned!(self, AsyncStorageTarget<Shared>, namespace.clone());
+        let async_target = resource_owned!(self, AsyncStorageTarget<Shared>, namespace.clone());
         if async_target.is_some() {
             return async_target;
         }
@@ -830,9 +831,13 @@ impl AttributeParser<Shared> {
 }
 
 #[async_trait(?Send)]
-impl Node for super::AttributeParser<Shared>
-{
+impl Node for super::AttributeParser<Shared> {
     fn assign_path(&mut self, path: String) {
+        if let Some(node) = self.nodes.last_mut() {
+            trace!("Setting path -- {} -- {:?}", path.as_str(), node.mount());
+            node.set_path(path.as_str());
+        }
+
         self.attributes.bind_last_to_path(path);
     }
 
@@ -882,8 +887,13 @@ impl Node for super::AttributeParser<Shared>
                 cattr.parse(self, input.unwrap_or_default());
 
                 if let Some(last) = self.nodes.last() {
-                    if let Ok(field_repr) = cattr.link_field(last.clone()).await {
-                        self.fields.push(field_repr);
+                    match cattr.link_field(last.clone()).await {
+                        Ok(field_repr) => {
+                            self.fields.push(field_repr);
+                        }
+                        Err(err) => {
+                            error!("{err}");
+                        }
                     }
                 }
             }
@@ -909,8 +919,7 @@ impl Node for super::AttributeParser<Shared>
 }
 
 #[runmd::prelude::async_trait(?Send)]
-impl ExtensionLoader for super::AttributeParser<Shared>
-{
+impl ExtensionLoader for super::AttributeParser<Shared> {
     async fn load_extension(
         &self,
         extension: &str,
@@ -918,16 +927,6 @@ impl ExtensionLoader for super::AttributeParser<Shared>
         input: Option<&str>,
     ) -> Option<BoxedNode> {
         let mut parser = self.clone();
-
-        // Drain any dispatches before trying to load the rest of the resources
-        if let Some(mut storage) = parser.storage_mut() {
-            storage.drain_dispatch_queues();
-        }
-
-        let handler =  parser.handlers.last().cloned();
-        if handler.is_some() {
-            parser = handler.unwrap().on_unload(parser).await;
-        }
 
         // Clear any pre-existing attribute types
         parser.attribute_types.clear();
@@ -969,9 +968,7 @@ impl ExtensionLoader for super::AttributeParser<Shared>
 
             let rk = parser.attributes.last().copied();
             // Extension has been loaded to a namespace
-            parser = handler
-                .on_load(parser, namespace, rk)
-                .await;
+            parser = handler.on_load(parser, namespace, rk).await;
 
             parser.handlers.push(handler);
 
@@ -982,6 +979,20 @@ impl ExtensionLoader for super::AttributeParser<Shared>
         }
 
         Some(Box::pin(parser))
+    }
+
+    async fn unload(&mut self) {
+        let parser = self.clone();
+
+        // Drain any dispatches before trying to load the rest of the resources
+        if let Some(mut storage) = self.storage_mut() {
+            storage.drain_dispatch_queues();
+        }
+
+        let handler = self.handlers.last().cloned();
+        if handler.is_some() {
+            *self = handler.unwrap().on_unload(parser).await;
+        }
     }
 }
 
@@ -1024,7 +1035,7 @@ mod test {
                     assert_eq!(2, parser.nodes.len(), "should be 2 nodes");
 
                     if let Some(node) = parser.nodes.last() {
-                        let (symbol, input, tag, doc_headers, annotations) = node.mount();
+                        let (symbol, input, tag, path, doc_headers, annotations) = node.mount();
                         assert_eq!(symbol.unwrap().as_str(), "test");
                         assert!(input.is_none());
                         assert_eq!(tag.unwrap().as_str(), "world");
@@ -1032,19 +1043,27 @@ mod test {
                             annotations.unwrap().get("description").unwrap().as_str(),
                             "A really cool description"
                         );
+                        eprintln!("{:?}", path);
                     }
 
                     if let Some(node) = parser.nodes.first() {
-                        eprintln!("{:?}", node.mount());
+                        eprintln!("-{:?}", node.mount());
                     }
                 },
-                |_, _| Box::pin(async { Ok(Repr::default()) }),
-                |r, f, n| Box::pin(async move { 
-                    eprintln!("{:?}", r.mount());
-                    eprintln!("{:?}", f.mount());
-                    eprintln!("{:?}", n.mount());
-                    Ok(Repr::default()) 
-                }),
+                |n, _| {
+                    Box::pin(async move {
+                        eprintln!("**{:?}", n.mount());
+                        Ok(Repr::default())
+                    })
+                },
+                |r, f, n| {
+                    Box::pin(async move {
+                        eprintln!("---{:?}", r.mount());
+                        eprintln!("---{:?}", f.mount());
+                        eprintln!("---{:?}", n.mount());
+                        Ok(Repr::default())
+                    })
+                },
                 ResourceLevel::new::<String>(),
                 FieldLevel::new::<0, Test>(),
             );
@@ -1074,7 +1093,32 @@ mod test {
     "#,
         );
 
-        let _ = workspace.compile(project).await.unwrap();
+        let workspace = workspace.compile(project).await.unwrap();
+        let project = workspace.project.unwrap();
+
+        let nodes = project.nodes.read().await;
+
+        for (node, store) in nodes.clone().iter() {
+            let store = store.read().await;
+
+            let attributes = store
+                .resource::<ParsedAttributes>(ResourceKey::root())
+                .unwrap();
+
+            for node in attributes.attributes.iter() {
+                eprintln!("-- {:x?}", node.repr());
+
+                if let Some(node) = node.repr() {
+                    let s = node.as_recv().unwrap().name().await;
+                    eprintln!("{:?}", s);
+
+                    let s = node.as_node().unwrap().annotations().await;
+                    eprintln!("{:?}", s);
+                }
+            }
+
+            eprintln!("{:#?}", attributes);
+        }
 
         ()
     }

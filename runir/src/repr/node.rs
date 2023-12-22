@@ -6,9 +6,6 @@ use crate::push_tag;
 
 use crate::prelude::*;
 
-// Intern table for doc headers
-define_intern_table!(DOC_HEADERS: Vec<String>);
-
 // Intern table for symbol values
 define_intern_table!(SYMBOL: String);
 
@@ -18,8 +15,14 @@ define_intern_table!(INPUT: String);
 // Intern table for tag values
 define_intern_table!(TAG: String);
 
+// Intern table for path values
+define_intern_table!(PATH: String);
+
 // Intern table for node index values
 define_intern_table!(NODE_IDX: usize);
+
+// Intern table for doc headers
+define_intern_table!(DOC_HEADERS: Vec<String>);
 
 // Intern table for node level annotations
 define_intern_table!(ANNOTATIONS: BTreeMap<String, String>);
@@ -39,6 +42,9 @@ pub struct NodeLevel {
     /// Tag value assigned to this resource,
     ///
     tag: Option<Tag<String, Arc<String>>>,
+    /// Path value assigned to this resource,
+    /// 
+    path: Option<Tag<String, Arc<String>>>,
     /// Node idx,
     ///
     idx: Option<Tag<usize, Arc<usize>>>,
@@ -58,6 +64,7 @@ impl NodeLevel {
             symbol: None,
             input: None,
             tag: None,
+            path: None,
             idx: None,
             doc_headers: None,
             annotations: None,
@@ -70,6 +77,7 @@ impl NodeLevel {
         symbol: Option<impl Into<String>>,
         input: Option<impl Into<String>>,
         tag: Option<impl Into<String>>,
+        path: Option<impl Into<String>>,
         idx: Option<usize>,
         doc_headers: Option<Vec<impl Into<String>>>,
         annotations: Option<BTreeMap<String, String>>,
@@ -84,6 +92,9 @@ impl NodeLevel {
         }
         if let Some(tag) = tag {
             node = node.with_tag(tag)
+        }
+        if let Some(path) = path {
+            node = node.with_path(path);
         }
         if let Some(idx) = idx {
             node = node.with_idx(idx);
@@ -119,6 +130,14 @@ impl NodeLevel {
     #[inline]
     pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
         self.set_tag(tag);
+        self
+    }
+
+    /// Returns the node level w/ path tag set,
+    ///  
+    #[inline]
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.set_path(path);
         self
     }
 
@@ -167,6 +186,13 @@ impl NodeLevel {
         self.tag = Some(Tag::new(&TAG, Arc::new(tag.into())));
     }
 
+    /// Sets the path tag for the node level,
+    /// 
+    #[inline]
+    pub fn set_path(&mut self, path: impl Into<String>) {
+        self.path = Some(Tag::new(&PATH, Arc::new(path.into())));
+    }
+
     /// Returns the node level w/ idx tag set,
     ///
     #[inline]
@@ -206,6 +232,10 @@ impl Level for NodeLevel {
             push_tag!(dyn interner, tag);
         }
 
+        if let Some(path) = self.path.as_ref() {
+            push_tag!(dyn interner, path);
+        }
+
         if let Some(idx) = self.idx.as_ref() {
             push_tag!(dyn interner, idx);
         }
@@ -226,6 +256,8 @@ impl Level for NodeLevel {
         Option<Arc<String>>,
         // Tag
         Option<Arc<String>>,
+        // Path
+        Option<Arc<String>>,
         // Doc headers
         Option<Arc<Vec<String>>>,
         // Annotations
@@ -238,6 +270,7 @@ impl Level for NodeLevel {
             self.symbol.as_ref().map(|i| i.create_value.clone()),
             self.input.as_ref().map(|i| i.create_value.clone()),
             self.tag.as_ref().map(|t| t.create_value.clone()),
+            self.path.as_ref().map(|p| p.create_value.clone()),
             self.doc_headers.as_ref().map(|t| t.create_value.clone()),
             self.annotations.as_ref().map(|a| a.create_value.clone()),
         )
@@ -260,6 +293,13 @@ impl NodeRepr {
     #[inline]
     pub async fn input(&self) -> Option<Arc<String>> {
         self.0.input().await
+    }
+
+    /// Returns node path,
+    ///
+    #[inline]
+    pub async fn path(&self) -> Option<Arc<String>> {
+        self.0.path().await
     }
 
     /// Returns node tag,
@@ -309,6 +349,13 @@ impl NodeRepr {
     #[inline]
     pub fn try_tag(&self) -> Option<Arc<String>> {
         self.0.try_tag()
+    }
+
+    /// Tries to return node path,
+    /// 
+    #[inline]
+    pub fn try_path(&self) -> Option<Arc<String>> {
+        self.0.try_path()
     }
 
     /// Tries to return node doc_headers,

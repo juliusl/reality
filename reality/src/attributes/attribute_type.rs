@@ -9,6 +9,7 @@ use anyhow::anyhow;
 use runir::prelude::*;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use tracing::trace;
 
 use crate::BlockObject;
 use crate::FieldRef;
@@ -62,7 +63,7 @@ pub struct AttributeTypeParser<S: StorageTarget + 'static> {
     ///
     link_recv: LinkRecvFn,
     /// Link field function,
-    /// 
+    ///
     link_field: LinkFieldFn,
     /// Resource level
     ///
@@ -126,14 +127,16 @@ impl AttributeTypeParser<Shared> {
     }
 
     /// Links a receiver to node and fields,
-    /// 
+    ///
     pub async fn link_recv(&self, node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr> {
+        trace!("linking recv - {:?}", node.mount());
         (self.link_recv)(node, fields).await
     }
 
     /// Links a field to a node,
-    /// 
+    ///
     pub async fn link_field(&self, node: NodeLevel) -> anyhow::Result<Repr> {
+        trace!("linking - {:?}", node.mount());
         if let Some(field) = self.field {
             (self.link_field)(self.resource, field, node).await
         } else {
@@ -148,7 +151,9 @@ impl AttributeTypeParser<Shared> {
         Owner: OnParseField<IDX> + Send + Sync + 'static,
         <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
-        Self::new::<ParsableField<IDX, Owner>>()
+        let mut parser = Self::new::<ParsableField<IDX, Owner>>();
+        parser.field = Some(FieldLevel::new::<IDX, Owner>());
+        parser
     }
 
     /// Returns an attribute parser for a parseable attribute type field,
@@ -158,7 +163,9 @@ impl AttributeTypeParser<Shared> {
         Owner: OnParseField<IDX> + Send + Sync + 'static,
         Owner::ParseType: AttributeType<Shared>,
     {
-        Self::new::<ParsableAttributeTypeField<IDX, Owner>>()
+        let mut parser = Self::new::<ParsableAttributeTypeField<IDX, Owner>>();
+        parser.field = Some(FieldLevel::new::<IDX, Owner>());
+        parser
     }
 
     /// Returns an attribute parser for a parseable attribute type field,
@@ -168,7 +175,9 @@ impl AttributeTypeParser<Shared> {
         Owner: OnParseField<IDX> + Send + Sync + 'static,
         Owner::ParseType: BlockObject,
     {
-        Self::new::<ParsableObjectTypeField<IDX, Owner>>()
+        let mut parser = Self::new::<ParsableObjectTypeField<IDX, Owner>>();
+        parser.field = Some(FieldLevel::new::<IDX, Owner>());
+        parser
     }
 }
 

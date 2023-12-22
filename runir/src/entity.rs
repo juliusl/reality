@@ -1,8 +1,7 @@
 // use crate::prelude::InternerFactory;
 
-
 // /// Interner implementation that interns based on an entity id system,
-// /// 
+// ///
 // pub struct EntityInterner {
 
 // }

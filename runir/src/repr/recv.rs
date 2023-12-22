@@ -28,19 +28,21 @@ pub trait Recv {
     {
         let mut repr = ReprFactory::<CrcInterner>::describe_resource::<Self>();
         repr.push_level(RecvLevel::new::<Self>(fields))?;
-        repr.push_level(node)?;
-
+        repr.push_level(node.clone())?;
         repr.link().await
     }
 
     /// Links a node level to a field level and returns a new Repr,
     ///
-    async fn link_field(resource: ResourceLevel, field: FieldLevel, node: NodeLevel) -> anyhow::Result<Repr> {
+    async fn link_field(
+        resource: ResourceLevel,
+        field: FieldLevel,
+        node: NodeLevel,
+    ) -> anyhow::Result<Repr> {
         let mut repr = ReprFactory::<CrcInterner>::default();
         repr.push_level(resource)?;
         repr.push_level(field)?;
         repr.push_level(node)?;
-
         repr.link().await
     }
 }
@@ -87,7 +89,7 @@ impl Level for RecvLevel {
 }
 
 /// Wrapper-struct for an intern handle providing api's to access receiver level tags,
-/// 
+///
 pub struct RecvRepr(pub(crate) InternHandle);
 
 impl RecvRepr {
@@ -120,7 +122,7 @@ impl RecvRepr {
     }
 
     /// Finds the repr of a field owned by receiver,
-    /// 
+    ///
     pub fn find_field(&self, name: &str) -> Option<Repr> {
         if let Some(fields) = self.try_fields() {
             fields

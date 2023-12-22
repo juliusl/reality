@@ -179,6 +179,7 @@ mod tests {
             Some("test"),
             Some("hello world"),
             Some(""),
+            Some(""),
             Some(0),
             Some(vec![""]),
             None,
@@ -190,6 +191,7 @@ mod tests {
         let handle_2 = NodeLevel::new_with(
             Some("test"),
             Some("hello world"),
+            Some(""),
             Some(""),
             Some(0),
             Some(vec![""]),
@@ -232,6 +234,7 @@ mod tests {
         repr.push_level(NodeLevel::new_with(
             Some("test"),
             Some("hello world"),
+            Some(""),
             Some(""),
             Some(0),
             Some(vec!["hello"]),

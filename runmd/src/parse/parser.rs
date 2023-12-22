@@ -141,6 +141,10 @@ impl Parser {
                 }
             }
 
+            if let Some(last) = self.graph.last_mut() {
+                last.unload().await;
+            }
+
             for node in self.graph.drain(..) {
                 let node = Pin::into_inner(node);
                 node.completed();
@@ -159,6 +163,10 @@ impl Parser {
     /// Callback when processing an AddNode instruction,
     ///
     async fn on_add_node(&mut self, node_info: NodeInfo<'_>, block_info: BlockInfo<'_>) {
+        if let Some(last) = self.graph.last_mut() {
+            last.unload().await;
+        }
+
         // Reset the current node index
         self.current_node_idx.take();
 
@@ -192,6 +200,8 @@ impl Parser {
     ///
     async fn on_load_extension<'a>(&mut self, node_info: NodeInfo<'_>, block_info: BlockInfo<'_>) {
         if let Some(last) = self.graph.last_mut() {
+            last.unload().await;
+
             last.set_info(node_info.clone(), block_info.clone());
             if let Some(ext) = node_info.line.extension.as_ref() {
                 if let Some(mut _ext) = last
@@ -224,6 +234,7 @@ impl Parser {
             last.set_info(node_info.clone(), block_info.clone());
 
             if let Some(mut attr) = node_info.line.attr {
+                last.assign_path(format!("?prop={}", attr.name));
                 last.define_property(
                     attr.name,
                     node_info.line.tag.map(|t| t.0),

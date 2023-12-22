@@ -231,9 +231,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Loading<Storage> {
     }
 }
 
-impl runmd::prelude::BlockProvider
-    for Loading<Shared>
-{
+impl runmd::prelude::BlockProvider for Loading<Shared> {
     fn provide(&self, block_info: BlockInfo) -> Option<runmd::prelude::BoxedNode> {
         let parser = self.create_parser_for_block(&block_info, None);
 
@@ -242,9 +240,7 @@ impl runmd::prelude::BlockProvider
 }
 
 #[async_trait(?Send)]
-impl runmd::prelude::NodeProvider
-    for Loading<Shared>
-{
+impl runmd::prelude::NodeProvider for Loading<Shared> {
     async fn provide(
         &self,
         name: &str,
@@ -453,7 +449,7 @@ mod tests {
             : .name World Hello
             <reality.test2>
             : .name World Hello3
-    
+
             + .test
             <a/reality.test>
             : .name Hello World 3
@@ -478,11 +474,49 @@ mod tests {
 
         let mut _project = project.load_file(".test/v2v2test.md").await.unwrap();
 
-        println!("{:#?}", _project.nodes.read().await.keys());
+        eprintln!("{:#?}", _project.nodes.read().await.keys());
 
         for (k, node) in _project.nodes.write().await.iter_mut() {
             let _node = node.read().await;
-            println!("{:?}", k);
+            eprintln!("{:?}", k);
+
+            let parsed = _node
+                .resource::<ParsedAttributes>(ResourceKey::root())
+                .unwrap();
+
+            for a in parsed.attributes.iter() {
+                if let Some(s) = a.repr() {
+                    let recv = s.as_recv().unwrap();
+
+                    if let Some(name) = recv
+                        .find_field("name")
+                        .as_ref()
+                        .and_then(runir::prelude::Repr::as_node)
+                    {
+                        eprintln!("{:?}", name.try_path());
+                    }
+
+                    let name = recv.try_name();
+                    let fields = recv.try_fields();
+                    eprintln!("{:#?}\n{:#?}", name, fields.clone());
+
+                    let p = s.as_node().unwrap().try_path();
+                    eprintln!("{:?}", p);
+
+                    for f in fields.unwrap_or_default().iter() {
+                        let n = f.as_field().unwrap().try_name();
+                        eprintln!("{:?}", n);
+
+                        let node = f.as_node().unwrap();
+                        eprintln!("{:?}", node.try_input());
+                        eprintln!(
+                            "{}{}",
+                            p.clone().unwrap_or_default(),
+                            node.try_path().unwrap_or_default()
+                        );
+                    }
+                }
+            }
         }
         ()
     }

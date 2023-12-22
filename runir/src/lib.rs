@@ -1,8 +1,8 @@
+mod entity;
 mod interner;
 mod level;
 mod repr;
 mod tag;
-mod entity;
 
 #[cfg(feature = "crc-interner")]
 mod crc;
@@ -71,6 +71,10 @@ pub mod prelude {
     pub use super::interner::InternHandle;
     pub use super::interner::InternTable;
     pub use super::interner::InternerFactory;
+    pub use super::interner::InternResult;
+    pub use super::interner::LevelFlags;
+
+    pub use super::tag::Tag;
 
     pub use super::level::Level;
 
@@ -86,10 +90,6 @@ pub mod prelude {
                 Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send>,
             > + Send,
     >;
-
-    pub(crate) use super::interner::InternResult;
-    pub(crate) use super::interner::LevelFlags;
-    pub(crate) use super::tag::Tag;
 }
 
 #[allow(dead_code)]

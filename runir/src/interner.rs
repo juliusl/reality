@@ -355,6 +355,20 @@ impl InternHandle {
         crate::repr::node::TAG.try_strong_ref(self)
     }
 
+    /// Returns a strong reference to the path,
+    ///
+    #[inline]
+    pub async fn path(&self) -> Option<Arc<String>> {
+        crate::repr::node::PATH.strong_ref(self).await
+    }
+
+    /// Tries to return a strong reference to the path,
+    ///
+    #[inline]
+    pub fn try_path(&self) -> Option<Arc<String>> {
+        crate::repr::node::PATH.try_strong_ref(self)
+    }
+
     /// Returns a strong reference to the node idx,
     ///
     #[inline]

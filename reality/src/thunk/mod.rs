@@ -133,7 +133,11 @@ pub mod prelude {
     {
         /// Called when the block object is being loaded into it's namespace,
         ///
-        async fn on_load(parser: AttributeParser<Shared>, storage: AsyncStorageTarget<Shared>, rk: Option<ResourceKey<Attribute>>) -> AttributeParser<Shared> {
+        async fn on_load(
+            parser: AttributeParser<Shared>,
+            storage: AsyncStorageTarget<Shared>,
+            rk: Option<ResourceKey<Attribute>>,
+        ) -> AttributeParser<Shared> {
             <P as BlockObject>::on_load(parser, storage, rk).await
         }
 

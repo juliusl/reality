@@ -7,7 +7,7 @@ use crate::repr::HANDLES;
 /// Each level of runtime representation is defined by a set of tags,
 ///
 #[derive(Clone, Copy)]
-pub(crate) struct Tag<T: Send + Sync + 'static, F: Sync = fn() -> T> {
+pub struct Tag<T: Send + Sync + 'static, F: Sync = fn() -> T> {
     /// Table that contains the tag value,
     ///
     pub(crate) intern_table: &'static InternTable<T>,

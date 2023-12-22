@@ -1,9 +1,13 @@
+use runir::prelude::Level;
+use tracing::trace;
+
 use crate::AsyncStorageTarget;
 use crate::Attribute;
 use crate::AttributeParser;
 use crate::AttributeType;
 use crate::AttributeTypeParser;
 use crate::FieldPacket;
+use crate::LinkRecvFn;
 use crate::ResourceKey;
 use crate::SetField;
 use crate::Shared;
@@ -91,11 +95,12 @@ where
 
 /// Type-alias for a block object event fn,
 ///
-type BlockObjectFn = fn(
-    AttributeParser<Shared>,
-    AsyncStorageTarget<Shared>,
-    Option<ResourceKey<Attribute>>,
-) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = AttributeParser<Shared>>>>;
+type BlockObjectFn =
+    fn(
+        AttributeParser<Shared>,
+        AsyncStorageTarget<Shared>,
+        Option<ResourceKey<Attribute>>,
+    ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = AttributeParser<Shared>>>>;
 
 /// Type-alias for a block object event completion fn,
 ///
@@ -108,6 +113,7 @@ pub struct BlockObjectHandler {
     on_load: BlockObjectFn,
     on_unload: BlockObjectFn,
     on_completed: BlockObjectCompletionFn,
+    link_recv: LinkRecvFn,
     namespace: Option<AsyncStorageTarget<Shared>>,
     resource_key: Option<ResourceKey<Attribute>>,
 }
@@ -118,6 +124,7 @@ impl Clone for BlockObjectHandler {
             on_load: self.on_load,
             on_unload: self.on_unload,
             on_completed: self.on_completed,
+            link_recv: self.link_recv,
             namespace: self.namespace.clone(),
             resource_key: self.resource_key,
         }
@@ -132,11 +139,10 @@ impl BlockObjectHandler {
         B: BlockObject,
     {
         Self {
-            on_load: |p, s, r| { 
-                Box::pin(async move { B::on_load(p, s, r).await })
-            },
+            on_load: B::on_load,
             on_unload: B::on_unload,
             on_completed: B::on_completed,
+            link_recv: B::link_recv,
             namespace: None,
             resource_key: None,
         }
@@ -149,7 +155,7 @@ impl BlockObjectHandler {
         parser: AttributeParser<Shared>,
         namespace: AsyncStorageTarget<Shared>,
         key: Option<ResourceKey<Attribute>>,
-    ) -> AttributeParser<Shared> { 
+    ) -> AttributeParser<Shared> {
         let parser = (self.on_load)(parser, namespace.clone(), key).await;
         self.namespace = Some(namespace);
         self.resource_key = key;
@@ -170,7 +176,29 @@ impl BlockObjectHandler {
     ///
     pub async fn on_unload(&self, parser: AttributeParser<Shared>) -> AttributeParser<Shared> {
         if let Some(namespace) = self.namespace.clone() {
-            (self.on_unload)(parser, namespace, self.resource_key).await
+            let mut parser = (self.on_unload)(parser, namespace, self.resource_key).await;
+
+            for n in parser.nodes.iter() {
+                trace!("* {:?}", n.mount());
+            }
+
+            let f = parser.fields.len();
+            trace!("fields -- {f}");
+            if let Some(recv) = parser.nodes.iter().rev().skip(f).next() {
+                trace!("trying unloading -- {:?}", recv.mount());
+                match (self.link_recv)(recv.clone(), parser.fields.clone()).await {
+                    Ok(recv) => {
+                        if let Some(rk) = parser.attributes.attributes.last_mut() {
+                            rk.set_repr(recv);
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("{err}");
+                    }
+                }
+            }
+            parser.fields.clear();
+            parser
         } else {
             panic!()
         }

@@ -132,8 +132,11 @@ mod tests {
     /// Called when loading this object,
     ///
     #[allow(dead_code)]
-    async fn on_load(parser: AttributeParser<Shared>, storage: AsyncStorageTarget<Shared>, _: Option<ResourceKey<Attribute>>) -> AttributeParser<Shared>
-    {
+    async fn on_load(
+        parser: AttributeParser<Shared>,
+        storage: AsyncStorageTarget<Shared>,
+        _: Option<ResourceKey<Attribute>>,
+    ) -> AttributeParser<Shared> {
         storage
             .maybe_intialize_dispatcher::<u64>(ResourceKey::root())
             .await;

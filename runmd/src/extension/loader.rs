@@ -12,4 +12,8 @@ pub trait Loader {
         tag: Option<&str>,
         input: Option<&str>,
     ) -> Option<BoxedNode>;
+
+    /// Unloads the node,
+    /// 
+    async fn unload(&mut self);
 }
