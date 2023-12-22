@@ -7,16 +7,21 @@ use crate::push_tag;
 // Intern table for address values
 define_intern_table!(ADDRESS: String);
 
+// Intern table for extension values
+define_intern_table!(EXTENSIONS: Vec<Repr>);
+
 /// Host level is the upper most level of representation,
 ///
-/// Host level assigns addresses defined by the document structure to the
-/// actual resource.
+/// Host level assigns an address that represents the current representation.
 ///
 pub struct HostLevel {
     /// The address is derived by the documentation hierarchy from runmd and
     /// is some human-readable string associated to some resource.
     ///
     address: Tag<String, Arc<String>>,
+    /// Extensions that have been added under this host,
+    /// 
+    extensions: Option<Tag<Vec<Repr>, Arc<Vec<Repr>>>>,
 }
 
 impl HostLevel {
@@ -26,7 +31,15 @@ impl HostLevel {
     pub fn new(address: impl Into<String>) -> Self {
         Self {
             address: Tag::new(&ADDRESS, Arc::new(address.into())),
+            extensions: None,
         }
+    }
+
+    /// Sets extensions on the host,
+    /// 
+    #[inline]
+    pub fn set_extensions(&mut self, extensions: Vec<Repr>) {
+        self.extensions = Some(Tag::new(&EXTENSIONS, Arc::new(extensions)));
     }
 }
 
@@ -34,16 +47,23 @@ impl Level for HostLevel {
     fn configure(&self, interner: &mut impl InternerFactory) -> InternResult {
         push_tag!(dyn interner, &self.address);
 
+        if let Some(extensions) = self.extensions.as_ref() {
+            push_tag!(dyn interner, extensions);
+        }
+
         interner.set_level_flags(LevelFlags::LEVEL_3);
 
         interner.interner()
     }
 
-    type Mount = Arc<String>;
+    type Mount = (Arc<String>, Option<Arc<Vec<Repr>>>);
 
     #[inline]
     fn mount(&self) -> Self::Mount {
-        self.address.create_value.clone()
+        (
+            self.address.create_value.clone(),
+            self.extensions.as_ref().map(|e| e.create_value.clone()),
+        )
     }
 }
 
@@ -56,13 +76,50 @@ impl HostRepr {
     ///
     #[inline]
     pub async fn address(&self) -> Option<Arc<String>> {
-        self.0.address().await
+        self.0.host_address().await
     }
 
     /// Returns the address provided by the host,
     ///
     #[inline]
     pub fn try_address(&self) -> Option<Arc<String>> {
-        self.0.try_address()
+        self.0.try_host_address()
+    }
+
+     /// Returns the address provided by the host,
+    ///
+    #[inline]
+    pub async fn extensions(&self) -> Option<Arc<Vec<Repr>>> {
+        self.0.host_extensions().await
+    }
+
+    /// Returns the address provided by the host,
+    ///
+    #[inline]
+    pub fn try_extensions(&self) -> Option<Arc<Vec<Repr>>> {
+        self.0.try_host_extensions()
+    }
+
+    /// Finds the repr of a field owned by receiver,
+    ///
+    pub fn find_extension(&self, name: &str) -> Option<Repr> {
+        if let Some(extensions) = self.try_extensions() {
+            extensions
+                .iter()
+                .find(|f| {
+                    f.as_recv()
+                        .and_then(|f| {
+                            if f.try_name().map(|n| n.to_string()) == Some(name.to_string()) {
+                                Some(f)
+                            } else {
+                                None
+                            }
+                        })
+                        .is_some()
+                })
+                .copied()
+        } else {
+            None
+        }
     }
 }

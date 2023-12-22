@@ -1,12 +1,13 @@
-use super::HANDLES;
-use crate::prelude::*;
 use futures::StreamExt;
 use std::sync::Arc;
 
-/// Factory for constructing a repr,
-///
+use crate::repr::HANDLES;
+use crate::prelude::*;
+
+/// Struct for linking together levels into a single representation,
+/// 
 #[derive(Default)]
-pub struct ReprFactory<I = CrcInterner>
+pub struct Linker<I = CrcInterner>
 where
     I: InternerFactory,
 {
@@ -16,12 +17,12 @@ where
     /// Vector of intern handles tags for each level of the current representation,
     ///
     levels: Vec<Tag<InternHandle, Arc<InternHandle>>>,
-    ///
+    /// Interning ready notifications,
     ///
     ready_notify: Vec<Arc<tokio::sync::Notify>>,
 }
 
-impl<I: InternerFactory + Default> ReprFactory<I> {
+impl<I: InternerFactory + Default> Linker<I> {
     /// Constructs and returns a new representation,
     ///
     pub async fn link(&self) -> anyhow::Result<Repr> {
@@ -85,7 +86,7 @@ impl<I: InternerFactory + Default> ReprFactory<I> {
     ///
     #[inline]
     pub fn describe_resource<T: Send + Sync + 'static>() -> Self {
-        let mut repr = ReprFactory::default();
+        let mut repr = Linker::default();
 
         repr.push_level(ResourceLevel::new::<T>())
             .expect("should be able to push since the repr is empty");

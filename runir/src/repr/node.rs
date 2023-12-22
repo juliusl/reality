@@ -43,7 +43,7 @@ pub struct NodeLevel {
     ///
     tag: Option<Tag<String, Arc<String>>>,
     /// Path value assigned to this resource,
-    /// 
+    ///
     path: Option<Tag<String, Arc<String>>>,
     /// Node idx,
     ///
@@ -187,7 +187,7 @@ impl NodeLevel {
     }
 
     /// Sets the path tag for the node level,
-    /// 
+    ///
     #[inline]
     pub fn set_path(&mut self, path: impl Into<String>) {
         self.path = Some(Tag::new(&PATH, Arc::new(path.into())));
@@ -352,7 +352,7 @@ impl NodeRepr {
     }
 
     /// Tries to return node path,
-    /// 
+    ///
     #[inline]
     pub fn try_path(&self) -> Option<Arc<String>> {
         self.0.try_path()

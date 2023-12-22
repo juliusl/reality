@@ -14,6 +14,6 @@ pub trait Loader {
     ) -> Option<BoxedNode>;
 
     /// Unloads the node,
-    /// 
+    ///
     async fn unload(&mut self);
 }

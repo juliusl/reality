@@ -22,12 +22,16 @@ pub trait Recv {
 
     /// Links a node level to a receiver and returns a new Repr,
     ///
-    async fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
+    async fn link_recv(
+        node: NodeLevel,
+        fields: Vec<Repr>,
+    ) -> anyhow::Result<Repr>
     where
         Self: Sized + Send + Sync + 'static,
     {
-        let mut repr = ReprFactory::<CrcInterner>::describe_resource::<Self>();
-        repr.push_level(RecvLevel::new::<Self>(fields))?;
+        let mut repr = Linker::<CrcInterner>::describe_resource::<Self>();
+        let recv = RecvLevel::new::<Self>(fields);
+        repr.push_level(recv)?;
         repr.push_level(node.clone())?;
         repr.link().await
     }
@@ -39,7 +43,7 @@ pub trait Recv {
         field: FieldLevel,
         node: NodeLevel,
     ) -> anyhow::Result<Repr> {
-        let mut repr = ReprFactory::<CrcInterner>::default();
+        let mut repr = Linker::<CrcInterner>::default();
         repr.push_level(resource)?;
         repr.push_level(field)?;
         repr.push_level(node)?;

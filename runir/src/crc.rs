@@ -216,14 +216,14 @@ mod tests {
         let b = rhandle.try_resource_type_name();
         assert_eq!(a, b);
 
-        let address = handle.address().await;
+        let address = handle.host_address().await;
 
         ()
     }
 
     #[tokio::test]
-    async fn test_repr_factory() {
-        let mut repr = ReprFactory::<CrcInterner>::describe_resource::<String>();
+    async fn test_linker() {
+        let mut repr = Linker::<CrcInterner>::describe_resource::<String>();
 
         // Assert the level is at the root
         assert_eq!(0, repr.level());
@@ -253,7 +253,7 @@ mod tests {
         eprintln!("{:#x?}", levels);
         eprintln!("{:x?}", repr.as_u64());
 
-        let mut drepr = ReprFactory::<CrcInterner>::describe_resource::<String>();
+        let mut drepr = Linker::<CrcInterner>::describe_resource::<String>();
         drepr
             .push_level(DependencyLevel::new("cool dep").with_parent(repr))
             .unwrap();

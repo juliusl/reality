@@ -3,6 +3,7 @@ mod interner;
 mod level;
 mod repr;
 mod tag;
+mod linker;
 
 #[cfg(feature = "crc-interner")]
 mod crc;
@@ -68,10 +69,12 @@ pub mod prelude {
     pub use super::macros::*;
     pub use crate::repr::prelude::*;
 
+    pub use super::linker::Linker;
+
     pub use super::interner::InternHandle;
+    pub use super::interner::InternResult;
     pub use super::interner::InternTable;
     pub use super::interner::InternerFactory;
-    pub use super::interner::InternResult;
     pub use super::interner::LevelFlags;
 
     pub use super::tag::Tag;

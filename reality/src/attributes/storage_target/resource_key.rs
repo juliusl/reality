@@ -267,14 +267,14 @@ async fn test_set_repr() {
     use crate::Attribute;
     use runir::prelude::CrcInterner;
     use runir::prelude::DependencyLevel;
-    use runir::prelude::ReprFactory;
+    use runir::prelude::Linker;
 
     // TODO: Convert eprintln to asserts
 
     let mut rk = ResourceKey::<Attribute>::new();
     eprintln!("{:x?}", uuid::Uuid::from_u128(rk.data));
 
-    let mut repr = ReprFactory::<CrcInterner>::describe_resource::<String>();
+    let mut repr = Linker::<CrcInterner>::describe_resource::<String>();
     repr.push_level(DependencyLevel::new("test")).unwrap();
 
     let repr = repr.link().await.unwrap();

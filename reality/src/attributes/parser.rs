@@ -440,6 +440,37 @@ impl ParsedAttributes {
             tc.store_kv(pk, fp);
         }
     }
+
+    /// Upgrades the node w/ a host level assigned,
+    ///
+    pub async fn upgrade_node(&mut self) -> anyhow::Result<()> {
+        if let Some(mut repr) = self.node.repr() {
+            if let Some(node) = repr.as_node() {
+                let input = node.input().await;
+                let tag = node.tag().await;
+
+                let address = match (input, tag) {
+                    (Some(input), Some(tag)) => {
+                        format!("{input}#{tag}")
+                    }
+                    (Some(input), None) => {
+                        format!("{input}")
+                    }
+                    _ => String::new(),
+                };
+
+                let exts = self.attributes.iter().filter_map(|a| a.repr()).collect();
+                let mut host = HostLevel::new(address);
+                host.set_extensions(exts);
+
+                let interner = CrcInterner::default();
+                repr.upgrade(interner, host).await?;
+                self.node.set_repr(repr);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// List of comments for an attribute,
@@ -482,6 +513,9 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     /// Fields that have been parsed,
     ///
     pub(crate) fields: Vec<Repr>,
+    /// Stack of link recv fns,
+    ///
+    pub(crate) link_recv: Vec<LinkRecvFn>,
 }
 
 impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
@@ -496,6 +530,7 @@ impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
             attributes: ParsedAttributes::default(),
             nodes: vec![],
             fields: vec![],
+            link_recv: vec![],
         }
     }
 }
@@ -512,6 +547,7 @@ impl<S: StorageTarget + 'static> Clone for AttributeParser<S> {
             attributes: self.attributes.clone(),
             nodes: self.nodes.clone(),
             fields: self.fields.clone(),
+            link_recv: self.link_recv.clone(),
         }
     }
 }
@@ -857,7 +893,7 @@ impl Node for super::AttributeParser<Shared> {
     }
 
     fn parsed_line(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {
-        trace!("[PARSED] {}", _node_info.line);
+        trace!("[PARSED]\n\n{}\n", _node_info.line);
         self.attributes.add_line(&_node_info.line);
     }
 
@@ -896,6 +932,7 @@ impl Node for super::AttributeParser<Shared> {
                         }
                     }
                 }
+                self.link_recv.push(cattr.link_recv);
             }
             None => {
                 trace!(attr_ty = name, "Did not have attribute");
@@ -927,6 +964,10 @@ impl ExtensionLoader for super::AttributeParser<Shared> {
         input: Option<&str>,
     ) -> Option<BoxedNode> {
         let mut parser = self.clone();
+
+        if parser.fields.len() > 0 {
+            let _ = parser.unload().await;
+        }
 
         // Clear any pre-existing attribute types
         parser.attribute_types.clear();
@@ -982,8 +1023,6 @@ impl ExtensionLoader for super::AttributeParser<Shared> {
     }
 
     async fn unload(&mut self) {
-        let parser = self.clone();
-
         // Drain any dispatches before trying to load the rest of the resources
         if let Some(mut storage) = self.storage_mut() {
             storage.drain_dispatch_queues();
@@ -991,14 +1030,27 @@ impl ExtensionLoader for super::AttributeParser<Shared> {
 
         let handler = self.handlers.last().cloned();
         if handler.is_some() {
+            let parser = self.clone();
             *self = handler.unwrap().on_unload(parser).await;
+        } else {
+            if let Some(link_recv) = self.link_recv.pop() {
+                let fields = self.fields.len();
+
+                if let Some(last) = self.nodes.iter().rev().skip(fields).next() {
+                    if let Ok(recv) = link_recv(last.clone(), self.fields.clone()).await {
+                        trace!("Unloading node, setting recv from last link_recv");
+                        self.attributes.node.set_repr(recv);
+                        self.fields.clear();
+                        self.link_recv.clear();
+                    }
+                }
+            }
         }
     }
 }
 
 #[allow(unused)]
 mod test {
-    use anyhow::Ok;
     use reality_derive::Reality;
 
     use super::*;
@@ -1008,6 +1060,7 @@ mod test {
     use crate::Workspace;
 
     #[tokio::test]
+    #[tracing_test::traced_test]
     async fn test_parser() {
         // Define a test resource
         #[derive(Reality, Clone, Default, Debug)]
@@ -1023,6 +1076,14 @@ mod test {
             type ProjectedType = String;
             fn field_name() -> &'static str {
                 "test"
+            }
+        }
+
+        struct Example;
+
+        impl runir::prelude::Recv for Example {
+            fn symbol() -> &'static str {
+                "example"
             }
         }
 
@@ -1050,10 +1111,14 @@ mod test {
                         eprintln!("-{:?}", node.mount());
                     }
                 },
-                |n, _| {
+                |n, f| {
                     Box::pin(async move {
-                        eprintln!("**{:?}", n.mount());
-                        Ok(Repr::default())
+                        let mut repr = Linker::<CrcInterner>::default();
+                        repr.push_level(ResourceLevel::new::<()>())?;
+                        repr.push_level(RecvLevel::new::<Example>(f))?;
+                        repr.push_level(n)?;
+
+                        repr.link().await
                     })
                 },
                 |r, f, n| {
@@ -1061,7 +1126,11 @@ mod test {
                         eprintln!("---{:?}", r.mount());
                         eprintln!("---{:?}", f.mount());
                         eprintln!("---{:?}", n.mount());
-                        Ok(Repr::default())
+                        let mut factory = Linker::<CrcInterner>::default();
+                        factory.push_level(r)?;
+                        factory.push_level(f)?;
+                        factory.push_level(n)?;
+                        factory.link().await
                     })
                 },
                 ResourceLevel::new::<String>(),
@@ -1115,6 +1184,15 @@ mod test {
                     let s = node.as_node().unwrap().annotations().await;
                     eprintln!("{:?}", s);
                 }
+            }
+
+            if let Some(node) = attributes.node.repr() {
+                let recv = node.as_recv().unwrap();
+                eprintln!("NODE! -- {:?}", recv.name().await);
+
+                let recv_node = node.as_node().unwrap();
+                eprintln!("{:?}", recv_node.try_symbol());
+                eprintln!("{:#010x?}", recv.try_fields());
             }
 
             eprintln!("{:#?}", attributes);

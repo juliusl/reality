@@ -1,15 +1,16 @@
 use anyhow::Error;
-// use reality::ResourceKey;
-// use reality::StorageTarget;
+use reality::ResourceKey;
+use reality::StorageTarget;
 use tokio::task::JoinError;
 use tokio::task::JoinHandle;
 
-// use crate::background_work::BackgroundWork;
-// use crate::background_work::BackgroundWorkEngineHandle;
-// use crate::background_work::CallStatus;
+use crate::background_work::BackgroundWork;
+use crate::background_work::BackgroundWorkEngineHandle;
+use crate::background_work::CallStatus;
 use crate::engine::EngineBuilder;
 use crate::prelude::Engine;
 use crate::prelude::EngineHandle;
+use crate::prelude::Published;
 // use crate::prelude::Published;
 
 /// Type-alias for the background task listening for new engine packets,
@@ -59,93 +60,91 @@ impl ForegroundEngine {
 
     /// Creates a new foreground engine from a workspace,
     ///
-    pub fn new(mut _builder: EngineBuilder) -> ForegroundEngine {
-        // let runtime = builder.runtime_builder.build().unwrap();
+    pub fn new(mut builder: EngineBuilder) -> ForegroundEngine {
+        let runtime = builder.runtime_builder.build().unwrap();
 
-        // let jh = runtime.spawn(async {
-        //     // Create/Test engine plugins
-        //     builder.workspace.add_buffer(
-        //         "background-work.md",
-        //         r#"
-        // ```runmd
-        // # -- # Test the background work
-        // + .operation test_background_work
-        // <loopio.std.io.println> Hello world a
-    
-        // # -- # Default engine operation plugins
-        // + .operation default
-        // <handle/loopio.background-work>
-        // <list/loopio.published>
-        
-        // # -- # Default host engine tasks
-        // + .host engine
+        let engine = runtime.block_on(async {
+            // Create/Test engine plugins
+            builder.workspace.add_buffer(
+                "background-work.md",
+                r#"
+```runmd
+# -- # Test the background work
++ .operation test_background_work
+<loopio.std.io.println> Hello world a
 
-        // # -- # Creates a new background work engine handle
-        // : .action   default/handle/loopio.background-work
+# -- # Default engine operation plugins
++ .operation default
+<handle/loopio.background-work>
+<list/loopio.published>
 
-        // # -- # Retrieves current published resources
-        // : .action   default/list/loopio.published
-        // ```
-        // "#,
-        //     );
-        //     builder.enable::<BackgroundWork>();
-        //     builder.enable::<Published>();
-        //     builder.compile().await
-        // });
+# -- # Default host engine tasks
++ .host engine
 
-        // let engine = runtime.block_on(jh).unwrap();
-        // let mut eh = engine.engine_handle();
+# -- # Creates a new background work engine handle
+: .action   default/handle/loopio.background-work
 
-        // let __engine_listener = runtime.spawn(async move {
-        //     let (_, pk) = engine.spawn(|_, p| Some(p));
-        //     pk.await
-        // });
+# -- # Retrieves current published resources
+: .action   default/list/loopio.published
+```
+"#,
+            );
+            builder.enable::<BackgroundWork>();
+            builder.enable::<Published>();
+            builder.compile().await
+        });
 
-        // eh = runtime.block_on(async move {
-        //     let tc = eh.run("engine://default").await.unwrap();
-        //     let transient = tc.transient().await;
-        //     let handle =
-        //         transient.current_resource::<BackgroundWorkEngineHandle>(ResourceKey::root());
-        //     assert!(handle.is_some());
-        //     eh.background_work = Some(handle.unwrap());
-        //     eh
-        // });
+        let mut eh = engine.engine_handle();
 
-        // // Run diagnostics before returning the foreground engine
-        // let bg = eh
-        //     .background()
-        //     .expect("should be able to create a background handle");
+        let __engine_listener = runtime.spawn(async move {
+            let (_, pk) = engine.spawn(|_, p| Some(p));
+            pk.await
+        });
 
-        // // This tests that the bg engine is working properly
-        // if let Ok(mut bg) = bg.call("engine://test_background_work") {
-        //     loop {
-        //         match bg.status() {
-        //             CallStatus::Enabled => {
-        //                 bg.spawn();
-        //             }
-        //             CallStatus::Disabled => {
-        //                 eprintln!("disabled");
-        //                 break;
-        //             }
-        //             CallStatus::Running => std::thread::yield_now(),
-        //             CallStatus::Pending => {
-        //                 bg.clone().into_foreground().ok();
-        //                 break;
-        //             }
-        //         }
-        //     }
-        // }
+        eh = runtime.block_on(async move {
+            let tc = eh.run("engine://default").await.unwrap();
+            let transient = tc.transient().await;
+            let handle =
+                transient.current_resource::<BackgroundWorkEngineHandle>(ResourceKey::root());
+            assert!(handle.is_some());
+            eh.background_work = Some(handle.unwrap());
+            eh
+        });
 
-        // ForegroundEngine {
-        //     eh,
-        //     runtime,
-        //     __engine_listener,
-        // }
-        todo!()
+        // Run diagnostics before returning the foreground engine
+        let bg = eh
+            .background()
+            .expect("should be able to create a background handle");
+
+        // This tests that the bg engine is working properly
+        if let Ok(mut bg) = bg.call("engine://test_background_work") {
+            loop {
+                match bg.status() {
+                    CallStatus::Enabled => {
+                        bg.spawn();
+                    }
+                    CallStatus::Disabled => {
+                        eprintln!("disabled");
+                        break;
+                    }
+                    CallStatus::Running => std::thread::yield_now(),
+                    CallStatus::Pending => {
+                        bg.clone().into_foreground().ok();
+                        break;
+                    }
+                }
+            }
+        }
+
+        ForegroundEngine {
+            eh,
+            runtime,
+            __engine_listener,
+        }
     }
 }
 
 #[test]
 fn test_foreground_engine() {
-    // let _mt_engine = ForegroundEngine::new(crate::prelude::Engine::builder());
+    let _mt_engine = ForegroundEngine::new(crate::prelude::Engine::builder());
 }

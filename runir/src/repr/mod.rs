@@ -1,5 +1,4 @@
 pub(crate) mod dependency;
-mod factory;
 pub(crate) mod field;
 pub(crate) mod host;
 pub(crate) mod node;
@@ -7,7 +6,6 @@ pub(crate) mod recv;
 pub(crate) mod resource;
 
 pub mod prelude {
-    pub use super::factory::ReprFactory;
     pub use super::Repr;
 
     pub use super::resource::ResourceLevel;

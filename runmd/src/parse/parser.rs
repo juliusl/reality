@@ -172,13 +172,16 @@ impl Parser {
 
         // Parse attr on line
         if let Some(ref attr) = node_info.line.attr {
-            let node = self.node_provider.provide(
-                attr.name,
-                node_info.line.tag.as_ref().map(|t| t.0),
-                attr.input.clone().map(|i| i.input_str()).as_deref(),
-                &node_info,
-                &block_info,
-            ).await;
+            let node = self
+                .node_provider
+                .provide(
+                    attr.name,
+                    node_info.line.tag.as_ref().map(|t| t.0),
+                    attr.input.clone().map(|i| i.input_str()).as_deref(),
+                    &node_info,
+                    &block_info,
+                )
+                .await;
             if let Some(mut node) = node {
                 {
                     let node = node.deref_mut();
@@ -239,7 +242,8 @@ impl Parser {
                     attr.name,
                     node_info.line.tag.map(|t| t.0),
                     attr.input.take().map(|i| i.input_str()).as_deref(),
-                ).await;
+                )
+                .await;
                 last.parsed_line(line, block_info);
             } else {
                 panic!("Line is missing attribute parameters to define property")

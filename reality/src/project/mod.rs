@@ -286,6 +286,8 @@ impl runmd::prelude::NodeProvider for Loading<Shared> {
         }
     }
 }
+
+#[allow(unused)]
 mod tests {
     use super::*;
 
@@ -345,6 +347,12 @@ mod tests {
     }
 
     use async_trait::async_trait;
+    use runir::prelude::CrcInterner;
+    use runir::prelude::Linker;
+    use runir::prelude::NodeLevel;
+    use runir::prelude::Recv;
+    use runir::prelude::RecvLevel;
+    use runir::prelude::ResourceLevel;
 
     #[derive(Reality, Serialize, Default, Clone, Debug)]
     #[reality(plugin, call = test_call)]
@@ -425,10 +433,28 @@ mod tests {
     async fn test_project_parser() {
         let mut project = Project::new(crate::Shared::default());
 
+        struct PsuedoTest;
+
+        impl Recv for PsuedoTest {
+            fn symbol() -> &'static str {
+                "test"
+            }
+        }
+
         project.add_node_plugin("test", |_, _, parser| {
             parser.with_object_type::<Test>();
             parser.with_object_type::<Test2>();
             parser.with_object_type::<Test3>();
+
+            parser.link_recv.push(|n, f| {
+                Box::pin(async move {
+                    let mut repr = Linker::<CrcInterner>::default();
+                    repr.push_level(ResourceLevel::new::<PsuedoTest>())?;
+                    repr.push_level(RecvLevel::new::<PsuedoTest>(f))?;
+                    repr.push_level(n)?;
+                    repr.link().await
+                })
+            });
         });
 
         tokio::fs::create_dir_all(".test").await.unwrap();
@@ -441,7 +467,7 @@ mod tests {
             This is a test of embedded runmd blocks.
     
             ```runmd
-            + .test
+            + .test example
             <app/reality.test>
             : .name Hello World 2
             : .file .test/test-1.md
@@ -484,6 +510,14 @@ mod tests {
                 .resource::<ParsedAttributes>(ResourceKey::root())
                 .unwrap();
 
+            if let Some(node) = parsed.node.repr() {
+                let recv = node.as_recv().unwrap();
+                eprintln!("{:?}", recv.try_name());
+
+                let fields = recv.fields().await;
+                eprintln!("{:#?}", fields);
+            }
+
             for a in parsed.attributes.iter() {
                 if let Some(s) = a.repr() {
                     let recv = s.as_recv().unwrap();
@@ -515,6 +549,17 @@ mod tests {
                             node.try_path().unwrap_or_default()
                         );
                     }
+                }
+            }
+
+            let mut parsed = parsed.to_owned();
+            parsed.upgrade_node().await.unwrap();
+
+            if let Some(repr) = parsed.node.repr() {
+                if let Some(host) = repr.as_host() {
+                    let address = host.try_address();
+                    let exts = host.try_extensions();
+                    eprintln!("{:x?} {:?}", address, exts);
                 }
             }
         }

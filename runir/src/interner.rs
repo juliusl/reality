@@ -411,18 +411,32 @@ impl InternHandle {
         crate::repr::node::ANNOTATIONS.try_strong_ref(self)
     }
 
-    /// Returns the address,
+    /// Returns the host address,
     ///
     #[inline]
-    pub async fn address(&self) -> Option<Arc<String>> {
+    pub async fn host_address(&self) -> Option<Arc<String>> {
         crate::repr::host::ADDRESS.strong_ref(self).await
     }
 
-    /// Tries to return the address,
+    /// Tries to return the host address,
     ///
     #[inline]
-    pub fn try_address(&self) -> Option<Arc<String>> {
+    pub fn try_host_address(&self) -> Option<Arc<String>> {
         crate::repr::host::ADDRESS.try_strong_ref(self)
+    }
+
+    /// Returns extensions added to this host,
+    /// 
+    #[inline]
+    pub async fn host_extensions(&self) -> Option<Arc<Vec<Repr>>> {
+        crate::repr::host::EXTENSIONS.strong_ref(self).await
+    }
+
+    /// Tries to return extensions added to this host,
+    /// 
+    #[inline]
+    pub fn try_host_extensions(&self) -> Option<Arc<Vec<Repr>>> {
+        crate::repr::host::EXTENSIONS.try_strong_ref(self)
     }
 }
 

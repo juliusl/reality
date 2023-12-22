@@ -73,6 +73,8 @@ impl ExtensionLoader for Test {
         trace!(extension, input, tag, "load_extension");
         Some(Box::pin(Test))
     }
+
+    async fn unload(&mut self) {}
 }
 
 #[async_trait(?Send)]

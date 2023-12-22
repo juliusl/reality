@@ -79,7 +79,7 @@ impl<'a> std::fmt::Display for Line<'a> {
                     (Some(Attribute { name, input: None }), None) => {
                         write!(f, "+ .{name}")
                     }
-                    _ => return write!(f, "BUG -- {:?}", self.attr),
+                    _ => return write!(f, "ADD_NODE BUG -- {:?}", self.attr),
                 }
             }
             Instruction::DefineProperty => {
@@ -112,7 +112,7 @@ impl<'a> std::fmt::Display for Line<'a> {
                     (Some(Attribute { name, input: None }), None) => {
                         write!(f, ": .{name}")
                     }
-                    _ => return write!(f, "BUG -- {:?}", self.attr),
+                    _ => return write!(f, "DEFINE_PROP BUG -- {:?}", self.attr),
                 }
             }
             Instruction::LoadExtension | Instruction::LoadExtensionSuffix => {
@@ -138,6 +138,14 @@ impl<'a> std::fmt::Display for Line<'a> {
                         write!(f, "<{tag}/{name}> {}", input.clone().input_str())
                     }
                     Some(Extension {
+                        tag: Some(tag),
+                        name,
+                        suffix: None,
+                        input: None,
+                    }) => {
+                        write!(f, "<{tag}/{name}>")
+                    }
+                    Some(Extension {
                         tag: None,
                         name,
                         suffix: Some(suffix),
@@ -161,10 +169,10 @@ impl<'a> std::fmt::Display for Line<'a> {
                     }) => {
                         write!(f, "<{name}>")
                     }
-                    _ => return write!(f, "BUG -- {:?}", self.extension),
+                    _ => return write!(f, "LOAD_EXT BUG -- {:?}", self.extension),
                 }
             }
-            _ => return write!(f, "BUG -- {:?}", self),
+            _ => return write!(f, "UNKNOWN_INSTRUCTION BUG -- {:?}", self),
         }?;
 
         match self.comment.as_ref() {

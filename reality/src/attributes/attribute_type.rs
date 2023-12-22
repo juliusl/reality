@@ -61,7 +61,7 @@ pub struct AttributeTypeParser<S: StorageTarget + 'static> {
     parse: fn(&mut AttributeParser<S>, String),
     /// Link receiver function,
     ///
-    link_recv: LinkRecvFn,
+    pub(crate) link_recv: LinkRecvFn,
     /// Link field function,
     ///
     link_field: LinkFieldFn,
