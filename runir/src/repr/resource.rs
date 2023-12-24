@@ -14,6 +14,9 @@ define_intern_table!(TYPE_SIZE: usize);
 // Intern table for resource type ids
 define_intern_table!(TYPE_ID: TypeId);
 
+// Intern table for resource parse type names
+define_intern_table!(PARSE_TYPE_NAME: &'static str);
+
 /// Resource level is the lowest level of representation,
 ///
 /// Resource level asserts compiler information for the resource.
@@ -29,6 +32,9 @@ pub struct ResourceLevel {
     /// Type size assigned by the compiler,
     ///
     type_size: Tag<usize>,
+    /// Rust type name of the type used to parse node input,
+    ///
+    parse_type: Option<Tag<&'static str>>,
 }
 
 impl ResourceLevel {
@@ -40,7 +46,15 @@ impl ResourceLevel {
             type_id: Tag::new(&TYPE_ID, std::any::TypeId::of::<T>),
             type_name: Tag::new(&TYPE_NAME, std::any::type_name::<T>),
             type_size: Tag::new(&TYPE_SIZE, std::mem::size_of::<T>),
+            parse_type: None,
         }
+    }
+
+    /// Sets the resource parse type,
+    ///
+    #[inline]
+    pub fn set_parse_type<T>(&mut self) {
+        self.parse_type = Some(Tag::new(&PARSE_TYPE_NAME, std::any::type_name::<T>));
     }
 }
 
@@ -49,6 +63,10 @@ impl Level for ResourceLevel {
         push_tag!(interner, self.type_id);
         push_tag!(interner, self.type_size);
         push_tag!(interner, self.type_name);
+
+        if let Some(parse_type) = self.parse_type {
+            push_tag!(interner, parse_type);
+        }
 
         interner.set_level_flags(LevelFlags::ROOT);
 
@@ -93,6 +111,13 @@ impl ResourceRepr {
         self.0.resource_type_id().await
     }
 
+    /// Returns the tag value of the resource parse type name,
+    ///
+    #[inline]
+    pub async fn parse_type_name(&self) -> Option<&'static str> {
+        self.0.resource_parse_type_name().await
+    }
+
     /// Returns the tag value of the resource type name,
     ///
     #[inline]
@@ -112,5 +137,12 @@ impl ResourceRepr {
     #[inline]
     pub fn try_type_id(&self) -> Option<TypeId> {
         self.0.try_resource_type_id()
+    }
+
+    /// Returns the tag value of the resource parse type name,
+    ///
+    #[inline]
+    pub fn try_parse_type_name(&self) -> Option<&'static str> {
+        self.0.try_resource_parse_type_name()
     }
 }

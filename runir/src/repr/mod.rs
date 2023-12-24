@@ -31,9 +31,9 @@ pub mod prelude {
 
 use crate::define_intern_table;
 use crate::prelude::*;
-use anyhow::anyhow;
 use serde::Deserialize;
 use serde::Serialize;
+use std::fmt::Display;
 use std::sync::Arc;
 
 use self::host::HostRepr;
@@ -98,14 +98,9 @@ impl Repr {
         let mut from = self.tail.clone();
         from.link = 0;
 
-        let _ = Tag::new(&HANDLES, Arc::new(from)).link(&to).await?;
-
-        if let Some(tail) = HANDLES.copy(&to.create_value.clone()).await {
-            self.tail = tail;
-            Ok(())
-        } else {
-            Err(anyhow!("Could not upgrade representation"))
-        }
+        let linked = Tag::new(&HANDLES, Arc::new(from)).link(&to).await?;
+        self.tail = linked;
+        Ok(())
     }
 
     /// Return a vector containing an intern handle pointing to each level of this representation,
@@ -172,5 +167,132 @@ impl Repr {
     #[inline]
     pub fn as_host(&self) -> Option<HostRepr> {
         self.try_get_levels().get(3).copied().map(HostRepr)
+    }
+}
+
+impl Display for Repr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            display_runmd(self, f)?;
+        } else if let Some(r) = self.as_resource() {
+            if let Some(n) = r.try_type_name() {
+                write!(f, "{n}")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+fn display_runmd(repr: &Repr, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    if let Some(node) = repr.as_node() {
+        writeln!(f, "{node}")?;
+    }
+
+    if let Some(resource) = repr.as_resource() {
+        writeln!(f, "| **Resource Tags** | |")?;
+        writeln!(f, "| --- |  ---  |")?;
+        if let Some(name) = resource.try_type_name() {
+            writeln!(f, "| type | `{name}` |")?;
+        }
+
+        if let Some(size) = resource.try_type_size() {
+            writeln!(f, "| size | {size} bytes |")?;
+        }
+
+        if let Some(id) = resource.try_type_id() {
+            writeln!(f, "| type-id | {:x?} |", id)?;
+        }
+
+        if let Some(parse_type) = resource.try_parse_type_name() {
+            writeln!(f, "| parse-type | `{parse_type}` |")?;
+        }
+
+        writeln!(f, "| uuid | {:?} |", resource.0.as_uuid())?;
+    }
+
+    if let Some(field) = repr.as_field() {
+        if field.try_name().is_some() {
+            writeln!(f, "| **Field Tags** | |")?;
+            if let Some(name) = field.try_name() {
+                writeln!(f, "| field_name | {name} |")?;
+            }
+            if let Some(offset) = field.try_offset() {
+                writeln!(f, "| field_offset | {offset} |")?;
+            }
+            if let Some(name) = field.try_owner_name() {
+                writeln!(f, "| owner_name | `{name}` |")?;
+            }
+            if let Some(size) = field.try_owner_size() {
+                writeln!(f, "| owner_size | {size} bytes |")?;
+            }
+            if let Some(id) = field.try_owner_type_id() {
+                writeln!(f, "| owner_type_id | {:x?} |", id)?;
+            }
+            writeln!(f, "| uuid | {:?} |", field.0.as_uuid())?;
+        }
+    }
+
+    if let Some(node) = repr.as_node() {
+        if let Some(path) = node.try_path() {
+            writeln!(f, "| **Node Tags** | |")?;
+            writeln!(f, "| path | {path} |")?;
+            writeln!(f, "| uuid | {:?} |", node.0.as_uuid())?;
+        }
+    }
+
+    if let Some(host) = repr.as_host() {
+        if let Some(addr) = host.try_address() {
+            writeln!(f, "| **Host Tags** | |")?;
+            writeln!(f, "| addr | {addr} |")?;
+            writeln!(f, "| uuid | {:?} |", host.0.as_uuid())?;
+        }
+    }
+
+    if let Some(recv) = repr.as_recv() {
+        writeln!(f)?;
+        if let Some(fields) = recv.try_fields() {
+            for _f in fields.iter() {
+                writeln!(f, "{:#}", _f)?;
+            }
+        }
+    }
+
+    if let Some(host) = repr.as_host() {
+        writeln!(f)?;
+        if let Some(ext) = host.try_extensions() {
+            for e in ext.iter() {
+                writeln!(f, "{:#}", e)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+impl Display for NodeRepr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(docs) = self.try_doc_headers() {
+            let mut docs = docs.iter();
+
+            if let Some(header) = docs.next() {
+                writeln!(f, "# {}", header.trim_start_matches("# --").trim())?;
+            }
+
+            for d in docs {
+                writeln!(f, "{}", d.trim_start_matches("# --").trim())?;
+            }
+        }
+
+        if let Some(source) = self.try_source() {
+            writeln!(f, "```runmd")?;
+            for line in source.lines() {
+                if !line.starts_with("#") {
+                    writeln!(f, "{}", line)?;
+                }
+            }
+            writeln!(f, "```")?;
+        }
+
+        Ok(())
     }
 }

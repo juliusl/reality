@@ -89,9 +89,14 @@ impl InternHandle {
     ///
     #[inline]
     pub fn as_u64(&self) -> u64 {
+        self.as_uuid().as_u64_pair().0
+    }
+
+    /// Returns as a uuid,
+    ///
+    #[inline]
+    pub fn as_uuid(&self) -> uuid::Uuid {
         uuid::Uuid::from_fields(self.link, self.register_hi, self.register_lo, &[0; 8])
-            .as_u64_pair()
-            .0
     }
 
     /// Returns the register value of the current handle,
@@ -183,6 +188,20 @@ impl InternHandle {
     #[inline]
     pub fn try_resource_type_size(&self) -> Option<usize> {
         crate::repr::resource::TYPE_SIZE.try_copy(self)
+    }
+
+    /// Returns the resource parse type name,
+    ///
+    #[inline]
+    pub async fn resource_parse_type_name(&self) -> Option<&'static str> {
+        crate::repr::resource::PARSE_TYPE_NAME.copy(self).await
+    }
+
+    /// Tries to return the resource parse type name,
+    ///
+    #[inline]
+    pub fn try_resource_parse_type_name(&self) -> Option<&'static str> {
+        crate::repr::resource::PARSE_TYPE_NAME.try_copy(self)
     }
 
     /// Returns the parent of the dependency,
@@ -628,6 +647,7 @@ impl<T: Send + Sync + 'static> InternTable<T> {
         // Skip if the value has already been created
         {
             if self.inner.read().await.contains_key(&handle) {
+                // eprintln!("Skipping interning {:?}", handle);
                 return Ok(());
             }
         }

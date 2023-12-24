@@ -195,7 +195,7 @@ impl NodeLevel {
     ///
     #[inline]
     pub fn set_input(&mut self, input: impl Into<String>) {
-        self.tag = Some(Tag::new(&INPUT, Arc::new(input.into())));
+        self.input = Some(Tag::new(&INPUT, Arc::new(input.into())));
     }
 
     /// Returns the node level w/ tag tag set,
