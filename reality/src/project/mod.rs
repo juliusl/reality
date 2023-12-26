@@ -1,40 +1,40 @@
+mod node;
+mod program;
+mod extension;
+mod package;
+mod source;
+mod workspace;
+mod host;
+
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
-
 use crate::Attribute;
 use crate::AttributeParser;
-use crate::ParsedAttributes;
 use crate::ParsedBlock;
+use crate::ParsedNode;
 use crate::ResourceKey;
 use crate::ResourceKeyHashBuilder;
 use crate::Shared;
 use crate::StorageTarget;
-
-mod node;
 use async_trait::async_trait;
 pub use node::Node;
-
-mod extension;
+pub use program::Program;
 pub use extension::Transform;
-
-mod source;
 use runmd::prelude::BlockInfo;
 use runmd::prelude::NodeInfo;
 use serde::Deserialize;
 use serde::Serialize;
 pub use source::Source;
-
-mod workspace;
 pub use workspace::CurrentDir;
 pub use workspace::Dir;
 pub use workspace::Empty as EmptyWorkspace;
 pub use workspace::Workspace;
-
-mod host;
 pub use host::RegisterWith;
+
+use self::package::Package;
 
 /// Block plugin fn,
 ///
@@ -45,13 +45,10 @@ pub type BlockPlugin<S> = Arc<dyn Fn(&mut AttributeParser<S>) + Send + Sync + 's
 pub type NodePlugin<S> =
     Arc<dyn Fn(Option<&str>, Option<&str>, &mut AttributeParser<S>) + Send + Sync + 'static>;
 
-/// Type-alias for a parsed node,
-///
-pub type ParsedNode<Storage> = Arc<tokio::sync::RwLock<Storage>>;
-
 /// Type-alias for a table of storages created per node,
 ///
-pub type NodeTable<Storage> = HashMap<ResourceKey<crate::attributes::Node>, ParsedNode<Storage>>;
+pub type NodeTable<Storage> =
+    BTreeMap<ResourceKey<crate::attributes::Node>, Arc<tokio::sync::RwLock<Storage>>>;
 
 /// Project storing the main runmd parser,
 ///
@@ -143,12 +140,32 @@ impl Project<Shared> {
         for (rk, s) in nodes.deref().iter() {
             let s = s.read().await;
 
-            if let Some(parsed) = s.current_resource::<ParsedAttributes>(ResourceKey::root()) {
+            if let Some(parsed) = s.current_resource::<ParsedNode>(ResourceKey::root()) {
+                if let Some(repr) = parsed.node.repr() {
+                    eprintln!("{:#}", repr);
+                }
+
                 block.nodes.insert(rk.transmute(), parsed);
             }
         }
 
         Ok(block)
+    }
+
+    /// Creates a package for this project,
+    /// 
+    pub async fn package(&self) -> anyhow::Result<Package> {
+        let nodes = self.nodes.read().await;
+
+        let mut programs = vec![];
+        for (_, n) in nodes.iter() {
+            let node = n.read().await.clone();
+
+            let program = Program::create(node).await?;
+            programs.push(program);
+        }
+
+        Ok(Package { programs })
     }
 }
 
@@ -196,7 +213,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Loading<Storage> {
         let mut parser = AttributeParser::<Storage::Namespace>::default();
 
         if let Some(node) = node {
-            parser.attributes.node = node;
+            parser.parsed_node.node = node;
         }
 
         // Blocks can have properties and load/unload properties
@@ -249,41 +266,39 @@ impl runmd::prelude::NodeProvider for Loading<Shared> {
         node_info: &NodeInfo,
         block_info: &BlockInfo,
     ) -> Option<runmd::prelude::BoxedNode> {
-        if let Ok(mut nodes) = self.0.nodes.try_write() {
-            let mut key_builder = ResourceKeyHashBuilder::new_default_hasher();
-            key_builder.hash(block_info);
-            key_builder.hash(node_info);
-            let key = key_builder.finish();
+        let mut nodes = self.0.nodes.write().await;
 
-            let target = self.0.root.shared_namespace(key);
-            let mut parser = self.create_parser_for_block(block_info, Some(key.transmute()));
-            parser.set_storage(target.storage);
+        let mut key_builder = ResourceKeyHashBuilder::new_default_hasher();
+        key_builder.hash(block_info);
+        key_builder.hash(node_info);
+        let key = key_builder.finish();
 
-            // Create and push a new node level
-            let mut node = runir::prelude::NodeLevel::new()
-                .with_symbol(name)
-                .with_doc_headers(node_info.line.doc_headers.clone())
-                .with_annotations(node_info.line.comment_properties.clone())
-                .with_idx(node_info.idx);
+        let target = self.0.root.shared_namespace(key);
+        let mut parser = self.create_parser_for_block(block_info, Some(key.transmute()));
+        parser.set_storage(target.storage);
 
-            if let Some(input) = input {
-                node.set_input(input);
-            }
-            if let Some(tag) = tag {
-                node.set_tag(tag);
-            }
-            parser.nodes.push(node);
+        // Create and push a new node level
+        let mut node = runir::prelude::NodeLevel::new()
+            .with_symbol(name)
+            .with_doc_headers(node_info.line.doc_headers.clone())
+            .with_annotations(node_info.line.comment_properties.clone())
+            .with_idx(node_info.idx);
 
-            self.apply_plugin(name, input, tag, &mut parser);
-
-            if let Some(storage) = parser.clone_storage() {
-                nodes.insert(key, storage);
-            }
-
-            Some(Box::pin(parser))
-        } else {
-            None
+        if let Some(input) = input {
+            node.set_input(input);
         }
+        if let Some(tag) = tag {
+            node.set_tag(tag);
+        }
+        parser.nodes.push(node);
+
+        self.apply_plugin(name, input, tag, &mut parser);
+
+        if let Some(storage) = parser.clone_storage() {
+            nodes.insert(key, storage);
+        }
+
+        Some(Box::pin(parser))
     }
 }
 
@@ -310,6 +325,8 @@ mod tests {
     pub struct Test {
         pub name: String,
         pub file: PathBuf,
+        #[reality(map_of=String)]
+        pub fields: BTreeMap<String, String>,
     }
 
     async fn test_noop(_tc: &mut ThunkContext) -> anyhow::Result<()> {
@@ -414,6 +431,7 @@ mod tests {
             Ok(Test {
                 name: String::new(),
                 file: PathBuf::from(""),
+                fields: BTreeMap::new(),
             })
         }
     }
@@ -431,7 +449,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[tracing_test::traced_test]
+    // #[tracing_test::traced_test]
     async fn test_project_parser() {
         let mut project = Project::new(crate::Shared::default());
 
@@ -447,16 +465,7 @@ mod tests {
             parser.with_object_type::<Thunk<Test>>();
             parser.with_object_type::<Thunk<Test2>>();
             parser.with_object_type::<Thunk<Test3>>();
-
-            parser.link_recv.push(|n, f| {
-                Box::pin(async move {
-                    let mut repr = Linker::<CrcInterner>::default();
-                    repr.push_level(ResourceLevel::new::<PsuedoTest>())?;
-                    repr.push_level(RecvLevel::new::<PsuedoTest>(f))?;
-                    repr.push_level(n)?;
-                    repr.link().await
-                })
-            });
+            parser.push_link_recv::<PsuedoTest>();
         });
 
         tokio::fs::create_dir_all(".test").await.unwrap();
@@ -473,6 +482,7 @@ mod tests {
             <app/reality.test>
             : .name Hello World 2
             : .file .test/test-1.md
+            : message .fields hello world 
             <reality.test>
             : .name World Hello
             <reality.test2>
@@ -507,99 +517,16 @@ mod tests {
 
         for (k, node) in _project.nodes.write().await.iter_mut() {
             let _node = node.read().await;
-            eprintln!("{:?}", k);
 
-            let parsed = _node
-                .resource::<ParsedAttributes>(ResourceKey::root())
+            let parsed_node = _node
+                .current_resource::<ParsedNode>(ResourceKey::root())
                 .unwrap();
 
-            let mut parsed = parsed.clone();
+            let mut parsed = parsed_node.to_owned();
+            parsed.upgrade_node(&_node).await.unwrap();
 
-            // TODO: This is a useful fn move it
-            for a in parsed.attributes.iter_mut() {
-                if let Some(plugin) = node.read().await.resource::<PluginLevel>(a.transmute()) {
-                    eprintln!("found thunk level");
-                    if let Some(mut repr) = a.repr() {
-                        if let Some(path) = repr.as_node().and_then(|n| n.try_path()) {
-                            repr.upgrade(CrcInterner::default(), HostLevel::new(path.to_string()))
-                                .await
-                                .unwrap();
-
-                            repr.upgrade(CrcInterner::default(), plugin.to_owned())
-                                .await
-                                .unwrap();
-                        }
-
-                        eprintln!("upgraded attr");
-                        a.set_repr(repr);
-                    }
-                }
-            }
-
-            // if let Some(node) = parsed.node.repr() {
-            //     let recv = node.as_recv().unwrap();
-            //     eprintln!("{:?}", recv.try_name());
-
-            //     let fields = recv.fields().await;
-            //     eprintln!("{:#?}", fields);
-            // }
-
-            for a in parsed.attributes.iter() {
-                if let Some(s) = a.repr() {
-                    if let Some(host) = s.as_host() {
-                        let addr = host.try_address();
-                        eprintln!("{:?}", addr);
-                    }
-
-                    if let Some(tr) = PluginRepr::try_from(s).ok() {
-                        eprintln!("found thunk repr");
-                        if let Some(call) = tr.call().await {
-                            let tc = call(ThunkContext::default()).await.unwrap();
-                        }
-                    }
-
-                    // let recv = s.as_recv().unwrap();
-
-                    // if let Some(name) = recv
-                    //     .find_field("name")
-                    //     .as_ref()
-                    //     .and_then(runir::prelude::Repr::as_node)
-                    // {
-                    //     eprintln!("{:?}", name.try_path());
-                    // }
-
-                    // let name = recv.try_name();
-                    // let fields = recv.try_fields();
-                    // eprintln!("{:#?}\n{:#?}", name, fields.clone());
-
-                    // let p = s.as_node().unwrap().try_path();
-                    // eprintln!("{:?}", p);
-
-                    // for f in fields.unwrap_or_default().iter() {
-                    //     let n = f.as_field().unwrap().try_name();
-                    //     eprintln!("{:?}", n);
-
-                    //     let node = f.as_node().unwrap();
-                    //     eprintln!("{:?}", node.try_input());
-                    //     eprintln!(
-                    //         "{}{}",
-                    //         p.clone().unwrap_or_default(),
-                    //         node.try_path().unwrap_or_default()
-                    //     );
-                    // }
-                }
-            }
-
-            let mut parsed = parsed.to_owned();
-            parsed.upgrade_node().await.unwrap();
-
-            if let Some(repr) = parsed.node.repr() {
-                if let Some(host) = repr.as_host() {
-                    let address = host.try_address();
-                    let exts = host.try_extensions();
-                    eprintln!("{:x?} {:?}", address, exts);
-                }
-            }
+            eprintln!("{:#}", parsed.node.repr().unwrap());
+            eprintln!("-----------------------------------")
         }
         ()
     }

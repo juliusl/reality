@@ -47,12 +47,6 @@ async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let mut init = Remote.create::<Host>(tc).await;
     init.bind(tc.clone());
 
-    if let Some(docs) = tc.decoration.as_ref().and_then(|d| d.doc_headers.as_ref()) {
-        for d in docs {
-            eprintln!("{}", d);
-        }
-    }
-
     let block = tc.parsed_block().await.expect("should have parsed block");
 
     if let Some(node) = block.nodes.get(&init.node) {
@@ -67,8 +61,9 @@ async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
     for a in init.action.iter() {
         eprintln!("# Action -- {}", a.value().unwrap());
-        if let Some(props) = a.decorations().map(|d| d.props()) {
-            eprintln!("{:#?}", props);
+
+        if let Some(repr) = a.property.and_then(|p| p.repr()) {
+            eprintln!("{:#}", repr);
         }
     }
 
@@ -302,7 +297,6 @@ async fn test_host() {
     let engine = engine.compile(workspace).await;
     // eprintln!("{:#?}", engine);
 
-    let block = engine.block().unwrap();
     let eh = engine.engine_handle();
     let _e = engine.spawn(|_, p| {
         eprintln!("{:?}", p);

@@ -66,29 +66,26 @@ pub struct EnableWireBus {
 async fn enable_wire_bus(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = tc.initialized::<EnableWireBus>().await;
 
-    if let Some(mut path) = tc.navigate(&init.path).await {
+    if let Some(path) = tc.navigate(&init.path).await {
         info!("Enabling wire bus {}", init.path);
         if let Some(enabled) = path.context().enable_frame().await? {
             let attr = path.context().attribute;
             let frame = enabled.initialized_frame().await;
-            unsafe {
-                // Creates a new wire bus
-                path.context_mut()
-                    .node_mut()
-                    .await
-                    .put_resource(WireBus { frame }, attr.transmute());
+            // Creates a new wire bus
+            path.context()
+                .node()
+                .await
+                .lazy_put_resource(WireBus { frame }, attr.transmute());
 
-                // If enabled this will enable frame updates for the plugin,
-                if init.allow_frame_updates {
-                    path.context_mut()
-                        .node_mut()
-                        .await
-                        .maybe_put_resource::<FrameUpdates>(
-                            FrameUpdates::default(),
-                            attr.transmute(),
-                        );
-                }
+            // If enabled this will enable frame updates for the plugin,
+            if init.allow_frame_updates {
+                path.context()
+                    .node()
+                    .await
+                    .lazy_put_resource::<FrameUpdates>(FrameUpdates::default(), attr.transmute());
             }
+
+            path.context().process_node_updates().await;
         }
         Ok(())
     } else {

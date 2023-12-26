@@ -70,11 +70,7 @@ impl CallAsync for Test {
             .await?;
 
         // println!("Printing from outside -- {:?}", __name);
-        use loopio::prelude::Ext;
         let initialized = context.initialized::<Test>().await;
-
-        let comments = context.get_comments().await;
-        println!("{:#?}", comments);
 
         let content = context.find_file_text("loopio/examples/test.txt").await;
         println!("{:?}", content);
@@ -104,9 +100,6 @@ impl CallAsync for Echo {
             println!("{:#?}", req.uri);
             println!("{:#?}", req.headers);
         }
-
-        let comments = context.get_comments().await;
-        println!("{:#?}", comments);
 
         let handle = context.engine_handle().await.unwrap();
         handle.shutdown(Duration::from_secs(4)).await?;

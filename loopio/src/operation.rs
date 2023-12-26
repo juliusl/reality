@@ -57,16 +57,16 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
     let node = tc.node().await;
 
-    let parsed = node.current_resource::<ParsedAttributes>(ResourceKey::root());
+    let parsed = node
+        .current_resource::<ParsedNode>(ResourceKey::root())
+        .unwrap();
+
+    // parsed.upgrade_node(&node).await?;
 
     // Create a stream so that we can await operations inside of the try_fold
     let stream = stream! {
-        if let Some(parsed) =  parsed {
-            // yield parsed.node;
-
-            for p in parsed.parsed() {
-                yield p;
-            }
+        for p in parsed.parsed() {
+            yield p;
         }
     };
 
@@ -80,6 +80,18 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
             // TODO -- Can add the plumbing for the activity system through here
             //
             {
+                if let Some(repr) = attr.repr() {
+                    if let Some(pl) = PluginRepr::try_from(repr).ok() {
+                        if let Some(call) = pl.call().await {
+                            let result = call(tc.clone()).await?;
+
+                            if let Some(r) = result {
+                                return Ok(r);
+                            }
+                        }
+                    }
+                }
+
                 let node = tc.node().await;
                 let mut tc = tc.clone();
                 if let Some(func) = node.current_resource::<ThunkFn>(attr.transmute()) {
@@ -341,14 +353,14 @@ async fn test_operation() {
     <loopio.std.io.println>                     Hello World b
     |# listen = event_test_b
 
-    # -- # Example demo host
+    # -- Example demo host
     + .host demo
 
-    # -- # Example of a mapped action to an operation
+    # -- Example of a mapped action to an operation
     : .action   b
     |# help = example of mapping to an operation
 
-    # -- # Example of a mapped action to within an operation
+    # -- Example of a mapped action to within an operation
     : .action   b/a/loopio.std.io.println
     |# help = example of mapping to an operation within an operation
 
@@ -358,6 +370,17 @@ async fn test_operation() {
 
     let engine = crate::engine::Engine::builder().build();
     let _engine = engine.compile(workspace).await;
+
+    if let Some(block) = _engine.block() {
+        let mut block = block.clone();
+        for (_, node) in block.nodes.iter_mut() {
+            if let Some(repr) = node.node.repr() {
+                eprintln!("{:#}", repr);
+            }
+
+            // node.upgrade_node(storage);
+        }
+    }
 
     // let block = engine.block.clone().unwrap_or_default();
     // for (n, node_storage) in engine.nodes.iter() {

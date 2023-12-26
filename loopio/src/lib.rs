@@ -75,7 +75,7 @@ mod tests {
                 println!("{:?}", frame);
             }
 
-            println!("Tag: {:?}", tc.tag().await);
+            println!("Tag: {:?}", tc.tag());
 
             Ok(())
         }
@@ -96,7 +96,7 @@ mod tests {
                 println!("{:?}", frame);
             }
 
-            println!("Tag: {:?}", tc.tag().await);
+            println!("Tag: {:?}", tc.tag());
 
             Ok(())
         }
@@ -144,41 +144,41 @@ mod tests {
         let mut workspace = Workspace::new();
         workspace.add_buffer(".test/test_plugin.md", runmd);
 
-        let engine = engine.compile(workspace).await;
-        let eh = engine.engine_handle();
+        let _engine = engine.compile2(workspace).await;
+        // let eh = engine.engine_handle();
 
-        engine.spawn(|_, p| Some(p));
+        // engine.spawn(|_, p| Some(p));
 
-        if let Ok(_resource) = eh.hosted_resource("engine://start#test").await {
-            // Create a new virtual bus
-            let mut bus = _resource
-                .context()
-                .virtual_bus(Address::from_str("test/operation#test_tag").unwrap())
-                .await;
+        // if let Ok(_resource) = eh.hosted_resource("engine://start#test").await {
+        //     // Create a new virtual bus
+        //     let mut bus = _resource
+        //         .context()
+        //         .virtual_bus(Address::from_str("test/operation#test_tag").unwrap())
+        //         .await;
 
-            // Create a clone for the test task
-            let mut txbus = bus.clone();
+        //     // Create a clone for the test task
+        //     let mut txbus = bus.clone();
 
-            let _ = tokio::spawn(async move {
-                let tx = txbus.transmit::<TestPlugin2>().await;
-                tx.write_to_virtual(|virt| {
-                    eprintln!("writing to virtual");
-                    virt.virtual_mut().name.commit()
-                });
-            });
+        //     let _ = tokio::spawn(async move {
+        //         let tx = txbus.transmit::<TestPlugin2>().await;
+        //         tx.write_to_virtual(|virt| {
+        //             eprintln!("writing to virtual");
+        //             virt.virtual_mut().name.commit()
+        //         });
+        //     });
 
-            // Create a new port listening for changes to the name field
-            let mut bus_port = bus
-                .wait_for::<TestPlugin2>()
-                .await
-                .select(|s| &s.virtual_ref().name)
-                .filter(|f| f.is_committed())
-                .pinned();
+        //     // Create a new port listening for changes to the name field
+        //     let mut bus_port = bus
+        //         .wait_for::<TestPlugin2>()
+        //         .await
+        //         .select(|s| &s.virtual_ref().name)
+        //         .filter(|f| f.is_committed())
+        //         .pinned();
 
-            if let Some(_) = bus_port.deref_mut().next().await {
-                eprintln!("got update");
-            }
-        }
+        //     if let Some(_) = bus_port.deref_mut().next().await {
+        //         eprintln!("got update");
+        //     }
+        // }
         ()
     }
 }

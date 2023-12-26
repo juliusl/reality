@@ -1,11 +1,18 @@
+use runir::prelude::FieldRepr;
+use runir::prelude::NodeRepr;
+use runir::prelude::RecvRepr;
 use runir::prelude::Repr;
+use runir::prelude::ResourceRepr;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::marker::PhantomData;
 use tracing::trace;
+
+use crate::PluginRepr;
 
 use super::target::StorageTargetKey;
 
@@ -49,7 +56,7 @@ impl<T: Send + Sync + 'static> ResourceKeyHashBuilder<T, DefaultHasher> {
 
 /// Struct containing properties of a resource key,
 ///
-#[derive(Debug, Serialize, Deserialize, Hash, Eq, PartialEq, PartialOrd)]
+#[derive(Serialize, Deserialize, Hash)]
 pub struct ResourceKey<T: Send + Sync + 'static> {
     /// Resource key data,
     ///
@@ -72,6 +79,35 @@ pub struct ResourceKey<T: Send + Sync + 'static> {
     pub data: u128,
     #[serde(skip)]
     _t: PhantomData<T>,
+}
+
+impl<T: Send + Sync + 'static> Eq for ResourceKey<T> {}
+
+impl<T: Send + Sync + 'static> PartialEq for ResourceKey<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+    }
+}
+
+impl<T: Send + Sync + 'static> Ord for ResourceKey<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.data.cmp(&other.data)
+    }
+}
+
+impl<T: Send + Sync + 'static> PartialOrd for ResourceKey<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.data.partial_cmp(&other.data)
+    }
+}
+
+impl<T: Send + Sync + 'static> Debug for ResourceKey<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResourceKey")
+            .field("data", &uuid::Uuid::from_u128(self.data))
+            .field("_t", &self._t)
+            .finish()
+    }
 }
 
 impl<T: Send + Sync + 'static> Default for ResourceKey<T> {
@@ -112,6 +148,15 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         let type_key = Self::type_key();
 
         uuid::Uuid::from_fields(0, 0, 0, &type_key.to_be_bytes()).into()
+    }
+
+    /// Creates a new resource key derived from a repr,
+    ///
+    #[inline]
+    pub fn with_repr(repr: runir::prelude::Repr) -> Self {
+        let mut n = Self::with_hash_key(repr.as_u64());
+        n.set_repr(repr);
+        n
     }
 
     /// Creates a new resource-key derived from hashable input,
@@ -173,7 +218,11 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         hash_builder.hash(self.key());
         hash_builder.hash(hashable);
 
-        hash_builder.finish()
+        let mut next = hash_builder.finish();
+        if let Some(repr) = self.repr() {
+            next.set_repr(repr);
+        }
+        next
     }
 
     /// Decodes the key from data,
@@ -208,15 +257,50 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         }
     }
 
+    /// Returns the plugin repr if found,
+    ///
+    #[inline]
+    pub fn plugin(&self) -> Option<PluginRepr> {
+        self.repr().and_then(|r| PluginRepr::try_from(r).ok())
+    }
+
+    /// Returns the node repr if found,
+    ///
+    #[inline]
+    pub fn node(&self) -> Option<NodeRepr> {
+        self.repr().and_then(|r| r.as_node())
+    }
+
+    /// Returns the field repr if found,
+    ///
+    #[inline]
+    pub fn field(&self) -> Option<FieldRepr> {
+        self.repr().and_then(|r| r.as_field())
+    }
+
+    /// Returns the resource repr if found,
+    ///
+    #[inline]
+    pub fn resource(&self) -> Option<ResourceRepr> {
+        self.repr().and_then(|r| r.as_resource())
+    }
+
+    /// Returns the recv repr if found,
+    ///
+    #[inline]
+    pub fn recv(&self) -> Option<RecvRepr> {
+        self.repr().and_then(|r| r.as_recv())
+    }
+
     /// Returns the hash value from the resource-key,
     ///
-    fn hash_key(&self) -> u64 {
+    pub(crate) fn hash_key(&self) -> u64 {
         self.key() ^ Self::type_key()
     }
 
     /// Returns the type key value,
     ///
-    fn type_key() -> u64 {
+    pub(crate) fn type_key() -> u64 {
         let mut hasher = DefaultHasher::new();
         let hasher = &mut hasher;
 
@@ -271,7 +355,6 @@ impl<T: Send + Sync + 'static> Clone for ResourceKey<T> {
 #[tokio::test]
 async fn test_set_repr() {
     use crate::Attribute;
-    use runir::prelude::CrcInterner;
     use runir::prelude::DependencyLevel;
     use runir::prelude::Linker;
 
@@ -280,7 +363,7 @@ async fn test_set_repr() {
     let mut rk = ResourceKey::<Attribute>::new();
     eprintln!("{:x?}", uuid::Uuid::from_u128(rk.data));
 
-    let mut repr = Linker::<CrcInterner>::describe_resource::<String>();
+    let mut repr = Linker::new::<String>();
     repr.push_level(DependencyLevel::new("test")).unwrap();
 
     let repr = repr.link().await.unwrap();
@@ -290,16 +373,11 @@ async fn test_set_repr() {
     let repr = rk.repr();
     eprintln!("{:04x?}", repr);
 
-    // tokio::time::sleep(Duration::from_millis(16)).await;
+    let rk = ResourceKey::<Attribute>::with_repr(repr.unwrap());
+    eprintln!("{:?}", rk);
 
-    let name = repr
-        .unwrap()
-        .as_resource()
-        .unwrap()
-        .type_name()
-        .await
-        .unwrap();
-    eprintln!("{}", name);
+    let res = rk.resource().unwrap();
+    eprintln!("{}", res.try_type_name().unwrap());
 
     ()
 }

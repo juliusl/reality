@@ -237,7 +237,13 @@ impl Parser {
             last.set_info(node_info.clone(), block_info.clone());
 
             if let Some(mut attr) = node_info.line.attr {
-                last.assign_path(format!("?prop={}", attr.name));
+                let path = if let Some(tag) = node_info.line.tag.as_ref() {
+                    format!("?prop={}#{}", attr.name, tag.0)
+                } else {
+                    format!("?prop={}", attr.name)
+                };
+
+                last.assign_path(path);
                 last.parsed_line(line, block_info);
                 last.define_property(
                     attr.name,

@@ -1,5 +1,3 @@
-use serde::Deserialize;
-use serde::Serialize;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -26,9 +24,9 @@ use crate::AttributeType;
 use crate::BlockObject;
 use crate::BlockObjectType;
 use crate::CallAsync;
-use crate::Decoration;
 use crate::LinkFieldFn;
 use crate::LinkRecvFn;
+use crate::PluginLevel;
 use crate::ResourceKey;
 use crate::SetIdentifiers;
 use crate::Shared;
@@ -47,9 +45,6 @@ pub struct HostedResource {
     /// The hosted resource key,
     ///
     pub rk: ResourceKey<Attribute>,
-    /// Any decorations to add w/ this resource,
-    ///
-    pub decoration: Option<Decoration>,
     /// Thunk context that is configured to the resource being hosted,
     ///
     pub binding: Option<ThunkContext>,
@@ -75,7 +70,6 @@ impl Debug for HostedResource {
             .field("address", &self.address)
             .field("node_rk", &self.node_rk)
             .field("rk", &self.rk)
-            .field("decoration", &self.decoration)
             .finish()
     }
 }
@@ -88,9 +82,9 @@ impl SetIdentifiers for HostedResource {
 ///
 #[derive(Debug, Clone, Default)]
 pub struct ParsedBlock {
-    /// ParsedAttributes for each node,
+    /// ParsedNode for each node,
     ///
-    pub nodes: HashMap<ResourceKey<crate::attributes::Node>, ParsedAttributes>,
+    pub nodes: HashMap<ResourceKey<crate::attributes::Node>, ParsedNode>,
     /// Bounded parsed paths,
     ///
     pub paths: BTreeMap<String, ResourceKey<Attribute>>,
@@ -120,10 +114,7 @@ impl ParsedBlock {
 
     /// Gets the parsed attributes of a node,
     ///
-    pub fn get_node(
-        &self,
-        node: ResourceKey<crate::attributes::Node>,
-    ) -> Option<&ParsedAttributes> {
+    pub fn get_node(&self, node: ResourceKey<crate::attributes::Node>) -> Option<&ParsedNode> {
         self.nodes.get(&node)
     }
 
@@ -134,7 +125,6 @@ impl ParsedBlock {
         path: impl Into<String>,
         node: ResourceKey<crate::attributes::Node>,
         resource: ResourceKey<Attribute>,
-        decoration: Option<Decoration>,
     ) -> &mut HostedResource {
         let path = path.into();
 
@@ -144,7 +134,6 @@ impl ParsedBlock {
                 address: path,
                 node_rk: node,
                 rk: resource,
-                decoration,
                 binding: None,
             })
     }
@@ -165,7 +154,7 @@ impl ParsedBlock {
 /// Struct for parsed attributes,
 ///
 #[derive(Debug, Default, Clone)]
-pub struct ParsedAttributes {
+pub struct ParsedNode {
     /// Node resource key,
     ///
     pub node: ResourceKey<Attribute>,
@@ -175,27 +164,12 @@ pub struct ParsedAttributes {
     /// Paths to attributes,
     ///
     pub paths: BTreeMap<String, ResourceKey<Attribute>>,
-    /// Properties defined by parsed attributes,
+    /// Defined properties,
     ///
-    pub properties: Properties,
+    pub properties: Vec<ResourceKey<Property>>,
 }
 
-/// Defined properties,
-///
-#[derive(Debug, Default, Clone)]
-pub struct Properties {
-    /// Map of defined properties,
-    ///
-    pub defined: HashMap<ResourceKey<Attribute>, Vec<ResourceKey<Property>>>,
-    /// Map of labeled comments,
-    ///
-    pub comment_properties: HashMap<ResourceKey<Property>, BTreeMap<String, String>>,
-    /// Map of doc headers found for properties,
-    ///
-    pub doc_headers: HashMap<ResourceKey<Property>, Vec<String>>,
-}
-
-impl ParsedAttributes {
+impl ParsedNode {
     /// Returns the number of attributes that have been parsed,
     ///
     #[inline]
@@ -250,52 +224,176 @@ impl ParsedAttributes {
     /// Defines a property by attr,
     ///
     #[inline]
-    pub fn define_property(&mut self, attr: ResourceKey<Attribute>, prop: ResourceKey<Property>) {
-        let defined = self.properties.defined.entry(attr).or_default();
-        defined.push(prop);
+    pub fn define_property(&mut self, prop: ResourceKey<Property>) {
+        self.properties.push(prop);
     }
 
     /// Upgrades the node w/ a host level assigned,
     ///
-    pub async fn upgrade_node(&mut self) -> anyhow::Result<()> {
+    pub(crate) async fn upgrade_node(&mut self, storage: &Shared) -> anyhow::Result<()> {
         if let Some(mut repr) = self.node.repr() {
             if let Some(node) = repr.as_node() {
-                let input = node.input().await;
+                let input = node
+                    .input()
+                    .await
+                    .map(|s| s.to_string())
+                    .unwrap_or(String::new());
                 let tag = node.tag().await;
 
-                let address = match (input, tag) {
-                    (Some(input), Some(tag)) => {
-                        format!("{input}#{tag}")
-                    }
-                    (Some(input), None) => {
-                        format!("{input}")
-                    }
-                    _ => String::new(),
+                let address = if let Some(ref tag) = tag {
+                    format!("{input}#{tag}")
+                } else {
+                    input.to_string()
                 };
 
-                let exts = self.attributes.iter().filter_map(|a| a.repr()).collect();
-                let mut host = HostLevel::new(address);
+                let mut exts = self
+                    .attributes
+                    .iter()
+                    .filter_map(|a| a.repr())
+                    .collect::<Vec<_>>();
+
+                for (i, e) in exts.iter_mut().enumerate() {
+                    if let Some(node) = e.as_node() {
+                        if let Some(path) = node.try_path() {
+                            let address = if let Some(ref tag) = tag {
+                                format!("{input}{}#{tag}", path)
+                            } else {
+                                format!("{input}{}", path)
+                            };
+
+                            let host = HostLevel::new(address);
+                            e.upgrade(CrcInterner::default(), host).await?;
+
+                            if let Some(ext) = self.attributes.get(i) {
+                                if let Some(plugin) =
+                                    storage.resource::<PluginLevel>(ext.transmute())
+                                {
+                                    eprintln!("Upgrading ext w/ plugin");
+                                    e.upgrade(CrcInterner::default(), plugin.clone()).await?;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let mut host = HostLevel::new(address.clone());
                 host.set_extensions(exts);
 
+                eprintln!("Upgrading node w/ host -- {}", address);
                 let interner = CrcInterner::default();
                 repr.upgrade(interner, host).await?;
+
+                if let Some(plugin) = storage.resource::<PluginLevel>(self.node.transmute()) {
+                    eprintln!("Upgrading node w/ plugin");
+                    repr.upgrade(CrcInterner::default(), plugin.clone()).await?;
+                }
+
                 self.node.set_repr(repr);
+
+                for (f, a) in self.attributes.iter_mut().map(|a| (a.clone().repr(), a)) {
+                    if let Some(mut f) = f {
+                        let node = f.as_node();
+                        if let Some(path) = node.as_ref().and_then(NodeRepr::try_path) {
+                            let address = if let Some(ref tag) = tag {
+                                format!("{input}/{path}#{tag}")
+                            } else {
+                                format!("{input}/{path}")
+                            };
+
+                            eprintln!("Upgrading field w/ host -- {}", address);
+                            f.upgrade(CrcInterner::default(), HostLevel::new(address))
+                                .await?;
+
+                            if let Some(plugin) = storage.resource::<PluginLevel>(a.transmute()) {
+                                eprintln!("Upgrading field w/ plugin");
+                                f.upgrade(CrcInterner::default(), plugin.clone()).await?;
+                            }
+
+                            a.set_repr(f);
+                        }
+                    }
+                }
+            }
+        }
+
+        for (_, rk) in self.paths.iter_mut() {
+            if self.node.key() == rk.key() {
+                if let Some(repr) = self.node.repr() {
+                    rk.set_repr(repr);
+                }
+            }
+            if let Some(attr) = self.attributes.iter().find(|r| r.key() == rk.key()) {
+                if let Some(repr) = attr.repr() {
+                    rk.set_repr(repr);
+                }
             }
         }
 
         Ok(())
     }
+
+    pub async fn index_decorations(&self, _rk: ResourceKey<Attribute>, _tc: &mut ThunkContext) {
+        // if let Some(repr) = rk.repr() {
+        //     if let Some(node) = repr.as_node() {
+        //         tc.store_kv(
+        //             rk,
+        //             Decoration {
+        //                 comment_properties: node.annotations().await.as_deref().cloned(),
+        //                 doc_headers: node.doc_headers().await.as_deref().cloned(),
+        //             },
+        //         );
+        //     }
+
+        //     if let Some(recv) = repr.as_recv() {
+        //         if let Some(fields) = recv.fields().await {
+        //             for f in fields.iter() {
+        //                 if let Some(node) = f.as_node() {
+        //                     tc.store_kv(
+        //                         rk,
+        //                         Decoration {
+        //                             comment_properties: node
+        //                                 .annotations()
+        //                                 .await
+        //                                 .as_deref()
+        //                                 .cloned(),
+        //                             doc_headers: node.doc_headers().await.as_deref().cloned(),
+        //                         },
+        //                     );
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+
+        // let mut props = vec![];
+        // if let Some(properties) = self.properties.defined.get(&rk) {
+        //     for prop in properties {
+        //         tc.store_kv(
+        //             prop,
+        //             Decoration {
+        //                 comment_properties: self.properties.comment_properties.get(prop).cloned(),
+        //                 doc_headers: self.properties.doc_headers.get(prop).cloned(),
+        //             },
+        //         );
+        //         props.push(prop);
+        //     }
+        // }
+
+        // let mut packets = vec![];
+        // {
+        //     let node = tc.node().await;
+        //     for prop in props {
+        //         if let Some(fp) = node.current_resource::<FieldPacket>(prop.transmute()) {
+        //             packets.push((*prop, fp));
+        //         }
+        //     }
+        // }
+
+        // for (pk, fp) in packets {
+        //     tc.store_kv(pk, fp);
+        // }
+    }
 }
-
-/// List of comments for an attribute,
-///
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Comments(pub Vec<String>);
-
-/// Struct containing a tag value,
-///
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Tag(String);
 
 /// Maintains attribute types and matches runmd nodes to the corresponding attribute type parser,
 ///
@@ -320,7 +418,7 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     storage: Option<Arc<tokio::sync::RwLock<Storage>>>,
     /// Attributes parsed,
     ///
-    pub attributes: ParsedAttributes,
+    pub parsed_node: ParsedNode,
     /// Nodes parsed from source,
     ///
     pub(crate) nodes: Vec<NodeLevel>,
@@ -341,7 +439,7 @@ impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
             attribute_types: Default::default(),
             handlers: Default::default(),
             storage: Default::default(),
-            attributes: ParsedAttributes::default(),
+            parsed_node: ParsedNode::default(),
             nodes: vec![],
             fields: vec![],
             link_recv: vec![],
@@ -358,7 +456,7 @@ impl<S: StorageTarget + 'static> Clone for AttributeParser<S> {
             block_object_types: self.block_object_types.clone(),
             handlers: self.handlers.clone(),
             storage: self.storage.clone(),
-            attributes: self.attributes.clone(),
+            parsed_node: self.parsed_node.clone(),
             nodes: self.nodes.clone(),
             fields: self.fields.clone(),
             link_recv: self.link_recv.clone(),
@@ -373,7 +471,7 @@ impl<S: StorageTarget> std::fmt::Debug for AttributeParser<S> {
             .field("symbol", &self.name)
             .field("attribute_table", &self.attribute_types)
             .field("storage", &self.storage.is_some())
-            .field("attributes", &self.attributes)
+            .field("attributes", &self.parsed_node)
             .field("fields", &self.fields)
             .finish()
     }
@@ -386,8 +484,32 @@ impl AttributeParser<Shared> {
         &mut self,
         source: impl AsRef<str>,
     ) -> anyhow::Result<ResourceKey<T>> {
-        let idx = self.attributes.len();
-        let key = ResourceKey::<Attribute>::with_hash(idx);
+        let tag = self.tag().cloned();
+        if let Some(last) = self.nodes.last_mut() {
+            last.set_input(source.as_ref());
+
+            if let Some(tag) = tag {
+                last.set_tag(tag);
+            }
+        }
+
+        eprintln!(
+            "parsing attribute -- `{}` {:?}",
+            source.as_ref(),
+            self.nodes
+                .last()
+                .cloned()
+                .unwrap_or(NodeLevel::new())
+                .mount()
+        );
+        // let idx = self.parsed_node.len();
+        let key = ResourceKey::<Attribute>::with_hash(
+            self.nodes
+                .last()
+                .cloned()
+                .unwrap_or(NodeLevel::new())
+                .mount(),
+        );
 
         // Storage target must be enabled,
         if let Some(storage) = self.storage() {
@@ -400,11 +522,8 @@ impl AttributeParser<Shared> {
                 )
             })?;
             storage.lazy_put_resource(init, key.transmute());
-            if let Some(tag) = self.tag() {
-                storage.lazy_put_resource(Tag(tag.to_string()), key.transmute());
-            }
         }
-        self.attributes.push(key);
+        self.parsed_node.push(key);
 
         Ok(key.transmute())
     }
@@ -414,6 +533,29 @@ impl AttributeParser<Shared> {
     pub fn with_object_type<O: BlockObject>(&mut self) -> &mut Self {
         self.add_object_type(BlockObjectType::new::<O>());
         self
+    }
+
+    /// Adds an object type to the parser w/ a different inner,
+    ///
+    pub fn with_object_type_as<O: BlockObject, As: BlockObject>(&mut self) -> &mut Self {
+        self.add_object_type(BlockObjectType::new_as::<O, As>());
+        self
+    }
+
+    /// Pushes a link recv task,
+    ///
+    pub fn push_link_recv<T>(&mut self)
+    where
+        T: runir::prelude::Recv + Send + Sync + 'static,
+    {
+        self.link_recv.push(|n, f| {
+            Box::pin(async move {
+                let mut repr = Linker::new::<T>();
+                repr.push_level(RecvLevel::new::<T>(f))?;
+                repr.push_level(n)?;
+                repr.link().await
+            })
+        })
     }
 
     /// Adds an object type to the parser,
@@ -437,7 +579,7 @@ impl AttributeParser<Shared> {
     where
         C: AttributeType<Shared> + Send + Sync + 'static,
     {
-        self.add_type(AttributeTypeParser::new::<C>());
+        self.add_type(AttributeTypeParser::new::<C>(ResourceLevel::new::<C>()));
         self
     }
 
@@ -478,7 +620,7 @@ impl AttributeParser<Shared> {
     ///
     pub fn with_parseable_field<const FIELD_OFFSET: usize, Owner>(&mut self) -> &mut Self
     where
-        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
         <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
         self.add_parseable_field::<FIELD_OFFSET, Owner>();
@@ -489,7 +631,7 @@ impl AttributeParser<Shared> {
     ///
     pub fn add_parseable_field<const FIELD_OFFSET: usize, Owner>(&mut self)
     where
-        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
         <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
         self.add_type(AttributeTypeParser::parseable_field::<FIELD_OFFSET, Owner>());
@@ -530,7 +672,7 @@ impl AttributeParser<Shared> {
     ///
     pub fn add_parseable_attribute_type_field<const FIELD_OFFSET: usize, Owner>(&mut self)
     where
-        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
         Owner::ParseType: AttributeType<Shared> + Send + Sync + 'static,
     {
         self.add_type(AttributeTypeParser::parseable_attribute_type_field::<
@@ -543,7 +685,7 @@ impl AttributeParser<Shared> {
     ///
     pub fn add_parseable_extension_type_field<const FIELD_OFFSET: usize, Owner>(&mut self)
     where
-        Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+        Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
         Owner::ParseType: BlockObject + Send + Sync + 'static,
     {
         self.add_type(AttributeTypeParser::parseable_object_type_field::<
@@ -661,6 +803,8 @@ impl AttributeParser<Shared> {
     ) -> Option<AsyncStorageTarget<Shared>> {
         let namespace = namespace.into();
 
+        eprintln!("Getting namespace {namespace}");
+
         // Check if an async_target already exists,
         //
         let async_target = resource_owned!(self, AsyncStorageTarget<Shared>, namespace.clone());
@@ -688,13 +832,13 @@ impl Node for super::AttributeParser<Shared> {
             node.set_path(path.as_str());
         }
 
-        self.attributes.bind_last_to_path(path);
+        self.parsed_node.bind_last_to_path(path);
     }
 
     fn set_info(&mut self, _node_info: NodeInfo, _block_info: BlockInfo) {
         trace!("{:#?}", _node_info);
         if _node_info.parent_idx.is_none() {
-            let last = self.attributes.attributes.last();
+            let last = self.parsed_node.attributes.last();
             trace!("Add node {:?} {:?}", _node_info, last);
         } else {
             // When adding a node, the node level is set before this fn
@@ -742,6 +886,10 @@ impl Node for super::AttributeParser<Shared> {
                     match cattr.link_field(last.clone()).await {
                         Ok(field_repr) => {
                             self.fields.push(field_repr);
+
+                            if let Some(last) = self.parsed_node.properties.last_mut() {
+                                last.set_repr(field_repr);
+                            }
                         }
                         Err(err) => {
                             error!("{err}");
@@ -758,7 +906,7 @@ impl Node for super::AttributeParser<Shared> {
 
     fn completed(mut self: Box<Self>) {
         if let Some(storage) = self.storage() {
-            storage.lazy_put_resource(self.attributes.clone(), ResourceKey::root());
+            storage.lazy_put_resource(self.parsed_node.clone(), ResourceKey::root());
         }
 
         if let Some(mut storage) = self.storage_mut() {
@@ -814,7 +962,7 @@ impl ExtensionLoader for super::AttributeParser<Shared> {
             Some(namespace),
         ) = (
             parser.block_object_types.get(extension).cloned(),
-            parser.namespace(extension),
+            parser.namespace(format!("{}:{}", parser.nodes.len(), extension)),
         ) {
             attribute_type.parse(&mut parser, input.unwrap_or_default());
 
@@ -823,7 +971,7 @@ impl ExtensionLoader for super::AttributeParser<Shared> {
                 storage.drain_dispatch_queues();
             }
 
-            let rk = parser.attributes.last().copied();
+            let rk = parser.parsed_node.last().copied();
             // Extension has been loaded to a namespace
             parser = handler.on_load(parser, namespace, rk).await;
 
@@ -855,7 +1003,7 @@ impl ExtensionLoader for super::AttributeParser<Shared> {
                 if let Some(last) = self.nodes.iter().rev().skip(fields).next() {
                     if let Ok(recv) = link_recv(last.clone(), self.fields.clone()).await {
                         trace!("Unloading node, setting recv from last link_recv");
-                        self.attributes.node.set_repr(recv);
+                        self.parsed_node.node.set_repr(recv);
                         self.fields.clear();
                         self.link_recv.clear();
                     }
@@ -914,7 +1062,7 @@ mod test {
                     if let Some(node) = parser.nodes.last() {
                         let (symbol, input, tag, path, doc_headers, annotations) = node.mount();
                         assert_eq!(symbol.unwrap().as_str(), "test");
-                        assert!(input.is_none());
+                        assert!(input.is_some());
                         assert_eq!(tag.unwrap().as_str(), "world");
                         assert_eq!(
                             annotations.unwrap().get("description").unwrap().as_str(),
@@ -929,8 +1077,7 @@ mod test {
                 },
                 |n, f| {
                     Box::pin(async move {
-                        let mut repr = Linker::<CrcInterner>::default();
-                        repr.push_level(ResourceLevel::new::<()>())?;
+                        let mut repr = Linker::new::<()>();
                         repr.push_level(RecvLevel::new::<Example>(f))?;
                         repr.push_level(n)?;
 
@@ -984,61 +1131,12 @@ mod test {
         let nodes = project.nodes.read().await;
 
         for (node, store) in nodes.clone().iter() {
-            let store = store.read().await;
+            let mut store = store.read().await;
 
-            let attributes = store
-                .resource::<ParsedAttributes>(ResourceKey::root())
-                .unwrap();
-
-            let mut attributes = attributes.clone();
-
-            if let Some(tl) = store.resource::<PluginLevel>(ResourceKey::root()) {
-                for a in attributes.attributes.iter_mut() {
-                    if let Some(mut repr) = a.repr() {
-                        if let Some(path) = repr.as_node().and_then(|n| n.try_path()) {
-                            repr.upgrade(CrcInterner::default(), HostLevel::new(path.to_string()))
-                                .await
-                                .unwrap();
-
-                            repr.upgrade(CrcInterner::default(), tl.to_owned())
-                                .await
-                                .unwrap();
-                        }
-                        a.set_repr(repr);
-                    }
-                }
-            }
-
-            for node in attributes.attributes.iter() {
-                eprintln!("-- {:x?}", node.repr());
-
-                if let Some(node) = node.repr() {
-                    let s = node.as_recv().unwrap().name().await;
-                    eprintln!("{:?}", s);
-
-                    let s = node.as_node().unwrap().annotations().await;
-                    eprintln!("{:?}", s);
-
-                    let s = node.as_node().unwrap().source().await;
-                    eprintln!("{}", s.unwrap_or_default());
-
-                    // let s = node.as_host().unwrap().address().await;
-                    // eprintln!("Address -- {:?}", s);
-
-                    if let Some(t) = PluginRepr::try_from(node).ok() {
-                        eprintln!("tl found");
-                    }
-                }
-            }
+            let attributes = store.resource::<ParsedNode>(ResourceKey::root()).unwrap();
 
             if let Some(node) = attributes.node.repr() {
-                let recv = node.as_recv().unwrap();
-                eprintln!("NODE! -- {:?}", recv.name().await);
-
-                let recv_node = node.as_node().unwrap();
-                eprintln!("{:?}", recv_node.try_symbol());
-                eprintln!("{:#010x?}", recv.try_fields());
-                eprintln!("{}", recv_node.try_source().unwrap_or_default());
+                eprintln!("{:#}", node);
             }
 
             eprintln!("{:#?}", attributes);

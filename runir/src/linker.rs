@@ -22,6 +22,12 @@ where
     ready_notify: Vec<Arc<tokio::sync::Notify>>,
 }
 
+impl Linker<CrcInterner> {
+    pub fn new<T: Send + Sync + 'static>() -> Self {
+        Self::describe_resource::<T>()
+    }
+}
+
 impl<I: InternerFactory + Default> Linker<I> {
     /// Constructs and returns a new representation,
     ///
@@ -85,7 +91,7 @@ impl<I: InternerFactory + Default> Linker<I> {
     /// Creates a new repr w/ the root as the ResourceLevel,
     ///
     #[inline]
-    pub fn describe_resource<T: Send + Sync + 'static>() -> Self {
+    pub(crate) fn describe_resource<T: Send + Sync + 'static>() -> Self {
         let mut repr = Linker::default();
 
         repr.push_level(ResourceLevel::new::<T>())

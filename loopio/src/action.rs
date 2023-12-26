@@ -92,7 +92,6 @@ pub trait Action {
             address: self.address(),
             node_rk: self.node_rk(),
             rk: self.plugin_rk(),
-            decoration: self.context().decoration.clone(),
             binding: Some(self.context().clone()),
         }
     }
@@ -258,18 +257,18 @@ async fn test_thunk_context_action() {
     let rk = ResourceKey::with_hash("test");
     tc.bind_plugin(rk);
 
-    unsafe {
-        let mut node = tc.node_mut().await;
-        node.put_resource::<ThunkFn>(
-            |tc| {
-                CallOutput::Spawn(tc.spawn(|tc| async move {
-                    eprintln!("hello world");
-                    Ok(tc)
-                }))
-            },
-            rk.transmute(),
-        );
-    }
+    let node = tc.node().await;
+    node.lazy_put_resource::<ThunkFn>(
+        |tc| {
+            CallOutput::Spawn(tc.spawn(|tc| async move {
+                eprintln!("hello world");
+                Ok(tc)
+            }))
+        },
+        rk.transmute(),
+    );
+
+    tc.node.storage.write().await.drain_dispatch_queues();
 
     let r = tc.into_hosted_resource();
     assert_eq!(r.address(), uuid.to_string());
@@ -292,10 +291,6 @@ impl LocalAction {
     {
         let inner = context.as_local_plugin::<P>().await;
         let mut transient = context.transient_mut().await;
-
-        if let Some(deco) = context.decoration.as_ref() {
-            transient.put_resource(deco.clone(), context.attribute.transmute());
-        }
 
         if let Some(block) = context.parsed_block().await {
             transient.put_resource(block, ResourceKey::root());
@@ -357,18 +352,13 @@ impl RemoteAction {
         {
             let node = context.node().await;
             if let Some(parsed_attributes) =
-                node.current_resource::<ParsedAttributes>(ResourceKey::root())
+                node.current_resource::<ParsedNode>(ResourceKey::root())
             {
                 debug!("Found parsed attributes");
                 drop(node);
                 transient.put_resource(parsed_attributes, context.attribute.transmute());
                 transient.put_resource(recv, context.attribute.transmute());
             }
-        }
-
-        if let Some(deco) = context.decoration.as_ref() {
-            debug!("Found decorations");
-            transient.put_resource(deco.clone(), context.attribute.transmute());
         }
 
         if let Some(block) = context.parsed_block().await {
@@ -439,7 +429,7 @@ impl ActionFactory {
             EnableVirtual(<P as Plugin>::enable_virtual),
             self.attribute().transmute(),
         );
-        if let Some(mut attrs) = storage.resource_mut::<ParsedAttributes>(ResourceKey::root()) {
+        if let Some(mut attrs) = storage.resource_mut::<ParsedNode>(ResourceKey::root()) {
             attrs.attributes.push(self.attribute());
         }
         storage.put_resource(self.attribute(), ResourceKey::default());
@@ -472,7 +462,7 @@ impl ActionFactory {
             EnableVirtual(<P as Plugin>::enable_virtual),
             self.attribute().transmute(),
         );
-        if let Some(mut attrs) = storage.resource_mut::<ParsedAttributes>(ResourceKey::root()) {
+        if let Some(mut attrs) = storage.resource_mut::<ParsedNode>(ResourceKey::root()) {
             attrs.attributes.push(self.attribute());
         }
         storage.put_resource(self.attribute(), ResourceKey::default());
@@ -528,10 +518,11 @@ impl ActionFactory {
     /// Publishes this factory,
     ///
     pub async fn publish(self, eh: EngineHandle) -> anyhow::Result<Address> {
-        let mut tc: ThunkContext = self.storage.into();
+        let tc: ThunkContext = self.storage.into();
 
-        if let Some(address) = self.address.as_ref() {
-            tc.set_property("address", address.to_string());
+        if let Some(_address) = self.address.as_ref() {
+            // TODO: Need a different way to handle this
+            // tc.set_property("address", address.to_string());
         }
 
         eh.publish(tc).await

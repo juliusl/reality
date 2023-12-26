@@ -130,6 +130,7 @@ pub mod repr {
     use crate::NewFn;
     use crate::Plugin;
     use crate::ThunkFn;
+    use crate::ToFrame;
 
     define_intern_table!(CALL: ThunkFn);
     define_intern_table!(ENABLE_FRAME: ThunkFn);
@@ -162,6 +163,25 @@ pub mod repr {
                 call: Tag::new(&CALL, Arc::new(<P as Plugin>::call)),
                 enable_frame: Tag::new(&ENABLE_FRAME, Arc::new(<P as Plugin>::enable_frame)),
                 enable_virtual: Tag::new(&ENABLE_VIRTUAL, Arc::new(<P as Plugin>::enable_virtual)),
+            }
+        }
+
+        /// Returns a new thunk level for P w/ data thunks from Inner,
+        ///
+        pub fn new_as<P, Inner>() -> Self
+        where
+            P: Plugin + Default + Clone + ToFrame + Send + Sync + 'static,
+            P::Virtual: NewFn<Inner = Inner>,
+            Inner: Plugin,
+            Inner::Virtual: NewFn<Inner = Inner>,
+        {
+            Self {
+                call: Tag::new(&CALL, Arc::new(<P as Plugin>::call)),
+                enable_frame: Tag::new(&ENABLE_FRAME, Arc::new(<Inner as Plugin>::enable_frame)),
+                enable_virtual: Tag::new(
+                    &ENABLE_VIRTUAL,
+                    Arc::new(<Inner as Plugin>::enable_virtual),
+                ),
             }
         }
     }
@@ -200,6 +220,7 @@ pub mod repr {
 
     /// Wrapper struct over intern handle providing access to plugin thunks,
     ///
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
     pub struct PluginRepr(InternHandle);
 
     impl PluginRepr {

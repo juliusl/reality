@@ -255,7 +255,7 @@ mod tests {
             .unwrap();
         eprintln!("{:?}", a);
 
-        let test = Test::create_repr::<CrcInterner>().unwrap();
+        let test = Test::linker::<CrcInterner>().unwrap();
         eprintln!("{:x?}", test.link().await.unwrap());
         ()
     }

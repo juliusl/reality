@@ -78,14 +78,14 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
         {
             let node = editing.node().await;
             if let Some(parsed_attributes) =
-                node.current_resource::<ParsedAttributes>(loopio::prelude::ResourceKey::root())
+                node.current_resource::<ParsedNode>(loopio::prelude::ResourceKey::root())
             {
                 info!("Found parsed attributes");
                 drop(node);
                 editing.maybe_write_cache(parsed_attributes);
 
-                if let Some(parsed) = editing.cached::<ParsedAttributes>() {
-                    parsed.index_decorations(editing.attribute, editing).await;
+                if let Some(parsed) = editing.cached::<ParsedNode>() {
+                    // parsed.index_decorations(editing.attribute, editing).await;
                     editing.store_kv(editing.attribute, recv);
                 }
             }
@@ -626,7 +626,7 @@ impl FieldWidget {
 
 fn defined_properties_section(tc: &ThunkContext, ui: &imgui::Ui) {
     let mut render_properties = vec![];
-    if let Some(parsed) = tc.cached_ref::<ParsedAttributes>() {
+    if let Some(parsed) = tc.cached_ref::<ParsedNode>() {
         let rk = tc.attribute;
         render_properties.push(|| {
             view_decorations(rk, &tc, ui);

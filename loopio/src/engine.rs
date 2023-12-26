@@ -1,18 +1,15 @@
 use anyhow::anyhow;
-use reality::prelude::runir::prelude::ResourceLevel;
-use reality::AttributeTypeParser;
-use reality::BlockObjectType;
 use serde::Deserialize;
 use serde::Serialize;
 
 use host::Host;
 
 use std::collections::BTreeMap;
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
 use tokio::runtime::Handle;
+use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -23,7 +20,7 @@ use tracing::trace;
 use tracing::warn;
 
 use reality::prelude::*;
-use reality::RwLock;
+use runir::prelude::*;
 
 use crate::background_work::BackgroundWorkEngineHandle;
 use crate::host;
@@ -102,28 +99,21 @@ impl EngineBuilder {
         Inner::Virtual: NewFn<Inner = Inner>,
     {
         self.register_with(|parser| {
-            let mut block_obj = BlockObjectType::new::<Thunk<Inner>>();
+            let mut block_obj = reality::BlockObjectType::new::<Thunk<Inner>>();
 
-            block_obj.attribute_type = AttributeTypeParser::<Shared>::new_with(
+            block_obj.attribute_type = reality::AttributeTypeParser::<Shared>::new_with(
                 P::symbol(),
                 |parser, input| {
                     P::parse(parser, input);
 
                     let key = parser
-                        .attributes
+                        .parsed_node
                         .last()
                         .cloned()
                         .unwrap_or(ResourceKey::root());
                     if let Some(storage) = parser.storage() {
-                        storage.lazy_put_resource::<ThunkFn>(<P as Plugin>::call, key.transmute());
-                        storage.lazy_put_resource::<EnableFrame>(
-                            EnableFrame(<Inner as Plugin>::enable_frame),
-                            key.transmute(),
-                        );
-                        storage.lazy_put_resource::<EnableVirtual>(
-                            EnableVirtual(<Inner as Plugin>::enable_virtual),
-                            key.transmute(),
-                        );
+                        storage
+                            .lazy_put_resource(PluginLevel::new_as::<P, Inner>(), key.transmute());
                     }
                 },
                 P::link_recv,
@@ -233,7 +223,7 @@ pub struct Engine {
     sequences: BTreeMap<String, Sequence>,
     /// Current nodes,
     ///
-    nodes: HashMap<ResourceKey<reality::attributes::Node>, Arc<RwLock<Shared>>>,
+    nodes: BTreeMap<ResourceKey<reality::attributes::Node>, Arc<RwLock<Shared>>>,
     /// Engine handle that can be used to send packets to this engine,
     ///
     handle: EngineHandle,
@@ -343,7 +333,7 @@ impl Engine {
             packet_rx: rx,
             block: None,
             workspace: None,
-            nodes: HashMap::new(),
+            nodes: BTreeMap::new(),
             __internal_resources: BTreeMap::new(),
             __published: BTreeMap::new(),
         }
@@ -352,7 +342,7 @@ impl Engine {
     fn add_node_plugin<T>(
         name: Option<&str>,
         tag: Option<&str>,
-        target: &mut AttributeParser<Shared>,
+        parser: &mut AttributeParser<Shared>,
     ) where
         T: Plugin + BlockObject + crate::prelude::Action + SetIdentifiers,
         T::Virtual: NewFn<Inner = T>,
@@ -361,36 +351,28 @@ impl Engine {
             .map(|n| n.to_string())
             .unwrap_or(format!("{}", uuid::Uuid::new_v4()));
 
-        T::parse(target, &name);
+        T::parse(parser, &name);
 
-        let node = target.attributes.node;
-        if let Some(last) = target.attributes.last().cloned() {
-            if let Some(mut storage) = target.storage_mut() {
-                storage.drain_dispatch_queues();
-                let mut address = None;
-                if let Some(mut seq) = storage.resource_mut(last.transmute::<T>()) {
-                    seq.bind_node(node.transmute());
-                    T::set_identifiers(&mut seq, &name, tag.map(|t| t.to_string()).as_ref());
-                    address = Some(Address::new(seq.address()));
-                }
+        eprintln!("add_node_plugin -- {:?}", parser.parsed_node);
+        let nk = parser.parsed_node.node.transmute::<T>();
+        let node = parser.parsed_node.last().unwrap().clone();
+        if let Some(mut storage) = parser.storage_mut() {
+            storage.drain_dispatch_queues();
+            let mut res = storage.current_resource(node.transmute::<T>()).unwrap();
+            eprintln!("Found node plugin");
+            res.bind_node(node.transmute());
+            T::set_identifiers(&mut res, &name, tag.map(|t| t.to_string()).as_ref());
 
-                if let Some(address) = address {
-                    eprintln!("Setting address {:?}", address);
-                    storage.put_resource(address, ResourceKey::root());
-                }
-
-                storage.put_resource::<ThunkFn>(<T as Plugin>::call, last.transmute());
-                storage.put_resource::<EnableFrame>(
-                    EnableFrame(<T as Plugin>::enable_frame),
-                    last.transmute(),
-                );
-                storage.put_resource::<EnableVirtual>(
-                    EnableVirtual(<T as Plugin>::enable_virtual),
-                    last.transmute(),
-                );
-                storage.put_resource(last.transmute::<T>(), ResourceKey::root());
-            }
+            let address = Address::new(res.address());
+            eprintln!("Setting address {}", address);
+            storage.put_resource(address, ResourceKey::root());
+            storage.put_resource(res, nk.transmute());
+            storage.put_resource(PluginLevel::new::<T>(), nk.transmute());
+            storage.put_resource::<ResourceKey<T>>(nk, ResourceKey::root());
         }
+
+        parser.parsed_node.attributes.pop();
+        parser.push_link_recv::<T>();
     }
 
     /// Creates a new context on this engine,
@@ -411,6 +393,66 @@ impl Engine {
         context
     }
 
+    pub async fn compile2(mut self, workspace: Workspace) -> anyhow::Result<Self> {
+        let mut project = Project::new(Shared::default());
+        project.add_block_plugin(None, None, |_| {});
+
+        let plugins = self.plugins.clone();
+        project.add_node_plugin("operation", move |name, tag, target| {
+            let name = name
+                .map(|n| n.to_string())
+                .unwrap_or(format!("{}", uuid::Uuid::new_v4()));
+            let node = target.parsed_node.node;
+            if let Some(mut storage) = target.storage_mut() {
+                let mut operation = Operation::new(name, tag.map(|t| t.to_string()));
+                operation.bind_node(node.transmute());
+
+                if let Ok(address) = Address::from_str(&operation.address()) {
+                    eprintln!("Adding address for operation -- {}", address);
+                    storage.put_resource(address, ResourceKey::root());
+                } else {
+                    eprintln!("Could not add address for {}", (&operation.address()));
+                }
+                storage.put_resource(PluginLevel::new::<Operation>(), node.transmute());
+                storage.put_resource(operation, node.transmute());
+                storage.put_resource(node.transmute::<Operation>(), ResourceKey::root());
+            }
+            for p in plugins.iter() {
+                p(target);
+            }
+            target.push_link_recv::<Operation>();
+        });
+
+        project.add_node_plugin("sequence", Self::add_node_plugin::<Sequence>);
+        project.add_node_plugin("host", Self::add_node_plugin::<Host>);
+
+        let project = workspace.compile(project).await?.project.take().unwrap();
+
+        self.block = Some(project.parsed_block().await?);
+
+        let nodes = project.nodes.into_inner();
+
+        eprintln!("{}", nodes.len());
+
+        for (_, n) in nodes {
+            let mut node = n.write().await;
+            node.drain_dispatch_queues();
+            drop(node);
+
+            let node = n.read().await;
+            if let Some(node) = node.resource::<ParsedNode>(ResourceKey::root()) {
+                if let Some(node) = node.node.repr() {
+                    eprintln!("{:x?}", node);
+                    eprintln!("{:#x?}", node.try_get_levels());
+                    eprintln!("{:#}", node);
+                }
+            }
+            drop(node);
+        }
+
+        Ok(self)
+    }
+
     /// Compiles operations from the parsed project,
     ///
     pub async fn compile(mut self, workspace: Workspace) -> Self {
@@ -423,7 +465,7 @@ impl Engine {
             let name = name
                 .map(|n| n.to_string())
                 .unwrap_or(format!("{}", uuid::Uuid::new_v4()));
-            let node = target.attributes.node;
+            let node = target.parsed_node.node;
             if let Some(mut storage) = target.storage_mut() {
                 let mut operation = Operation::new(name, tag.map(|t| t.to_string()));
                 operation.bind_node(node.transmute());
@@ -444,12 +486,15 @@ impl Engine {
                     EnableVirtual(<Operation as Plugin>::enable_virtual),
                     ResourceKey::root(),
                 );
+                storage.put_resource(PluginLevel::new::<Operation>(), ResourceKey::root());
                 storage.put_resource(operation, ResourceKey::root());
             }
 
             for p in plugins.iter() {
                 p(target);
             }
+
+            target.push_link_recv::<Operation>();
         });
 
         project.add_node_plugin("sequence", Self::add_node_plugin::<Sequence>);
@@ -473,6 +518,7 @@ impl Engine {
                 let hostkey = storage
                     .current_resource::<ResourceKey<Host>>(ResourceKey::root())
                     .unwrap_or(ResourceKey::root());
+
                 if let Some(_) = storage.current_resource::<Host>(hostkey) {
                     // Since new_context set the host map, earlier hosts are available to later hosts
                     let mut context = self
@@ -485,13 +531,13 @@ impl Engine {
 
                     if let Some(host_name) = host.name.value().cloned() {
                         // Find actions defined by the host for adding to the parsed block later
-                        for (dec, a) in host
+                        for a in host
                             .action
                             .iter()
                             .filter(|a| a.value().is_some())
-                            .map(|a| (a.decorations().cloned(), a.value.clone().unwrap()))
+                            .map(|a| (a.value.clone().unwrap()))
                         {
-                            host_actions.push((host_name.to_string(), a, dec));
+                            host_actions.push((host_name.to_string(), a));
                         }
                         host.bind_plugin(hostkey.transmute());
 
@@ -526,12 +572,22 @@ impl Engine {
                     }
                 }
                 target.write().await.drain_dispatch_queues();
+            }
 
+            // Extract sequences
+            for (_, target) in nodes.iter() {
                 let storage = target.latest().await;
                 let seqkey = storage
                     .current_resource::<ResourceKey<Sequence>>(ResourceKey::root())
                     .unwrap_or(ResourceKey::root());
-                if let Some(_) = storage.current_resource::<Sequence>(seqkey) {
+
+                // let parsed = storage.current_resource::<ParsedNode>(ResourceKey::root());
+
+                // let seqkey = parsed
+                //     .map(|p| p.node)
+                //     .unwrap_or(ResourceKey::root());
+
+                if let Some(_) = storage.current_resource::<Sequence>(seqkey.transmute()) {
                     let mut context = self.new_context(target.clone()).await;
                     context.attribute = seqkey.transmute();
 
@@ -554,116 +610,130 @@ impl Engine {
                     .put_resource(self.engine_handle(), ResourceKey::root());
             }
 
-            // Add ParsedBlock to all nodes,
-            if let Ok(mut block) = project.parsed_block().await {
-                // Bind all pending address to the block first
-                for (node, target) in nodes.iter() {
-                    if let Some(address) =
-                        target.read().await.resource::<Address>(ResourceKey::root())
-                    {
-                        block.bind_node_to_path(node.transmute(), address.to_string());
-                    }
-                }
-
-                // Bind all hosted resources to it's own thunk context
-                // This creates a seperate thunk context which shares node storage but has it's own cache
-                for (host_name, address, deco) in host_actions {
-                    trace!(
-                        host_name,
-                        address = address.to_string(),
-                        "Adding hosted resource --\n{:#?}",
-                        deco
-                    );
-                    eprintln!(
-                        "Searching for node {}\n{:#?}",
-                        address.node_address(),
-                        block.paths
-                    );
-                    if let Some(node) = block.paths.get(&address.node_address()) {
-                        if let Some(node_storage) = nodes.get(&node.transmute()).cloned() {
-                            let resource = block
-                                .nodes
-                                .get(&node.transmute())
-                                .and_then(|n| {
-                                    let addr = address.path();
-                                    eprintln!("Searching for addr {}\n{:#?}", addr, n.paths);
-                                    n.paths.get(addr).cloned()
-                                })
-                                .unwrap_or(node.clone().transmute());
-
-                            let address = address.clone().with_host(host_name);
-                            let hosted_resource = block.bind_resource_path(
-                                address.to_string(),
-                                node.transmute(),
-                                resource.transmute(),
-                                deco,
-                            );
-
-                            let mut context = self.new_context(node_storage.clone()).await;
-                            context.set_attribute(resource);
-                            hosted_resource.bind(context);
-
-                            self.__internal_resources.insert(
-                                Address::from_str(hosted_resource.address().as_str()).unwrap(),
-                                hosted_resource.clone(),
-                            );
+            let block = project.parsed_block().await;
+            match block {
+                Ok(mut block) => {
+                    // Bind all pending addresses to the block first
+                    for (_, target) in nodes.iter() {
+                        if let Some(address) =
+                            target.read().await.resource::<Address>(ResourceKey::root())
+                        {
+                            if let Some(node) = target
+                                .read()
+                                .await
+                                .resource::<ParsedNode>(ResourceKey::root())
+                            {
+                                let node = node.attributes.first().unwrap();
+                                eprintln!("Binding - {address} : {:?}", node);
+                                block.bind_node_to_path(node.transmute(), address.to_string());
+                            }
                         }
                     }
-                }
 
-                // Share the block w/ all nodes
-                for (_, target) in nodes.iter() {
-                    target
-                        .write()
-                        .await
-                        .put_resource(block.clone(), ResourceKey::root());
-                }
+                    // Bind all hosted resources to it's own thunk context
+                    // This creates a seperate thunk context which shares node storage but has it's own cache
+                    for (host_name, address) in host_actions {
+                        trace!(
+                            host_name,
+                            address = address.to_string(),
+                            "Adding hosted resource",
+                        );
+                        eprintln!(
+                            "Searching for node {}\n{:#?}",
+                            address.node_address(),
+                            block.paths
+                        );
+                        if let Some(node) = block.paths.get(&address.node_address()) {
+                            if let Some(node_storage) = nodes.get(&node.transmute()).cloned() {
+                                let resource = block
+                                    .nodes
+                                    .get(&node.transmute())
+                                    .and_then(|n| {
+                                        let addr = address.path();
+                                        eprintln!("Searching for addr {}\n{:#?}", addr, n.paths);
+                                        n.paths.get(addr).cloned()
+                                    })
+                                    .unwrap_or(node.clone().transmute());
 
-                for (addr, host) in self.hosts.iter_mut() {
-                    unsafe {
-                        let mut node = host.context_mut().node_mut().await;
-                        node.put_resource(block.clone(), ResourceKey::root());
+                                let address = address.clone().with_host(host_name);
+                                let hosted_resource = block.bind_resource_path(
+                                    address.to_string(),
+                                    node.transmute(),
+                                    resource.transmute(),
+                                );
+
+                                let mut context = self.new_context(node_storage.clone()).await;
+                                context.set_attribute(resource);
+                                hosted_resource.bind(context);
+
+                                self.__internal_resources.insert(
+                                    Address::from_str(hosted_resource.address().as_str()).unwrap(),
+                                    hosted_resource.clone(),
+                                );
+                            }
+                        }
                     }
 
-                    self.__internal_resources.insert(
-                        Address::from_str(format!("{addr}://").as_str()).unwrap(),
-                        host.into_hosted_resource(),
-                    );
-                }
-
-                for (addr, op) in self.operations.iter_mut() {
-                    unsafe {
-                        let mut node = op.context_mut().node_mut().await;
-                        node.put_resource(block.clone(), ResourceKey::root());
+                    // Share the block w/ all nodes
+                    for (_, target) in nodes.iter() {
+                        target
+                            .write()
+                            .await
+                            .put_resource(block.clone(), ResourceKey::root());
                     }
-                    self.__internal_resources
-                        .insert(Address::from_str(addr).unwrap(), op.into_hosted_resource());
-                }
 
-                for (addr, seq) in self.sequences.iter_mut() {
-                    unsafe {
-                        let mut node = seq.context_mut().node_mut().await;
-                        node.put_resource(block.clone(), ResourceKey::root());
+                    for (addr, host) in self.hosts.iter_mut() {
+                        {
+                            let node = host.context().node().await;
+                            node.lazy_put_resource(block.clone(), ResourceKey::root());
+                        }
+
+                        host.context_mut().process_node_updates().await;
+
+                        self.__internal_resources.insert(
+                            Address::from_str(format!("{addr}://").as_str()).unwrap(),
+                            host.into_hosted_resource(),
+                        );
                     }
-                    self.__internal_resources
-                        .insert(Address::from_str(addr).unwrap(), seq.into_hosted_resource());
-                }
 
-                for (address, resource) in block.resource_paths.iter() {
-                    if let Ok(address) = Address::from_str(address) {
+                    for (addr, op) in self.operations.iter_mut() {
+                        let node = op.context().node().await;
+                        node.lazy_put_resource(block.clone(), ResourceKey::root());
                         self.__internal_resources
-                            .insert(address.clone(), resource.clone());
+                            .insert(Address::from_str(addr).unwrap(), op.into_hosted_resource());
+                    }
+
+                    for (addr, seq) in self.sequences.iter_mut() {
+                        {
+                            let node = seq.context().node().await;
+                            node.lazy_put_resource(block.clone(), ResourceKey::root());
+                        }
+
+                        seq.context_mut().process_node_updates().await;
+
                         self.__internal_resources
-                            .insert(address.with_host("engine"), resource.clone());
+                            .insert(Address::from_str(addr).unwrap(), seq.into_hosted_resource());
+                    }
+
+                    for (address, resource) in block.resource_paths.iter() {
+                        if let Ok(address) = Address::from_str(address) {
+                            self.__internal_resources
+                                .insert(address.clone(), resource.clone());
+                            self.__internal_resources
+                                .insert(address.with_host("engine"), resource.clone());
+                        }
+                    }
+
+                    if let Some(_block) = self.block.as_mut() {
+                        _block.nodes.extend(block.nodes);
+                        _block.paths.extend(block.paths);
+                        _block.resource_paths.extend(block.resource_paths);
+                    } else {
+                        self.block = Some(block);
                     }
                 }
-
-                if let Some(_block) = self.block.as_mut() {
-                    _block.nodes.extend(block.nodes);
-                    _block.paths.extend(block.paths);
-                    _block.resource_paths.extend(block.resource_paths);
-                } else {
-                    self.block = Some(block);
+                Err(err) => {
+                    panic!("{err}");
                 }
             }
 

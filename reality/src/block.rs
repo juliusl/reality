@@ -1,4 +1,5 @@
 use runir::prelude::Level;
+use runir::prelude::ResourceLevel;
 use tracing::trace;
 
 use crate::AsyncStorageTarget;
@@ -37,6 +38,14 @@ impl BlockObjectType {
             handler: B::handler(),
         }
     }
+
+    pub fn new_as<B: BlockObject, As: BlockObject>() -> Self {
+        Self {
+            ident: B::symbol(),
+            attribute_type: B::attribute_type_as::<As>(),
+            handler: B::handler(),
+        }
+    }
 }
 
 impl Clone for BlockObjectType {
@@ -63,7 +72,17 @@ where
     /// Returns the attribute-type parser for the block-object type,
     ///
     fn attribute_type() -> AttributeTypeParser<Shared> {
-        AttributeTypeParser::new::<Self>()
+        AttributeTypeParser::new::<Self>(ResourceLevel::new::<Self>())
+    }
+
+    /// Returns the attribute-type parser for the block-object type replacing the inner type,
+    ///
+    fn attribute_type_as<Inner>() -> AttributeTypeParser<Shared>
+    where
+        Inner:
+            AttributeType<Shared> + SetField<FieldPacket> + ToFrame + Sized + Send + Sync + 'static,
+    {
+        AttributeTypeParser::new::<Self>(ResourceLevel::new::<Inner>())
     }
 
     /// Returns an empty handler for this block object,
@@ -188,7 +207,7 @@ impl BlockObjectHandler {
                 trace!("trying unloading -- {:?}", recv.mount());
                 match (self.link_recv)(recv.clone(), parser.fields.clone()).await {
                     Ok(recv) => {
-                        if let Some(rk) = parser.attributes.attributes.last_mut() {
+                        if let Some(rk) = parser.parsed_node.attributes.last_mut() {
                             rk.set_repr(recv);
                         }
                     }

@@ -325,7 +325,7 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
             // Setting name
             if let Some(methods) = path
                 .property("methods")
-                .and_then(|m| CommaSeperatedStrings::from_str(m).ok())
+                .and_then(|m| CommaSeperatedStrings::from_str(m.as_str()).ok())
             {
                 // Parse the methods from decoration properties
                 let methods = methods

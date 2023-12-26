@@ -26,7 +26,7 @@ pub trait Recv {
     where
         Self: Sized + Send + Sync + 'static,
     {
-        let mut repr = Linker::<CrcInterner>::describe_resource::<Self>();
+        let mut repr = Linker::new::<Self>();
         let recv = RecvLevel::new::<Self>(fields);
         repr.push_level(recv)?;
         repr.push_level(node.clone())?;

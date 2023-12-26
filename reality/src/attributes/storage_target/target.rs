@@ -195,6 +195,20 @@ pub trait StorageTarget {
         self.lazy_dispatch_mut(move |s| s.put_resource(resource, resource_key));
     }
 
+    /// Lazily puts a resource into the storage target
+    ///
+    fn lazy_maybe_put_resource<T: Send + Sync + 'static>(
+        &self,
+        resource: T,
+        resource_key: StorageTargetKey<T>,
+    ) where
+        Self: 'static,
+    {
+        self.lazy_dispatch_mut(move |s| {
+            s.maybe_put_resource(resource, resource_key);
+        });
+    }
+
     /// Lazily dispatch a fn w/ a reference to the storage target,
     ///
     fn lazy_dispatch<F: FnOnce(&Self) + 'static + Send + Sync>(&self, exec: F)

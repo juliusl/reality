@@ -27,10 +27,6 @@ pub trait Ext {
     ///
     async fn engine_handle(&self) -> Option<EngineHandle>;
 
-    /// Returns any comments added for this attribute,
-    ///
-    async fn get_comments(&self) -> Option<Comments>;
-
     /// Notify host w/ a condition,
     ///
     async fn notify_host(&self, host: &str) -> anyhow::Result<()>;
@@ -63,14 +59,6 @@ impl Ext for ThunkContext {
         } else {
             None
         }
-    }
-
-    /// Get comments stored in the node,
-    ///
-    async fn get_comments(&self) -> Option<Comments> {
-        self.node()
-            .await
-            .current_resource(self.attribute.transmute())
     }
 
     async fn on_notify_host(&self, host: &str) -> anyhow::Result<()> {

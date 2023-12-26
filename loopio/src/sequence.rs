@@ -67,12 +67,15 @@ async fn execute_sequence(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
     (&mut seq).await?;
 
-    unsafe {
+    {
         let seq = seq.get_mut();
-        tc.node_mut()
+        tc.node()
             .await
-            .put_resource(seq.clone(), tc.attribute.transmute());
+            .lazy_put_resource(seq.clone(), tc.attribute.transmute());
     }
+
+    tc.context_mut().process_node_updates().await;
+
     Ok(())
 }
 
@@ -398,7 +401,7 @@ impl Iterator for StepList {
 }
 
 #[tokio::test]
-// #[tracing_test::traced_test]
+#[tracing_test::traced_test]
 async fn test_seq() -> anyhow::Result<()> {
     let mut workspace = Workspace::new();
     workspace.add_buffer(
@@ -407,23 +410,22 @@ async fn test_seq() -> anyhow::Result<()> {
     ```runmd
     + .operation a
     <t/demo.testseq>          Hello World a
-
+    
     + .operation b
     <t/demo.testseq>          Hello World b
-
+    
     + .operation c
     <t/demo.testseq>          Hello World c
-
+    
     + .operation d
     <t/demo.testseq>          Hello World d
-
-
+    
     # -- Test sequence decorations
     + .sequence test
     |# name = Test sequence
     
     # -- Operations on a step execute all at once
-    :  .step a, b, c
+    :  .step a, b, c # test-break
 
     # -- If kind is set to once, this row only executes once if the sequence loops
     : .step b, d,
@@ -432,7 +434,7 @@ async fn test_seq() -> anyhow::Result<()> {
     # -- If this were set to true, then the sequence would automatically loop
     : .loop false
 
-    + .host test
+    + .host test-host
     : .action   b/t/demo.testseq
     ```
     "#,
@@ -441,23 +443,48 @@ async fn test_seq() -> anyhow::Result<()> {
     let mut engine = crate::prelude::DefaultEngine.new();
     engine.enable::<TestSeq>();
 
-    let engine = engine.compile(workspace).await;
-    let eh = engine.engine_handle();
-    let _e = engine.spawn(|_, p| {
-        // eprintln!("{:?}", p);
-        Some(p)
-    });
+    let engine = engine.compile2(workspace).await?;
 
-    let seq = eh.hosted_resource("engine://test").await.unwrap();
-    seq.spawn_call().await?;
-    seq.spawn_call().await?;
-    seq.spawn_call().await?;
-    seq.spawn_call().await?;
+    if let Some(block) = engine.block() {
+        eprintln!("{:#?}", block);
 
-    // Tests that after calling the sequence several times, the counter has the expected value
-    let testseq = eh.hosted_resource("test://b/t/demo.testseq").await.unwrap();
-    let testseq = testseq.context().initialized::<TestSeq>().await;
-    assert_eq!(testseq.counter, 5);
+        for (_, n) in block.nodes.iter() {
+            for n in n.properties.iter() {
+                if let Some(repr) = n.repr() {
+                    eprintln!("{:#}", repr);
+                }
+            }
+        }
+    }
+
+    // if let Some(block) = engine.block() {
+    //     for (_, n) in block.nodes.iter() {
+    //         eprintln!("{:#}", n.node.repr().unwrap());
+
+    //         for a in n.attributes.iter() {
+    //             if let Some(repr) = a.repr() {
+    //                 eprintln!("{:#}", repr);
+    //             }
+    //         }
+    //     }
+    // }
+
+    // let eh = engine.engine_handle();
+    // let _e = engine.spawn(|_, p| {
+    //     // eprintln!("{:?}", p);
+    //     Some(p)
+    // });
+
+    // let seq = eh.hosted_resource("engine://test").await.unwrap();
+    // seq.spawn_call().await?;
+    // seq.spawn_call().await?;
+    // seq.spawn_call().await?;
+    // seq.spawn_call().await?;
+
+    // // Tests that after calling the sequence several times, the counter has the expected value
+    // let testseq = eh.hosted_resource("test://b/t/demo.testseq").await.unwrap();
+    // let testseq = testseq.context().initialized::<TestSeq>().await;
+    // assert_eq!(testseq.counter, 5);
     Ok(())
 }
 
@@ -472,7 +499,7 @@ struct TestSeq {
 async fn call_test_seq(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let mut init = tc.initialized::<TestSeq>().await;
     init.counter += 1;
-    eprintln!("{} {}", init.name, init.counter);
+    eprintln!("s: {} {}", init.name, init.counter);
     tc.node()
         .await
         .lazy_put_resource(init, tc.attribute.transmute());

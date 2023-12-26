@@ -4,8 +4,8 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-use crate::Decoration;
-use crate::KvpExt;
+use crate::CacheExt;
+use crate::ParsedNode;
 use crate::Property;
 use crate::ResourceKey;
 use crate::ThunkContext;
@@ -23,36 +23,6 @@ pub struct Decorated<T: Send + Sync + 'static> {
     /// If set, this is the property_key generated on parse,
     ///
     pub property: Option<ResourceKey<Property>>,
-    /// Decoration value,
-    ///
-    decoration: Option<Decoration>,
-}
-
-impl<T: PartialOrd + Send + Sync + 'static> PartialOrd for Decorated<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match self.value.partial_cmp(&other.value) {
-            Some(core::cmp::Ordering::Equal) => {}
-            ord => return ord,
-        }
-        self.tag.partial_cmp(&other.tag)
-    }
-}
-
-impl<T: Ord + Send + Sync + 'static> Ord for Decorated<T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (self.value.as_ref(), self.tag.as_ref()).cmp(&(other.value.as_ref(), other.tag.as_ref()))
-    }
-}
-
-impl<T: Clone + Send + Sync + 'static> Clone for Decorated<T> {
-    fn clone(&self) -> Self {
-        Self {
-            value: self.value.clone(),
-            tag: self.tag.clone(),
-            property: self.property,
-            decoration: self.decoration.clone(),
-        }
-    }
 }
 
 impl<T: Send + Sync + 'static> Decorated<T> {
@@ -85,30 +55,29 @@ impl<T: Send + Sync + 'static> Decorated<T> {
     pub fn set_property(&mut self, key: ResourceKey<Property>) {
         self.property = Some(key);
     }
-    /// Sets the decoration on this container,
-    ///
-    pub fn set_decoration(&mut self, decoration: Decoration) {
-        self.decoration = Some(decoration);
-    }
 
     /// Sync the state w/ a context,
     ///
-    pub fn sync(&mut self, tc: &ThunkContext) {
+    pub fn sync(&mut self, _tc: &ThunkContext) {
         if let Some(prop) = self.property.as_ref() {
-            self.decoration = tc.fetch_kv::<Decoration>(*prop).map(|(_, d)| d.clone());
+            if let Some(node) = _tc.cached_ref::<ParsedNode>() {
+                self.property = node
+                    .properties
+                    .iter()
+                    .find(|p| p.key() == prop.key())
+                    .cloned();
+            }
         }
     }
 
     /// Finds a property in decorations,
     ///
-    pub fn property(&self, name: impl AsRef<str>) -> Option<&String> {
-        self.decoration.as_ref().and_then(|d| d.prop(name.as_ref()))
-    }
-
-    /// Returns a reference to decorations,
-    ///
-    pub fn decorations(&self) -> Option<&Decoration> {
-        self.decoration.as_ref()
+    pub fn property(&self, name: impl AsRef<str>) -> Option<String> {
+        self.property
+            .as_ref()
+            .and_then(|p| p.node())
+            .and_then(|p| p.try_annotations())
+            .and_then(|d| d.get(name.as_ref()).cloned())
     }
 }
 
@@ -121,8 +90,33 @@ impl<T: FromStr + Send + Sync + 'static> FromStr for Decorated<T> {
             value: Some(value),
             tag: None,
             property: None,
-            decoration: None,
         })
+    }
+}
+
+impl<T: PartialOrd + Send + Sync + 'static> PartialOrd for Decorated<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.value.partial_cmp(&other.value) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.tag.partial_cmp(&other.tag)
+    }
+}
+
+impl<T: Ord + Send + Sync + 'static> Ord for Decorated<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.value.as_ref(), self.tag.as_ref()).cmp(&(other.value.as_ref(), other.tag.as_ref()))
+    }
+}
+
+impl<T: Clone + Send + Sync + 'static> Clone for Decorated<T> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+            tag: self.tag.clone(),
+            property: self.property,
+        }
     }
 }
 
@@ -213,3 +207,85 @@ impl<const DELIM: char, T: FromStr + Send + Sync + 'static> Iterator for Delimit
 //         Ok(Self { val: T::from_str(s)?, idx: 0 })
 //     }
 // }
+
+#[allow(unused)]
+mod tests {
+    use runir::prelude::Recv;
+    use tokio::runtime::Handle;
+
+    use crate::prelude::*;
+
+    use crate::Decorated;
+
+    #[tokio::test]
+    async fn test_decorated() {
+        struct PsuedoTest;
+
+        impl Recv for PsuedoTest {
+            fn symbol() -> &'static str {
+                "test"
+            }
+        }
+
+        #[derive(Reality, Clone, Default, Debug)]
+        #[reality(call=test, plugin)]
+        struct DecoratedTest {
+            #[reality(derive_fromstr)]
+            marker: String,
+            name: Decorated<String>,
+        }
+        async fn test(tc: &mut ThunkContext) -> anyhow::Result<()> {
+            let mut test = Remote.create::<DecoratedTest>(tc).await;
+            assert_eq!("test", test.marker);
+
+            let desc = test.name.property("description");
+            assert_eq!("Testing decorated", desc.unwrap().as_str());
+
+            eprintln!("{:#?}", test);
+            Ok(())
+        }
+
+        let mut project = Project::new(Shared::default());
+
+        project.add_node_plugin("test", |_, _, parser| {
+            parser.with_object_type::<Thunk<DecoratedTest>>();
+            parser.push_link_recv::<PsuedoTest>();
+        });
+
+        let project = project
+            .load_content(
+                r#"
+        ```runmd
+        + .test
+        <test/reality.decoratedtest> test
+        : .name hello-world
+        |# description = Testing decorated 
+        ```
+        "#,
+            )
+            .await
+            .unwrap();
+
+        if let Some((_, node)) = project.nodes.into_inner().pop_first() {
+            let target = AsyncStorageTarget::from_parts(node, Handle::current());
+
+            let mut tc: ThunkContext = target.into();
+
+            let _node = tc.node().await;
+            let mut node = _node
+                .current_resource::<ParsedNode>(ResourceKey::root())
+                .unwrap();
+
+            node.upgrade_node(&_node).await.unwrap();
+            drop(_node);
+
+            eprintln!("{:#?}", node);
+
+            let attr = node.attributes.first().unwrap();
+            tc.set_attribute(*attr);
+
+            tc.call().await.unwrap();
+        }
+        ()
+    }
+}

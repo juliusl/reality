@@ -18,12 +18,19 @@ pub mod prelude {
     pub use super::plugin::Plugin;
     pub use crate::AsyncStorageTarget;
     pub use crate::AttributeType;
+    use crate::AttributeTypeParser;
     pub use crate::BlockObject;
     pub use crate::Shared;
     pub use crate::StorageTarget;
     pub use crate::ToFrame;
+    use async_trait::async_trait;
     pub use futures_util::Future;
     pub use futures_util::FutureExt;
+    use runir::prelude::Linker;
+    use runir::prelude::NodeLevel;
+    use runir::prelude::RecvLevel;
+    use runir::prelude::Repr;
+    use runir::prelude::ResourceLevel;
     pub use std::marker::PhantomData;
     pub use std::ops::DerefMut;
 
@@ -31,7 +38,7 @@ pub mod prelude {
     use crate::AttributeParser;
     use crate::FieldPacket;
     use crate::FieldRefController;
-    use crate::ParsedAttributes;
+    use crate::ParsedNode;
     use crate::ResourceKey;
     use crate::SetField;
     use runir::prelude::CrcInterner;
@@ -83,6 +90,7 @@ pub mod prelude {
         }
     }
 
+    #[async_trait(?Send)]
     impl<P> runir::prelude::Recv for Thunk<P>
     where
         P: Plugin + Send + Sync + 'static,
@@ -90,6 +98,19 @@ pub mod prelude {
     {
         fn symbol() -> &'static str {
             P::symbol()
+        }
+
+        /// Links a node level to a receiver and returns a new Repr,
+        ///
+        async fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
+        where
+            Self: Sized + Send + Sync + 'static,
+        {
+            let mut repr = Linker::new::<P>();
+            let recv = RecvLevel::new::<P>(fields);
+            repr.push_level(recv)?;
+            repr.push_level(node.clone())?;
+            repr.link().await
         }
     }
 
@@ -102,7 +123,7 @@ pub mod prelude {
             <P as AttributeType<Shared>>::parse(parser, content);
 
             let key = parser
-                .attributes
+                .parsed_node
                 .last()
                 .cloned()
                 .unwrap_or(ResourceKey::root());
@@ -129,6 +150,12 @@ pub mod prelude {
         P: SetField<FieldPacket> + Plugin + Send + Sync + 'static,
         P::Virtual: NewFn<Inner = P>,
     {
+        /// Returns the attribute-type parser for the block-object type,
+        ///
+        fn attribute_type() -> AttributeTypeParser<Shared> {
+            AttributeTypeParser::new::<Self>(ResourceLevel::new::<P>())
+        }
+
         /// Called when the block object is being loaded into it's namespace,
         ///
         async fn on_load(
@@ -156,7 +183,7 @@ pub mod prelude {
                     .storage
                     .write()
                     .await
-                    .resource_mut::<ParsedAttributes>(ResourceKey::root())
+                    .resource_mut::<ParsedNode>(ResourceKey::root())
                 {
                     if let Some(mut repr) = parsed.node.repr() {
                         if let Err(err) = repr.upgrade(CrcInterner::default(), tl).await {

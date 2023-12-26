@@ -1,7 +1,6 @@
 mod attribute;
 mod attribute_type;
 mod decorated;
-mod decoration;
 mod fields;
 mod parser;
 mod storage_target;
@@ -17,15 +16,11 @@ pub mod prelude {
     pub use super::decorated::CommaSeperatedStrings;
     pub use super::decorated::Decorated;
     pub use super::decorated::Delimitted;
-    pub use super::decoration::Decoration;
     pub use super::fields::*;
     pub use super::parser::AttributeParser;
-    pub use super::parser::Comments;
     pub use super::parser::HostedResource;
-    pub use super::parser::ParsedAttributes;
     pub use super::parser::ParsedBlock;
-    pub use super::parser::Properties;
-    pub use super::parser::Tag;
+    pub use super::parser::ParsedNode;
     pub use super::storage_target::prelude::*;
     pub use super::visit::Field;
     pub use super::visit::FieldMut;

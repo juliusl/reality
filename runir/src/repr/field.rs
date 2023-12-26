@@ -39,17 +39,21 @@ pub trait Field<const OFFSET: usize>: Send + Sync + 'static {
     ///
     fn field_name() -> &'static str;
 
-    /// Creates and returns a representation factory at repr level 1,
+    /// Creates and returns a linker for this field,
     ///
-    fn create_repr<I: InternerFactory + Default>() -> anyhow::Result<Linker<I>>
+    fn linker<I: InternerFactory + Default>() -> anyhow::Result<Linker<I>>
     where
         Self: Sized,
     {
-        let mut factory = Linker::<I>::describe_resource::<Self::ProjectedType>();
+        let mut linker = Linker::<I>::default();
 
-        factory.push_level(FieldLevel::new::<OFFSET, Self>())?;
+        let mut resource = ResourceLevel::new::<Self::ProjectedType>();
+        resource.set_parse_type::<Self::ParseType>();
 
-        Ok(factory)
+        linker.push_level(resource)?;
+        linker.push_level(FieldLevel::new::<OFFSET, Self>())?;
+
+        Ok(linker)
     }
 }
 

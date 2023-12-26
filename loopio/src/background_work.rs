@@ -214,13 +214,13 @@ impl BackgroundFuture {
                     let mut resource = eh.hosted_resource(&address).await?;
 
                     let rk = resource.plugin_rk();
-                    unsafe {
-                        resource
-                            .context_mut()
-                            .node_mut()
-                            .await
-                            .put_resource::<FrameUpdates>(updates, rk.transmute());
-                    }
+                    resource
+                        .context_mut()
+                        .node()
+                        .await
+                        .lazy_put_resource::<FrameUpdates>(updates, rk.transmute());
+
+                    resource.context_mut().process_node_updates().await;
 
                     select! {
                         result = resource.spawn().unwrap() => result?,

@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_stream::stream;
@@ -9,13 +8,11 @@ use futures_util::TryStreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use tracing::error;
-use tracing::trace;
 use uuid::Uuid;
 
 use crate::prelude::Latest;
 use crate::AsyncStorageTarget;
 use crate::Attribute;
-use crate::Decoration;
 use crate::Dispatcher;
 use crate::Frame;
 use crate::FrameListener;
@@ -23,13 +20,12 @@ use crate::FrameUpdates;
 use crate::HostedResource;
 use crate::Node;
 use crate::PacketRouter;
-use crate::ParsedAttributes;
 use crate::ParsedBlock;
+use crate::ParsedNode;
 use crate::ResourceKey;
 use crate::Shared;
 use crate::StorageTarget;
 use crate::StorageTargetKey;
-use crate::Tag;
 use crate::WireClient;
 use crate::WireServer;
 
@@ -54,9 +50,6 @@ pub struct Context {
     /// If the context has been branched, this will be the Uuid assigned to the variant,
     ///
     pub variant_id: Option<Uuid>,
-    /// Decorations parsed for this context,
-    ///
-    pub decoration: Option<Decoration>,
     /// Cache storage,
     ///
     /// **Note** Cloning the cache will creates a new branch.
@@ -85,9 +78,6 @@ impl From<AsyncStorageTarget<Shared>> for Context {
                     .take_resource(attribute.transmute())
                     .map(|a| *a)
                     .unwrap_or_default(),
-                decoration: storage
-                    .take_resource::<Decoration>(attribute.transmute())
-                    .map(|a| *a),
                 __cached: storage
                     .take_resource(attribute.transmute())
                     .map(|a| *a)
@@ -100,7 +90,6 @@ impl From<AsyncStorageTarget<Shared>> for Context {
                 transient: Shared::default().into_thread_safe_with(handle),
                 cancellation: CancellationToken::new(),
                 variant_id: None,
-                decoration: None,
                 __cached: Shared::default(),
             }
         }
@@ -143,21 +132,12 @@ impl Context {
 
     /// Returns the value of a property decoration if found,
     ///
-    pub fn property(&self, name: impl AsRef<str>) -> Option<&String> {
-        self.decoration
-            .as_ref()
-            .and_then(|d| d.comment_properties.as_ref())
-            .and_then(|c| c.get(name.as_ref()))
-    }
-
-    /// Sets a property for the current context,
-    ///
-    pub fn set_property(&mut self, name: impl Into<String>, value: impl Into<String>) {
-        let decoration = self.decoration.get_or_insert(Decoration::default());
-
-        let properties = decoration.comment_properties.get_or_insert(BTreeMap::new());
-
-        properties.entry(name.into()).or_insert(value.into());
+    pub fn property(&self, name: impl AsRef<str>) -> Option<String> {
+        self.attribute
+            .repr()
+            .and_then(|d| d.as_node())
+            .and_then(|d| d.try_annotations())
+            .and_then(|c| c.get(name.as_ref()).cloned())
     }
 
     /// Returns the parsed block,
@@ -185,10 +165,11 @@ impl Context {
 
     /// Returns the tag value if one was set for this context,
     ///
-    pub async fn tag(&self) -> Option<Tag> {
-        self.node()
-            .await
-            .current_resource(self.attribute.transmute())
+    pub fn tag(&self) -> Option<Arc<String>> {
+        self.attribute
+            .repr()
+            .and_then(|r| r.as_node())
+            .and_then(|n| n.try_tag())
     }
 
     /// Reset the transient storage,
@@ -210,24 +191,10 @@ impl Context {
         self.node.storage.read().await
     }
 
-    /// Get mutable access to source storage,
+    /// Processes any pending node updates,
     ///
-    /// # Safety
-    ///
-    /// Marked unsafe because will mutate the source storage. Source storage is re-used on each execution.
-    ///
-    pub async unsafe fn node_mut(&self) -> tokio::sync::RwLockWriteGuard<Shared> {
-        self.node.storage.write().await
-    }
-
-    /// (unsafe) Tries to get mutable access to source storage,
-    ///
-    /// # Safety
-    ///
-    /// Marked unsafe because will mutate the source storage. Source storage is re-used on each execution.
-    ///
-    pub unsafe fn try_source_mut(&mut self) -> Option<tokio::sync::RwLockWriteGuard<Shared>> {
-        self.node.storage.try_write().ok()
+    pub async fn process_node_updates(&self) {
+        self.node.storage.write().await.drain_dispatch_queues();
     }
 
     /// Returns the transient storage target,
@@ -483,40 +450,40 @@ impl Context {
         }
     }
 
-    /// Scan and take resourrces of type P from node storage,
-    ///
-    pub async fn scan_take_node<P: Sync + Send + 'static>(&self) -> Vec<P> {
-        let attrs = self
-            .node()
-            .await
-            .stream_attributes()
-            .collect::<Vec<_>>()
-            .await;
-        let mut acc = vec![];
-        for attr in attrs {
-            let mut clone = self.clone();
-            clone.attribute = attr;
+    // /// Scan and take resourrces of type P from node storage,
+    // ///
+    // pub async fn scan_take_node<P: Sync + Send + 'static>(&self) -> Vec<P> {
+    //     let attrs = self
+    //         .node()
+    //         .await
+    //         .stream_attributes()
+    //         .collect::<Vec<_>>()
+    //         .await;
+    //     let mut acc = vec![];
+    //     for attr in attrs {
+    //         let mut clone = self.clone();
+    //         clone.attribute = attr;
 
-            trace!("Scanning to take {:?}", &clone.attribute);
-            if let Some(init) = clone.scan_take_node_for::<P>().await {
-                acc.push(init);
-            }
-            trace!("Finished scanning to take {:?}", acc.len());
-        }
+    //         trace!("Scanning to take {:?}", &clone.attribute);
+    //         if let Some(init) = clone.scan_take_node_for::<P>().await {
+    //             acc.push(init);
+    //         }
+    //         trace!("Finished scanning to take {:?}", acc.len());
+    //     }
 
-        acc
-    }
+    //     acc
+    // }
 
-    /// Scans if a resource exists for the current context,
-    ///
-    pub async fn scan_take_node_for<P: Sync + Send + 'static>(&self) -> Option<P> {
-        unsafe {
-            self.node_mut()
-                .await
-                .take_resource::<P>(self.attribute.transmute())
-                .map(|p| *p)
-        }
-    }
+    // /// Scans if a resource exists for the current context,
+    // ///
+    // pub async fn scan_take_node_for<P: Sync + Send + 'static>(&self) -> Option<P> {
+    //     unsafe {
+    //         self.node_mut()
+    //             .await
+    //             .take_resource::<P>(self.attribute.transmute())
+    //             .map(|p| *p)
+    //     }
+    // }
 
     /// Scans the entire node for resources of type P,
     ///
@@ -575,10 +542,9 @@ impl Context {
         {
             debug!("Applying changes to transient storage");
             self.transient_mut().await.drain_dispatch_queues();
-            unsafe {
-                debug!("Applying changes to node storage");
-                self.node_mut().await.drain_dispatch_queues();
-            }
+
+            debug!("Applying changes to node storage");
+            self.node.storage.write().await.drain_dispatch_queues();
         }
 
         self.set_attribute(attr);
@@ -630,6 +596,15 @@ impl Context {
     /// Calls the thunk fn related to this context,
     ///
     pub async fn call(&self) -> anyhow::Result<Option<Context>> {
+        if let Some(repr) = self.attribute.repr() {
+            let plugin = PluginRepr::try_from(repr)?;
+            if let Some(call) = plugin.call().await {
+                let context = call(self.clone()).await?;
+
+                return Ok(context);
+            }
+        }
+
         let thunk = self
             .node()
             .await
@@ -651,6 +626,15 @@ impl Context {
     /// Calls the enable frame thunk fn related to this context,
     ///
     pub async fn enable_frame(&self) -> anyhow::Result<Option<Context>> {
+        if let Some(repr) = self.attribute.repr() {
+            let plugin = PluginRepr::try_from(repr)?;
+            if let Some(enable_frame) = plugin.enable_frame().await {
+                let context = enable_frame(self.clone()).await?;
+
+                return Ok(context);
+            }
+        }
+
         let thunk = self
             .node()
             .await
@@ -665,6 +649,15 @@ impl Context {
     /// Calls the enable virtual thunk fn related to this context,
     ///
     pub async fn enable_virtual(&self) -> anyhow::Result<Option<Context>> {
+        if let Some(repr) = self.attribute.repr() {
+            let plugin = PluginRepr::try_from(repr)?;
+            if let Some(enable_virtal) = plugin.enable_virtual().await {
+                let context = enable_virtal(self.clone()).await?;
+
+                return Ok(context);
+            }
+        }
+
         let thunk = self
             .node()
             .await
@@ -679,38 +672,38 @@ impl Context {
     /// Prints out debug information on this thunk context,
     ///
     pub fn print_debug_info(&self) {
-        if let Some(doc_headers) = self
-            .decoration
-            .as_ref()
-            .and_then(|d| d.doc_headers.as_ref())
-        {
-            for d in doc_headers {
-                eprintln!("{d}");
-            }
-            eprintln!();
-        }
-        eprintln!("attribute:      {:?}", self.attribute);
-        eprintln!("variant  :      {:?}", self.variant_id);
-        eprintln!("--- Decorations ---");
-        if let Some(properties) = self
-            .decoration
-            .as_ref()
-            .and_then(|d| d.comment_properties.as_ref())
-        {
-            for (n, v) in properties {
-                eprintln!("{n}: {v}");
-            }
-        } else {
-            eprintln!("None")
-        }
-        eprintln!("--- Cache State ---");
-        eprintln!("# of keys :      {}", self.__cached.len());
+        // if let Some(doc_headers) = self
+        //     .decoration
+        //     .as_ref()
+        //     .and_then(|d| d.doc_headers.as_ref())
+        // {
+        //     for d in doc_headers {
+        //         eprintln!("{d}");
+        //     }
+        //     eprintln!();
+        // }
+        // eprintln!("attribute:      {:?}", self.attribute);
+        // eprintln!("variant  :      {:?}", self.variant_id);
+        // eprintln!("--- Decorations ---");
+        // if let Some(properties) = self
+        //     .decoration
+        //     .as_ref()
+        //     .and_then(|d| d.comment_properties.as_ref())
+        // {
+        //     for (n, v) in properties {
+        //         eprintln!("{n}: {v}");
+        //     }
+        // } else {
+        //     eprintln!("None")
+        // }
+        // eprintln!("--- Cache State ---");
+        // eprintln!("# of keys :      {}", self.__cached.len());
 
-        if let Some(frame) = self.cached_ref::<Frame>() {
-            eprintln!("--- Frame State ---");
-            eprintln!("# of fields:     {}", frame.fields.len());
-            // TODO
-        }
+        // if let Some(frame) = self.cached_ref::<Frame>() {
+        //     eprintln!("--- Frame State ---");
+        //     eprintln!("# of fields:     {}", frame.fields.len());
+        //     // TODO
+        // }
     }
 }
 
@@ -736,12 +729,6 @@ impl Remote {
             .finish();
 
         p.sync(tc);
-        if let Some(deco) = tc
-            .fetch_kv::<Decoration>(tc.attribute)
-            .map(|(_, deco)| deco.clone())
-        {
-            tc.decoration = Some(deco);
-        }
         p
     }
 }
@@ -765,9 +752,6 @@ impl Local {
             .finish();
 
         plugin.sync(tc);
-        tc.decoration = tc
-            .fetch_kv::<Decoration>(tc.attribute)
-            .map(|(_, deco)| deco.clone());
         plugin
     }
 }
@@ -830,12 +814,12 @@ where
     pub async fn apply_decorations(self) -> Initializer<'a, P> {
         // Index decorations into the current cache,
         {
-            let node = self.context.node().await;
-            if let Some(_) = node.current_resource::<ParsedAttributes>(ResourceKey::root()) {
-                drop(node);
-                // parsed
-                //     .index_decorations(self.context.attribute, self.context)
-                //     .await;
+            let _node = self.context.node().await;
+            let node = _node.current_resource::<ParsedNode>(ResourceKey::root());
+            drop(_node);
+
+            if let Some(node) = node {
+                self.context.write_cache(node);
             }
         }
 

@@ -351,7 +351,7 @@ where
 
 #[allow(unused_imports)]
 mod tests {
-    use std::cell::RefCell;
+    use std::{cell::RefCell, collections::BTreeMap};
 
     use tokio::io::AsyncReadExt;
     use tracing::trace;
@@ -381,6 +381,7 @@ mod tests {
                 crate::project::tests::Test {
                     name: "hello-world".to_string(),
                     file: "test".into(),
+                    fields: BTreeMap::new(),
                 },
             )
             .await;

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use futures_util::Stream;
 
 use crate::prelude::*;
-use crate::ParsedAttributes;
+use crate::ParsedNode;
 use crate::StorageTargetKey;
 use async_stream::stream;
 
@@ -22,7 +22,7 @@ impl<S: StorageTarget + ToOwned<Owned = S> + Send + Sync + 'static> Node<S> {
     ///
     pub fn stream_attributes(&self) -> impl Stream<Item = ResourceKey<Attribute>> + '_ {
         stream! {
-            let parsed = self.0.latest().await.current_resource::<ParsedAttributes>(ResourceKey::root());
+            let parsed = self.0.latest().await.current_resource::<ParsedNode>(ResourceKey::root());
             if let Some(parsed) =  parsed {
                 yield parsed.node;
 
@@ -39,7 +39,7 @@ impl<S: StorageTarget + ToOwned<Owned = S> + Send + Sync + 'static> AsyncStorage
     ///
     pub fn stream_attributes(&self) -> impl Stream<Item = ResourceKey<Attribute>> + '_ {
         stream! {
-            let parsed = self.storage.latest().await.current_resource::<ParsedAttributes>(ResourceKey::root());
+            let parsed = self.storage.latest().await.current_resource::<ParsedNode>(ResourceKey::root());
             if let Some(parsed) =  parsed {
                 yield parsed.node;
 
@@ -60,7 +60,7 @@ impl<S: StorageTarget + ToOwned<Owned = S> + Send + Sync + 'static> AsyncStorage
             .storage
             .latest()
             .await
-            .current_resource::<ParsedAttributes>(StorageTargetKey::root());
+            .current_resource::<ParsedNode>(StorageTargetKey::root());
 
         if let Some(parsed) = parsed {
             parsed
@@ -78,7 +78,7 @@ impl Shared {
     ///
     pub fn stream_attributes(&self) -> impl Stream<Item = ResourceKey<Attribute>> + '_ {
         stream! {
-            let parsed = self.current_resource::<ParsedAttributes>(ResourceKey::root());
+            let parsed = self.current_resource::<ParsedNode>(ResourceKey::root());
             if let Some(parsed) =  parsed {
                 // yield parsed.node;
 
