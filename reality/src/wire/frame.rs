@@ -1,15 +1,17 @@
-use std::sync::Arc;
-
+use anyhow::anyhow;
 use serde::Serialize;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing::trace;
 
-use crate::{Attribute, AttributeType, FieldPacket, NewFn, Plugin, ResourceKey, Shared};
-
-use anyhow::anyhow;
-
+use crate::Attribute;
+use crate::AttributeType;
+use crate::FieldPacket;
+use crate::NewFn;
 use crate::PacketRoutes;
-
-use tokio::sync::Mutex;
+use crate::Plugin;
+use crate::ResourceKey;
+use crate::Shared;
 
 /// Type-alias for a the frame version of an attribute type,
 ///

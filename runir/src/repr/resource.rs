@@ -91,7 +91,7 @@ pub struct ResourceRepr(pub(crate) InternHandle);
 
 impl ResourceRepr {
     /// Returns true if resource matches type,
-    /// 
+    ///
     pub fn is_type<T: 'static>(&self) -> bool {
         self.try_type_name()
             .filter(|n| n == &std::any::type_name::<T>())

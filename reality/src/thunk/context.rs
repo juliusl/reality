@@ -572,43 +572,6 @@ impl Context {
         }
         Err(anyhow::anyhow!("Did not execute thunk"))
     }
-
-    /// Prints out debug information on this thunk context,
-    ///
-    pub fn print_debug_info(&self) {
-        // if let Some(doc_headers) = self
-        //     .decoration
-        //     .as_ref()
-        //     .and_then(|d| d.doc_headers.as_ref())
-        // {
-        //     for d in doc_headers {
-        //         eprintln!("{d}");
-        //     }
-        //     eprintln!();
-        // }
-        // eprintln!("attribute:      {:?}", self.attribute);
-        // eprintln!("variant  :      {:?}", self.variant_id);
-        // eprintln!("--- Decorations ---");
-        // if let Some(properties) = self
-        //     .decoration
-        //     .as_ref()
-        //     .and_then(|d| d.comment_properties.as_ref())
-        // {
-        //     for (n, v) in properties {
-        //         eprintln!("{n}: {v}");
-        //     }
-        // } else {
-        //     eprintln!("None")
-        // }
-        // eprintln!("--- Cache State ---");
-        // eprintln!("# of keys :      {}", self.__cached.len());
-
-        // if let Some(frame) = self.cached_ref::<Frame>() {
-        //     eprintln!("--- Frame State ---");
-        //     eprintln!("# of fields:     {}", frame.fields.len());
-        //     // TODO
-        // }
-    }
 }
 
 /// A Remote Plugin can depend on initialization of it's state from

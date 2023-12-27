@@ -4,7 +4,6 @@ use futures_util::Stream;
 
 use crate::prelude::*;
 use crate::ParsedNode;
-use crate::StorageTargetKey;
 use async_stream::stream;
 
 /// wrapper struct to unpack parsed resources constructed by a project,
@@ -47,28 +46,6 @@ impl<S: StorageTarget + ToOwned<Owned = S> + Send + Sync + 'static> AsyncStorage
                     yield p;
                 }
             }
-        }
-    }
-
-    /// Resolves a path to an attribute for type T,
-    ///
-    pub async fn resolve<T: Send + Sync + 'static>(
-        &self,
-        path: impl AsRef<str>,
-    ) -> StorageTargetKey<T> {
-        let parsed = self
-            .storage
-            .latest()
-            .await
-            .current_resource::<ParsedNode>(StorageTargetKey::root());
-
-        if let Some(parsed) = parsed {
-            parsed
-                .resolve_path(path.as_ref())
-                .map(|a| a.transmute())
-                .unwrap_or(ResourceKey::root())
-        } else {
-            StorageTargetKey::<T>::root()
         }
     }
 }
