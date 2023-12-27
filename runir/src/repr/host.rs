@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+use serde::Deserialize;
+use serde::Serialize;
+
 use crate::define_intern_table;
 use crate::prelude::*;
 use crate::push_tag;
@@ -69,6 +72,7 @@ impl Level for HostLevel {
 
 /// Wrapper struct with access to host tags,
 ///
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Serialize, Deserialize)]
 pub struct HostRepr(pub(crate) InternHandle);
 
 impl HostRepr {

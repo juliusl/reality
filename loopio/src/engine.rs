@@ -236,9 +236,12 @@ pub struct Engine {
     /// Workspace,
     ///
     workspace: Option<Workspace>,
-    /// Pasred block,
+    /// Parsed block,
     ///
     block: Option<ParsedBlock>,
+    /// Package
+    ///
+    pub(crate) package: Option<Package>,
     /// Internal hosted resources,
     ///
     __internal_resources: HostedResourceMap,
@@ -332,6 +335,7 @@ impl Engine {
             },
             packet_rx: rx,
             block: None,
+            package: None,
             workspace: None,
             nodes: BTreeMap::new(),
             __internal_resources: BTreeMap::new(),
@@ -428,27 +432,8 @@ impl Engine {
 
         let project = workspace.compile(project).await?.project.take().unwrap();
 
+        self.package = Some(project.package().await?);
         self.block = Some(project.parsed_block().await?);
-
-        let nodes = project.nodes.into_inner();
-
-        eprintln!("{}", nodes.len());
-
-        for (_, n) in nodes {
-            let mut node = n.write().await;
-            node.drain_dispatch_queues();
-            drop(node);
-
-            let node = n.read().await;
-            if let Some(node) = node.resource::<ParsedNode>(ResourceKey::root()) {
-                if let Some(node) = node.node.repr() {
-                    eprintln!("{:x?}", node);
-                    eprintln!("{:#x?}", node.try_get_levels());
-                    eprintln!("{:#}", node);
-                }
-            }
-            drop(node);
-        }
 
         Ok(self)
     }

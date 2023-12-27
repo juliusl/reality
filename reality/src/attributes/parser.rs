@@ -256,9 +256,9 @@ impl ParsedNode {
                     if let Some(node) = e.as_node() {
                         if let Some(path) = node.try_path() {
                             let address = if let Some(ref tag) = tag {
-                                format!("{input}{}#{tag}", path)
+                                format!("{input}/{}#{tag}", path)
                             } else {
-                                format!("{input}{}", path)
+                                format!("{input}/{}", path)
                             };
 
                             let host = HostLevel::new(address);

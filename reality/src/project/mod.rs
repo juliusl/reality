@@ -1,16 +1,11 @@
-mod node;
-mod program;
 mod extension;
+mod host;
+mod node;
 mod package;
+mod program;
 mod source;
 mod workspace;
-mod host;
 
-use std::collections::BTreeMap;
-use std::collections::HashMap;
-use std::ops::Deref;
-use std::path::Path;
-use std::sync::Arc;
 use crate::Attribute;
 use crate::AttributeParser;
 use crate::ParsedBlock;
@@ -20,21 +15,26 @@ use crate::ResourceKeyHashBuilder;
 use crate::Shared;
 use crate::StorageTarget;
 use async_trait::async_trait;
+pub use extension::Transform;
+pub use host::RegisterWith;
 pub use node::Node;
 pub use program::Program;
-pub use extension::Transform;
 use runmd::prelude::BlockInfo;
 use runmd::prelude::NodeInfo;
 use serde::Deserialize;
 use serde::Serialize;
 pub use source::Source;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::ops::Deref;
+use std::path::Path;
+use std::sync::Arc;
 pub use workspace::CurrentDir;
 pub use workspace::Dir;
 pub use workspace::Empty as EmptyWorkspace;
 pub use workspace::Workspace;
-pub use host::RegisterWith;
 
-use self::package::Package;
+pub use self::package::Package;
 
 /// Block plugin fn,
 ///
@@ -153,7 +153,7 @@ impl Project<Shared> {
     }
 
     /// Creates a package for this project,
-    /// 
+    ///
     pub async fn package(&self) -> anyhow::Result<Package> {
         let nodes = self.nodes.read().await;
 
@@ -376,8 +376,9 @@ mod tests {
     #[reality(plugin, call = test_call)]
     pub struct Test4;
 
-    pub async fn test_call(_: &mut ThunkContext) -> anyhow::Result<()> {
-        eprintln!("test call");
+    pub async fn test_call(tc: &mut ThunkContext) -> anyhow::Result<()> {
+        let test = tc.initialized::<Test>().await;
+        eprintln!("test call {:#?}", test);
         Ok(())
     }
 
@@ -528,6 +529,16 @@ mod tests {
             eprintln!("{:#}", parsed.node.repr().unwrap());
             eprintln!("-----------------------------------")
         }
+
+        let package = _project.package().await.unwrap();
+
+        let mut matches = package.search("app/reality.test");
+        eprintln!("{:#x?}", matches);
+
+        let program = matches.pop().unwrap();
+        let tc = program.program.context().unwrap();
+        let _ = tc.call().await.unwrap();
+
         ()
     }
 }

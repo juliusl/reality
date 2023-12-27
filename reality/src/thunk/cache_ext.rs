@@ -35,12 +35,6 @@ pub trait CacheExt {
         &mut self,
         resource: R,
     ) -> <Shared as StorageTarget>::BorrowMutResource<'_, R>;
-
-    /// Creates a new cache tx,
-    ///
-    fn cached_tx<R: Sync + Send + 'static>(
-        &mut self,
-    ) -> Option<<Shared as StorageTarget>::BorrowMutResource<'_, R>>;
 }
 
 impl CacheExt for ThunkContext {
@@ -76,11 +70,5 @@ impl CacheExt for ThunkContext {
     ) -> <Shared as StorageTarget>::BorrowMutResource<'_, R> {
         self.__cached
             .maybe_put_resource(resource, self.attribute.transmute())
-    }
-
-    fn cached_tx<R: Sync + Send + 'static>(
-        &mut self,
-    ) -> Option<<Shared as StorageTarget>::BorrowMutResource<'_, R>> {
-        todo!()
     }
 }

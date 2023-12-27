@@ -1,4 +1,6 @@
+use anyhow::anyhow;
 use runir::prelude::FieldRepr;
+use runir::prelude::HostRepr;
 use runir::prelude::NodeRepr;
 use runir::prelude::RecvRepr;
 use runir::prelude::Repr;
@@ -13,7 +15,6 @@ use std::marker::PhantomData;
 use tracing::trace;
 
 use crate::PluginRepr;
-
 use super::target::StorageTargetKey;
 
 /// Build a resource key,
@@ -79,41 +80,6 @@ pub struct ResourceKey<T: Send + Sync + 'static> {
     pub data: u128,
     #[serde(skip)]
     _t: PhantomData<T>,
-}
-
-impl<T: Send + Sync + 'static> Eq for ResourceKey<T> {}
-
-impl<T: Send + Sync + 'static> PartialEq for ResourceKey<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.data == other.data
-    }
-}
-
-impl<T: Send + Sync + 'static> Ord for ResourceKey<T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.data.cmp(&other.data)
-    }
-}
-
-impl<T: Send + Sync + 'static> PartialOrd for ResourceKey<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.data.partial_cmp(&other.data)
-    }
-}
-
-impl<T: Send + Sync + 'static> Debug for ResourceKey<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ResourceKey")
-            .field("data", &uuid::Uuid::from_u128(self.data))
-            .field("_t", &self._t)
-            .finish()
-    }
-}
-
-impl<T: Send + Sync + 'static> Default for ResourceKey<T> {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl<T: Send + Sync + 'static> ResourceKey<T> {
@@ -292,8 +258,16 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         self.repr().and_then(|r| r.as_recv())
     }
 
+    /// Returns the node repr if found,
+    ///
+    #[inline]
+    pub fn host(&self) -> Option<HostRepr> {
+        self.repr().and_then(|r| r.as_host())
+    }
+
     /// Returns the hash value from the resource-key,
     ///
+    #[inline]
     pub(crate) fn hash_key(&self) -> u64 {
         self.key() ^ Self::type_key()
     }
@@ -310,6 +284,61 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         type_id.hash(hasher);
 
         hasher.finish() ^ type_name.as_ptr() as u64
+    }
+
+    /// Derives type key from repr handle,
+    /// 
+    pub(crate) fn split_for_soft_link(&self) -> anyhow::Result<(u64, u64)> {
+        let mut hasher = DefaultHasher::new();
+        let hasher = &mut hasher;
+
+        if let (Some(r), Some(resource)) = (self.repr(), self.resource()) {
+            if let Some(tyid) = resource.try_type_id() {
+                tyid.hash(hasher);
+            }
+
+            if let Some(type_name) = resource.try_type_name() {
+                eprintln!("splitting {}", type_name);
+                return Ok((r.as_u64(), hasher.finish() ^ type_name.as_ptr() as u64));
+            }
+        }
+
+        Err(anyhow!("Could not derive type key"))
+    }
+}
+
+impl<T: Send + Sync + 'static> Eq for ResourceKey<T> {}
+
+impl<T: Send + Sync + 'static> PartialEq for ResourceKey<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+    }
+}
+
+impl<T: Send + Sync + 'static> Ord for ResourceKey<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.data.cmp(&other.data)
+    }
+}
+
+impl<T: Send + Sync + 'static> PartialOrd for ResourceKey<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.data.partial_cmp(&other.data)
+    }
+}
+
+impl<T: Send + Sync + 'static> Debug for ResourceKey<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResourceKey")
+            .field("data", &uuid::Uuid::from_u128(self.data))
+            .field("_t", &self._t)
+            .finish()
+    }
+}
+
+impl<T: Send + Sync + 'static> Default for ResourceKey<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -4,13 +4,9 @@ use tracing::debug;
 use tracing::info;
 use tracing::warn;
 
-use crate::ParsedNode;
-use crate::Project;
-use crate::ResourceKey;
-use crate::Shared;
-use crate::StorageTarget;
-
 use super::Source;
+use crate::Project;
+use crate::Shared;
 
 /// Pointer struct for creating a workspace based on the current directory,
 ///
@@ -155,20 +151,6 @@ impl Workspace {
                 Source::TextBuffer { relative, source } => {
                     info!("Compiling {:?}", relative);
                     project = project.load_content(source).await?;
-                }
-            }
-        }
-
-        {
-            let mut nodes = project.nodes.write().await;
-            for (_, storage) in nodes.iter_mut() {
-                let mut storage = storage.write().await;
-                if let Some(mut parsed) =
-                    storage.current_resource::<ParsedNode>(ResourceKey::root())
-                {
-                    parsed.upgrade_node(&storage).await?;
-
-                    storage.put_resource(parsed, ResourceKey::root());
                 }
             }
         }

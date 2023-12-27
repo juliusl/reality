@@ -1,18 +1,12 @@
-use std::fmt::Debug;
-
-use async_stream::stream;
+use anyhow::anyhow;
 use futures_util::Future;
 use futures_util::FutureExt;
-
-use anyhow::anyhow;
-
-use futures_util::StreamExt;
-use futures_util::TryStreamExt;
 use reality::Attribute;
 use reality::ResourceKey;
 use reality::SetIdentifiers;
 use reality::StorageTarget;
 use reality::ThunkContext;
+use std::fmt::Debug;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::trace;
@@ -55,72 +49,19 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let mut init = tc.initialized::<Operation>().await;
     init.bind(tc.clone());
 
-    let node = tc.node().await;
+    if let Some(host) = tc.attribute.host() {
+        let ext = host.extensions().await;
+        if let Some(ext) = ext {
+            let mut context = tc.clone();
+            for e in ext.iter() {
+                let attr = ResourceKey::<Attribute>::with_repr(*e);
+                context.set_attribute(attr);
+                context = context.call().await?.unwrap();
 
-    let parsed = node
-        .current_resource::<ParsedNode>(ResourceKey::root())
-        .unwrap();
-
-    // parsed.upgrade_node(&node).await?;
-
-    // Create a stream so that we can await operations inside of the try_fold
-    let stream = stream! {
-        for p in parsed.parsed() {
-            yield p;
-        }
-    };
-
-    // **NOTE** It's important to drop this reference here since we may take a reference to this node
-    // inside of a plugin
-    drop(node);
-    let _tc = stream
-        .map(Ok)
-        .try_fold(tc.clone(), |tc, attr| async move {
-            // eprintln!("-- should call -- {:?}", attr);
-            // TODO -- Can add the plumbing for the activity system through here
-            //
-            {
-                if let Some(repr) = attr.repr() {
-                    if let Some(pl) = PluginRepr::try_from(repr).ok() {
-                        if let Some(call) = pl.call().await {
-                            let result = call(tc.clone()).await?;
-
-                            if let Some(r) = result {
-                                return Ok(r);
-                            }
-                        }
-                    }
-                }
-
-                let node = tc.node().await;
-                let mut tc = tc.clone();
-                if let Some(func) = node.current_resource::<ThunkFn>(attr.transmute()) {
-                    drop(node);
-                    tc.attribute = attr;
-                    match (func)(tc.clone()) {
-                        CallOutput::Spawn(Some(jh)) => {
-                            tc = jh.await??;
-                        }
-                        CallOutput::Update(Some(update)) => tc = update,
-                        CallOutput::Abort(err) => err?,
-                        CallOutput::Skip | CallOutput::Spawn(None) | CallOutput::Update(None) => {}
-                    }
-                } else {
-                    //
-                    // **BACKGROUND**
-                    // For now make this very loud to fix any edge cases that may exist when parsing runmd
-                    // If an attribute was added it meant that the attribute was successfully parsed, if that was the case
-                    // then during compilation a thunk fn should exist for this extension.
-                    // This indicates that an edge case was not handled between either the lexer -> parser (parse)
-                    // or parser -> engine (compile) phases.
-                    //
-                    eprintln!("ERROR!! ======== NO THUNK FN {:?}", attr);
-                }
-
-                Ok::<ThunkContext, anyhow::Error>(tc)
+                context.process_node_updates().await;
             }
-        })
-        .await?;
+        }
+    }
 
     Ok(())
 }
@@ -346,11 +287,11 @@ async fn test_operation() {
 
     # -- Example plugin
     # -- Example plugin in operation b
-    <a/loopio.std.io.println>                   Hello World a
+    <a/loopio.std.io.println>                   Hello World aa
     |# listen = event_test
 
     # -- Example plugin b
-    <loopio.std.io.println>                     Hello World b
+    <loopio.std.io.println>                     Hello World bb
     |# listen = event_test_b
 
     # -- Example demo host
@@ -369,78 +310,30 @@ async fn test_operation() {
     );
 
     let engine = crate::engine::Engine::builder().build();
-    let _engine = engine.compile(workspace).await;
+    let _engine = engine.compile2(workspace).await.unwrap();
 
-    if let Some(block) = _engine.block() {
-        let mut block = block.clone();
-        for (_, node) in block.nodes.iter_mut() {
-            if let Some(repr) = node.node.repr() {
-                eprintln!("{:#}", repr);
-            }
+    if let Some(package) = _engine.package.as_ref() {
+        let mut matches = package.search("println?idx=0.5");
+        let _ = matches
+            .pop()
+            .unwrap()
+            .program
+            .context()
+            .unwrap()
+            .call()
+            .await
+            .unwrap();
 
-            // node.upgrade_node(storage);
-        }
+        let mut matches = package.search("a");
+        let _ = matches
+            .pop()
+            .unwrap()
+            .program
+            .context()
+            .unwrap()
+            .call()
+            .await
+            .unwrap();
     }
-
-    // let block = engine.block.clone().unwrap_or_default();
-    // for (n, node_storage) in engine.nodes.iter() {
-    //     if let Some(node) = block.nodes.get(n) {
-    //         for attr in node.attributes.iter() {
-    //             trace!("{:?}", attr);
-    //             let mut context = engine.new_context(node_storage.clone()).await;
-    //             context.attribute = Some(*attr);
-
-    //             let _ = context.spawn_call().await.unwrap().unwrap();
-    //         }
-    //     }
-    // }
-
-    // for (_, op) in engine.iter_operations() {
-    //     if !op.context().node().await.contains::<ThunkFn>(None) {
-    //         panic!();
-    //     }
-    //     op.context().call().await.unwrap().unwrap();
-    // }
-
-    // for (_, seq) in engine.iter_sequences() {
-    //     let seq = seq.into_hosted_resource();
-    //     eprintln!("Seq -- {:#?}", seq);
-    // }
-
-    // for (_, host) in engine.iter_hosts() {
-    //     let hosted = host.into_hosted_resource();
-    //     eprintln!("Host -- {:#?}", hosted);
-    // }
-
-    // let block = engine.block().unwrap();
-
-    // let deck = Deck::from(block);
-    // eprintln!("{:#?}", deck);
-
-    // eprintln!("{:#?}", block);
-    // for (_, n) in block.nodes.iter() {
-    //     for (_rk, v) in n.comment_properties.iter() {
-    //         for (k, v) in v {
-    //             if k == "listen" || k == "notify" {
-
-    //             }
-    //         }
-    //     }
-    // }
-
-    // let host = engine.get_host("demo").await;
-    // let _e = engine.spawn(|_, p| Some(p));
-
-    // if let Some(mut host) = host {
-    //     let action = host.spawn().expect("should be able to get an action");
-    //     action
-    //         .await
-    //         .unwrap()
-    //         .expect("should be able to await the action");
-    // }
-
-    // let op = engine.get_operation("a").await.unwrap();
-    // op.await.unwrap();
-
     ()
 }

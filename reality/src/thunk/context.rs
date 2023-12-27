@@ -604,23 +604,7 @@ impl Context {
                 return Ok(context);
             }
         }
-
-        let thunk = self
-            .node()
-            .await
-            .current_resource::<ThunkFn>(self.attribute.transmute());
-        if let Some(thunk) = thunk {
-            (thunk)(self.clone()).await
-        } else {
-            let contains = self
-                .node()
-                .await
-                .contains::<ThunkFn>(self.attribute.transmute());
-            Err(anyhow::anyhow!(
-                "Did not execute thunk {:?} {contains}",
-                self.attribute
-            ))
-        }
+        Err(anyhow::anyhow!("Did not execute thunk"))
     }
 
     /// Calls the enable frame thunk fn related to this context,
@@ -634,16 +618,7 @@ impl Context {
                 return Ok(context);
             }
         }
-
-        let thunk = self
-            .node()
-            .await
-            .current_resource::<EnableFrame>(self.attribute.transmute());
-        if let Some(EnableFrame(thunk)) = thunk {
-            (thunk)(self.clone()).await
-        } else {
-            Err(anyhow::anyhow!("Did not execute thunk"))
-        }
+        Err(anyhow::anyhow!("Did not execute thunk"))
     }
 
     /// Calls the enable virtual thunk fn related to this context,
@@ -657,16 +632,7 @@ impl Context {
                 return Ok(context);
             }
         }
-
-        let thunk = self
-            .node()
-            .await
-            .current_resource::<EnableVirtual>(self.attribute.transmute());
-        if let Some(EnableVirtual(thunk)) = thunk {
-            (thunk)(self.clone()).await
-        } else {
-            Err(anyhow::anyhow!("Did not execute thunk"))
-        }
+        Err(anyhow::anyhow!("Did not execute thunk"))
     }
 
     /// Prints out debug information on this thunk context,

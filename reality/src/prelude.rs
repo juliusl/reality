@@ -54,6 +54,7 @@ pub use crate::VisitVirtual;
 pub use crate::VisitVirtualMut;
 pub use crate::WireServer;
 pub use crate::Workspace;
+pub use crate::project::Package;
 
 // pub use crate::SharedFile;
 

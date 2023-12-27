@@ -37,6 +37,32 @@ pub struct Shared {
     resources: HashMap<u64, Arc<RwLock<Box<dyn Send + Sync + 'static>>>>,
 }
 
+impl Shared {
+    /// Creates soft-links for entries that have a repr handle,
+    /// 
+    pub(crate) fn create_soft_links(&mut self, node: &ParsedNode) {
+        if let Ok((repr_key, ty_key)) = node.node.split_for_soft_link() {
+            eprintln!("Creating soft link {:x}^{:x}", repr_key, ty_key);
+            if let Some(resource) = self.resources.get(&(ty_key ^ node.node.hash_key())) {
+                eprintln!("Found source {:x}^{:x}", ty_key, node.node.hash_key());
+                eprintln!("Inserting {:x}", ty_key ^ repr_key);
+                self.resources.insert(ty_key ^ repr_key, resource.clone());
+            }
+        }
+
+        for a in node.attributes.iter() {
+            if let Ok((repr_key, ty_key)) = a.split_for_soft_link() {
+                eprintln!("Creating soft link {:x}^{:x}", repr_key, ty_key);
+                if let Some(resource) = self.resources.get(&(ty_key ^ a.hash_key())) {
+                    eprintln!("Found source {:x}^{:x}", ty_key, a.hash_key());
+                    eprintln!("Inserting {:x}", ty_key ^ repr_key);
+                    self.resources.insert(ty_key ^ repr_key, resource.clone());
+                }
+            }
+        }
+    }
+}
+
 impl StorageTarget for Shared {
     type BorrowResource<'a, T: Send + Sync + 'static> = RwLockReadGuard<'a, T>;
 

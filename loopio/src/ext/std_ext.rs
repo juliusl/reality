@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use reality::prelude::*;
 use serde::{Deserialize, Serialize};
+use tracing::trace;
 
 use crate::action::ActionExt;
 
@@ -163,6 +164,7 @@ pub struct Println {
 #[async_trait::async_trait]
 impl CallAsync for Println {
     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
+        trace!("println");
         let initialized = context.initialized::<Println>().await;
         println!("{}", initialized.line);
         Ok(())

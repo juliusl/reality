@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use serde::Deserialize;
+use serde::Serialize;
+
 use crate::define_intern_table;
 use crate::push_tag;
 
@@ -313,6 +316,7 @@ impl Level for NodeLevel {
 
 /// Wrapper struct with access to node tags,
 ///
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Serialize, Deserialize)]
 pub struct NodeRepr(pub(crate) InternHandle);
 
 impl NodeRepr {
