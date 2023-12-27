@@ -17,10 +17,8 @@ use crate::Dispatcher;
 use crate::Frame;
 use crate::FrameListener;
 use crate::FrameUpdates;
-use crate::HostedResource;
 use crate::Node;
 use crate::PacketRouter;
-use crate::ParsedBlock;
 use crate::ParsedNode;
 use crate::ResourceKey;
 use crate::Shared;
@@ -138,14 +136,6 @@ impl Context {
             .and_then(|d| d.as_node())
             .and_then(|d| d.try_annotations())
             .and_then(|c| c.get(name.as_ref()).cloned())
-    }
-
-    /// Returns the parsed block,
-    ///
-    pub async fn parsed_block(&self) -> Option<ParsedBlock> {
-        self.node()
-            .await
-            .current_resource::<ParsedBlock>(StorageTargetKey::root())
     }
 
     /// Creates a branched thunk context,
@@ -450,41 +440,6 @@ impl Context {
         }
     }
 
-    // /// Scan and take resourrces of type P from node storage,
-    // ///
-    // pub async fn scan_take_node<P: Sync + Send + 'static>(&self) -> Vec<P> {
-    //     let attrs = self
-    //         .node()
-    //         .await
-    //         .stream_attributes()
-    //         .collect::<Vec<_>>()
-    //         .await;
-    //     let mut acc = vec![];
-    //     for attr in attrs {
-    //         let mut clone = self.clone();
-    //         clone.attribute = attr;
-
-    //         trace!("Scanning to take {:?}", &clone.attribute);
-    //         if let Some(init) = clone.scan_take_node_for::<P>().await {
-    //             acc.push(init);
-    //         }
-    //         trace!("Finished scanning to take {:?}", acc.len());
-    //     }
-
-    //     acc
-    // }
-
-    // /// Scans if a resource exists for the current context,
-    // ///
-    // pub async fn scan_take_node_for<P: Sync + Send + 'static>(&self) -> Option<P> {
-    //     unsafe {
-    //         self.node_mut()
-    //             .await
-    //             .take_resource::<P>(self.attribute.transmute())
-    //             .map(|p| *p)
-    //     }
-    // }
-
     /// Scans the entire node for resources of type P,
     ///
     pub fn iter_node<P: ToOwned<Owned = P> + Sync + Send + 'static>(&self) -> BoxStream<'_, P> {
@@ -555,23 +510,6 @@ impl Context {
             Ok(None) => Ok(previous),
             Err(err) => Err(err),
         }
-    }
-
-    /// Resolves an attribute by path, returns a context if an attribute was found,
-    ///
-    pub async fn navigate(&self, path: impl AsRef<str>) -> Option<HostedResource> {
-        let node = self.node().await;
-        if let Some(block) = node.resource::<ParsedBlock>(ResourceKey::root()) {
-            eprintln!("Looking for resource at: {}", path.as_ref());
-            if let Some(hosted_resource) = block.find_resource(path.as_ref()) {
-                eprintln!("Found hosted resource: {:?}", hosted_resource);
-                return Some(hosted_resource.clone());
-            } else {
-                eprintln!("Did not find resource at: {}\n{:#?}", path.as_ref(), block);
-            }
-        }
-
-        None
     }
 
     /// Schedules garbage collection of the variant,

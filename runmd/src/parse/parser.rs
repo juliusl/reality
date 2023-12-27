@@ -218,7 +218,12 @@ impl Parser {
                     if let Some(path) = ext.path() {
                         _ext.assign_path(path);
                     } else {
-                        _ext.assign_path(format!("{}?idx={}.{}", ext.type_name(), block_info.idx, node_info.idx));
+                        _ext.assign_path(format!(
+                            "{}?idx={}/{}",
+                            ext.type_name(),
+                            block_info.idx,
+                            node_info.idx
+                        ));
                     }
                     _ext.parsed_line(node_info, block_info);
                     self.graph.push(_ext);

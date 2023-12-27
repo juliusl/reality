@@ -144,7 +144,7 @@ mod tests {
         let mut workspace = Workspace::new();
         workspace.add_buffer(".test/test_plugin.md", runmd);
 
-        let _engine = engine.compile2(workspace).await;
+        let _engine = engine.compile(workspace).await.unwrap();
         // let eh = engine.engine_handle();
 
         // engine.spawn(|_, p| Some(p));

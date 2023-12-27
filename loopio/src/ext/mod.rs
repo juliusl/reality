@@ -141,11 +141,6 @@ pub mod utility {
         #[cfg(feature = "hyper-ext")]
         #[reality(ext)]
         request: super::hyper_ext::Request,
-        /// Enables a wire bus for an attribute,
-        ///
-        #[cfg(feature = "wire-ext")]
-        #[reality(ext)]
-        enable_wire_bus: super::wire_ext::EnableWireBus,
     }
 
     async fn noop(_: &mut ThunkContext) -> anyhow::Result<()> {

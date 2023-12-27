@@ -47,18 +47,6 @@ async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let mut init = Remote.create::<Host>(tc).await;
     init.bind(tc.clone());
 
-    let block = tc.parsed_block().await.expect("should have parsed block");
-
-    if let Some(node) = block.nodes.get(&init.node) {
-        if let Some(node) = node.node.repr().and_then(|r| r.as_node()) {
-            if let Some(docs) = node.doc_headers().await {
-                for d in docs.iter() {
-                    eprintln!("{d}");
-                }
-            }
-        }
-    }
-
     for a in init.action.iter() {
         eprintln!("# Action -- {}", a.value().unwrap());
 
@@ -91,12 +79,6 @@ async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
             .await?;
         eprintln!("published -- {:?}", published);
     }
-
-    eprintln!("# Paths");
-    for (p, _) in block.paths.iter() {
-        eprintln!(" - {p}");
-    }
-    eprintln!();
 
     if init.start.is_some() {
         eprintln!("Start found.");
@@ -294,7 +276,7 @@ async fn test_host() {
     );
 
     let engine = crate::engine::Engine::builder().build();
-    let engine = engine.compile(workspace).await;
+    let engine = engine.compile(workspace).await.unwrap();
     // eprintln!("{:#?}", engine);
 
     let eh = engine.engine_handle();

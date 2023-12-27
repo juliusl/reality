@@ -19,7 +19,6 @@ pub mod prelude {
     pub use super::fields::*;
     pub use super::parser::AttributeParser;
     pub use super::parser::HostedResource;
-    pub use super::parser::ParsedBlock;
     pub use super::parser::ParsedNode;
     pub use super::storage_target::prelude::*;
     pub use super::visit::Field;

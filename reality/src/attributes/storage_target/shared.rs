@@ -39,7 +39,7 @@ pub struct Shared {
 
 impl Shared {
     /// Creates soft-links for entries that have a repr handle,
-    /// 
+    ///
     pub(crate) fn create_soft_links(&mut self, node: &ParsedNode) {
         if let Ok((repr_key, ty_key)) = node.node.split_for_soft_link() {
             eprintln!("Creating soft link {:x}^{:x}", repr_key, ty_key);

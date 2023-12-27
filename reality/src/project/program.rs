@@ -53,13 +53,16 @@ impl Program {
     }
 
     /// Returns any node's whose paths end w/ name,
+    ///    
+    /// **Note** If `*` is used all programs w/ addresses are returned.
     ///
     pub fn search(&self, name: impl AsRef<str>) -> Vec<ProgramMatch> {
         let mut matches = vec![];
         for a in self.node.attributes.iter() {
             if let Some(host) = a.host() {
                 if let Some(address) = host.try_address() {
-                    if address.ends_with(name.as_ref()) {
+                    let is_match = address.ends_with(name.as_ref()) || name.as_ref() == "*";
+                    if is_match {
                         let mut program = self.clone();
                         program.entry_point = Some(*a);
                         matches.push(ProgramMatch { host, program });

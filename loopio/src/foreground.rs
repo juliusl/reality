@@ -63,11 +63,12 @@ impl ForegroundEngine {
     pub fn new(mut builder: EngineBuilder) -> ForegroundEngine {
         let runtime = builder.runtime_builder.build().unwrap();
 
-        let engine = runtime.block_on(async {
-            // Create/Test engine plugins
-            builder.workspace.add_buffer(
-                "background-work.md",
-                r#"
+        let engine = runtime
+            .block_on(async {
+                // Create/Test engine plugins
+                builder.workspace.add_buffer(
+                    "background-work.md",
+                    r#"
 ```runmd
 # -- # Test the background work
 + .operation test_background_work
@@ -88,11 +89,12 @@ impl ForegroundEngine {
 : .action   default/list/loopio.published
 ```
 "#,
-            );
-            builder.enable::<BackgroundWork>();
-            builder.enable::<Published>();
-            builder.compile().await
-        });
+                );
+                builder.enable::<BackgroundWork>();
+                builder.enable::<Published>();
+                builder.compile().await
+            })
+            .unwrap();
 
         let mut eh = engine.engine_handle();
 

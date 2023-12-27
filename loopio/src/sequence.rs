@@ -443,19 +443,7 @@ async fn test_seq() -> anyhow::Result<()> {
     let mut engine = crate::prelude::DefaultEngine.new();
     engine.enable::<TestSeq>();
 
-    let engine = engine.compile2(workspace).await?;
-
-    if let Some(block) = engine.block() {
-        eprintln!("{:#?}", block);
-
-        for (_, n) in block.nodes.iter() {
-            for n in n.properties.iter() {
-                if let Some(repr) = n.repr() {
-                    eprintln!("{:#}", repr);
-                }
-            }
-        }
-    }
+    let _ = engine.compile(workspace).await?;
 
     // if let Some(block) = engine.block() {
     //     for (_, n) in block.nodes.iter() {

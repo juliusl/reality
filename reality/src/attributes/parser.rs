@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -10,7 +9,6 @@ use tracing::trace;
 use runir::prelude::*;
 use runmd::prelude::*;
 
-use super::attribute;
 use super::attribute::Attribute;
 use super::attribute::Property;
 use super::attribute_type::OnParseField;
@@ -76,79 +74,6 @@ impl Debug for HostedResource {
 
 impl SetIdentifiers for HostedResource {
     fn set_identifiers(&mut self, _: &str, _: Option<&String>) {}
-}
-
-/// Struct for a parsed block,
-///
-#[derive(Debug, Clone, Default)]
-pub struct ParsedBlock {
-    /// ParsedNode for each node,
-    ///
-    pub nodes: HashMap<ResourceKey<crate::attributes::Node>, ParsedNode>,
-    /// Bounded parsed paths,
-    ///
-    pub paths: BTreeMap<String, ResourceKey<Attribute>>,
-    /// Bounded resource paths,
-    ///
-    pub resource_paths: BTreeMap<String, HostedResource>,
-}
-
-impl ParsedBlock {
-    /// Binds a node to a path in this parsed block,
-    ///
-    /// **Note** This will also update the node and bind the root path
-    /// to the node's resource key.
-    ///
-    pub fn bind_node_to_path(
-        &mut self,
-        node: ResourceKey<attribute::Node>,
-        path: impl Into<String>,
-    ) -> bool {
-        if let Some(_node) = self.nodes.get_mut(&node) {
-            self.paths.insert(path.into(), node.transmute());
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Gets the parsed attributes of a node,
-    ///
-    pub fn get_node(&self, node: ResourceKey<crate::attributes::Node>) -> Option<&ParsedNode> {
-        self.nodes.get(&node)
-    }
-
-    /// Binds a path to a resource from a resource w/in the parsed block,
-    ///
-    pub fn bind_resource_path(
-        &mut self,
-        path: impl Into<String>,
-        node: ResourceKey<crate::attributes::Node>,
-        resource: ResourceKey<Attribute>,
-    ) -> &mut HostedResource {
-        let path = path.into();
-
-        self.resource_paths
-            .entry(path.clone())
-            .or_insert(HostedResource {
-                address: path,
-                node_rk: node,
-                rk: resource,
-                binding: None,
-            })
-    }
-
-    /// Looks for a hosted resource by path,
-    ///
-    pub fn find_resource(&self, resource: impl AsRef<str>) -> Option<&HostedResource> {
-        self.resource_paths.get(resource.as_ref())
-    }
-
-    /// Looks for a hosted resource by path and returns a mutable reference,
-    ///
-    pub fn find_resource_mut(&mut self, resource: impl AsRef<str>) -> Option<&mut HostedResource> {
-        self.resource_paths.get_mut(resource.as_ref())
-    }
 }
 
 /// Struct for parsed attributes,

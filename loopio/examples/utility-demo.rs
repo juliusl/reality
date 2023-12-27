@@ -24,7 +24,7 @@ async fn main() {
     engine.enable::<Test>();
     engine.enable::<Echo>();
     let engine = engine.build();
-    let engine = engine.compile(workspace).await;
+    let engine = engine.compile(workspace).await.unwrap();
 
     // let mut host = engine.get_host("testhost").await.expect("should have host");
     let (eh, _) = engine.spawn(|_, packet| {

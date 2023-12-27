@@ -310,7 +310,7 @@ async fn test_operation() {
     );
 
     let engine = crate::engine::Engine::builder().build();
-    let _engine = engine.compile2(workspace).await.unwrap();
+    let _engine = engine.compile(workspace).await.unwrap();
 
     if let Some(package) = _engine.package.as_ref() {
         let mut matches = package.search("println?idx=0.5");
@@ -325,7 +325,7 @@ async fn test_operation() {
             .unwrap();
 
         let mut matches = package.search("a");
-        let _ = matches
+        let tc = matches
             .pop()
             .unwrap()
             .program
@@ -334,6 +334,18 @@ async fn test_operation() {
             .call()
             .await
             .unwrap();
+
+        let tc = tc.unwrap();
+
+        let packet = tc.attribute.empty_packet();
+        eprintln!("{:#?}", packet);
     }
+
+    eprintln!("{:#?}", _engine);
+
+    let resource = _engine.get_resource("engine://a").await.unwrap();
+
+    let _ = resource.spawn_call().await.unwrap();
+
     ()
 }

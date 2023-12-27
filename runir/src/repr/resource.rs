@@ -90,6 +90,18 @@ impl Level for ResourceLevel {
 pub struct ResourceRepr(pub(crate) InternHandle);
 
 impl ResourceRepr {
+    /// Returns true if resource matches type,
+    /// 
+    pub fn is_type<T: 'static>(&self) -> bool {
+        self.try_type_name()
+            .filter(|n| n == &std::any::type_name::<T>())
+            .is_some()
+            && self
+                .try_type_id()
+                .filter(|n| *n == std::any::TypeId::of::<T>())
+                .is_some()
+    }
+
     /// Returns the tag value of the resource type name,
     ///
     #[inline]

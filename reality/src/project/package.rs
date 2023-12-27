@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use runir::prelude::{NodeRepr, HostRepr};
+use runir::prelude::*;
 
 use super::Program;
 
@@ -15,6 +15,8 @@ pub struct Package {
 impl Package {
     /// Searches for a program w/ name,
     ///
+    /// **Note** If `*` is used all programs w/ addresses are returned.
+    ///
     pub fn search(&self, name: impl AsRef<str>) -> Vec<ProgramMatch> {
         let mut matches = vec![];
         for p in self.programs.iter() {
@@ -22,14 +24,10 @@ impl Package {
                 .ok()
                 .and_then(|a| a.attribute.host())
                 .and_then(|a| a.try_address())
-                .filter(|p| p.ends_with(name.as_ref()))
+                .filter(|p| p.ends_with(name.as_ref()) || name.as_ref() == "*")
                 .is_some()
             {
-                if let Some(host) = p
-                    .context()
-                    .ok()
-                    .and_then(|a| a.attribute.host())
-                {
+                if let Some(host) = p.context().ok().and_then(|a| a.attribute.host()) {
                     matches.push(ProgramMatch {
                         host,
                         program: p.clone(),
@@ -43,8 +41,14 @@ impl Package {
     }
 }
 
+/// Struct containing the result of a program search,
+///
 pub struct ProgramMatch {
-    pub(crate) host: HostRepr,
+    /// Host representation
+    ///
+    pub host: HostRepr,
+    /// Matched program
+    ///
     pub program: Program,
 }
 

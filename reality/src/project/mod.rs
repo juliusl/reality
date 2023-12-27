@@ -8,8 +8,6 @@ mod workspace;
 
 use crate::Attribute;
 use crate::AttributeParser;
-use crate::ParsedBlock;
-use crate::ParsedNode;
 use crate::ResourceKey;
 use crate::ResourceKeyHashBuilder;
 use crate::Shared;
@@ -25,8 +23,6 @@ use serde::Deserialize;
 use serde::Serialize;
 pub use source::Source;
 use std::collections::BTreeMap;
-use std::collections::HashMap;
-use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 pub use workspace::CurrentDir;
@@ -125,31 +121,6 @@ impl Project<Shared> {
         drop(parser);
 
         loading.unload()
-    }
-
-    /// Returns the parsed block from this project,
-    ///
-    pub async fn parsed_block(&self) -> anyhow::Result<ParsedBlock> {
-        let nodes = self.nodes.read().await;
-
-        let mut block = ParsedBlock {
-            nodes: HashMap::new(),
-            paths: BTreeMap::new(),
-            resource_paths: BTreeMap::new(),
-        };
-        for (rk, s) in nodes.deref().iter() {
-            let s = s.read().await;
-
-            if let Some(parsed) = s.current_resource::<ParsedNode>(ResourceKey::root()) {
-                if let Some(repr) = parsed.node.repr() {
-                    eprintln!("{:#}", repr);
-                }
-
-                block.nodes.insert(rk.transmute(), parsed);
-            }
-        }
-
-        Ok(block)
     }
 
     /// Creates a package for this project,

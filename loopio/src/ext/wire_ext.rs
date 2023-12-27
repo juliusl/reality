@@ -3,11 +3,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-use anyhow::anyhow;
 use futures_util::Stream;
 use reality::prelude::*;
-use serde::Deserialize;
-use serde::Serialize;
 use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Sender;
 use tokio::sync::Notify;
@@ -43,53 +40,6 @@ impl WireBus {
             .chain(self.frame.fields.iter())
             .cloned()
             .collect::<Vec<FieldPacket>>()
-    }
-}
-
-/// Plugin to enable the wire bus on an attribute,
-///
-#[derive(Reality, Serialize, Deserialize, PartialEq, Default, Clone)]
-#[reality(call=enable_wire_bus, plugin, rename = "enable-wirebus")]
-pub struct EnableWireBus {
-    /// Path to the attribute,
-    ///
-    /// **Note**: A path must be assigned to an attribute in order for it to be
-    /// navigated to by this plugin.
-    ///
-    #[reality(derive_fromstr)]
-    path: String,
-    /// If true allows changes to be applied,
-    ///
-    allow_frame_updates: bool,
-}
-
-async fn enable_wire_bus(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let init = tc.initialized::<EnableWireBus>().await;
-
-    if let Some(path) = tc.navigate(&init.path).await {
-        info!("Enabling wire bus {}", init.path);
-        if let Some(enabled) = path.context().enable_frame().await? {
-            let attr = path.context().attribute;
-            let frame = enabled.initialized_frame().await;
-            // Creates a new wire bus
-            path.context()
-                .node()
-                .await
-                .lazy_put_resource(WireBus { frame }, attr.transmute());
-
-            // If enabled this will enable frame updates for the plugin,
-            if init.allow_frame_updates {
-                path.context()
-                    .node()
-                    .await
-                    .lazy_put_resource::<FrameUpdates>(FrameUpdates::default(), attr.transmute());
-            }
-
-            path.context().process_node_updates().await;
-        }
-        Ok(())
-    } else {
-        Err(anyhow!("Could not find resource {:?}", init.path))
     }
 }
 

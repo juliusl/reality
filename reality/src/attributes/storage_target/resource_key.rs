@@ -14,8 +14,9 @@ use std::hash::Hasher;
 use std::marker::PhantomData;
 use tracing::trace;
 
-use crate::PluginRepr;
 use super::target::StorageTargetKey;
+use crate::FieldPacket;
+use crate::PluginRepr;
 
 /// Build a resource key,
 ///
@@ -223,6 +224,47 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         }
     }
 
+    /// Tries to create an empty field packet that could represent the resource
+    /// associared to the current key.
+    ///
+    pub fn empty_packet(&self) -> Option<FieldPacket> {
+        if let Some(repr) = self.repr() {
+            let mut packet = FieldPacket::default();
+
+            if let Some(resource) = repr.as_resource() {
+                if let Some(type_name) = resource.try_type_name() {
+                    packet.data_type_name = type_name.to_string();
+                }
+
+                if let Some(type_size) = resource.try_type_size() {
+                    packet.data_type_size = type_size;
+                }
+            }
+
+            if let Some(field) = repr.as_field() {
+                if let Some(owner_name) = field.try_owner_name() {
+                    packet.owner_name = owner_name.to_string();
+                }
+
+                if let Some(name) = field.try_name() {
+                    packet.field_name = name.to_string();
+                } else if packet.owner_name.is_empty() {
+                    packet.field_name = "self".to_string();
+                }
+
+                if let Some(offset) = field.try_offset() {
+                    packet.field_offset = offset;
+                }
+            }
+
+            packet.attribute_hash = Some(self.data);
+
+            Some(packet)
+        } else {
+            None
+        }
+    }
+
     /// Returns the plugin repr if found,
     ///
     #[inline]
@@ -287,7 +329,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
     }
 
     /// Derives type key from repr handle,
-    /// 
+    ///
     pub(crate) fn split_for_soft_link(&self) -> anyhow::Result<(u64, u64)> {
         let mut hasher = DefaultHasher::new();
         let hasher = &mut hasher;

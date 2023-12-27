@@ -290,11 +290,7 @@ impl LocalAction {
         P::Virtual: NewFn<Inner = P>,
     {
         let inner = context.as_local_plugin::<P>().await;
-        let mut transient = context.transient_mut().await;
-
-        if let Some(block) = context.parsed_block().await {
-            transient.put_resource(block, ResourceKey::root());
-        }
+        let transient = context.transient_mut().await;
 
         drop(transient);
 
@@ -351,19 +347,12 @@ impl RemoteAction {
         // Gets the current parsed attributes state of the target attribute,
         {
             let node = context.node().await;
-            if let Some(parsed_attributes) =
-                node.current_resource::<ParsedNode>(ResourceKey::root())
-            {
-                debug!("Found parsed attributes");
+            if let Some(parsed_node) = node.current_resource::<ParsedNode>(ResourceKey::root()) {
+                debug!("Found parsed node");
                 drop(node);
-                transient.put_resource(parsed_attributes, context.attribute.transmute());
+                transient.put_resource(parsed_node, context.attribute.transmute());
                 transient.put_resource(recv, context.attribute.transmute());
             }
-        }
-
-        if let Some(block) = context.parsed_block().await {
-            debug!("Found parsed block");
-            transient.put_resource(block, ResourceKey::root());
         }
 
         drop(transient);
@@ -643,9 +632,8 @@ async fn test_custom_action() {
         eb
     }]);
 
-    let _engine = builder.compile().await;
+    let _engine = builder.compile().await.unwrap();
     eprintln!("{:#?}", _engine);
-    eprintln!("{:#?}", _engine.block());
 
     let (eh, _) = _engine.spawn(|_, p| Some(p));
     let _tc = eh.run("engine://a").await.unwrap();
