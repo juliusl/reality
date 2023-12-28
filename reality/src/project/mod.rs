@@ -120,6 +120,13 @@ impl Project<Shared> {
 
         drop(parser);
 
+        for (_, n) in loading.0.nodes.write().await.iter() {
+            let mut n = n.write().await;
+
+            n.drain_dispatch_queues();
+        }
+
+
         loading.unload()
     }
 

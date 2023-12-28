@@ -23,6 +23,7 @@ use crate::background_work::BackgroundWorkEngineHandle;
 use crate::host;
 use crate::operation::Operation;
 use crate::prelude::Action;
+use crate::prelude::ActionExt;
 use crate::prelude::Address;
 use crate::prelude::EngineBuildMiddleware;
 use crate::prelude::Ext;
@@ -233,6 +234,7 @@ impl Debug for Engine {
 
         f.debug_struct("Engine")
             .field("__published", &self.__published.keys())
+            .field("__internal_resources", &self.__internal_resources)
             .finish()
     }
 }
@@ -310,7 +312,7 @@ impl Engine {
         tag: Option<&str>,
         parser: &mut AttributeParser<Shared>,
     ) where
-        T: Plugin + BlockObject + crate::prelude::Action + SetIdentifiers,
+        T: Debug + Plugin + BlockObject + crate::prelude::Action + SetIdentifiers,
         T::Virtual: NewFn<Inner = T>,
     {
         let name = name
@@ -319,14 +321,14 @@ impl Engine {
 
         T::parse(parser, &name);
 
-        eprintln!("add_node_plugin -- {:?}", parser.parsed_node);
+        trace!("add_node_plugin -- {:?}", parser.parsed_node);
         let nk = parser.parsed_node.node.transmute::<T>();
-        let node = parser.parsed_node.last().unwrap().clone();
+        let node = parser.parsed_node.last().expect("should have a node level").clone();
         if let Some(mut storage) = parser.storage_mut() {
             storage.drain_dispatch_queues();
-            let mut res = storage.current_resource(node.transmute::<T>()).unwrap();
-            eprintln!("Found node plugin");
-            res.bind_node(node.transmute());
+            let mut res = storage.current_resource(node.transmute::<T>()).expect("should exist after T::parse is called");
+            trace!("Found node plugin");
+            res.bind_node(nk.transmute());
             T::set_identifiers(&mut res, &name, tag.map(|t| t.to_string()).as_ref());
 
             storage.put_resource(res, nk.transmute());
@@ -335,6 +337,8 @@ impl Engine {
         }
 
         parser.parsed_node.attributes.pop();
+        parser.parsed_node.attributes.push(nk.transmute());
+
         parser.push_link_recv::<T>();
     }
 
@@ -371,16 +375,48 @@ impl Engine {
         let package = project.package().await?;
 
         let contents = package.search("*");
+        let mut hosts = vec![];
         for p in contents {
-            eprintln!("Found address -- {:?}", p.host.try_address());
+            trace!("Found address -- {:?}", p.host.try_address());
             if let Some(address) = p
                 .host
                 .try_address()
                 .and_then(|a| Address::from_str(a.as_str()).ok())
             {
+                trace!("Storing as address -- {}", address);
                 let mut context = p.program.context()?;
                 context.cancellation = self.cancellation.child_token();
-                self.__published.insert(address, context);
+                self.__published.insert(address, context.clone());
+
+                if let Some(resource) = context.attribute.resource() {
+                    if resource.is_type::<Host>() {
+                        hosts.push(context);
+                    }
+                }
+            }
+        }
+
+        for mut host in hosts {
+            let host = host.as_remote_plugin::<Host>().await;
+
+            trace!("Configuring host\n{:#?}", host);
+            for a in host.action.iter() {
+                if let Some(address) = a.value() {
+                    let addr = address.to_string();
+                    let resource = self.get_resource(addr).await?;
+
+                    let address = address.clone().with_host(
+                        host.name
+                            .value
+                            .as_ref()
+                            .map(|v| v.as_str())
+                            .unwrap_or("engine"),
+                    );
+
+                    // Registers the action to address, can be fetched w/ self.get_resource
+                    trace!("Registering host action - {}", address);
+                    self.__internal_resources.insert(address, resource);
+                }
             }
         }
 
@@ -686,7 +722,7 @@ impl Debug for EngineAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Call { address, tx } => f
-                .debug_struct("Run")
+                .debug_struct("Call")
                 .field("address", address)
                 .field("has_tx", &tx.is_some())
                 .finish(),

@@ -57,7 +57,7 @@ async fn execute_sequence(tc: &mut ThunkContext) -> anyhow::Result<()> {
     seq.context_mut().attribute = tc.attribute;
 
     //
-    // A sequence trackes what it has already called w/ the StepList
+    // A sequence tracks what it has already called w/ the StepList
     // When restoring the list any "once" steps are filtered out.
     //
     // In order to make changes that way, we need to pin the sequence before calling it, so that we can persist
@@ -443,7 +443,7 @@ async fn test_seq() -> anyhow::Result<()> {
     let mut engine = crate::prelude::DefaultEngine.new();
     engine.enable::<TestSeq>();
 
-    let _ = engine.compile(workspace).await?;
+    let engine = engine.compile(workspace).await?;
 
     // if let Some(block) = engine.block() {
     //     for (_, n) in block.nodes.iter() {
@@ -457,22 +457,25 @@ async fn test_seq() -> anyhow::Result<()> {
     //     }
     // }
 
-    // let eh = engine.engine_handle();
-    // let _e = engine.spawn(|_, p| {
-    //     // eprintln!("{:?}", p);
-    //     Some(p)
-    // });
+    let eh = engine.engine_handle();
+    let _e = engine.spawn(|_, p| {
+        eprintln!("{:?}", p);
+        Some(p)
+    });
 
-    // let seq = eh.hosted_resource("engine://test").await.unwrap();
-    // seq.spawn_call().await?;
-    // seq.spawn_call().await?;
-    // seq.spawn_call().await?;
-    // seq.spawn_call().await?;
+    let seq = eh.hosted_resource("engine://test").await.unwrap();
+    seq.spawn_call().await?;
+    seq.spawn_call().await?;
+    seq.spawn_call().await?;
+    seq.spawn_call().await?;
 
-    // // Tests that after calling the sequence several times, the counter has the expected value
-    // let testseq = eh.hosted_resource("test://b/t/demo.testseq").await.unwrap();
-    // let testseq = testseq.context().initialized::<TestSeq>().await;
-    // assert_eq!(testseq.counter, 5);
+    let testseq = eh
+        .hosted_resource("test-host://b/t/demo.testseq")
+        .await
+        .unwrap();
+    let testseq = testseq.context().initialized::<TestSeq>().await;
+    assert_eq!(testseq.counter, 5);
+
     Ok(())
 }
 
@@ -487,10 +490,17 @@ struct TestSeq {
 async fn call_test_seq(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let mut init = tc.initialized::<TestSeq>().await;
     init.counter += 1;
-    eprintln!("s: {} {}", init.name, init.counter);
-    tc.node()
-        .await
-        .lazy_put_resource(init, tc.attribute.transmute());
-
+    eprintln!(
+        "{:?}: {} {}",
+        tc.attribute.transmute::<TestSeq>(),
+        init.name,
+        init.counter
+    );
+    let key = tc.attribute.transmute::<TestSeq>();
+    tc.node().await.lazy_dispatch_mut(move |node| {
+        if let Some(mut seq) = node.resource_mut(key) {
+            seq.counter = init.counter;
+        }
+    });
     Ok(())
 }

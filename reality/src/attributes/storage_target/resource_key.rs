@@ -347,6 +347,16 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
 
         Err(anyhow!("Could not derive type key"))
     }
+
+    /// Returns true if the current key is a link,
+    /// 
+    pub fn is_link(&self) -> bool {
+        if let Some(repr) = self.repr() {
+            repr.as_u64() == self.hash_key()
+        } else {
+            false
+        }
+    }
 }
 
 impl<T: Send + Sync + 'static> Eq for ResourceKey<T> {}

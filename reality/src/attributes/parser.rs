@@ -437,7 +437,7 @@ impl AttributeParser<Shared> {
         );
 
         // Storage target must be enabled,
-        if let Some(storage) = self.storage() {
+        if let Some(mut storage) = self.storage_mut() {
             // Initialize attribute type,
             let init = source.as_ref().parse::<T>().map_err(|_| {
                 anyhow::anyhow!(
@@ -446,7 +446,7 @@ impl AttributeParser<Shared> {
                     source.as_ref()
                 )
             })?;
-            storage.lazy_put_resource(init, key.transmute());
+            storage.put_resource(init, key.transmute());
         }
         self.parsed_node.push(key);
 

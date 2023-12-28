@@ -1,19 +1,14 @@
 use anyhow::anyhow;
 use futures_util::Future;
 use futures_util::FutureExt;
-use reality::Attribute;
-use reality::ResourceKey;
-use reality::SetIdentifiers;
-use reality::StorageTarget;
-use reality::ThunkContext;
+use uuid::timestamp::context;
 use std::fmt::Debug;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::trace;
 use tracing::warn;
 
-use crate::prelude::Action;
-use reality::prelude::*;
+use crate::prelude::*;
 
 /// Struct for a top-level node,
 ///
@@ -260,92 +255,127 @@ impl SetIdentifiers for Operation {
     }
 }
 
-#[tokio::test]
-#[tracing_test::traced_test]
-async fn test_operation() {
-    let mut workspace = Workspace::new();
-    workspace.add_buffer(
-        "demo.md",
-        r#"
-    ```runmd
-    # -- Example operation that listens for the completion of another
-    + .operation a
-    |# test = test
+#[allow(unused)]
+mod test {
+    use crate::prelude::*;
 
-    # -- Example plugin
-    # -- Example plugin in operation a
-    <loopio.std.io.println>                     Hello World a
-    |# listen = event_test
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn test_operation() {
+        let mut workspace = Workspace::new();
+        workspace.add_buffer(
+            "demo.md",
+            r#"
+        ```runmd
+        # -- Example operation that listens for the completion of another
+        + .operation a
+        |# test = test
+    
+        # -- Example plugin
+        # -- Example plugin in operation a
+        <loopio.std.io.println>                     Hello World a
+        |# listen = event_test
+    
+        # -- Example plugin b
+        <loopio.std.io.println>                     Hello World b
+        |# listen = event_test_b
+    
+        # -- Another example
+        + .operation b
+        |# test = test
+    
+        # -- Example plugin
+        # -- Example plugin in operation b
+        <a/loopio.std.io.println>                   Hello World aa
+        |# listen = event_test
+    
+        # -- Example plugin b
+        <loopio.std.io.println>                     Hello World bb
+        |# listen = event_test_b
+    
+        # -- Example demo host
+        + .host demo
+    
+        # -- Example of a mapped action to an operation
+        : .action   b
+        |# help = example of mapping to an operation
+    
+        # -- Example of a mapped action to within an operation
+        : .action   b/a/loopio.std.io.println
+        |# help = example of mapping to an operation within an operation
+    
+        ```
+        "#,
+        );
 
-    # -- Example plugin b
-    <loopio.std.io.println>                     Hello World b
-    |# listen = event_test_b
+        let engine = crate::engine::Engine::builder().build();
+        let _engine = engine.compile(workspace).await.unwrap();
 
-    # -- Another example
-    + .operation b
-    |# test = test
+        if let Some(package) = _engine.package.as_ref() {
+            let mut matches = package.search("println?idx=0/5");
+            let _ = matches
+                .pop()
+                .unwrap()
+                .program
+                .context()
+                .unwrap()
+                .call()
+                .await
+                .unwrap();
 
-    # -- Example plugin
-    # -- Example plugin in operation b
-    <a/loopio.std.io.println>                   Hello World aa
-    |# listen = event_test
+            let mut matches = package.search("a");
+            let tc = matches
+                .pop()
+                .unwrap()
+                .program
+                .context()
+                .unwrap()
+                .call()
+                .await
+                .unwrap();
 
-    # -- Example plugin b
-    <loopio.std.io.println>                     Hello World bb
-    |# listen = event_test_b
+            let tc = tc.unwrap();
 
-    # -- Example demo host
-    + .host demo
+            let packet = tc.attribute.empty_packet();
+            eprintln!("{:#?}", packet);
+        }
 
-    # -- Example of a mapped action to an operation
-    : .action   b
-    |# help = example of mapping to an operation
+        eprintln!("{:#?}", _engine);
 
-    # -- Example of a mapped action to within an operation
-    : .action   b/a/loopio.std.io.println
-    |# help = example of mapping to an operation within an operation
+        let mut resource = _engine.get_resource("engine://demo").await.unwrap();
 
-    ```
-    "#,
-    );
+        {
+            let node = resource.context().node().await;
+            let parsed_node = node
+                .current_resource::<ParsedNode>(ResourceKey::root())
+                .unwrap();
+            eprintln!("{:#?}", parsed_node);
+        }
 
-    let engine = crate::engine::Engine::builder().build();
-    let _engine = engine.compile(workspace).await.unwrap();
+        let host = resource.context_mut().as_remote_plugin::<Host>().await;
+        eprintln!("{:#?}", host);
 
-    if let Some(package) = _engine.package.as_ref() {
-        let mut matches = package.search("println?idx=0.5");
-        let _ = matches
-            .pop()
-            .unwrap()
-            .program
-            .context()
-            .unwrap()
-            .call()
-            .await
-            .unwrap();
+        host.action.iter().for_each(|a| {
+            let help = a.property("help");
+            eprintln!("{:?}", help);
 
-        let mut matches = package.search("a");
-        let tc = matches
-            .pop()
-            .unwrap()
-            .program
-            .context()
-            .unwrap()
-            .call()
-            .await
-            .unwrap();
+            let prop = a.property.unwrap();
+            if let Some(node) = prop.node() {
+                if let Some(annotations) = node.try_annotations() {
+                    eprintln!("{:?}", annotations);
+                }
+            }
+        });
 
-        let tc = tc.unwrap();
+        let resource = _engine.get_resource("demo://b").await.unwrap();
+        let _ = resource.spawn_call().await.unwrap();
 
-        let packet = tc.attribute.empty_packet();
-        eprintln!("{:#?}", packet);
+        // if let Some(repr) = resource.context().attribute.repr() {
+        //     eprintln!("{:#}", repr);
+        //     eprintln!("is_link: {}", resource.context().attribute.is_link());
+        //     eprintln!("key: {:x}", resource.context().attribute.transmute::<Host>().key());
+        // }
+
+        ()
     }
-
-    eprintln!("{:#?}", _engine);
-
-    let resource = _engine.get_resource("engine://a").await.unwrap();
-
-    let _ = resource.spawn_call().await.unwrap();
-
-    ()
 }

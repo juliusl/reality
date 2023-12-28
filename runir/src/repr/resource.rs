@@ -94,7 +94,7 @@ impl ResourceRepr {
     ///
     pub fn is_type<T: 'static>(&self) -> bool {
         self.try_type_name()
-            .filter(|n| n == &std::any::type_name::<T>())
+            .filter(|n| *n == std::any::type_name::<T>())
             .is_some()
             && self
                 .try_type_id()

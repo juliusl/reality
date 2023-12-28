@@ -253,22 +253,22 @@ async fn test_host() {
 # -- If this were set to true, then the sequence would automatically loop
 : .loop false
 
-# -- # Demo host
+# -- Demo host
 # -- Placeholder text 
 + .host demo
 : .start        test
 
-# -- # Example of setting up a notifier
+# -- Example of setting up a notifier
 : .action               c/start/loopio.std.io.println
 |# help     =           Example of adding help documentation
 |# notify   =           ob_b_complete
 
-# -- # Example of wiring up a listener
+# -- Example of wiring up a listener
 : .action               a/start/loopio.std.io.println
 |# help     =           Example of adding help documentation
 |# listen   =           ob_b_complete
 
-# -- # Example of an event
+# -- Example of an event
 : .event                op_b_complete
 |# description  =       Example of an event that can be listened to
 ```
