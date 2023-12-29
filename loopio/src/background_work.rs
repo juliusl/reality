@@ -95,21 +95,6 @@ impl BackgroundWorkEngineHandle {
         Ok(bg)
     }
 
-    /// Listens for an event,
-    ///
-    pub fn listen(&mut self, listen: impl AsRef<str>) -> anyhow::Result<BackgroundFuture> {
-        let (_rk, mut bg) = self.tc.maybe_store_kv(
-            listen.as_ref(),
-            BackgroundFuture {
-                tc: self.tc.clone(),
-                address: Address::from_str(listen.as_ref())?,
-                cancellation: self.tc.cancellation.child_token(),
-            },
-        );
-
-        Ok(bg.listen())
-    }
-
     pub fn worker<P>(
         &mut self,
         plugin: P,

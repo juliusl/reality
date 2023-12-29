@@ -99,7 +99,7 @@ impl ForegroundEngine {
         let mut eh = engine.engine_handle();
 
         let __engine_listener = runtime.spawn(async move {
-            let (_, pk) = engine.spawn(|_, p| Some(p));
+            let (_, pk) = engine.default_startup().await.unwrap();
             pk.await
         });
 
@@ -147,6 +147,13 @@ impl ForegroundEngine {
 }
 
 #[test]
+#[tracing_test::traced_test]
 fn test_foreground_engine() {
-    let _mt_engine = ForegroundEngine::new(crate::prelude::Engine::builder());
+    let mt_engine = ForegroundEngine::new(crate::prelude::Engine::builder());
+
+    if let Some(bg) = mt_engine.engine_handle().background() {
+        let mut bg = bg.call("test_background_work").unwrap();
+        bg.spawn();
+        let _ = bg.into_foreground().unwrap();
+    }
 }

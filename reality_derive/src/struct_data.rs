@@ -91,6 +91,38 @@ impl Parse for StructData {
         let mut replace = None;
 
         for attr in derive_input.attrs.iter() {
+            if attr.path().is_ident("plugin_def") {
+                attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("call") {
+                        meta.input.parse::<Token![=]>()?;
+                        call = meta.input.parse::<Ident>().ok();
+                        plugin = true;
+                    }
+                    Ok(())
+                })?;
+            }
+
+            if attr.path().is_ident("parse_def") {
+                attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("rename") {
+                        meta.input.parse::<Token![=]>()?;
+                        reality_rename = meta.input.parse::<LitStr>().ok();
+                    }
+
+                    if meta.path.is_ident("group") {
+                        meta.input.parse::<Token![=]>()?;
+                        group = meta.input.parse::<LitStr>().ok();
+                    }
+
+                    if meta.path.is_ident("replace") {
+                        meta.input.parse::<Token![=]>()?;
+                        replace = meta.input.parse::<Type>().ok();
+                    }
+                    
+                    Ok(())
+                })?;
+            }
+
             if attr.path().is_ident("reality") {
                 attr.parse_nested_meta(|meta| {
                     if meta.path.is_ident("call") {

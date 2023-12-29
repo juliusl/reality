@@ -12,7 +12,7 @@ use crate::prelude::*;
 /// Struct for a top-level node,
 ///
 #[derive(Reality, Default)]
-#[reality(call = run_operation, plugin)]
+#[plugin_def(call = run_operation)]
 pub struct Operation {
     /// Name of this operation,
     ///

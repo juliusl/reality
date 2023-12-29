@@ -14,7 +14,7 @@ use crate::prelude::Ext;
 /// A Host contains a broadly shared storage context,
 ///
 #[derive(Reality, Default, Clone)]
-#[reality(call = debug, plugin)]
+#[plugin_def(call = debug)]
 pub struct Host {
     /// Name for this host,
     ///

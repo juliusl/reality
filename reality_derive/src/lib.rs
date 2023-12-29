@@ -18,7 +18,7 @@ pub fn derive_attribute_type(_item: proc_macro::TokenStream) -> proc_macro::Toke
 
 /// Derives Reality object includes several implementations,
 ///
-#[proc_macro_derive(Reality, attributes(reality))]
+#[proc_macro_derive(Reality, attributes(reality, plugin_def, parse_def))]
 pub fn derive_object_type(_item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let struct_data = parse_macro_input!(_item as StructData);
 

@@ -89,6 +89,7 @@ impl EngineBuilder {
     {
         self.register_with(|parser| {
             parser.with_object_type::<Thunk<P>>();
+            parser.push_link_recv::<P>();
         });
     }
 
@@ -693,7 +694,9 @@ impl Engine {
 /// List of all published addresses hosted on an engine,
 ///
 #[derive(Reality, Default, Clone, Debug)]
-#[reality(call = build_published, plugin)]
+#[plugin_def(
+    call = build_published
+)]
 pub struct Published {
     /// Label for this list,
     ///
@@ -709,7 +712,7 @@ async fn build_published(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let eh = tc.engine_handle().await;
 
     if let Some(eh) = eh {
-        let mut _a = eh.hosted_resource("engine://").await?;
+        let mut _a = eh.hosted_resource("engine://engine").await?;
 
         if let Some(published) = _a.context().cached::<Published>() {
             published
