@@ -1,5 +1,7 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use async_stream::stream;
 use futures_util::stream::BoxStream;
 use futures_util::Future;
@@ -8,6 +10,7 @@ use futures_util::TryStreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use tracing::error;
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::prelude::Latest;
@@ -112,6 +115,11 @@ impl Default for Context {
     }
 }
 
+#[derive(Default, Debug, Clone)]
+struct LocalAnnotations {
+    map: BTreeMap<String, String>,
+}
+
 impl Context {
     /// Returns a new blank thunk context,
     ///
@@ -130,12 +138,46 @@ impl Context {
 
     /// Returns the value of a property decoration if found,
     ///
+    /// **Note** Returns the result from annotations set from the parsed repr first otherwise,
+    /// checks local annotations.
+    ///
     pub fn property(&self, name: impl AsRef<str>) -> Option<String> {
-        self.attribute
+        let local = self.attribute.into_link().and_then(|key| {
+            self.fetch_kv::<LocalAnnotations>(key)
+                .and_then(|a| a.1.map.get(name.as_ref()).cloned())
+        });
+
+        local.or(self
+            .attribute
             .repr()
             .and_then(|d| d.as_node())
             .and_then(|d| d.try_annotations())
-            .and_then(|c| c.get(name.as_ref()).cloned())
+            .and_then(|c| c.get(name.as_ref()).cloned()))
+    }
+
+    /// Sets a property for the current context w/ local annotations,
+    ///
+    pub fn set_property(
+        &mut self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> anyhow::Result<()> {
+        if let Some(key) = self.attribute.into_link() {
+            let name = name.into();
+            let value = value.into();
+
+            let (_, mut annotations) = self.maybe_store_kv(key, LocalAnnotations::default());
+
+            if let Some(last) = annotations.map.insert(name.to_string(), value.to_string()) {
+                warn!("replacing local annotation {name}: {last} -> {value}");
+            }
+
+            Ok(())
+        } else {
+            Err(anyhow!(
+                "Current context does not have a linkable resource key {:?}", self.attribute
+            ))
+        }
     }
 
     /// Creates a branched thunk context,
@@ -179,6 +221,22 @@ impl Context {
     ///
     pub async fn node(&self) -> tokio::sync::RwLockReadGuard<Shared> {
         self.node.storage.read().await
+    }
+
+    /// Returns the current resource from node storage,
+    /// 
+    pub async fn current_node_resource<T>(&self) -> Option<T>
+    where
+        T: ToOwned<Owned = T> + Send + Sync + 'static,
+    {
+        let node = self.node().await;
+
+        let link = self
+            .attribute
+            .into_link()
+            .and_then(|key| node.current_resource(key.transmute()));
+
+        node.current_resource(self.attribute.transmute()).or(link)
     }
 
     /// Processes any pending node updates,
@@ -261,9 +319,7 @@ impl Context {
     /// Returns the packet router initialized for P,
     ///
     pub async fn router<P: Plugin + Sync + Send + 'static>(&self) -> Option<Arc<PacketRouter<P>>> {
-        self.node()
-            .await
-            .current_resource(self.attribute.transmute())
+       self.current_node_resource().await
     }
 
     /// Returns the current **default** frame listener for plugin P,
@@ -274,9 +330,7 @@ impl Context {
     where
         P::Virtual: NewFn<Inner = P>,
     {
-        self.node()
-            .await
-            .current_resource(self.attribute.transmute())
+        self.current_node_resource().await
     }
 
     /// Returns the current wire server if initialized,
@@ -285,9 +339,7 @@ impl Context {
     where
         P::Virtual: NewFn<Inner = P>,
     {
-        self.node()
-            .await
-            .current_resource(self.attribute.transmute())
+       self.current_node_resource().await
     }
 
     /// Returns the current wire client if initialized,
@@ -296,9 +348,7 @@ impl Context {
     where
         P::Virtual: NewFn<Inner = P>,
     {
-        self.node()
-            .await
-            .current_resource(self.attribute.transmute())
+        self.current_node_resource().await
     }
 
     /// Listens for one packet,
@@ -327,10 +377,7 @@ impl Context {
     /// Retrieves the initialized frame state of the plugin,
     ///
     pub async fn initialized_frame(&self) -> Frame {
-        self.node()
-            .await
-            .current_resource::<Frame>(self.attribute.transmute())
-            .unwrap_or_default()
+        self.current_node_resource().await.unwrap_or_default()
     }
 
     /// Returns a dispatcher for resource T,
@@ -386,9 +433,7 @@ impl Context {
     /// Scans if a resource exists for the current context,
     ///
     pub async fn scan_node_for<P: ToOwned<Owned = P> + Sync + Send + 'static>(&self) -> Option<P> {
-        self.node()
-            .await
-            .current_resource::<P>(self.attribute.transmute())
+        self.current_node_resource().await
     }
 
     /// Scans the entire node for resources of type P,
@@ -399,7 +444,7 @@ impl Context {
             .stream_attributes()
             .fold(vec![], |mut acc, attr| async move {
                 let mut clone = self.clone();
-                clone.attribute = attr;
+                clone.set_attribute(attr);
 
                 if let Some(init) = clone.scan_node_for::<P>().await {
                     acc.push(init);

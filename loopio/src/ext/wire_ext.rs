@@ -77,12 +77,7 @@ impl VirtualBus {
     where
         P::Virtual: NewFn<Inner = P> + FieldRefController<Owner = P>,
     {
-        if let Some(tc) = self
-            .node
-            .find_node_context::<P>()
-            .await
-            .or(Some(self.node.clone()))
-        {
+        if let Some(tc) = self.node.find_node_context::<P>().await {
             if let Ok(Some(context)) = tc.enable_virtual().await {
                 let port = self
                     .node
@@ -142,6 +137,8 @@ impl VirtualBus {
     /// Prepares and returns a virtual port on the bus to transmit changes
     /// on the virtual plugin.
     ///
+    /// **Note** Waits until a port is active to receive the transmission before sending.
+    ///
     pub async fn transmit<P: Plugin>(
         &mut self,
     ) -> <Shared as StorageTarget>::BorrowMutResource<'_, BusVirtualPort<P>>
@@ -152,11 +149,11 @@ impl VirtualBus {
             .node
             .find_node_context::<P>()
             .await
-            .or(Some(self.node.clone()))
         {
             if let Ok(Some(context)) = tc.enable_virtual().await {
+                debug!("Waiting for port activation before transmission");
                 self.port_active.0.notified().await;
-                debug!("port active notified");
+                debug!("Port is active, returning port for transmission");
                 let port = self
                     .node
                     .maybe_write_cache::<BusVirtualPort<P>>(BusVirtualPort {

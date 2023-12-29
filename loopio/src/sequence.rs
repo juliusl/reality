@@ -445,18 +445,6 @@ async fn test_seq() -> anyhow::Result<()> {
 
     let engine = engine.compile(workspace).await?;
 
-    // if let Some(block) = engine.block() {
-    //     for (_, n) in block.nodes.iter() {
-    //         eprintln!("{:#}", n.node.repr().unwrap());
-
-    //         for a in n.attributes.iter() {
-    //             if let Some(repr) = a.repr() {
-    //                 eprintln!("{:#}", repr);
-    //             }
-    //         }
-    //     }
-    // }
-
     let eh = engine.engine_handle();
     let _e = engine.spawn(|_, p| {
         eprintln!("{:?}", p);

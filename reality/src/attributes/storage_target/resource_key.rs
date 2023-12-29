@@ -198,6 +198,14 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         u64::from_be_bytes(*uuid::Uuid::from_u128(self.data).as_fields().3)
     }
 
+    /// Returns the link version of the resource key if possible,
+    /// 
+    pub fn into_link(&self) -> Option<ResourceKey<T>> {
+        self.repr().map(|r| {
+            ResourceKey::<T>::with_repr(r)
+        })
+    }
+
     /// Sets the repr for this key,
     ///
     pub fn set_repr(&mut self, repr: runir::prelude::Repr) {

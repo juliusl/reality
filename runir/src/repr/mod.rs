@@ -79,6 +79,13 @@ impl Repr {
         self.tail.as_u64()
     }
 
+    /// Returns repr as a uuid,
+    /// 
+    #[inline]
+    pub fn as_uuid(&self) -> uuid::Uuid {
+        uuid::Uuid::from_u64_pair(self.tail.as_u64(), 0)
+    }
+
     /// Upgrades a representation in place w/ a new level,
     ///
     pub async fn upgrade(

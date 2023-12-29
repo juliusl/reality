@@ -203,7 +203,7 @@ impl InternHandle {
     pub fn try_resource_parse_type_name(&self) -> Option<&'static str> {
         crate::repr::resource::PARSE_TYPE_NAME.try_copy(self)
     }
-
+    
     /// Returns the parent of the dependency,
     ///
     #[inline]

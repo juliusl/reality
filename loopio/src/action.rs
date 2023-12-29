@@ -348,9 +348,8 @@ impl RemoteAction {
         {
             let node = context.node().await;
             if let Some(parsed_node) = node.current_resource::<ParsedNode>(ResourceKey::root()) {
-                debug!("Found parsed node");
                 drop(node);
-                transient.put_resource(parsed_node, context.attribute.transmute());
+                transient.put_resource(parsed_node, ResourceKey::root());
                 transient.put_resource(recv, context.attribute.transmute());
             }
         }
@@ -408,20 +407,10 @@ impl ActionFactory {
             .storage
             .try_write()
             .expect("should be able to write");
-        storage.put_resource::<P>(plugin, self.attribute().transmute());
-        storage.put_resource::<ThunkFn>(<P as Plugin>::call, self.attribute().transmute());
-        storage.put_resource::<EnableFrame>(
-            EnableFrame(<P as Plugin>::enable_frame),
-            self.attribute().transmute(),
-        );
-        storage.put_resource::<EnableVirtual>(
-            EnableVirtual(<P as Plugin>::enable_virtual),
-            self.attribute().transmute(),
-        );
-        if let Some(mut attrs) = storage.resource_mut::<ParsedNode>(ResourceKey::root()) {
-            attrs.attributes.push(self.attribute());
-        }
-        storage.put_resource(self.attribute(), ResourceKey::default());
+
+        let key = self.attribute().transmute();
+
+        storage.put_resource::<P>(plugin, key);
 
         drop(storage);
         self
@@ -507,11 +496,11 @@ impl ActionFactory {
     /// Publishes this factory,
     ///
     pub async fn publish(self, eh: EngineHandle) -> anyhow::Result<Address> {
-        let tc: ThunkContext = self.storage.into();
+        let mut tc: ThunkContext = self.storage.into();
+        tc.set_attribute(self.attribute);
 
-        if let Some(_address) = self.address.as_ref() {
-            // TODO: Need a different way to handle this
-            // tc.set_property("address", address.to_string());
+        if let Some(address) = self.address.as_ref() {
+            tc.set_property("address", address.to_string())?;
         }
 
         eh.publish(tc).await
@@ -528,11 +517,7 @@ impl ActionFactory {
     }
 
     fn attribute(&self) -> ResourceKey<Attribute> {
-        if let Some(address) = self.address.as_ref() {
-            self.attribute.branch(address.to_string())
-        } else {
-            self.attribute
-        }
+        self.attribute
     }
 }
 

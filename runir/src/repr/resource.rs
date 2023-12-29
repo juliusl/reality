@@ -102,6 +102,14 @@ impl ResourceRepr {
                 .is_some()
     }
 
+    /// Returns true if the resource parse type matches,
+    /// 
+    pub fn is_parse_type<T: 'static>(&self) -> bool {
+        self.try_parse_type_name()
+            .filter(|n| *n == std::any::type_name::<T>())
+            .is_some()
+    }
+
     /// Returns the tag value of the resource type name,
     ///
     #[inline]

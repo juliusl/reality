@@ -136,7 +136,7 @@ impl ParsedNode {
     ///
     #[inline]
     pub fn parsed(&self) -> impl Iterator<Item = ResourceKey<Attribute>> + '_ {
-        self.attributes.iter().cloned()
+        self.attributes.iter().cloned().chain(self.properties.iter().map(|p| p.transmute()))
     }
 
     /// Resolve a path,

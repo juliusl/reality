@@ -1,10 +1,14 @@
 use bytes::Bytes;
+use reality::prelude::runir::prelude::Repr;
+use serde::Deserialize;
+use serde::Serialize;
+use tracing::info;
 use std::fmt::Debug;
 
 use reality::prelude::*;
 
-use crate::action::RemoteAction;
 use crate::prelude::Action;
+use crate::prelude::ActionExt;
 use crate::prelude::Address;
 use crate::prelude::Ext;
 
@@ -27,8 +31,8 @@ pub struct Host {
     pub start: Option<Decorated<Address>>,
     /// List of events managed by this host,
     ///
-    #[reality(vec_of=Decorated<String>)]
-    pub event: Vec<Decorated<String>>,
+    #[reality(vec_of=Event)]
+    pub event: Vec<Event>,
     /// Binding to an engine,
     ///
     #[reality(ignore)]
@@ -53,31 +57,6 @@ async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
         if let Some(repr) = a.property.and_then(|p| p.repr()) {
             eprintln!("{:#}", repr);
         }
-    }
-
-    let eh = tc.engine_handle().await.unwrap();
-
-    for e in init.event.iter() {
-        let (_, mut br) = tc.branch();
-
-        let published = RemoteAction
-            .build::<Event>(&mut br)
-            .await
-            .set_address(
-                format!(
-                    "{}://?event={}",
-                    init.name.value().unwrap_or(&"engine".to_string()),
-                    e.value().unwrap_or(&"default".to_string())
-                )
-                .parse::<Address>()?,
-            )
-            .set_entrypoint(Event {
-                name: e.clone(),
-                data: Bytes::new(),
-            })
-            .publish(eh.clone())
-            .await?;
-        eprintln!("published -- {:?}", published);
     }
 
     if init.start.is_some() {
@@ -129,6 +108,7 @@ impl Debug for Host {
             .field("name", &self.name)
             .field("start", &self.start)
             .field("action", &self.action)
+            .field("event", &self.event)
             .finish()
     }
 }
@@ -187,7 +167,9 @@ impl Action for Host {
 
 /// Plugin for managing state for a shared event defined on a Host,
 ///
-#[derive(Reality, Debug, Default, Clone)]
+#[derive(
+    Reality, Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord,
+)]
 #[reality(call=on_event, plugin)]
 pub struct Event {
     /// Name of this event,
@@ -195,19 +177,23 @@ pub struct Event {
     /// Decorations are passed from the host definition.
     ///
     #[reality(derive_fromstr)]
-    pub name: Decorated<String>,
+    pub name: String,
     /// Current state of this event,
     ///
+    #[serde(skip)]
     #[reality(ignore)]
     pub data: Bytes,
+    #[serde(skip)]
+    #[reality(ignore)]
+    pub repr: Repr,
 }
 
 async fn on_event(tc: &mut ThunkContext) -> anyhow::Result<()> {
     use tracing::debug;
 
-    let init = tc.initialized::<Event>().await;
+    let init = tc.as_remote_plugin::<Event>().await;
 
-    debug!(name = init.name.value());
+    debug!(name = init.name);
 
     Ok(())
 }
@@ -279,32 +265,25 @@ async fn test_host() {
     let engine = engine.compile(workspace).await.unwrap();
     // eprintln!("{:#?}", engine);
 
-    let eh = engine.engine_handle();
-    let _e = engine.spawn(|_, p| {
-        eprintln!("{:?}", p);
-        Some(p)
+    let (eh, _) = engine.default_startup().await.unwrap();
+
+    // Example - getting a virtual bus for an event created by host
+    let mut vbus = eh.event_vbus("demo", "op_b_complete").await.unwrap();
+
+    // Example - writing to an "event" created by host
+    let mut txbus = vbus.clone();
+    tokio::spawn(async move {
+        // Example - transmit a change from another thread
+        let transmit = txbus.transmit::<Event>().await;
+        transmit.write_to_virtual(|r| r.virtual_mut().name.commit());
     });
-    if let Ok(hosted_resource) = eh.hosted_resource("demo://").await {
-        eprintln!("Found hosted resource - {}", hosted_resource.address());
-        hosted_resource.spawn().unwrap().await.unwrap().unwrap();
 
-        // Example - getting a virtual bus for an event created by host
-        let mut vbus = eh.event_vbus("demo", "op_b_complete").await.unwrap();
-
-        // Example - writing to an "event" created by host
-        let mut txbus = vbus.clone();
-        tokio::spawn(async move {
-            let transmit = txbus.transmit::<Event>().await;
-            transmit.write_to_virtual(|r| r.virtual_mut().name.commit())
-        });
-
-        // Example - waiting for an "event" created by host
-        let _event = vbus.wait_for::<Event>().await;
-        let mut port = _event.select(|e| &e.virtual_ref().name);
-        let mut port = futures_util::StreamExt::boxed(&mut port);
-        if let Some((_next, event)) = futures_util::StreamExt::next(&mut port).await {
-            eprintln!("got next - {:#?}", event);
-        }
+    // Example - waiting for an "event" created by host
+    let _event = vbus.wait_for::<Event>().await;
+    let mut port = _event.select(|e| &e.virtual_ref().name);
+    let mut port = futures_util::StreamExt::boxed(&mut port);
+    if let Some((next, event)) = futures_util::StreamExt::next(&mut port).await {
+        eprintln!("got next - {:#x?}\ncommitted -{:?}", event, next.is_committed());
     }
 
     ()

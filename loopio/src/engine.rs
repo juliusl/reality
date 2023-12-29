@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use bytes::Bytes;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -19,8 +20,11 @@ use tracing::trace;
 use reality::prelude::*;
 use runir::prelude::*;
 
+use crate::action::ActionFactory;
+use crate::action::RemoteAction;
 use crate::background_work::BackgroundWorkEngineHandle;
 use crate::host;
+use crate::host::Event;
 use crate::operation::Operation;
 use crate::prelude::Action;
 use crate::prelude::ActionExt;
@@ -220,6 +224,9 @@ pub struct Engine {
     /// Package
     ///
     pub package: Option<Package>,
+    /// Remote actions,
+    ///
+    __remote_actions: Vec<ActionFactory>,
     /// Internal hosted resources,
     ///
     __internal_resources: HostedResourceMap,
@@ -302,6 +309,7 @@ impl Engine {
             },
             packet_rx: rx,
             package: None,
+            __remote_actions: vec![],
             __internal_resources: BTreeMap::new(),
             __published: BTreeMap::new(),
         }
@@ -323,10 +331,16 @@ impl Engine {
 
         trace!("add_node_plugin -- {:?}", parser.parsed_node);
         let nk = parser.parsed_node.node.transmute::<T>();
-        let node = parser.parsed_node.last().expect("should have a node level").clone();
+        let node = parser
+            .parsed_node
+            .last()
+            .expect("should have a node level")
+            .clone();
         if let Some(mut storage) = parser.storage_mut() {
             storage.drain_dispatch_queues();
-            let mut res = storage.current_resource(node.transmute::<T>()).expect("should exist after T::parse is called");
+            let mut res = storage
+                .current_resource(node.transmute::<T>())
+                .expect("should exist after T::parse is called");
             trace!("Found node plugin");
             res.bind_node(nk.transmute());
             T::set_identifiers(&mut res, &name, tag.map(|t| t.to_string()).as_ref());
@@ -383,7 +397,7 @@ impl Engine {
                 .try_address()
                 .and_then(|a| Address::from_str(a.as_str()).ok())
             {
-                trace!("Storing as address -- {}", address);
+                info!("Publishing address -- {}", address);
                 let mut context = p.program.context()?;
                 context.cancellation = self.cancellation.child_token();
                 self.__published.insert(address, context.clone());
@@ -396,8 +410,9 @@ impl Engine {
             }
         }
 
-        for mut host in hosts {
-            let host = host.as_remote_plugin::<Host>().await;
+        for mut _host in hosts {
+            let mut host = _host.as_remote_plugin::<Host>().await;
+            host.bind(_host.clone());
 
             trace!("Configuring host\n{:#?}", host);
             for a in host.action.iter() {
@@ -418,9 +433,59 @@ impl Engine {
                     self.__internal_resources.insert(address, resource);
                 }
             }
+
+            if let Some(recv) = host.context().attribute.recv() {
+                for mut f in recv.try_fields().unwrap().iter().cloned() {
+                    if f.as_resource()
+                        .map(|r| r.is_parse_type::<Event>())
+                        .unwrap_or_default()
+                    {
+                        let name = f
+                            .as_node()
+                            .and_then(|n| n.try_input())
+                            .map(|i| i.to_string())
+                            .unwrap_or(f.as_uuid().to_string());
+
+                        let h = HostLevel::new(format!("?event={name}"));
+                        f.upgrade(CrcInterner::default(), h).await?;
+
+                        let p = PluginLevel::new::<Event>();
+                        f.upgrade(CrcInterner::default(), p).await?;
+
+                        let event_key = ResourceKey::<Event>::with_repr(f);
+                        trace!("Created event_key -- {:?}", event_key);
+
+                        let mut node = ParsedNode::default();
+                        node.attributes.push(event_key.transmute());
+
+                        let mut tc = ThunkContext::new();
+                        tc.set_attribute(event_key.transmute());
+
+                        {
+                            let mut _node = tc.node.storage.write().await;
+                            _node.put_resource(node, ResourceKey::root());
+                        }
+
+                        let remote_action = RemoteAction
+                            .build::<Event>(&mut tc)
+                            .await
+                            .set_address(Address::from_str(
+                                format!("{}://?event={}", host.name.value().unwrap(), name)
+                                    .as_str(),
+                            )?)
+                            .set_entrypoint(Event {
+                                name: name.clone(),
+                                data: Bytes::default(),
+                                repr: event_key.repr().unwrap_or_default(),
+                            });
+                        self.__remote_actions.push(remote_action);
+                    }
+                }
+            }
         }
 
         self.package = Some(package);
+
         Ok(self)
     }
 
@@ -476,11 +541,33 @@ impl Engine {
         self,
         middleware: impl Fn(&mut Engine, EnginePacket) -> Option<EnginePacket> + Send + Sync + 'static,
     ) -> (EngineHandle, JoinHandle<anyhow::Result<Self>>) {
-        eprintln!("Starting engine packet listener");
+        info!("Starting engine packet listener");
         (
             self.engine_handle(),
             tokio::spawn(self.handle_packets(middleware)),
         )
+    }
+
+    /// Default start up procedure,
+    ///
+    pub async fn default_startup(
+        mut self,
+    ) -> anyhow::Result<(EngineHandle, JoinHandle<anyhow::Result<Self>>)> {
+        let remote_actions = self.__remote_actions.drain(..).collect::<Vec<_>>();
+        let startup = self.spawn(|_, p| {
+            trace!("{:?}", p);
+            Some(p)
+        });
+
+        let eh = startup.0.clone();
+
+        // Publish all remote actions
+        for ra in remote_actions {
+            let address = ra.publish(eh.clone()).await?;
+            info!("Default startup published remote action - {}", address);
+        }
+
+        Ok(startup)
     }
 
     /// Starts handling engine packets,
@@ -498,7 +585,7 @@ impl Engine {
                 trace!("Handling packet {:?}", packet.action);
                 match packet.action {
                     EngineAction::Call { address, mut tx } => {
-                        println!("Looking up hosted resource");
+                        trace!(address, "Looking up hosted resource");
                         if let Some(tx) = tx.take() {
                             if let Ok(resource) = self.get_resource(address).await {
                                 println!("Sending call output");
@@ -511,7 +598,7 @@ impl Engine {
                         }
                     }
                     EngineAction::Resource { address, mut tx } => {
-                        info!(address, "Looking up hosted resource");
+                        trace!(address, "Looking up hosted resource");
 
                         if let Some(tx) = tx.take() {
                             if let Ok(mut resource) = self.get_resource(address).await {
@@ -555,7 +642,7 @@ impl Engine {
                         if let Some(tx) = tx.take() {
                             let address = context.address();
 
-                            info!(address, "Looking up hosted resource");
+                            trace!(address, "Looking up hosted resource");
                             if let Ok(address) = address.parse::<Address>() {
                                 if !self.__internal_resources.contains_key(&address)
                                     && !self.__published.contains_key(&address)
@@ -580,7 +667,7 @@ impl Engine {
                         }
                     }
                     EngineAction::Sync { mut tx } => {
-                        info!("Syncing engine handle");
+                        trace!("Syncing engine handle");
                         if let Some(tx) = tx.take() {
                             if tx.send(self.engine_handle()).is_err() {
                                 error!("Could not send updated handle");
@@ -588,7 +675,7 @@ impl Engine {
                         }
                     }
                     EngineAction::Shutdown(delay) => {
-                        info!(delay_ms = delay.as_millis(), "Shutdown requested");
+                        trace!(delay_ms = delay.as_millis(), "Shutdown requested");
                         tokio::time::sleep(delay).await;
                         self.cancellation.cancel();
                         break;
@@ -891,6 +978,8 @@ impl EngineHandle {
             .await?;
 
         let tc = event.spawn_call().await?;
+
+        tc.process_node_updates().await;
 
         Ok(VirtualBus::from(tc))
     }

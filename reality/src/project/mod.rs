@@ -126,7 +126,6 @@ impl Project<Shared> {
             n.drain_dispatch_queues();
         }
 
-
         loading.unload()
     }
 
