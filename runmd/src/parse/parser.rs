@@ -219,7 +219,7 @@ impl Parser {
                         _ext.assign_path(path);
                     } else {
                         _ext.assign_path(format!(
-                            "{}?idx={}/{}",
+                            "{}?b={}&n={}",
                             ext.type_name(),
                             block_info.idx,
                             node_info.idx

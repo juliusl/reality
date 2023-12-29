@@ -311,7 +311,7 @@ mod test {
         let _engine = engine.compile(workspace).await.unwrap();
 
         if let Some(package) = _engine.package.as_ref() {
-            let mut matches = package.search("println?idx=0/5");
+            let mut matches = package.search("println?b=0&n=5");
             let _ = matches
                 .pop()
                 .unwrap()

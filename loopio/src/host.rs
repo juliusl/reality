@@ -2,7 +2,6 @@ use bytes::Bytes;
 use reality::prelude::runir::prelude::Repr;
 use serde::Deserialize;
 use serde::Serialize;
-use tracing::info;
 use std::fmt::Debug;
 
 use reality::prelude::*;
@@ -211,19 +210,19 @@ async fn test_host() {
 + .operation a
 |# test = test
     
-<start/loopio.std.io.println>                 Hello World a
+<start/loopio.std.io.println>                   Hello World a
 |# listen =     op_b_complete
 
 + .operation b
-<loopio.std.io.println>                 Hello World b
+<loopio.std.io.println>                         Hello World b
 |# notify =     op_b_complete
 
 + .operation c
-<start/loopio.std.io.println>           Hello World c
+<start/loopio.std.io.println>                   Hello World c
 |# notify = test_cond
 
 + .operation d
-<loopio.std.io.println>                 Hello World d
+<loopio.std.io.println>                         Hello World d
 
 # -- Test sequence decorations
 + .sequence test
@@ -275,7 +274,13 @@ async fn test_host() {
     tokio::spawn(async move {
         // Example - transmit a change from another thread
         let transmit = txbus.transmit::<Event>().await;
-        transmit.write_to_virtual(|r| r.virtual_mut().name.commit());
+        transmit.write_to_virtual(|r| {
+            r.virtual_mut().owner.send_if_modified(|o| {
+                o.data = Bytes::from_static(b"hello world");
+                false
+            });
+            r.virtual_mut().name.commit()
+        });
     });
 
     // Example - waiting for an "event" created by host
@@ -283,7 +288,9 @@ async fn test_host() {
     let mut port = _event.select(|e| &e.virtual_ref().name);
     let mut port = futures_util::StreamExt::boxed(&mut port);
     if let Some((next, event)) = futures_util::StreamExt::next(&mut port).await {
-        eprintln!("got next - {:#x?}\ncommitted -{:?}", event, next.is_committed());
+        eprintln!("got next - {:#x?}", event);
+        assert!(next.is_committed());
+        assert_eq!(b"hello world", &event.data[..]);
     }
 
     ()

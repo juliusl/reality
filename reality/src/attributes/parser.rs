@@ -193,7 +193,7 @@ impl ParsedNode {
                                 if let Some(plugin) =
                                     storage.resource::<PluginLevel>(ext.transmute())
                                 {
-                                    eprintln!("Upgrading ext w/ plugin");
+                                    trace!("Upgrading ext w/ plugin");
                                     e.upgrade(CrcInterner::default(), plugin.clone()).await?;
                                 }
                             }
@@ -204,12 +204,12 @@ impl ParsedNode {
                 let mut host = HostLevel::new(address.clone());
                 host.set_extensions(exts);
 
-                eprintln!("Upgrading node w/ host -- {}", address);
+                trace!("Upgrading node w/ host -- {}", address);
                 let interner = CrcInterner::default();
                 repr.upgrade(interner, host).await?;
 
                 if let Some(plugin) = storage.resource::<PluginLevel>(self.node.transmute()) {
-                    eprintln!("Upgrading node w/ plugin");
+                    trace!("Upgrading node w/ plugin");
                     repr.upgrade(CrcInterner::default(), plugin.clone()).await?;
                 }
 
@@ -225,12 +225,12 @@ impl ParsedNode {
                                 format!("{input}/{path}")
                             };
 
-                            eprintln!("Upgrading field w/ host -- {}", address);
+                            trace!("Upgrading field w/ host -- {}", address);
                             f.upgrade(CrcInterner::default(), HostLevel::new(address))
                                 .await?;
 
                             if let Some(plugin) = storage.resource::<PluginLevel>(a.transmute()) {
-                                eprintln!("Upgrading field w/ plugin");
+                                trace!("Upgrading field w/ plugin");
                                 f.upgrade(CrcInterner::default(), plugin.clone()).await?;
                             }
 
@@ -418,7 +418,7 @@ impl AttributeParser<Shared> {
             }
         }
 
-        eprintln!(
+        trace!(
             "parsing attribute -- `{}` {:?}",
             source.as_ref(),
             self.nodes
@@ -728,7 +728,7 @@ impl AttributeParser<Shared> {
     ) -> Option<AsyncStorageTarget<Shared>> {
         let namespace = namespace.into();
 
-        eprintln!("Getting namespace {namespace}");
+        trace!("Getting namespace {namespace}");
 
         // Check if an async_target already exists,
         //

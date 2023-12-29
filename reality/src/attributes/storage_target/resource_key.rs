@@ -348,7 +348,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
             }
 
             if let Some(type_name) = resource.try_type_name() {
-                eprintln!("splitting {}", type_name);
+                trace!("splitting {}", type_name);
                 return Ok((r.as_u64(), hasher.finish() ^ type_name.as_ptr() as u64));
             }
         }

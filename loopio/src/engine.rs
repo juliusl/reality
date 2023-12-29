@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use host::Host;
+use tracing::debug;
 
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -329,7 +330,6 @@ impl Engine {
 
         T::parse(parser, &name);
 
-        trace!("add_node_plugin -- {:?}", parser.parsed_node);
         let nk = parser.parsed_node.node.transmute::<T>();
         let node = parser
             .parsed_node
@@ -349,9 +349,10 @@ impl Engine {
             storage.put_resource(PluginLevel::new::<T>(), nk.transmute());
             storage.put_resource::<ResourceKey<T>>(nk, ResourceKey::root());
         }
-
         parser.parsed_node.attributes.pop();
         parser.parsed_node.attributes.push(nk.transmute());
+
+        debug!("add_node_plugin\n-----\n{:#?}\n-----", parser.parsed_node);
 
         parser.push_link_recv::<T>();
     }
@@ -391,7 +392,6 @@ impl Engine {
         let contents = package.search("*");
         let mut hosts = vec![];
         for p in contents {
-            trace!("Found address -- {:?}", p.host.try_address());
             if let Some(address) = p
                 .host
                 .try_address()
@@ -429,7 +429,7 @@ impl Engine {
                     );
 
                     // Registers the action to address, can be fetched w/ self.get_resource
-                    trace!("Registering host action - {}", address);
+                    info!("Registering host action - {}", address);
                     self.__internal_resources.insert(address, resource);
                 }
             }
@@ -453,7 +453,7 @@ impl Engine {
                         f.upgrade(CrcInterner::default(), p).await?;
 
                         let event_key = ResourceKey::<Event>::with_repr(f);
-                        trace!("Created event_key -- {:?}", event_key);
+                        info!("Created event_key -- {:?}", event_key);
 
                         let mut node = ParsedNode::default();
                         node.attributes.push(event_key.transmute());

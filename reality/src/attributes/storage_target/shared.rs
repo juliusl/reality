@@ -6,6 +6,7 @@ use tokio::sync::RwLock;
 use tokio::sync::RwLockMappedWriteGuard;
 use tokio::sync::RwLockReadGuard;
 use tokio::sync::RwLockWriteGuard;
+use tracing::trace;
 
 use crate::prelude::*;
 
@@ -42,20 +43,20 @@ impl Shared {
     ///
     pub(crate) fn create_soft_links(&mut self, node: &ParsedNode) {
         if let Ok((repr_key, ty_key)) = node.node.split_for_soft_link() {
-            eprintln!("Creating soft link {:x}^{:x}", repr_key, ty_key);
+            trace!("Creating soft link {:x}^{:x}", repr_key, ty_key);
             if let Some(resource) = self.resources.get(&(ty_key ^ node.node.hash_key())) {
-                eprintln!("Found source {:x}^{:x}", ty_key, node.node.hash_key());
-                eprintln!("Inserting {:x}", ty_key ^ repr_key);
+                trace!("Found source {:x}^{:x}", ty_key, node.node.hash_key());
+                trace!("Inserting {:x}", ty_key ^ repr_key);
                 self.resources.insert(ty_key ^ repr_key, resource.clone());
             }
         }
 
         for a in node.attributes.iter() {
             if let Ok((repr_key, ty_key)) = a.split_for_soft_link() {
-                eprintln!("Creating soft link {:x}^{:x}", repr_key, ty_key);
+                trace!("Creating soft link {:x}^{:x}", repr_key, ty_key);
                 if let Some(resource) = self.resources.get(&(ty_key ^ a.hash_key())) {
-                    eprintln!("Found source {:x}^{:x}", ty_key, a.hash_key());
-                    eprintln!("Inserting {:x}", ty_key ^ repr_key);
+                    trace!("Found source {:x}^{:x}", ty_key, a.hash_key());
+                    trace!("Inserting {:x}", ty_key ^ repr_key);
                     self.resources.insert(ty_key ^ repr_key, resource.clone());
                 }
             }
