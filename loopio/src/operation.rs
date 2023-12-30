@@ -44,7 +44,7 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
     init.bind(tc.clone());
 
     if let Some(host) = tc.attribute.host() {
-        let ext = host.extensions().await;
+        let ext = host.extensions();
         if let Some(ext) = ext {
             let mut context = tc.clone();
             for e in ext.iter() {
@@ -360,7 +360,7 @@ mod test {
 
             let prop = a.property.unwrap();
             if let Some(node) = prop.node() {
-                if let Some(annotations) = node.try_annotations() {
+                if let Some(annotations) = node.annotations() {
                     eprintln!("{:?}", annotations);
                 }
             }

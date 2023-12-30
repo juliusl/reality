@@ -133,70 +133,35 @@ impl FieldRepr {
     /// Returns the tag value of the field name,
     ///
     #[inline]
-    pub async fn name(&self) -> Option<&'static str> {
-        self.0.field_name().await
+    pub fn name(&self) -> Option<&'static str> {
+        self.0.field_name()
     }
 
     /// Returns the tag value of the field offset,
     ///
     #[inline]
-    pub async fn offset(&self) -> Option<usize> {
-        self.0.field_offset().await
+    pub fn offset(&self) -> Option<usize> {
+        self.0.field_offset()
     }
 
     /// Returns the tag value of the owner type name,
     ///  
     #[inline]
-    pub async fn owner_name(&self) -> Option<&'static str> {
-        self.0.owner_name().await
+    pub fn owner_name(&self) -> Option<&'static str> {
+        self.0.owner_name()
     }
 
     /// Returns the tag value of the owner type size,
     ///
     #[inline]
-    pub async fn owner_size(&self) -> Option<usize> {
-        self.0.owner_size().await
+    pub fn owner_size(&self) -> Option<usize> {
+        self.0.owner_size()
     }
 
     /// Returns the tag value of the owner's type id,
     ///
     #[inline]
-    pub async fn owner_type_id(&self) -> Option<TypeId> {
-        self.0.owner_type_id().await
-    }
-
-    /// Returns the tag value of the field name,
-    ///
-    #[inline]
-    pub fn try_name(&self) -> Option<&'static str> {
-        self.0.try_field_name()
-    }
-
-    /// Returns the tag value of the field offset,
-    ///
-    #[inline]
-    pub fn try_offset(&self) -> Option<usize> {
-        self.0.try_field_offset()
-    }
-
-    /// Returns the tag value of the owner type name,
-    ///  
-    #[inline]
-    pub fn try_owner_name(&self) -> Option<&'static str> {
-        self.0.try_owner_name()
-    }
-
-    /// Returns the tag value of the owner type size,
-    ///
-    #[inline]
-    pub fn try_owner_size(&self) -> Option<usize> {
-        self.0.try_owner_size()
-    }
-
-    /// Returns the tag value of the owner's type id,
-    ///
-    #[inline]
-    pub fn try_owner_type_id(&self) -> Option<TypeId> {
-        self.0.try_owner_type_id()
+    pub fn owner_type_id(&self) -> Option<TypeId> {
+        self.0.owner_type_id()
     }
 }

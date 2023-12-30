@@ -56,7 +56,7 @@ impl<I: InternerFactory + Default> Linker<I> {
 
         let tail = tail.value();
 
-        if let Some(tail) = HANDLES.copy(&tail).await {
+        if let Some(tail) = HANDLES.copy(&tail) {
             Ok(Repr { tail })
         } else {
             Err(anyhow::anyhow!("Could not create representation"))

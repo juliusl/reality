@@ -4,12 +4,14 @@ use std::future::Future;
 use std::hash::Hash;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::sync::Weak;
 
 use anyhow::anyhow;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::Notify;
+use tracing::warn;
 
 use crate::prelude::Repr;
 
@@ -59,6 +61,9 @@ pub struct InternHandle {
     /// Lower register,
     ///
     pub(crate) register_lo: u16,
+
+    // #[serde(skip)]
+    // pub(crate) data: u64,
 }
 
 impl From<u64> for InternHandle {
@@ -151,325 +156,163 @@ impl InternHandle {
     /// Returns the resource type id,
     ///
     #[inline]
-    pub async fn resource_type_id(&self) -> Option<TypeId> {
-        crate::repr::resource::TYPE_ID.copy(self).await
-    }
-
-    /// Tries to return the resource type id,
-    ///
-    #[inline]
-    pub fn try_resource_type_id(&self) -> Option<TypeId> {
-        crate::repr::resource::TYPE_ID.try_copy(self)
+    pub fn resource_type_id(&self) -> Option<TypeId> {
+        crate::repr::resource::TYPE_ID.copy(self)
     }
 
     /// Returns the resource type name,
     ///
     #[inline]
-    pub async fn resource_type_name(&self) -> Option<&'static str> {
-        crate::repr::resource::TYPE_NAME.copy(self).await
-    }
-
-    /// Tries to return the resource type name,
-    ///
-    #[inline]
-    pub fn try_resource_type_name(&self) -> Option<&'static str> {
-        crate::repr::resource::TYPE_NAME.try_copy(self)
+    pub fn resource_type_name(&self) -> Option<&'static str> {
+        crate::repr::resource::TYPE_NAME.copy(self)
     }
 
     /// Returns the resource type size,
     ///
     #[inline]
-    pub async fn resource_type_size(&self) -> Option<usize> {
-        crate::repr::resource::TYPE_SIZE.copy(self).await
-    }
-
-    /// Tries to return the resource type size,
-    ///
-    #[inline]
-    pub fn try_resource_type_size(&self) -> Option<usize> {
-        crate::repr::resource::TYPE_SIZE.try_copy(self)
+    pub fn resource_type_size(&self) -> Option<usize> {
+        crate::repr::resource::TYPE_SIZE.copy(self)
     }
 
     /// Returns the resource parse type name,
     ///
     #[inline]
-    pub async fn resource_parse_type_name(&self) -> Option<&'static str> {
-        crate::repr::resource::PARSE_TYPE_NAME.copy(self).await
-    }
-
-    /// Tries to return the resource parse type name,
-    ///
-    #[inline]
-    pub fn try_resource_parse_type_name(&self) -> Option<&'static str> {
-        crate::repr::resource::PARSE_TYPE_NAME.try_copy(self)
+    pub fn resource_parse_type_name(&self) -> Option<&'static str> {
+        crate::repr::resource::PARSE_TYPE_NAME.copy(self)
     }
     
     /// Returns the parent of the dependency,
     ///
     #[inline]
-    pub async fn dependency_parent(&self) -> Option<Repr> {
-        crate::repr::dependency::DEPENDENCY_PARENT.copy(self).await
-    }
-
-    /// Tries to return the parent of the dependency,
-    ///
-    #[inline]
-    pub fn try_dependency_parent(&self) -> Option<Repr> {
-        crate::repr::dependency::DEPENDENCY_PARENT.try_copy(self)
+    pub fn dependency_parent(&self) -> Option<Repr> {
+        crate::repr::dependency::DEPENDENCY_PARENT.copy(self)
     }
 
     /// Returns the name of the dependency,
     ///
     #[inline]
-    pub async fn dependency_name(&self) -> Option<Arc<String>> {
+    pub fn dependency_name(&self) -> Option<Arc<String>> {
         crate::repr::dependency::DEPENDENCY_NAME
             .strong_ref(self)
-            .await
-    }
-
-    /// Tries to return the name of the dependency,
-    ///
-    #[inline]
-    pub fn try_dependency_name(&self) -> Option<Arc<String>> {
-        crate::repr::dependency::DEPENDENCY_NAME.try_strong_ref(self)
     }
 
     /// Returns the name of the receiver,
     ///
     #[inline]
-    pub async fn recv_name(&self) -> Option<Arc<String>> {
-        crate::repr::recv::RECV_NAMES.strong_ref(self).await
-    }
-
-    /// Tries to return the name of the receiver,
-    ///
-    #[inline]
-    pub fn try_recv_name(&self) -> Option<Arc<String>> {
-        crate::repr::recv::RECV_NAMES.try_strong_ref(self)
+    pub fn recv_name(&self) -> Option<Arc<String>> {
+        crate::repr::recv::RECV_NAMES.strong_ref(self)
     }
 
     /// Returns the name of the receiver fields,
     ///
     #[inline]
-    pub async fn recv_fields(&self) -> Option<Arc<Vec<Repr>>> {
-        crate::repr::recv::RECV_FIELDS.strong_ref(self).await
-    }
-
-    /// Tries to return the receiver fields,
-    ///
-    #[inline]
-    pub fn try_recv_fields(&self) -> Option<Arc<Vec<Repr>>> {
-        crate::repr::recv::RECV_FIELDS.try_strong_ref(self)
+    pub fn recv_fields(&self) -> Option<Arc<Vec<Repr>>> {
+        crate::repr::recv::RECV_FIELDS.strong_ref(self)
     }
 
     /// Returns the type id of the owner of this field,
     ///
     #[inline]
-    pub async fn owner_type_id(&self) -> Option<TypeId> {
-        crate::repr::field::OWNER_ID.copy(self).await
-    }
-
-    /// Tries to return the type id of the owner of this field,
-    ///
-    #[inline]
-    pub fn try_owner_type_id(&self) -> Option<TypeId> {
-        crate::repr::field::OWNER_ID.try_copy(self)
+    pub fn owner_type_id(&self) -> Option<TypeId> {
+        crate::repr::field::OWNER_ID.copy(self)
     }
 
     /// Returns the type name of the owner of this field,
     ///
     #[inline]
-    pub async fn owner_name(&self) -> Option<&'static str> {
-        crate::repr::field::OWNER_NAME.copy(self).await
-    }
-
-    /// Tries to return the type name of the owner of this field,
-    ///
-    #[inline]
-    pub fn try_owner_name(&self) -> Option<&'static str> {
-        crate::repr::field::OWNER_NAME.try_copy(self)
+    pub fn owner_name(&self) -> Option<&'static str> {
+        crate::repr::field::OWNER_NAME.copy(self)
     }
 
     /// Returns the type size of the owner of this field,
     ///
     #[inline]
-    pub async fn owner_size(&self) -> Option<usize> {
-        crate::repr::field::OWNER_SIZE.copy(self).await
-    }
-
-    /// Tries to return the type size of the owner of this field,
-    ///
-    #[inline]
-    pub fn try_owner_size(&self) -> Option<usize> {
-        crate::repr::field::OWNER_SIZE.try_copy(self)
+    pub fn owner_size(&self) -> Option<usize> {
+        crate::repr::field::OWNER_SIZE.copy(self)
     }
 
     /// Returns the field offset,
     ///
     #[inline]
-    pub async fn field_offset(&self) -> Option<usize> {
-        crate::repr::field::FIELD_OFFSET.copy(self).await
-    }
-
-    /// Tries to return the field offset,
-    ///
-    #[inline]
-    pub fn try_field_offset(&self) -> Option<usize> {
-        crate::repr::field::FIELD_OFFSET.try_copy(self)
+    pub fn field_offset(&self) -> Option<usize> {
+        crate::repr::field::FIELD_OFFSET.copy(self)
     }
 
     /// Returns the field name,
     ///
     #[inline]
-    pub async fn field_name(&self) -> Option<&'static str> {
-        crate::repr::field::FIELD_NAME.copy(self).await
-    }
-
-    /// Tries to return the field name,
-    ///
-    #[inline]
-    pub fn try_field_name(&self) -> Option<&'static str> {
-        crate::repr::field::FIELD_NAME.try_copy(self)
+    pub fn field_name(&self) -> Option<&'static str> {
+        crate::repr::field::FIELD_NAME.copy(self)
     }
 
     /// Returns the node symbol,
     ///
     #[inline]
-    pub async fn symbol(&self) -> Option<Arc<String>> {
-        crate::repr::node::SYMBOL.strong_ref(self).await
-    }
-
-    /// Tries to return the node symbol,
-    ///
-    #[inline]
-    pub fn try_symbol(&self) -> Option<Arc<String>> {
-        crate::repr::node::SYMBOL.try_strong_ref(self)
+    pub fn symbol(&self) -> Option<Arc<String>> {
+        crate::repr::node::SYMBOL.strong_ref(self)
     }
 
     /// Returns a strong reference to the input,
     ///
     #[inline]
-    pub async fn input(&self) -> Option<Arc<String>> {
-        crate::repr::node::INPUT.strong_ref(self).await
-    }
-
-    /// Tries to return a strong reference to the input,
-    ///
-    #[inline]
-    pub fn try_input(&self) -> Option<Arc<String>> {
-        crate::repr::node::INPUT.try_strong_ref(self)
+    pub fn input(&self) -> Option<Arc<String>> {
+        crate::repr::node::INPUT.strong_ref(self)
     }
 
     /// Returns a strong reference to the tag,
     ///
     #[inline]
-    pub async fn tag(&self) -> Option<Arc<String>> {
-        crate::repr::node::TAG.strong_ref(self).await
-    }
-
-    /// Tries to return a strong reference to the tag,
-    ///
-    #[inline]
-    pub fn try_tag(&self) -> Option<Arc<String>> {
-        crate::repr::node::TAG.try_strong_ref(self)
+    pub fn tag(&self) -> Option<Arc<String>> {
+        crate::repr::node::TAG.strong_ref(self)
     }
 
     /// Returns a strong reference to the path,
     ///
     #[inline]
-    pub async fn path(&self) -> Option<Arc<String>> {
-        crate::repr::node::PATH.strong_ref(self).await
-    }
-
-    /// Tries to return a strong reference to the path,
-    ///
-    #[inline]
-    pub fn try_path(&self) -> Option<Arc<String>> {
-        crate::repr::node::PATH.try_strong_ref(self)
+    pub fn path(&self) -> Option<Arc<String>> {
+        crate::repr::node::PATH.strong_ref(self)
     }
 
     /// Returns a strong reference to the node idx,
     ///
     #[inline]
-    pub async fn node_idx(&self) -> Option<usize> {
-        crate::repr::node::NODE_IDX.copy(self).await
-    }
-
-    /// Tries to return a strong reference to the node idx,
-    ///
-    #[inline]
-    pub fn try_node_idx(&self) -> Option<usize> {
-        crate::repr::node::NODE_IDX.try_copy(self)
+    pub fn node_idx(&self) -> Option<usize> {
+        crate::repr::node::NODE_IDX.copy(self)
     }
 
     /// Returns a strong reference to node source,
     ///
     #[inline]
-    pub async fn node_source(&self) -> Option<Arc<String>> {
-        crate::repr::node::SOURCE.strong_ref(self).await
-    }
-
-    /// Tries to return a strong reference to node source,
-    ///
-    #[inline]
-    pub fn try_node_source(&self) -> Option<Arc<String>> {
-        crate::repr::node::SOURCE.try_strong_ref(self)
+    pub fn node_source(&self) -> Option<Arc<String>> {
+        crate::repr::node::SOURCE.strong_ref(self)
     }
 
     /// Returns a strong reference to doc_headers,
     ///
     #[inline]
-    pub async fn doc_headers(&self) -> Option<Arc<Vec<String>>> {
-        crate::repr::node::DOC_HEADERS.strong_ref(self).await
-    }
-
-    /// Tries to return a strong reference to doc_headers,
-    ///
-    #[inline]
-    pub fn try_doc_headers(&self) -> Option<Arc<Vec<String>>> {
-        crate::repr::node::DOC_HEADERS.try_strong_ref(self)
+    pub fn doc_headers(&self) -> Option<Arc<Vec<String>>> {
+        crate::repr::node::DOC_HEADERS.strong_ref(self)
     }
 
     /// Returns a strong reference to annotations,
     ///
     #[inline]
-    pub async fn annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
-        crate::repr::node::ANNOTATIONS.strong_ref(self).await
-    }
-
-    /// Tries to return a strong reference to annotations,
-    ///
-    #[inline]
-    pub fn try_annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
-        crate::repr::node::ANNOTATIONS.try_strong_ref(self)
+    pub fn annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
+        crate::repr::node::ANNOTATIONS.strong_ref(self)
     }
 
     /// Returns the host address,
     ///
     #[inline]
-    pub async fn host_address(&self) -> Option<Arc<String>> {
-        crate::repr::host::ADDRESS.strong_ref(self).await
-    }
-
-    /// Tries to return the host address,
-    ///
-    #[inline]
-    pub fn try_host_address(&self) -> Option<Arc<String>> {
-        crate::repr::host::ADDRESS.try_strong_ref(self)
+    pub fn host_address(&self) -> Option<Arc<String>> {
+        crate::repr::host::ADDRESS.strong_ref(self)
     }
 
     /// Returns extensions added to this host,
     ///
     #[inline]
-    pub async fn host_extensions(&self) -> Option<Arc<Vec<Repr>>> {
-        crate::repr::host::EXTENSIONS.strong_ref(self).await
-    }
-
-    /// Tries to return extensions added to this host,
-    ///
-    #[inline]
-    pub fn try_host_extensions(&self) -> Option<Arc<Vec<Repr>>> {
-        crate::repr::host::EXTENSIONS.try_strong_ref(self)
+    pub fn host_extensions(&self) -> Option<Arc<Vec<Repr>>> {
+        crate::repr::host::EXTENSIONS.strong_ref(self)
     }
 }
 
@@ -513,11 +356,16 @@ impl InternResult {
 
 /// Struct maintaining an inner shared intern table,
 ///
-#[derive(Default)]
 pub struct InternTable<T: Send + Sync + 'static> {
     /// Inner table,
     ///
-    inner: tokio::sync::RwLock<BTreeMap<InternHandle, Arc<T>>>,
+    inner: std::sync::OnceLock<tokio::sync::watch::Sender<BTreeMap<InternHandle, Arc<T>>>>,
+}
+
+impl<T: Send + Sync + 'static> Default for InternTable<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T: Send + Sync + 'static> InternTable<T> {
@@ -526,8 +374,16 @@ impl<T: Send + Sync + 'static> InternTable<T> {
     #[inline]
     pub const fn new() -> Self {
         Self {
-            inner: tokio::sync::RwLock::const_new(BTreeMap::new()),
+            inner: OnceLock::new(),
         }
+    }
+
+    pub fn inner(&self) -> &tokio::sync::watch::Sender<BTreeMap<InternHandle, Arc<T>>> {
+        self.inner.get_or_init(|| {
+            let (tx, _) = tokio::sync::watch::channel(BTreeMap::new());
+
+            tx
+        })
     }
 
     /// Returns a handle to the interned value,
@@ -535,23 +391,8 @@ impl<T: Send + Sync + 'static> InternTable<T> {
     /// **Errors** Returns an error if the value is not currently interned, or if the
     /// inner table lock is poisoned.
     ///
-    pub async fn get(&self, handle: &InternHandle) -> anyhow::Result<Weak<T>> {
-        let table = self.inner.read().await;
-
-        if let Some(value) = table.get(handle) {
-            Ok(Arc::downgrade(value))
-        } else {
-            Err(anyhow!("Not interned {:?}", handle))
-        }
-    }
-
-    /// Returns a handle to the interned value,
-    ///
-    /// **Errors** Returns an error if the value cannot be currently read, or if the
-    /// inner table lock is poisoned.
-    ///
-    pub fn try_get(&self, handle: &InternHandle) -> anyhow::Result<Weak<T>> {
-        let table = self.inner.try_read()?;
+    pub fn get(&self, handle: &InternHandle) -> anyhow::Result<Weak<T>> {
+        let table = self.inner().borrow();
 
         if let Some(value) = table.get(handle) {
             Ok(Arc::downgrade(value))
@@ -562,26 +403,11 @@ impl<T: Send + Sync + 'static> InternTable<T> {
 
     /// Returns a copy of the interned value from a handle,
     ///
-    pub async fn copy(&self, handle: &InternHandle) -> Option<T>
+    pub fn copy(&self, handle: &InternHandle) -> Option<T>
     where
         T: Copy,
     {
         self.get(handle)
-            .await
-            .ok()
-            .as_ref()
-            .and_then(Weak::upgrade)
-            .as_deref()
-            .copied()
-    }
-
-    /// Tries to return a copy of the internd value from a handle,
-    ///
-    pub fn try_copy(&self, handle: &InternHandle) -> Option<T>
-    where
-        T: Copy,
-    {
-        self.try_get(handle)
             .ok()
             .as_ref()
             .and_then(Weak::upgrade)
@@ -591,26 +417,11 @@ impl<T: Send + Sync + 'static> InternTable<T> {
 
     /// Returns a clone of the interned value from a handle,
     ///
-    pub async fn clone(&self, handle: &InternHandle) -> Option<T>
+    pub fn clone(&self, handle: &InternHandle) -> Option<T>
     where
         T: Clone,
     {
         self.get(handle)
-            .await
-            .ok()
-            .as_ref()
-            .and_then(Weak::upgrade)
-            .as_deref()
-            .cloned()
-    }
-
-    /// Tries to return a clone of the internd value from a handle,
-    ///
-    pub fn try_clone(&self, handle: &InternHandle) -> Option<T>
-    where
-        T: Clone,
-    {
-        self.try_get(handle)
             .ok()
             .as_ref()
             .and_then(Weak::upgrade)
@@ -620,19 +431,8 @@ impl<T: Send + Sync + 'static> InternTable<T> {
 
     /// Returns a new strong reference to the value,
     ///
-    pub async fn strong_ref(&self, handle: &InternHandle) -> Option<Arc<T>> {
+    pub fn strong_ref(&self, handle: &InternHandle) -> Option<Arc<T>> {
         self.get(handle)
-            .await
-            .ok()
-            .as_ref()
-            .and_then(Weak::upgrade)
-            .clone()
-    }
-
-    /// Tries to return a new strong reference to the value,
-    ///
-    pub fn try_strong_ref(&self, handle: &InternHandle) -> Option<Arc<T>> {
-        self.try_get(handle)
             .ok()
             .as_ref()
             .and_then(Weak::upgrade)
@@ -643,18 +443,20 @@ impl<T: Send + Sync + 'static> InternTable<T> {
     ///
     /// **Note** If the intern handle already has been assigned a value this will result in a no-op.
     ///
-    pub async fn assign_intern(&self, handle: InternHandle, value: T) -> anyhow::Result<()> {
+    pub fn assign_intern(&self, handle: InternHandle, value: T) -> anyhow::Result<()> {
+        // TODO: FIX -- Handle intern handle conflicts...
         // Skip if the value has already been created
-        {
-            if self.inner.read().await.contains_key(&handle) {
-                // eprintln!("Skipping interning {:?}", handle);
-                return Ok(());
+        // {
+        //     if self.inner().borrow().contains_key(&handle) {
+        //         // eprintln!("Skipping interning {:?}", handle);
+        //         return Ok(());
+        //     }
+        // }
+        self.inner().send_modify(|t| {
+            if let Some(_) = t.insert(handle, Arc::new(value)) {
+                warn!("Replacing intern handle {:?} {:x?}", handle.level_flags(), handle);
             }
-        }
-
-        let mut table = self.inner.write().await;
-
-        table.insert(handle, Arc::new(value));
+        });
 
         Ok(())
     }

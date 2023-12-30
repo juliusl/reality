@@ -114,15 +114,16 @@ impl Repr {
     ///
     /// The vector is ordered w/ the first element as the root and the last as the tail.
     ///
-    pub fn try_get_levels(&self) -> Vec<InternHandle> {
+    pub fn get_levels(&self) -> Vec<InternHandle> {
         let mut levels = vec![];
         let mut cursor = self.tail.node();
         loop {
             match cursor {
                 (Some(prev), current) => {
-                    let prev = HANDLES.try_copy(&prev).unwrap();
-                    levels.push(current);
-                    cursor = prev.node();
+                    if let Some(prev) = HANDLES.copy(&prev) {
+                        levels.push(current);
+                        cursor = prev.node();
+                    }
                 }
                 (None, current) => {
                     levels.push(current);
@@ -137,7 +138,7 @@ impl Repr {
     ///
     #[inline]
     pub fn as_resource(&self) -> Option<ResourceRepr> {
-        self.try_get_levels().get(0).copied().map(ResourceRepr)
+        self.get_levels().get(0).copied().map(ResourceRepr)
     }
 
     /// Returns the repr as a dependency repr,
@@ -145,35 +146,35 @@ impl Repr {
     #[inline]
     pub fn as_dependency(&self) -> Option<DependencyRepr> {
         // TODO: Check if this is actually DependencyLevel?
-        self.try_get_levels().get(1).copied().map(DependencyRepr)
+        self.get_levels().get(1).copied().map(DependencyRepr)
     }
 
     /// Returns the repr as a receiver repr,
     ///
     #[inline]
     pub fn as_recv(&self) -> Option<RecvRepr> {
-        self.try_get_levels().get(1).copied().map(RecvRepr)
+        self.get_levels().get(1).copied().map(RecvRepr)
     }
 
     /// Returns the repr as a field repr,
     ///
     #[inline]
     pub fn as_field(&self) -> Option<FieldRepr> {
-        self.try_get_levels().get(1).copied().map(FieldRepr)
+        self.get_levels().get(1).copied().map(FieldRepr)
     }
 
     /// Returns the repr as a node repr,
     ///
     #[inline]
     pub fn as_node(&self) -> Option<NodeRepr> {
-        self.try_get_levels().get(2).copied().map(NodeRepr)
+        self.get_levels().get(2).copied().map(NodeRepr)
     }
 
     /// Returns the repr as a host repr,
     ///
     #[inline]
     pub fn as_host(&self) -> Option<HostRepr> {
-        self.try_get_levels().get(3).copied().map(HostRepr)
+        self.get_levels().get(3).copied().map(HostRepr)
     }
 }
 
@@ -182,7 +183,7 @@ impl Display for Repr {
         if f.alternate() {
             display_runmd(self, f)?;
         } else if let Some(r) = self.as_resource() {
-            if let Some(n) = r.try_type_name() {
+            if let Some(n) = r.type_name() {
                 write!(f, "{n}")?;
             }
         }
@@ -198,19 +199,19 @@ fn display_runmd(repr: &Repr, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Resu
     if let Some(resource) = repr.as_resource() {
         writeln!(f, "| **Resource Tags** | |")?;
         writeln!(f, "| --- |  ---  |")?;
-        if let Some(name) = resource.try_type_name() {
+        if let Some(name) = resource.type_name() {
             writeln!(f, "| type | `{name}` |")?;
         }
 
-        if let Some(size) = resource.try_type_size() {
+        if let Some(size) = resource.type_size() {
             writeln!(f, "| size | {size} bytes |")?;
         }
 
-        if let Some(id) = resource.try_type_id() {
+        if let Some(id) = resource.type_id() {
             writeln!(f, "| type-id | {:x?} |", id)?;
         }
 
-        if let Some(parse_type) = resource.try_parse_type_name() {
+        if let Some(parse_type) = resource.parse_type_name() {
             writeln!(f, "| parse-type | `{parse_type}` |")?;
         }
 
@@ -218,21 +219,21 @@ fn display_runmd(repr: &Repr, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Resu
     }
 
     if let Some(field) = repr.as_field() {
-        if field.try_name().is_some() {
+        if field.name().is_some() {
             writeln!(f, "| **Field Tags** | |")?;
-            if let Some(name) = field.try_name() {
+            if let Some(name) = field.name() {
                 writeln!(f, "| field_name | {name} |")?;
             }
-            if let Some(offset) = field.try_offset() {
+            if let Some(offset) = field.offset() {
                 writeln!(f, "| field_offset | {offset} |")?;
             }
-            if let Some(name) = field.try_owner_name() {
+            if let Some(name) = field.owner_name() {
                 writeln!(f, "| owner_name | `{name}` |")?;
             }
-            if let Some(size) = field.try_owner_size() {
+            if let Some(size) = field.owner_size() {
                 writeln!(f, "| owner_size | {size} bytes |")?;
             }
-            if let Some(id) = field.try_owner_type_id() {
+            if let Some(id) = field.owner_type_id() {
                 writeln!(f, "| owner_type_id | {:x?} |", id)?;
             }
             writeln!(f, "| uuid | {:?} |", field.0.as_uuid())?;
@@ -240,7 +241,7 @@ fn display_runmd(repr: &Repr, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Resu
     }
 
     if let Some(node) = repr.as_node() {
-        if let Some(path) = node.try_path() {
+        if let Some(path) = node.path() {
             writeln!(f, "| **Node Tags** | |")?;
             writeln!(f, "| path | {path} |")?;
             writeln!(f, "| uuid | {:?} |", node.0.as_uuid())?;
@@ -248,7 +249,7 @@ fn display_runmd(repr: &Repr, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Resu
     }
 
     if let Some(host) = repr.as_host() {
-        if let Some(addr) = host.try_address() {
+        if let Some(addr) = host.address() {
             writeln!(f, "| **Host Tags** | |")?;
             writeln!(f, "| addr | {addr} |")?;
             writeln!(f, "| uuid | {:?} |", host.0.as_uuid())?;
@@ -257,7 +258,7 @@ fn display_runmd(repr: &Repr, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Resu
 
     if let Some(recv) = repr.as_recv() {
         writeln!(f)?;
-        if let Some(fields) = recv.try_fields() {
+        if let Some(fields) = recv.fields() {
             for _f in fields.iter() {
                 writeln!(f, "{:#}", _f)?;
             }
@@ -266,7 +267,7 @@ fn display_runmd(repr: &Repr, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Resu
 
     if let Some(host) = repr.as_host() {
         writeln!(f)?;
-        if let Some(ext) = host.try_extensions() {
+        if let Some(ext) = host.extensions() {
             for e in ext.iter() {
                 writeln!(f, "{:#}", e)?;
             }
@@ -278,7 +279,7 @@ fn display_runmd(repr: &Repr, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Resu
 
 impl Display for NodeRepr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(docs) = self.try_doc_headers() {
+        if let Some(docs) = self.doc_headers() {
             let mut docs = docs.iter();
 
             if let Some(header) = docs.next() {
@@ -290,7 +291,7 @@ impl Display for NodeRepr {
             }
         }
 
-        if let Some(source) = self.try_source() {
+        if let Some(source) = self.source() {
             writeln!(f, "```runmd")?;
             for line in source.lines() {
                 if !line.starts_with("#") {

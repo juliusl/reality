@@ -155,15 +155,14 @@ impl ParsedNode {
 
     /// Upgrades the node w/ a host level assigned,
     ///
-    pub(crate) async fn upgrade_node(&mut self, storage: &Shared) -> anyhow::Result<()> {
+    pub(crate) async fn upgrade_node<I: InternerFactory>(&mut self, interner: impl Fn() -> I, storage: &Shared) -> anyhow::Result<()> {
         if let Some(mut repr) = self.node.repr() {
             if let Some(node) = repr.as_node() {
                 let input = node
                     .input()
-                    .await
                     .map(|s| s.to_string())
                     .unwrap_or(String::new());
-                let tag = node.tag().await;
+                let tag = node.tag();
 
                 let address = if let Some(ref tag) = tag {
                     format!("{input}#{tag}")
@@ -179,7 +178,7 @@ impl ParsedNode {
 
                 for (i, e) in exts.iter_mut().enumerate() {
                     if let Some(node) = e.as_node() {
-                        if let Some(path) = node.try_path() {
+                        if let Some(path) = node.path() {
                             let address = if let Some(ref tag) = tag {
                                 format!("{input}/{}#{tag}", path)
                             } else {
@@ -187,14 +186,14 @@ impl ParsedNode {
                             };
 
                             let host = HostLevel::new(address);
-                            e.upgrade(CrcInterner::default(), host).await?;
+                            e.upgrade(interner(), host).await?;
 
                             if let Some(ext) = self.attributes.get(i) {
                                 if let Some(plugin) =
                                     storage.resource::<PluginLevel>(ext.transmute())
                                 {
                                     trace!("Upgrading ext w/ plugin");
-                                    e.upgrade(CrcInterner::default(), plugin.clone()).await?;
+                                    e.upgrade(interner(), plugin.clone()).await?;
                                 }
                             }
                         }
@@ -205,12 +204,12 @@ impl ParsedNode {
                 host.set_extensions(exts);
 
                 trace!("Upgrading node w/ host -- {}", address);
-                let interner = CrcInterner::default();
-                repr.upgrade(interner, host).await?;
+                
+                repr.upgrade(interner(), host).await?;
 
                 if let Some(plugin) = storage.resource::<PluginLevel>(self.node.transmute()) {
                     trace!("Upgrading node w/ plugin");
-                    repr.upgrade(CrcInterner::default(), plugin.clone()).await?;
+                    repr.upgrade(interner(), plugin.clone()).await?;
                 }
 
                 self.node.set_repr(repr);
@@ -218,7 +217,7 @@ impl ParsedNode {
                 for (f, a) in self.attributes.iter_mut().map(|a| (a.clone().repr(), a)) {
                     if let Some(mut f) = f {
                         let node = f.as_node();
-                        if let Some(path) = node.as_ref().and_then(NodeRepr::try_path) {
+                        if let Some(path) = node.as_ref().and_then(NodeRepr::path) {
                             let address = if let Some(ref tag) = tag {
                                 format!("{input}/{path}#{tag}")
                             } else {
@@ -226,12 +225,12 @@ impl ParsedNode {
                             };
 
                             trace!("Upgrading field w/ host -- {}", address);
-                            f.upgrade(CrcInterner::default(), HostLevel::new(address))
+                            f.upgrade(interner(), HostLevel::new(address))
                                 .await?;
 
                             if let Some(plugin) = storage.resource::<PluginLevel>(a.transmute()) {
                                 trace!("Upgrading field w/ plugin");
-                                f.upgrade(CrcInterner::default(), plugin.clone()).await?;
+                                f.upgrade(interner(), plugin.clone()).await?;
                             }
 
                             a.set_repr(f);
@@ -770,7 +769,8 @@ impl Node for super::AttributeParser<Shared> {
             let node = NodeLevel::new()
                 .with_doc_headers(_node_info.line.doc_headers)
                 .with_annotations(_node_info.line.comment_properties)
-                .with_idx(_node_info.idx);
+                .with_idx(_node_info.idx)
+                .with_block(_block_info.idx);
             self.nodes.push(node);
         }
     }

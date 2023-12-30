@@ -181,6 +181,7 @@ mod tests {
             Some(""),
             Some(""),
             Some(0),
+            None,
             Some(""),
             Some(vec![""]),
             None,
@@ -194,6 +195,7 @@ mod tests {
             Some("hello world"),
             Some(""),
             Some(""),
+            Some(0),
             Some(0),
             Some(""),
             Some(vec![""]),
@@ -214,11 +216,11 @@ mod tests {
             .await;
         assert_eq!(LevelFlags::LEVEL_3, handle.level_flags());
 
-        let a = rhandle.resource_type_name().await;
-        let b = rhandle.try_resource_type_name();
+        let a = rhandle.resource_type_name();
+        let b = rhandle.resource_type_name();
         assert_eq!(a, b);
 
-        let address = handle.host_address().await;
+        let address = handle.host_address();
 
         ()
     }
@@ -239,6 +241,7 @@ mod tests {
             Some(""),
             Some(""),
             Some(0),
+            Some(0),
             Some(""),
             Some(vec!["hello"]),
             Some(BTreeMap::new()),
@@ -252,7 +255,7 @@ mod tests {
         let repr = repr.link().await.unwrap();
         eprintln!("{:x?}", repr);
 
-        let levels = repr.try_get_levels();
+        let levels = repr.get_levels();
         eprintln!("{:#x?}", levels);
         eprintln!("{:x?}", repr.as_u64());
 
@@ -264,7 +267,7 @@ mod tests {
         let mut _drepr = drepr.link().await.unwrap();
         eprintln!("{:x?}", _drepr);
 
-        let levels = _drepr.try_get_levels();
+        let levels = _drepr.get_levels();
         eprintln!("{:#x?}", levels);
         eprintln!("{:x?}", _drepr.as_u64());
 
@@ -275,10 +278,10 @@ mod tests {
 
         // ketchup().await;
 
-        let parent = drepr.parent().await;
+        let parent = drepr.parent();
         eprintln!("{:x?}", parent);
 
-        let name = drepr.name().await;
+        let name = drepr.name();
         eprintln!("{:?}", name);
 
         let parent_type_name = parent
@@ -286,7 +289,6 @@ mod tests {
             .as_resource()
             .unwrap()
             .type_name()
-            .await
             .unwrap();
         eprintln!("{}", parent_type_name);
 
@@ -296,7 +298,7 @@ mod tests {
             .await
             .unwrap();
 
-        let input = _drepr.as_node().unwrap().input().await.unwrap();
+        let input = _drepr.as_node().unwrap().input().unwrap();
         eprintln!("{:?}", input);
 
         ()

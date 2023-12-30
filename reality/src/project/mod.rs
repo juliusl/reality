@@ -243,8 +243,6 @@ impl runmd::prelude::NodeProvider for Loading<Shared> {
         node_info: &NodeInfo,
         block_info: &BlockInfo,
     ) -> Option<runmd::prelude::BoxedNode> {
-        let mut nodes = self.0.nodes.write().await;
-
         let mut key_builder = ResourceKeyHashBuilder::new_default_hasher();
         key_builder.hash(block_info);
         key_builder.hash(node_info);
@@ -259,7 +257,8 @@ impl runmd::prelude::NodeProvider for Loading<Shared> {
             .with_symbol(name)
             .with_doc_headers(node_info.line.doc_headers.clone())
             .with_annotations(node_info.line.comment_properties.clone())
-            .with_idx(node_info.idx);
+            .with_idx(node_info.idx)
+            .with_block(block_info.idx);
 
         if let Some(input) = input {
             node.set_input(input);
@@ -272,6 +271,7 @@ impl runmd::prelude::NodeProvider for Loading<Shared> {
         self.apply_plugin(name, input, tag, &mut parser);
 
         if let Some(storage) = parser.clone_storage() {
+            let mut nodes = self.0.nodes.write().await;
             nodes.insert(key, storage);
         }
 
@@ -501,7 +501,7 @@ mod tests {
                 .unwrap();
 
             let mut parsed = parsed_node.to_owned();
-            parsed.upgrade_node(&_node).await.unwrap();
+            parsed.upgrade_node(CrcInterner::default, &_node).await.unwrap();
 
             eprintln!("{:#}", parsed.node.repr().unwrap());
             eprintln!("-----------------------------------")

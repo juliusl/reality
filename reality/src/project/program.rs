@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use runir::prelude::CrcInterner;
 
 use crate::Attribute;
 use crate::ParsedNode;
@@ -29,7 +30,7 @@ impl Program {
     ///
     pub async fn create(mut storage: Shared) -> anyhow::Result<Self> {
         if let Some(mut node) = storage.current_resource::<ParsedNode>(ResourceKey::root()) {
-            node.upgrade_node(&storage).await?;
+            node.upgrade_node(CrcInterner::default, &storage).await?;
 
             // Important to note here, parsed node is never mutated outside of this
             storage.create_soft_links(&node);
@@ -60,7 +61,7 @@ impl Program {
         let mut matches = vec![];
         for a in self.node.attributes.iter() {
             if let Some(host) = a.host() {
-                if let Some(address) = host.try_address() {
+                if let Some(address) = host.address() {
                     let is_match = address.ends_with(name.as_ref()) || name.as_ref() == "*";
                     if is_match {
                         let mut program = self.clone();

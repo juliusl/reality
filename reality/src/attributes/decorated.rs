@@ -76,7 +76,7 @@ impl<T: Send + Sync + 'static> Decorated<T> {
         self.property
             .as_ref()
             .and_then(|p| p.node())
-            .and_then(|p| p.try_annotations())
+            .and_then(|p| p.annotations())
             .and_then(|d| d.get(name.as_ref()).cloned())
     }
 }
@@ -210,6 +210,7 @@ impl<const DELIM: char, T: FromStr + Send + Sync + 'static> Iterator for Delimit
 
 #[allow(unused)]
 mod tests {
+    use runir::prelude::CrcInterner;
     use runir::prelude::Recv;
     use tokio::runtime::Handle;
 
@@ -276,7 +277,7 @@ mod tests {
                 .current_resource::<ParsedNode>(ResourceKey::root())
                 .unwrap();
 
-            node.upgrade_node(&_node).await.unwrap();
+            node.upgrade_node(CrcInterner::default, &_node).await.unwrap();
             drop(_node);
 
             eprintln!("{:#?}", node);

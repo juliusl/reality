@@ -23,7 +23,7 @@ impl Package {
             if p.context()
                 .ok()
                 .and_then(|a| a.attribute.host())
-                .and_then(|a| a.try_address())
+                .and_then(|a| a.address())
                 .filter(|p| p.ends_with(name.as_ref()) || name.as_ref() == "*")
                 .is_some()
             {

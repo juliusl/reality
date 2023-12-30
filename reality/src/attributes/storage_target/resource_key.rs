@@ -240,27 +240,27 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
             let mut packet = FieldPacket::default();
 
             if let Some(resource) = repr.as_resource() {
-                if let Some(type_name) = resource.try_type_name() {
+                if let Some(type_name) = resource.type_name() {
                     packet.data_type_name = type_name.to_string();
                 }
 
-                if let Some(type_size) = resource.try_type_size() {
+                if let Some(type_size) = resource.type_size() {
                     packet.data_type_size = type_size;
                 }
             }
 
             if let Some(field) = repr.as_field() {
-                if let Some(owner_name) = field.try_owner_name() {
+                if let Some(owner_name) = field.owner_name() {
                     packet.owner_name = owner_name.to_string();
                 }
 
-                if let Some(name) = field.try_name() {
+                if let Some(name) = field.name() {
                     packet.field_name = name.to_string();
                 } else if packet.owner_name.is_empty() {
                     packet.field_name = "self".to_string();
                 }
 
-                if let Some(offset) = field.try_offset() {
+                if let Some(offset) = field.offset() {
                     packet.field_offset = offset;
                 }
             }
@@ -343,11 +343,11 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         let hasher = &mut hasher;
 
         if let (Some(r), Some(resource)) = (self.repr(), self.resource()) {
-            if let Some(tyid) = resource.try_type_id() {
+            if let Some(tyid) = resource.type_id() {
                 tyid.hash(hasher);
             }
 
-            if let Some(type_name) = resource.try_type_name() {
+            if let Some(type_name) = resource.type_name() {
                 trace!("splitting {}", type_name);
                 return Ok((r.as_u64(), hasher.finish() ^ type_name.as_ptr() as u64));
             }
@@ -466,7 +466,7 @@ async fn test_set_repr() {
     eprintln!("{:?}", rk);
 
     let res = rk.resource().unwrap();
-    eprintln!("{}", res.try_type_name().unwrap());
+    eprintln!("{}", res.type_name().unwrap());
 
     ()
 }

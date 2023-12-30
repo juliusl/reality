@@ -395,7 +395,7 @@ impl Engine {
         for p in contents {
             if let Some(address) = p
                 .host
-                .try_address()
+                .address()
                 .and_then(|a| Address::from_str(a.as_str()).ok())
             {
                 info!("Publishing address -- {}", address);
@@ -436,14 +436,14 @@ impl Engine {
             }
 
             if let Some(recv) = host.context().attribute.recv() {
-                for mut f in recv.try_fields().unwrap().iter().cloned() {
+                for mut f in recv.fields().unwrap().iter().cloned() {
                     if f.as_resource()
                         .map(|r| r.is_parse_type::<Event>())
                         .unwrap_or_default()
                     {
                         let name = f
                             .as_node()
-                            .and_then(|n| n.try_input())
+                            .and_then(|n| n.input())
                             .map(|i| i.to_string())
                             .unwrap_or(f.as_uuid().to_string());
 

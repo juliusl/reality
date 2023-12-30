@@ -93,11 +93,11 @@ impl ResourceRepr {
     /// Returns true if resource matches type,
     ///
     pub fn is_type<T: 'static>(&self) -> bool {
-        self.try_type_name()
+        self.type_name()
             .filter(|n| *n == std::any::type_name::<T>())
             .is_some()
             && self
-                .try_type_id()
+                .type_id()
                 .filter(|n| *n == std::any::TypeId::of::<T>())
                 .is_some()
     }
@@ -105,7 +105,7 @@ impl ResourceRepr {
     /// Returns true if the resource parse type matches,
     /// 
     pub fn is_parse_type<T: 'static>(&self) -> bool {
-        self.try_parse_type_name()
+        self.parse_type_name()
             .filter(|n| *n == std::any::type_name::<T>())
             .is_some()
     }
@@ -113,56 +113,28 @@ impl ResourceRepr {
     /// Returns the tag value of the resource type name,
     ///
     #[inline]
-    pub async fn type_name(&self) -> Option<&'static str> {
-        self.0.resource_type_name().await
+    pub fn type_name(&self) -> Option<&'static str> {
+        self.0.resource_type_name()
     }
 
     /// Returns the tag value of the resource type size,
     ///
     #[inline]
-    pub async fn type_size(&self) -> Option<usize> {
-        self.0.resource_type_size().await
+    pub fn type_size(&self) -> Option<usize> {
+        self.0.resource_type_size()
     }
 
     /// Returns the tage value of the resource type id,
     ///
     #[inline]
-    pub async fn type_id(&self) -> Option<TypeId> {
-        self.0.resource_type_id().await
+    pub fn type_id(&self) -> Option<TypeId> {
+        self.0.resource_type_id()
     }
 
     /// Returns the tag value of the resource parse type name,
     ///
     #[inline]
-    pub async fn parse_type_name(&self) -> Option<&'static str> {
-        self.0.resource_parse_type_name().await
-    }
-
-    /// Returns the tag value of the resource type name,
-    ///
-    #[inline]
-    pub fn try_type_name(&self) -> Option<&'static str> {
-        self.0.try_resource_type_name()
-    }
-
-    /// Returns the tag value of the resource type size,
-    ///
-    #[inline]
-    pub fn try_type_size(&self) -> Option<usize> {
-        self.0.try_resource_type_size()
-    }
-
-    /// Returns the tage value of the resource type id,
-    ///
-    #[inline]
-    pub fn try_type_id(&self) -> Option<TypeId> {
-        self.0.try_resource_type_id()
-    }
-
-    /// Returns the tag value of the resource parse type name,
-    ///
-    #[inline]
-    pub fn try_parse_type_name(&self) -> Option<&'static str> {
-        self.0.try_resource_parse_type_name()
+    pub fn parse_type_name(&self) -> Option<&'static str> {
+        self.0.resource_parse_type_name()
     }
 }

@@ -208,7 +208,7 @@ pub mod repr {
         type Error = anyhow::Error;
 
         fn try_from(value: Repr) -> Result<Self, Self::Error> {
-            if let Some(l) = value.try_get_levels().get(4) {
+            if let Some(l) = value.get_levels().get(4) {
                 Ok(PluginRepr(*l))
             } else {
                 Err(anyhow!(
@@ -226,38 +226,20 @@ pub mod repr {
     impl PluginRepr {
         /// Returns the call thunk,
         ///
-        pub async fn call(&self) -> Option<ThunkFn> {
-            CALL.copy(&self.0).await
+        pub fn call(&self) -> Option<ThunkFn> {
+            CALL.copy(&self.0)
         }
 
         /// Returns the enable_frame thunk,
         ///
-        pub async fn enable_frame(&self) -> Option<ThunkFn> {
-            ENABLE_FRAME.copy(&self.0).await
+        pub fn enable_frame(&self) -> Option<ThunkFn> {
+            ENABLE_FRAME.copy(&self.0)
         }
 
         /// Returns the enable_virtual thunk,
         ///
-        pub async fn enable_virtual(&self) -> Option<ThunkFn> {
-            ENABLE_VIRTUAL.copy(&self.0).await
-        }
-
-        /// Tries to return the call thunk,
-        ///
-        pub fn try_call(&self) -> Option<ThunkFn> {
-            CALL.try_copy(&self.0)
-        }
-
-        /// Tries to return the enable frame thunk,
-        ///
-        pub fn try_enable_frame(&self) -> Option<ThunkFn> {
-            ENABLE_FRAME.try_copy(&self.0)
-        }
-
-        /// Tries to return the enable virtual thunk,
-        ///
-        pub fn try_enable_virtual(&self) -> Option<ThunkFn> {
-            ENABLE_VIRTUAL.try_copy(&self.0)
+        pub fn enable_virtual(&self) -> Option<ThunkFn> {
+            ENABLE_VIRTUAL.copy(&self.0)
         }
     }
 }

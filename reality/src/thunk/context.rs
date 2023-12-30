@@ -151,7 +151,7 @@ impl Context {
             .attribute
             .repr()
             .and_then(|d| d.as_node())
-            .and_then(|d| d.try_annotations())
+            .and_then(|d| d.annotations())
             .and_then(|c| c.get(name.as_ref()).cloned()))
     }
 
@@ -201,7 +201,7 @@ impl Context {
         self.attribute
             .repr()
             .and_then(|r| r.as_node())
-            .and_then(|n| n.try_tag())
+            .and_then(|n| n.tag())
     }
 
     /// Reset the transient storage,
@@ -581,7 +581,7 @@ impl Context {
     pub async fn call(&self) -> anyhow::Result<Option<Context>> {
         if let Some(repr) = self.attribute.repr() {
             let plugin = PluginRepr::try_from(repr)?;
-            if let Some(call) = plugin.call().await {
+            if let Some(call) = plugin.call() {
                 let context = call(self.clone()).await?;
 
                 return Ok(context);
@@ -595,7 +595,7 @@ impl Context {
     pub async fn enable_frame(&self) -> anyhow::Result<Option<Context>> {
         if let Some(repr) = self.attribute.repr() {
             let plugin = PluginRepr::try_from(repr)?;
-            if let Some(enable_frame) = plugin.enable_frame().await {
+            if let Some(enable_frame) = plugin.enable_frame() {
                 let context = enable_frame(self.clone()).await?;
 
                 return Ok(context);
@@ -609,7 +609,7 @@ impl Context {
     pub async fn enable_virtual(&self) -> anyhow::Result<Option<Context>> {
         if let Some(repr) = self.attribute.repr() {
             let plugin = PluginRepr::try_from(repr)?;
-            if let Some(enable_virtal) = plugin.enable_virtual().await {
+            if let Some(enable_virtal) = plugin.enable_virtual() {
                 let context = enable_virtal(self.clone()).await?;
 
                 return Ok(context);

@@ -4,6 +4,7 @@ mod level;
 mod linker;
 mod repr;
 mod tag;
+mod entropy;
 
 #[cfg(feature = "crc-interner")]
 mod crc;
@@ -50,7 +51,7 @@ mod macros {
         ($interner:ident, $tag:expr) => {
             let tag = $tag;
             $interner.push_tag(tag.value(), move |h| {
-                Box::pin(async move { tag.assign(h).await })
+                Box::pin(async move { tag.assign(h) })
             });
         };
         (dyn $interner:ident, $tag:expr) => {
@@ -58,7 +59,7 @@ mod macros {
 
             let inner = tag.clone();
             $interner.push_tag(tag.value(), move |h| {
-                Box::pin(async move { inner.assign(h).await })
+                Box::pin(async move { inner.assign(h) })
             });
         };
     }
@@ -110,7 +111,6 @@ mod tests {
     async fn test_intern_table() {
         TEST_INTERNER
             .assign_intern(InternHandle::default(), "hello world")
-            .await
             .unwrap();
 
         // Test get/try_get
@@ -118,7 +118,6 @@ mod tests {
             "hello world".to_string(),
             TEST_INTERNER
                 .get(&InternHandle::default())
-                .await
                 .unwrap()
                 .upgrade()
                 .unwrap()
@@ -128,7 +127,7 @@ mod tests {
         assert_eq!(
             "hello world".to_string(),
             TEST_INTERNER
-                .try_get(&InternHandle::default())
+                .get(&InternHandle::default())
                 .unwrap()
                 .upgrade()
                 .unwrap()
@@ -140,7 +139,6 @@ mod tests {
             "hello world".to_string(),
             TEST_INTERNER
                 .strong_ref(&InternHandle::default())
-                .await
                 .unwrap()
                 .to_string()
         );
@@ -148,7 +146,7 @@ mod tests {
         assert_eq!(
             "hello world".to_string(),
             TEST_INTERNER
-                .try_strong_ref(&InternHandle::default())
+                .strong_ref(&InternHandle::default())
                 .unwrap()
                 .to_string()
         );
@@ -158,7 +156,6 @@ mod tests {
             "hello world".to_string(),
             TEST_INTERNER
                 .clone(&InternHandle::default())
-                .await
                 .unwrap()
                 .to_string()
         );
@@ -166,7 +163,7 @@ mod tests {
         assert_eq!(
             "hello world".to_string(),
             TEST_INTERNER
-                .try_clone(&InternHandle::default())
+                .clone(&InternHandle::default())
                 .unwrap()
                 .to_string()
         );
@@ -176,7 +173,6 @@ mod tests {
             "hello world".to_string(),
             TEST_INTERNER
                 .copy(&InternHandle::default())
-                .await
                 .unwrap()
                 .to_string()
         );
@@ -184,7 +180,7 @@ mod tests {
         assert_eq!(
             "hello world".to_string(),
             TEST_INTERNER
-                .try_copy(&InternHandle::default())
+                .copy(&InternHandle::default())
                 .unwrap()
                 .to_string()
         );
@@ -236,7 +232,7 @@ mod tests {
         let (prev, current) = linked.node();
         eprintln!("{:x?} -> {:x?}", prev, current);
 
-        let linked = &HANDLES.try_get(&current).unwrap();
+        let linked = &HANDLES.get(&current).unwrap();
         eprintln!("{:x?}", linked.upgrade());
 
         let from = Tag::new(&HANDLES, Arc::new(field));
@@ -247,11 +243,11 @@ mod tests {
         let (prev, current) = linked.node();
         eprintln!("{:x?} -> {:x?}", prev, current);
 
-        let linked = &HANDLES.try_get(&prev.unwrap()).unwrap();
+        let linked = &HANDLES.get(&prev.unwrap()).unwrap();
         eprintln!("{:x?}", linked.upgrade());
 
         let a = crate::repr::node::ANNOTATIONS
-            .try_strong_ref(&input)
+            .strong_ref(&input)
             .unwrap();
         eprintln!("{:?}", a);
 

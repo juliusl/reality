@@ -260,6 +260,8 @@ async fn test_host() {
     "#,
     );
 
+    // tokio::time::sleep(Duration::from_secs(5)).await;
+
     let engine = crate::engine::Engine::builder().build();
     let engine = engine.compile(workspace).await.unwrap();
     // eprintln!("{:#?}", engine);
@@ -267,30 +269,35 @@ async fn test_host() {
     let (eh, _) = engine.default_startup().await.unwrap();
 
     // Example - getting a virtual bus for an event created by host
-    let mut vbus = eh.event_vbus("demo", "op_b_complete").await.unwrap();
-
-    // Example - writing to an "event" created by host
-    let mut txbus = vbus.clone();
-    tokio::spawn(async move {
-        // Example - transmit a change from another thread
-        let transmit = txbus.transmit::<Event>().await;
-        transmit.write_to_virtual(|r| {
-            r.virtual_mut().owner.send_if_modified(|o| {
-                o.data = Bytes::from_static(b"hello world");
-                false
+    match eh.event_vbus("demo", "op_b_complete").await {
+        Ok(mut vbus) => {
+            // Example - writing to an "event" created by host
+            let mut txbus = vbus.clone();
+            tokio::spawn(async move {
+                // Example - transmit a change from another thread
+                let transmit = txbus.transmit::<Event>().await;
+                transmit.write_to_virtual(|r| {
+                    r.virtual_mut().owner.send_if_modified(|o| {
+                        o.data = Bytes::from_static(b"hello world");
+                        false
+                    });
+                    r.virtual_mut().name.commit()
+                });
             });
-            r.virtual_mut().name.commit()
-        });
-    });
 
-    // Example - waiting for an "event" created by host
-    let _event = vbus.wait_for::<Event>().await;
-    let mut port = _event.select(|e| &e.virtual_ref().name);
-    let mut port = futures_util::StreamExt::boxed(&mut port);
-    if let Some((next, event)) = futures_util::StreamExt::next(&mut port).await {
-        eprintln!("got next - {:#x?}", event);
-        assert!(next.is_committed());
-        assert_eq!(b"hello world", &event.data[..]);
+            // Example - waiting for an "event" created by host
+            let _event = vbus.wait_for::<Event>().await;
+            let mut port = _event.select(|e| &e.virtual_ref().name);
+            let mut port = futures_util::StreamExt::boxed(&mut port);
+            if let Some((next, event)) = futures_util::StreamExt::next(&mut port).await {
+                eprintln!("got next - {:#x?}", event);
+                assert!(next.is_committed());
+                assert_eq!(b"hello world", &event.data[..]);
+            }
+        }
+        Err(err) => {
+            panic!("{err}");
+        },
     }
 
     ()

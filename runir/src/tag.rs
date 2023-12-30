@@ -32,10 +32,9 @@ impl<T: Send + Sync + 'static> Tag<T> {
     /// Assigns a value to an intern handle,
     ///
     #[inline]
-    pub async fn assign(&self, handle: InternHandle) -> anyhow::Result<()> {
+    pub fn assign(&self, handle: InternHandle) -> anyhow::Result<()> {
         self.intern_table
             .assign_intern(handle, (self.create_value)())
-            .await
     }
 
     /// Returns the inner value,
@@ -50,10 +49,9 @@ impl<T: ToOwned<Owned = T> + Send + Sync + 'static> Tag<T, Arc<T>> {
     /// Assign a value to an intern handle,
     ///
     #[inline]
-    pub async fn assign(&self, handle: InternHandle) -> anyhow::Result<()> {
+    pub fn assign(&self, handle: InternHandle) -> anyhow::Result<()> {
         self.intern_table
             .assign_intern(handle, self.create_value.deref().to_owned())
-            .await
     }
 
     /// Returns the inner value,
@@ -88,7 +86,7 @@ impl Tag<InternHandle, Arc<InternHandle>> {
         let mut out = *to.clone();
         out.link = link;
 
-        Tag::new(&HANDLES, Arc::new(out)).assign(*to).await?;
+        Tag::new(&HANDLES, Arc::new(out)).assign(*to)?;
 
         Ok(out)
     }

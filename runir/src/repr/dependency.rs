@@ -72,28 +72,14 @@ impl DependencyRepr {
     /// Returns the name of this dependency,
     ///
     #[inline]
-    pub async fn name(&self) -> Option<Arc<String>> {
-        self.0.dependency_name().await
+    pub fn name(&self) -> Option<Arc<String>> {
+        self.0.dependency_name()
     }
 
     /// Returns the parent of this dependency,
     ///
     #[inline]
-    pub async fn parent(&self) -> Option<Repr> {
-        self.0.dependency_parent().await
-    }
-
-    /// Returns the name of this dependency,
-    ///
-    #[inline]
-    pub fn try_name(&self) -> Option<Arc<String>> {
-        self.0.try_dependency_name()
-    }
-
-    /// Returns the parent of this dependency,
-    ///
-    #[inline]
-    pub fn try_parent(&self) -> Option<Repr> {
-        self.0.try_dependency_parent()
+    pub fn parent(&self) -> Option<Repr> {
+        self.0.dependency_parent()
     }
 }

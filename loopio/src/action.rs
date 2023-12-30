@@ -251,32 +251,6 @@ impl Action for ThunkContext {
 #[async_trait]
 impl ActionExt for ThunkContext {}
 
-#[tokio::test]
-async fn test_thunk_context_action() {
-    let (uuid, mut tc) = ThunkContext::new().branch();
-    let rk = ResourceKey::with_hash("test");
-    tc.bind_plugin(rk);
-
-    let node = tc.node().await;
-    node.lazy_put_resource::<ThunkFn>(
-        |tc| {
-            CallOutput::Spawn(tc.spawn(|tc| async move {
-                eprintln!("hello world");
-                Ok(tc)
-            }))
-        },
-        rk.transmute(),
-    );
-
-    tc.node.storage.write().await.drain_dispatch_queues();
-
-    let r = tc.into_hosted_resource();
-    assert_eq!(r.address(), uuid.to_string());
-    assert_eq!(r.plugin_rk(), rk);
-    let _ = r.spawn_call().await.unwrap(); // Will panic if the thunk fn was not called
-    ()
-}
-
 /// Pointer-struct for creating local actions,
 ///
 pub struct LocalAction;

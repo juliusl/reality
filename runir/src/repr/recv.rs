@@ -97,41 +97,27 @@ impl RecvRepr {
     /// Returns the name of the receiver,
     ///
     #[inline]
-    pub async fn name(&self) -> Option<Arc<String>> {
-        self.0.recv_name().await
-    }
-
-    /// Tries to return the name of the receiver,
-    ///
-    #[inline]
-    pub fn try_name(&self) -> Option<Arc<String>> {
-        self.0.try_recv_name()
+    pub fn name(&self) -> Option<Arc<String>> {
+        self.0.recv_name()
     }
 
     /// Returns the name of the receiver fields,
     ///
     #[inline]
-    pub async fn fields(&self) -> Option<Arc<Vec<Repr>>> {
-        self.0.recv_fields().await
-    }
-
-    /// Tries to return the receiver fields,
-    ///
-    #[inline]
-    pub fn try_fields(&self) -> Option<Arc<Vec<Repr>>> {
-        self.0.try_recv_fields()
+    pub fn fields(&self) -> Option<Arc<Vec<Repr>>> {
+        self.0.recv_fields()
     }
 
     /// Finds the repr of a field owned by receiver,
     ///
     pub fn find_field(&self, name: &str) -> Option<Repr> {
-        if let Some(fields) = self.try_fields() {
+        if let Some(fields) = self.fields() {
             fields
                 .iter()
                 .find(|f| {
                     f.as_field()
                         .and_then(|f| {
-                            if f.try_name() == Some(name) {
+                            if f.name() == Some(name) {
                                 Some(f)
                             } else {
                                 None

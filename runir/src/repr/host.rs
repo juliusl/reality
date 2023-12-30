@@ -79,41 +79,27 @@ impl HostRepr {
     /// Returns the address provided by the host,
     ///
     #[inline]
-    pub async fn address(&self) -> Option<Arc<String>> {
-        self.0.host_address().await
+    pub fn address(&self) -> Option<Arc<String>> {
+        self.0.host_address()
     }
 
     /// Returns the address provided by the host,
     ///
     #[inline]
-    pub fn try_address(&self) -> Option<Arc<String>> {
-        self.0.try_host_address()
-    }
-
-    /// Returns the address provided by the host,
-    ///
-    #[inline]
-    pub async fn extensions(&self) -> Option<Arc<Vec<Repr>>> {
-        self.0.host_extensions().await
-    }
-
-    /// Returns the address provided by the host,
-    ///
-    #[inline]
-    pub fn try_extensions(&self) -> Option<Arc<Vec<Repr>>> {
-        self.0.try_host_extensions()
+    pub fn extensions(&self) -> Option<Arc<Vec<Repr>>> {
+        self.0.host_extensions()
     }
 
     /// Finds the repr of a field owned by receiver,
     ///
     pub fn find_extension(&self, name: &str) -> Option<Repr> {
-        if let Some(extensions) = self.try_extensions() {
+        if let Some(extensions) = self.extensions() {
             extensions
                 .iter()
                 .find(|f| {
                     f.as_recv()
                         .and_then(|f| {
-                            if f.try_name().map(|n| n.to_string()) == Some(name.to_string()) {
+                            if f.name().map(|n| n.to_string()) == Some(name.to_string()) {
                                 Some(f)
                             } else {
                                 None

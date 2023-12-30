@@ -24,6 +24,9 @@ define_intern_table!(PATH: String);
 // Intern table for node index values
 define_intern_table!(NODE_IDX: usize);
 
+// Intern table for block idx values
+define_intern_table!(BLOCK_IDX: usize);
+
 // Intern table for source
 define_intern_table!(SOURCE: String);
 
@@ -54,6 +57,9 @@ pub struct NodeLevel {
     /// Node idx,
     ///
     idx: Option<Tag<usize, Arc<usize>>>,
+    /// Block idx,
+    /// 
+    bidx: Option<Tag<usize, Arc<usize>>>,
     /// Node source,
     ///
     source: Option<Tag<String, Arc<String>>>,
@@ -75,6 +81,7 @@ impl NodeLevel {
             tag: None,
             path: None,
             idx: None,
+            bidx: None,
             source: None,
             doc_headers: None,
             annotations: None,
@@ -89,6 +96,7 @@ impl NodeLevel {
         tag: Option<impl Into<String>>,
         path: Option<impl Into<String>>,
         idx: Option<usize>,
+        block: Option<usize>,
         source: Option<impl Into<String>>,
         doc_headers: Option<Vec<impl Into<String>>>,
         annotations: Option<BTreeMap<String, String>>,
@@ -109,6 +117,9 @@ impl NodeLevel {
         }
         if let Some(idx) = idx {
             node = node.with_idx(idx);
+        }
+        if let Some(idx) = block {
+            node = node.with_block(idx);
         }
         if let Some(source) = source {
             node = node.with_source(source);
@@ -160,6 +171,14 @@ impl NodeLevel {
     #[inline]
     pub fn with_idx(mut self, idx: usize) -> Self {
         self.set_idx(idx);
+        self
+    }
+
+       /// Returns the node level w/ idx tag set,
+    ///
+    #[inline]
+    pub fn with_block(mut self, idx: usize) -> Self {
+        self.set_block(idx);
         self
     }
 
@@ -220,6 +239,13 @@ impl NodeLevel {
     #[inline]
     pub fn set_idx(&mut self, idx: usize) {
         self.idx = Some(Tag::new(&NODE_IDX, Arc::new(idx)));
+    }
+
+    /// Returns the node level w/ block idx tag set,
+    ///
+    #[inline]
+    pub fn set_block(&mut self, idx: usize) {
+        self.bidx = Some(Tag::new(&BLOCK_IDX, Arc::new(idx)));
     }
 
     /// Sets the source tag for the node level,
@@ -322,105 +348,56 @@ pub struct NodeRepr(pub(crate) InternHandle);
 impl NodeRepr {
     /// Returns the node symbol,
     ///
-    pub async fn symbol(&self) -> Option<Arc<String>> {
-        self.0.symbol().await
+    pub fn symbol(&self) -> Option<Arc<String>> {
+        self.0.symbol()
     }
 
     /// Returns node input,
     ///
     #[inline]
-    pub async fn input(&self) -> Option<Arc<String>> {
-        self.0.input().await
+    pub fn input(&self) -> Option<Arc<String>> {
+        self.0.input()
     }
 
     /// Returns node path,
     ///
     #[inline]
-    pub async fn path(&self) -> Option<Arc<String>> {
-        self.0.path().await
+    pub fn path(&self) -> Option<Arc<String>> {
+        self.0.path()
     }
 
     /// Returns node tag,
     ///
     #[inline]
-    pub async fn tag(&self) -> Option<Arc<String>> {
-        self.0.tag().await
+    pub fn tag(&self) -> Option<Arc<String>> {
+        self.0.tag()
     }
 
     /// Returns the node idx,
     ///
     #[inline]
-    pub async fn idx(&self) -> Option<usize> {
-        self.0.node_idx().await
+    pub fn idx(&self) -> Option<usize> {
+        self.0.node_idx()
     }
 
     /// Returns the node source,
     ///
     #[inline]
-    pub async fn source(&self) -> Option<Arc<String>> {
-        self.0.node_source().await
+    pub fn source(&self) -> Option<Arc<String>> {
+        self.0.node_source()
     }
 
     /// Returns node doc_headers,
     ///
     #[inline]
-    pub async fn doc_headers(&self) -> Option<Arc<Vec<String>>> {
-        self.0.doc_headers().await
+    pub fn doc_headers(&self) -> Option<Arc<Vec<String>>> {
+        self.0.doc_headers()
     }
 
     /// Returns node annotations,
     ///
     #[inline]
-    pub async fn annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
-        self.0.annotations().await
-    }
-
-    /// Tries to return the symbol,
-    ///
-    #[inline]
-    pub fn try_symbol(&self) -> Option<Arc<String>> {
-        self.0.try_symbol()
-    }
-
-    /// Tries to returns node input,
-    ///
-    #[inline]
-    pub fn try_input(&self) -> Option<Arc<String>> {
-        self.0.try_input()
-    }
-
-    /// Tries to return node tag,
-    ///
-    #[inline]
-    pub fn try_tag(&self) -> Option<Arc<String>> {
-        self.0.try_tag()
-    }
-
-    /// Tries to return node path,
-    ///
-    #[inline]
-    pub fn try_path(&self) -> Option<Arc<String>> {
-        self.0.try_path()
-    }
-
-    /// Tries to return the node source,
-    ///
-    #[inline]
-    pub fn try_source(&self) -> Option<Arc<String>> {
-        self.0.try_node_source()
-    }
-
-    /// Tries to return node doc_headers,
-    ///
-    #[inline]
-    pub fn try_doc_headers(&self) -> Option<Arc<Vec<String>>> {
-        self.0.try_doc_headers()
-    }
-
-    /// Tries to return node annotations,
-    ///
-    #[inline]
-    pub fn try_annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
-        self.0.try_annotations()
+    pub fn annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
+        self.0.annotations()
     }
 }
