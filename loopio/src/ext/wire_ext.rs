@@ -286,7 +286,7 @@ where
     ///
     /// **Usage**
     ///
-    /// ```rs norun
+    /// ```rs no_run
     /// let mut stream = port.pinned();
     ///
     /// while let Some(next) = stream.deref_mut().next().await {

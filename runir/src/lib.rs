@@ -85,6 +85,8 @@ pub mod prelude {
     #[cfg(feature = "crc-interner")]
     pub use super::crc::CrcInterner;
 
+    pub use super::entropy::set_entropy;
+
     /// Type-alias for a function that takes an intern handle and returns a future,
     ///
     pub type InternHandleFutureThunk = Box<

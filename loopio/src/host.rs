@@ -200,6 +200,8 @@ async fn on_event(tc: &mut ThunkContext) -> anyhow::Result<()> {
 #[tokio::test]
 #[tracing_test::traced_test]
 async fn test_host() {
+    runir::prelude::set_entropy();
+
     let mut workspace = Workspace::new();
     workspace.add_buffer(
         "demo.md",

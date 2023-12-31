@@ -256,13 +256,13 @@ mod tests {
         let project = project
             .load_content(
                 r#"
-        ```runmd
-        + .test
-        <test/reality.decoratedtest> test
-        : .name hello-world
-        |# description = Testing decorated 
-        ```
-        "#,
+            ```runmd
+            + .test
+            <test/reality.decoratedtest> test
+            : .name hello-world
+            |# description = Testing decorated 
+            ```
+            "#,
             )
             .await
             .unwrap();
@@ -277,7 +277,9 @@ mod tests {
                 .current_resource::<ParsedNode>(ResourceKey::root())
                 .unwrap();
 
-            node.upgrade_node(CrcInterner::default, &_node).await.unwrap();
+            node.upgrade_node(CrcInterner::default, &_node)
+                .await
+                .unwrap();
             drop(_node);
 
             eprintln!("{:#?}", node);
@@ -287,6 +289,7 @@ mod tests {
 
             tc.call().await.unwrap();
         }
+
         ()
     }
 }

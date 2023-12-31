@@ -13,6 +13,7 @@ use serde::Serialize;
 use tokio::sync::Notify;
 use tracing::warn;
 
+use crate::entropy::ENTROPY;
 use crate::prelude::Repr;
 
 /// This trait is based on the concept of string interning where the
@@ -61,9 +62,9 @@ pub struct InternHandle {
     /// Lower register,
     ///
     pub(crate) register_lo: u16,
-
-    // #[serde(skip)]
-    // pub(crate) data: u64,
+    /// Data register,
+    /// 
+    pub(crate) data: u64,
 }
 
 impl From<u64> for InternHandle {
@@ -76,6 +77,7 @@ impl From<u64> for InternHandle {
             link,
             register_hi,
             register_lo,
+            data: ENTROPY.get(),
         }
     }
 }
@@ -144,6 +146,7 @@ impl InternHandle {
                 link: 0,
                 register_hi: hi,
                 register_lo: lo,
+                data: ENTROPY.get(),
             });
         }
 
@@ -444,14 +447,13 @@ impl<T: Send + Sync + 'static> InternTable<T> {
     /// **Note** If the intern handle already has been assigned a value this will result in a no-op.
     ///
     pub fn assign_intern(&self, handle: InternHandle, value: T) -> anyhow::Result<()> {
-        // TODO: FIX -- Handle intern handle conflicts...
         // Skip if the value has already been created
-        // {
-        //     if self.inner().borrow().contains_key(&handle) {
-        //         // eprintln!("Skipping interning {:?}", handle);
-        //         return Ok(());
-        //     }
-        // }
+        {
+            if self.inner().borrow().contains_key(&handle) {
+                // eprintln!("Skipping interning {:?}", handle);
+                return Ok(());
+            }
+        }
         self.inner().send_modify(|t| {
             if let Some(_) = t.insert(handle, Arc::new(value)) {
                 warn!("Replacing intern handle {:?} {:x?}", handle.level_flags(), handle);
