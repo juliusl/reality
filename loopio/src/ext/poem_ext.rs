@@ -384,7 +384,8 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
         context
             .register_internal_host_alias(alias?, replace_with?)
             .await;
-        context.on_notify_host(scheme.as_str()).await?;
+        
+        // context.on_notify_host(scheme.as_str()).await?;
 
         // TODO: Plugins can "opt-in" to eventing
         // {host}://?event=engine-proxy-started

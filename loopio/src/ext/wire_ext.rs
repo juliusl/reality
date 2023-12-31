@@ -12,6 +12,7 @@ use tokio::task::JoinHandle;
 use tracing::debug;
 use tracing::error;
 use tracing::info;
+use tracing::trace;
 use tracing::warn;
 
 use crate::prelude::Action;
@@ -145,11 +146,7 @@ impl VirtualBus {
     where
         P::Virtual: NewFn<Inner = P> + FieldRefController<Owner = P>,
     {
-        if let Some(tc) = self
-            .node
-            .find_node_context::<P>()
-            .await
-        {
+        if let Some(tc) = self.node.find_node_context::<P>().await {
             if let Ok(Some(context)) = tc.enable_virtual().await {
                 debug!("Waiting for port activation before transmission");
                 self.port_active.0.notified().await;
@@ -322,7 +319,9 @@ where
         let tx = self.owner_port.tx.clone();
 
         if let Some(port_active) = self.owner_port.port_active.get() {
-            port_active.0.notify_one();
+            port_active.0.notify_waiters();
+        } else {
+            warn!("No active port set");
         }
 
         if let Some(rx) = self.owner_port.vrx.get_mut() {

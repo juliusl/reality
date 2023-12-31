@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use bytes::Bytes;
+use futures_util::StreamExt;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -235,6 +236,9 @@ pub struct Engine {
     /// Published nodes,
     ///
     __published: BTreeMap<Address, ThunkContext>,
+    /// Map of virtual buses,
+    /// 
+    __bus: BTreeMap<Address, VirtualBus>,
 }
 
 impl Debug for Engine {
@@ -306,6 +310,7 @@ impl Engine {
             runtime: Some(runtime),
             cancellation: cancellation.clone(),
             handle: EngineHandle {
+                host: None,
                 sender: Arc::new(sender),
                 background_work: None,
             },
@@ -314,6 +319,7 @@ impl Engine {
             __remote_actions: vec![],
             __internal_resources: BTreeMap::new(),
             __published: BTreeMap::new(),
+            __bus: BTreeMap::new(),
         }
     }
 
@@ -421,6 +427,18 @@ impl Engine {
                     let addr = address.to_string();
                     let resource = self.get_resource(addr).await?;
 
+                    let eh = self
+                        .engine_handle()
+                        .with_host(host.name.value().cloned().unwrap_or("engine".to_string()));
+                    
+                    resource
+                        .context()
+                        .node()
+                        .await
+                        .lazy_put_resource(eh, ResourceKey::root());
+
+                    resource.context().process_node_updates().await;
+
                     let address = address.clone().with_host(
                         host.name
                             .value
@@ -467,13 +485,14 @@ impl Engine {
                             _node.put_resource(node, ResourceKey::root());
                         }
 
+                        let address = Address::from_str(
+                            format!("{}://?event={}", host.name.value().unwrap(), name)
+                                .as_str(),
+                        )?;
                         let remote_action = RemoteAction
                             .build::<Event>(&mut tc)
                             .await
-                            .set_address(Address::from_str(
-                                format!("{}://?event={}", host.name.value().unwrap(), name)
-                                    .as_str(),
-                            )?)
+                            .set_address(address)
                             .set_entrypoint(Event {
                                 name: name.clone(),
                                 data: Bytes::default(),
@@ -508,11 +527,13 @@ impl Engine {
             // Drain dispatch queues
             {
                 let mut node = resource.context_mut().node.storage.write().await;
-                node.put_resource(self.engine_handle(), ResourceKey::root());
+                node.maybe_put_resource(self.engine_handle(), ResourceKey::root());
                 node.drain_dispatch_queues();
             }
             {
-                resource.context_mut().write_cache(self.engine_handle());
+                resource
+                    .context_mut()
+                    .maybe_write_cache(self.engine_handle());
             }
 
             Ok(resource)
@@ -645,6 +666,20 @@ impl Engine {
 
                             trace!(address, "Looking up hosted resource");
                             if let Ok(address) = address.parse::<Address>() {
+
+                                if let Some(mut filter) = address.filter() {
+                                    if let Some((_, event)) = filter.find(|(k, _)| {
+                                        k == "event"
+                                    }) {
+                                        if !self.__bus.contains_key(&address) {
+                                            info!("Detected event publish, registering virtual bus -- {} {}", event, address);
+                                            let bus = VirtualBus::from(context.clone());
+    
+                                            self.__bus.insert(address.clone(), bus);
+                                        }
+                                    }
+                                }
+
                                 if !self.__internal_resources.contains_key(&address)
                                     && !self.__published.contains_key(&address)
                                 {
@@ -672,6 +707,15 @@ impl Engine {
                         if let Some(tx) = tx.take() {
                             if tx.send(self.engine_handle()).is_err() {
                                 error!("Could not send updated handle");
+                            }
+                        }
+                    }
+                    EngineAction::Bus { address, mut tx } => {
+                        if let Some(tx) = tx.take() {
+                            if let Some(bus) = self.__bus.get(&address) {
+                                if tx.send(bus.clone()).is_err() {
+                                    error!("Could not send bus");
+                                }
                             }
                         }
                     }
@@ -792,8 +836,6 @@ enum EngineAction {
         ///
         #[serde(skip)]
         context: ThunkContext,
-        ///
-        ///
         #[serde(skip)]
         tx: Option<tokio::sync::oneshot::Sender<anyhow::Result<Address>>>,
     },
@@ -802,6 +844,13 @@ enum EngineAction {
     Sync {
         #[serde(skip)]
         tx: Option<tokio::sync::oneshot::Sender<EngineHandle>>,
+    },
+    Bus {
+        /// Bus address
+        /// 
+        address: Address,
+        #[serde(skip)]
+        tx: Option<tokio::sync::oneshot::Sender<VirtualBus>>,
     },
     /// Requests the engine to shutdown,
     ///
@@ -839,6 +888,9 @@ impl Debug for EngineAction {
 /// can return an updated engine handle. (Specifically the cache)
 ///
 pub struct EngineHandle {
+    /// Host this handle is attached to,
+    ///
+    pub host: Option<String>,
     /// Sends engine packets to the engine,
     ///
     sender: Arc<tokio::sync::mpsc::UnboundedSender<EnginePacket>>,
@@ -850,6 +902,7 @@ pub struct EngineHandle {
 impl Clone for EngineHandle {
     fn clone(&self) -> Self {
         Self {
+            host: self.host.clone(),
             sender: self.sender.clone(),
             background_work: self.background_work.clone(),
         }
@@ -865,6 +918,13 @@ impl Debug for EngineHandle {
 }
 
 impl EngineHandle {
+    /// Returns the handle w/ host set,
+    ///
+    pub fn with_host(mut self, host: impl Into<String>) -> Self {
+        self.host = Some(host.into());
+        self
+    }
+
     /// Runs an operation by sending a packet and waits for a response,
     ///
     pub async fn run(&self, address: impl Into<String>) -> anyhow::Result<ThunkContext> {
@@ -975,15 +1035,64 @@ impl EngineHandle {
 
     /// Returns a virtual bus for some event,
     ///
-    pub async fn event_vbus(&self, host: &str, name: &str) -> anyhow::Result<VirtualBus> {
-        let event = self
-            .hosted_resource(format!("{host}://?event={name}"))
-            .await?;
+    pub(crate) async fn event_vbus(&self, host: &str, name: &str) -> anyhow::Result<VirtualBus> {
+        let address: Address = format!("{host}://?event={name}").parse()?;
+        
+        let (tx, rx) = tokio::sync::oneshot::channel();
 
-        let tc = event.spawn_call().await?;
+        let packet = EnginePacket {
+            action: EngineAction::Bus { address, tx: Some(tx) },
+        };
 
-        tc.process_node_updates().await;
+        self.sender.send(packet)?;
 
-        Ok(VirtualBus::from(tc))
+        Ok(rx.await?)
+    }
+
+    /// Listens for an event,
+    ///
+    pub(crate) async fn listen(&self, event: impl AsRef<str>) -> anyhow::Result<()> {
+        let host = self.host.clone().unwrap_or(String::from("engine"));
+
+        match self.event_vbus(&host, event.as_ref()).await {
+            Ok(mut vbus) => {
+                let next = vbus.wait_for::<Event>().await;
+
+                let mut next = next.select(|n| &n.virtual_ref().name);
+                let mut port = futures_util::StreamExt::boxed(&mut next);
+
+                info!("Listening for event -- {}", event.as_ref());
+                if let Some((_, event)) = port.next().await {
+                    info!("Got event -- {:?}", event);
+                }
+
+                info!("Finished listening");
+                Ok(())
+            }
+            Err(err) => {
+                error!("Could not listen for event {err}");
+                Err(err)
+            }
+        }
+    }
+
+    /// Notifies listeners of an event,
+    ///
+    pub(crate) async fn notify(&self, event: impl AsRef<str>) -> anyhow::Result<()> {
+        let host = self.host.clone().unwrap_or(String::from("engine"));
+
+        match self.event_vbus(&host, event.as_ref()).await {
+            Ok(mut vbus) => {
+                let writer = vbus.transmit::<Event>().await;
+
+                writer.write_to_virtual(|r| r.virtual_mut().name.commit());
+
+                Ok(())
+            }
+            Err(err) => {
+                error!("Could not listen for event {err}");
+                Err(err)
+            }
+        }
     }
 }

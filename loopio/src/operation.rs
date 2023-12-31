@@ -4,6 +4,7 @@ use futures_util::FutureExt;
 use std::fmt::Debug;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use tracing::debug;
 use tracing::trace;
 use tracing::warn;
 
@@ -42,6 +43,14 @@ pub struct Operation {
 async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let mut init = tc.initialized::<Operation>().await;
     init.bind(tc.clone());
+    
+    debug!(op = init.name, "Starting operation");
+
+    if let Some(eh) = tc.engine_handle().await {
+        if let Some(host) = eh.host {
+            debug!(op = init.name, "Host is set on operation -- {}://", host);
+        }
+    }
 
     if let Some(host) = tc.attribute.host() {
         let ext = host.extensions();
@@ -50,9 +59,24 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
             for e in ext.iter() {
                 let attr = ResourceKey::<Attribute>::with_repr(*e);
                 context.set_attribute(attr);
+
+                // If set, listens for an event before continuing to call the next ext
+                if let Some(event) = attr.prop("listen") {
+                    if let Some(eh) = tc.engine_handle().await {
+                        eh.listen(event).await?;
+                    }
+                }
+
                 context = context.call().await?.unwrap();
 
                 context.process_node_updates().await;
+
+                // If set, notifies an event before continuing to the call the next ext
+                if let Some(event) = attr.prop("notify") {
+                    if let Some(eh) = tc.engine_handle().await {
+                        eh.notify(event).await?;
+                    }
+                }
             }
         }
     }
@@ -273,11 +297,9 @@ mod test {
         # -- Example plugin
         # -- Example plugin in operation a
         <loopio.std.io.println>                     Hello World a
-        |# listen = event_test
     
         # -- Example plugin b
         <loopio.std.io.println>                     Hello World b
-        |# listen = event_test_b
     
         # -- Another example
         + .operation b
@@ -286,11 +308,9 @@ mod test {
         # -- Example plugin
         # -- Example plugin in operation b
         <a/loopio.std.io.println>                   Hello World aa
-        |# listen = event_test
     
         # -- Example plugin b
         <loopio.std.io.println>                     Hello World bb
-        |# listen = event_test_b
     
         # -- Example demo host
         + .host demo
