@@ -19,12 +19,15 @@
 
     + .operation test-engine-proxy                                      # Tests poem utilities
     <loopio.poem.engine-proxy> localhost:0                              # Runs a local server that can start operations or sequences
-    
+    |# notify = test-engine-proxy
+
     : .alias testhost://test-engine-proxy
+    
     : test          .route test_std_io
     : test_2        .route run_println
     : test_handler  .route test_hyper
     : test_3        .route test_process
+
     : test          .path /test
     : test_2        .path /test2
     : test_3        .path /test3
@@ -32,6 +35,7 @@
 
     + .operation start_reverse_proxy
     <loopio.poem.reverse-proxy-config>  testhost://test-engine-proxy
+    |# listen = test-engine-proxy
     
     <loopio.poem.reverse-proxy>         localhost:3576
     : .host testhost://test-engine-proxy

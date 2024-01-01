@@ -43,7 +43,7 @@ pub struct Operation {
 async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let mut init = tc.initialized::<Operation>().await;
     init.bind(tc.clone());
-    
+
     debug!(op = init.name, "Starting operation");
 
     if let Some(eh) = tc.engine_handle().await {
@@ -74,7 +74,8 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
                 // If set, notifies an event before continuing to the call the next ext
                 if let Some(event) = attr.prop("notify") {
                     if let Some(eh) = tc.engine_handle().await {
-                        eh.notify(event).await?;
+                        // TODO: Read/Put message
+                        eh.notify(event, None).await?;
                     }
                 }
             }

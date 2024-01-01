@@ -384,22 +384,6 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
         context
             .register_internal_host_alias(alias?, replace_with?)
             .await;
-        
-        // context.on_notify_host(scheme.as_str()).await?;
-
-        // TODO: Plugins can "opt-in" to eventing
-        // {host}://?event=engine-proxy-started
-        // --> .events.as_map().get("engine-proxy-started")
-        // let bus = context.virtual_bus::<Event>(scheme.as_str().parse::<Address>()?).await;
-
-        // bus.transmit().await.write_to_virtual(|u| {
-        //     u.virtual_mut().events.as_map().get("engine-proxy-started").commit()
-        // });
-
-        //
-        // TODO -- context.wire_bus("demo://").commit(virtual_engine_proxy.path);
-        //      or context.virtual_bus("demo://"). api's -- wait_for, commit, changed,
-        //
     }
 
     eprintln!(

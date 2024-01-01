@@ -32,7 +32,7 @@ async fn main() {
         Some(packet)
     });
 
-    let host = eh.hosted_resource("testhost://").await.unwrap();
+    let host = eh.hosted_resource("engine://testhost").await.unwrap();
     let _task = host.spawn_call().await.unwrap();
     ()
 }

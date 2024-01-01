@@ -237,7 +237,7 @@ pub struct Engine {
     ///
     __published: BTreeMap<Address, ThunkContext>,
     /// Map of virtual buses,
-    /// 
+    ///
     __bus: BTreeMap<Address, VirtualBus>,
 }
 
@@ -430,7 +430,7 @@ impl Engine {
                     let eh = self
                         .engine_handle()
                         .with_host(host.name.value().cloned().unwrap_or("engine".to_string()));
-                    
+
                     resource
                         .context()
                         .node()
@@ -486,8 +486,7 @@ impl Engine {
                         }
 
                         let address = Address::from_str(
-                            format!("{}://?event={}", host.name.value().unwrap(), name)
-                                .as_str(),
+                            format!("{}://?event={}", host.name.value().unwrap(), name).as_str(),
                         )?;
                         let remote_action = RemoteAction
                             .build::<Event>(&mut tc)
@@ -666,15 +665,12 @@ impl Engine {
 
                             trace!(address, "Looking up hosted resource");
                             if let Ok(address) = address.parse::<Address>() {
-
                                 if let Some(mut filter) = address.filter() {
-                                    if let Some((_, event)) = filter.find(|(k, _)| {
-                                        k == "event"
-                                    }) {
+                                    if let Some((_, event)) = filter.find(|(k, _)| k == "event") {
                                         if !self.__bus.contains_key(&address) {
                                             info!("Detected event publish, registering virtual bus -- {} {}", event, address);
                                             let bus = VirtualBus::from(context.clone());
-    
+
                                             self.__bus.insert(address.clone(), bus);
                                         }
                                     }
@@ -847,7 +843,7 @@ enum EngineAction {
     },
     Bus {
         /// Bus address
-        /// 
+        ///
         address: Address,
         #[serde(skip)]
         tx: Option<tokio::sync::oneshot::Sender<VirtualBus>>,
@@ -1037,11 +1033,14 @@ impl EngineHandle {
     ///
     pub(crate) async fn event_vbus(&self, host: &str, name: &str) -> anyhow::Result<VirtualBus> {
         let address: Address = format!("{host}://?event={name}").parse()?;
-        
+
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         let packet = EnginePacket {
-            action: EngineAction::Bus { address, tx: Some(tx) },
+            action: EngineAction::Bus {
+                address,
+                tx: Some(tx),
+            },
         };
 
         self.sender.send(packet)?;
@@ -1078,14 +1077,26 @@ impl EngineHandle {
 
     /// Notifies listeners of an event,
     ///
-    pub(crate) async fn notify(&self, event: impl AsRef<str>) -> anyhow::Result<()> {
+    pub(crate) async fn notify(
+        &self,
+        event: impl AsRef<str>,
+        data: Option<Bytes>,
+    ) -> anyhow::Result<()> {
         let host = self.host.clone().unwrap_or(String::from("engine"));
 
         match self.event_vbus(&host, event.as_ref()).await {
             Ok(mut vbus) => {
                 let writer = vbus.transmit::<Event>().await;
 
-                writer.write_to_virtual(|r| r.virtual_mut().name.commit());
+                writer.write_to_virtual(move |r| {
+                    if let Some(data) = data {
+                        r.virtual_ref().send_raw().send_if_modified(|o| {
+                            o.data = data;
+                            true
+                        });
+                    }
+                    r.virtual_mut().name.commit()
+                });
 
                 Ok(())
             }
