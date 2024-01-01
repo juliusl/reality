@@ -8,7 +8,6 @@ pub mod prelude {
     use loopio::engine::EngineHandle;
     use loopio::prelude::Attribute;
     use loopio::prelude::CacheExt;
-    use loopio::prelude::Decoration;
     use loopio::prelude::Dispatcher;
     use loopio::prelude::FieldPacket;
     use loopio::prelude::FrameUpdates;
@@ -67,9 +66,6 @@ pub mod prelude {
         /// Currently available dispatcher,
         ///
         pub disp: Option<Dispatcher<Shared, Attribute>>,
-        /// Currently available decoration,
-        ///
-        pub decorations: RwLock<OnceLock<Decoration>>,
         /// Current frame updates,
         ///
         pub frame_updates: RefCell<FrameUpdates>,
@@ -156,42 +152,42 @@ pub mod prelude {
         /// Shows the call button if applicable,
         ///
         pub fn show_call_button(&self) {
-            if let Ok(deco) = self.decorations.read() {
-                self.imgui.text(format!("{:#?}", deco));
+            // if let Ok(deco) = self.decorations.read() {
+            //     self.imgui.text(format!("{:#?}", deco));
 
-                if let Some(address) = deco
-                    .get()
-                    .and_then(|d| d.comment_properties.as_ref())
-                    .and_then(|d| d.get("address"))
-                {
-                    if let Some(bg) = self.eh.lock().unwrap().background() {
-                        if let Ok(mut call) = bg.call(address) {
-                            match call.status() {
-                                loopio::background_work::CallStatus::Enabled => {
-                                    if self.imgui.button("Run") {
-                                        call.spawn_with_updates(
-                                            self.frame_updates.replace(FrameUpdates::default()),
-                                        );
-                                    }
-                                }
-                                loopio::background_work::CallStatus::Disabled => {}
-                                loopio::background_work::CallStatus::Running => {
-                                    self.imgui.text("Running");
+            //     if let Some(address) = deco
+            //         .get()
+            //         .and_then(|d| d.comment_properties.as_ref())
+            //         .and_then(|d| d.get("address"))
+            //     {
+            //         if let Some(bg) = self.eh.lock().unwrap().background() {
+            //             if let Ok(mut call) = bg.call(address) {
+            //                 match call.status() {
+            //                     loopio::background_work::CallStatus::Enabled => {
+            //                         if self.imgui.button("Run") {
+            //                             call.spawn_with_updates(
+            //                                 self.frame_updates.replace(FrameUpdates::default()),
+            //                             );
+            //                         }
+            //                     }
+            //                     loopio::background_work::CallStatus::Disabled => {}
+            //                     loopio::background_work::CallStatus::Running => {
+            //                         self.imgui.text("Running");
 
-                                    self.imgui.same_line();
-                                    if self.imgui.button("Cancel") {
-                                        call.cancel();
-                                    }
-                                }
-                                loopio::background_work::CallStatus::Pending => {
-                                    let _ = call.into_foreground().unwrap();
-                                    eprintln!("Background work finished");
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            //                         self.imgui.same_line();
+            //                         if self.imgui.button("Cancel") {
+            //                             call.cancel();
+            //                         }
+            //                     }
+            //                     loopio::background_work::CallStatus::Pending => {
+            //                         let _ = call.into_foreground().unwrap();
+            //                         eprintln!("Background work finished");
+            //                     }
+            //                 }
+            //             }
+            //         }
+            //     }
+            // }
         }
 
         /// Gets a mutable reference to the underlying thunk context,

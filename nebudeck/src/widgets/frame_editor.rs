@@ -42,10 +42,11 @@ pub struct FrameEditor {
 async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let mut init = Remote.create::<FrameEditor>(tc).await;
 
-    init.editor_name = init.editor_name.or(tc.property("title").cloned());
+    init.editor_name = init.editor_name.or(tc.property("title"));
 
+    let eh = tc.engine_handle().await.expect("not bound to an engine");
     info!("Enabling frame editor -- {:?}", init.path);
-    if let Some(mut editing) = tc.navigate(&init.path.to_string()).await {
+    if let Ok(mut editing) = eh.hosted_resource(&init.path.to_string()).await {
         let editing = editing.context_mut();
 
         editing.write_cache(init.clone());
@@ -244,14 +245,14 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                 panel.value.as_ref().unwrap_or(name),
                                 TreeNodeFlags::DEFAULT_OPEN,
                             ) {
-                                if let Some(deco) = panel.decorations() {
-                                    if let Some(docs) = deco.docs() {
-                                        for d in docs {
-                                            ui.text(d);
-                                        }
-                                        ui.new_line();
-                                    }
-                                }
+                                // if let Some(deco) = panel() {
+                                //     if let Some(docs) = deco.docs() {
+                                //         for d in docs {
+                                //             ui.text(d);
+                                //         }
+                                //         ui.new_line();
+                                //     }
+                                // }
 
                                 ui.indent();
                                 // This can be optimized later -
@@ -264,29 +265,29 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                                         .map(|d| edit.property(d));
                                                     match properties {
                                                         [title, Some(widget), help] => {
-                                                            let editor = FieldWidget {
-                                                                title: title
-                                                                    .unwrap_or(&value)
-                                                                    .to_string(),
-                                                                widget: widget.to_string(),
-                                                                field: value.to_string(),
-                                                                field_map: field_map.clone(),
-                                                                doc_headers: edit
-                                                                    .decorations()
-                                                                    .unwrap()
-                                                                    .docs()
-                                                                    .map(|d| d.to_vec())
-                                                                    .unwrap_or_default(),
-                                                                help: help.map(String::to_string),
-                                                                widget_table: tc
-                                                                    .get()
-                                                                    .unwrap()
-                                                                    .cached::<EditorWidgetTable>()
-                                                                    .unwrap_or_default(),
-                                                            };
-                                                            tc.get_mut()
-                                                                .unwrap()
-                                                                .store_kv(&edit, editor);
+                                                            // let editor = FieldWidget {
+                                                            //     title: title
+                                                            //         .unwrap_or(&value)
+                                                            //         .to_string(),
+                                                            //     widget: widget.to_string(),
+                                                            //     field: value.to_string(),
+                                                            //     field_map: field_map.clone(),
+                                                            //     doc_headers: edit
+                                                            //         .decorations()
+                                                            //         .unwrap()
+                                                            //         .docs()
+                                                            //         .map(|d| d.to_vec())
+                                                            //         .unwrap_or_default(),
+                                                            //     help: help.map(String::to_string),
+                                                            //     widget_table: tc
+                                                            //         .get()
+                                                            //         .unwrap()
+                                                            //         .cached::<EditorWidgetTable>()
+                                                            //         .unwrap_or_default(),
+                                                            // };
+                                                            // tc.get_mut()
+                                                            //     .unwrap()
+                                                            //     .store_kv(&edit, editor);
                                                         }
                                                         _ => {
                                                             ui.label_text(
@@ -343,10 +344,11 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                             cache.frame.fields.len()
                                         );
                                         println!("{:#?}", cache);
-                                        tc.node_mut().await.put_resource::<FrameUpdates>(
+                                        tc.node().await.lazy_put_resource::<FrameUpdates>(
                                             *cache,
                                             tc.attribute.transmute(),
                                         );
+                                        tc.process_node_updates().await;
                                     }
                                     Ok(tc)
                                 });
@@ -630,11 +632,11 @@ fn defined_properties_section(tc: &ThunkContext, ui: &imgui::Ui) {
         let rk = tc.attribute;
         render_properties.push(|| {
             view_decorations(rk, &tc, ui);
-            if let Some(defined) = parsed.properties.defined.get(&rk) {
-                for prop in defined.clone() {
-                    view_decorations(prop, &tc, ui);
-                }
-            }
+            // if let Some(defined) = parsed.properties.defined.get(&rk) {
+            //     for prop in defined.clone() {
+            //         view_decorations(prop, &tc, ui);
+            //     }
+            // }
         });
 
         if ui.collapsing_header("Defined Properties", TreeNodeFlags::empty()) {
@@ -714,24 +716,24 @@ fn view_decorations<T: std::hash::Hash + Send + Sync + 'static>(
     ui: &imgui::Ui,
 ) {
     // ui.indent();
-    if let Some((_, dec)) = tc.fetch_kv::<Decoration>(rk) {
-        if let Some(_n) = ui.tree_node(format!("Decorations {}", rk.data.to_string())) {
-            if let Some(doc_h) = dec.docs() {
-                for d in doc_h {
-                    ui.text(d);
-                }
-                ui.new_line();
-            }
+    // if let Some((_, dec)) = tc.fetch_kv::<Decoration>(rk) {
+    //     if let Some(_n) = ui.tree_node(format!("Decorations {}", rk.data.to_string())) {
+    //         if let Some(doc_h) = dec.docs() {
+    //             for d in doc_h {
+    //                 ui.text(d);
+    //             }
+    //             ui.new_line();
+    //         }
 
-            if !dec.props().is_empty() {
-                for (name, prop) in dec.props() {
-                    ui.label_text(name, prop);
-                }
-            }
+    //         if !dec.props().is_empty() {
+    //             for (name, prop) in dec.props() {
+    //                 ui.label_text(name, prop);
+    //             }
+    //         }
 
-            view_field_packet(rk, tc, ui);
-        }
-    }
+    //         view_field_packet(rk, tc, ui);
+    //     }
+    // }
     // ui.unindent();
 }
 

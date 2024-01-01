@@ -127,7 +127,6 @@ struct Test {
 async fn test(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = Local.create::<Test>(tc).await;
     println!("{:#?}", init);
-    tc.print_debug_info();
 
     let mut storage = tc.transient.storage.write().await;
     init.pack::<Shared>(&mut storage);
@@ -170,7 +169,6 @@ async fn process_wizard(tc: &mut ThunkContext) -> anyhow::Result<()> {
         // **Note** This could be a remote action but since there is no state there's no
         // point in initializing as a RemoteAction.
         let init = LocalAction.build::<Process>(tc).await;
-        eprintln!("{:?}", tc.decoration);
 
         // Bind a task that defines the UI node and dependencies
         let init = init.bind_task("edit_program_name", ProcessWizard::edit_program_name);
@@ -183,17 +181,13 @@ async fn process_wizard(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
         // Call a task on the hosted resource that will build the ui node
         if let Some(_tc) = _a.try_call("edit_program_name").await? {
-            if let Some(mut nodes) = _tc
+            if let Some(nodes) = _tc
                 .transient
                 .storage
                 .write()
                 .await
                 .take_resource::<Vec<UiNode>>(_tc.attribute.transmute())
             {
-                // TODO -- This needs to be added back to the core library
-                for n in nodes.iter_mut() {
-                    n.context.decoration = tc.decoration.clone();
-                }
                 // Transfer transient storage resources over to the current context
                 tc.transient
                     .storage

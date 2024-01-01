@@ -333,7 +333,6 @@ impl DesktopApp for ImguiMiddleware {
                             .cloned()
                             .expect("should be bound to an engine"),
                     ),
-                    decorations: std::sync::RwLock::new(OnceLock::new()),
                     frame_updates: RefCell::new(FrameUpdates::default()),
                 };
 
@@ -553,12 +552,8 @@ impl UiDisplayMut for ImguiMiddleware {
                     // Swap current thunk context
                     let yielding = if let Ok(mut tc) = ui.tc.lock() {
                         let yielding = tc.take();
-                        ui.decorations.write().unwrap().take();
-
+                        // ui.decorations.write().unwrap().take();
                         let current = ui_node.context.clone();
-                        if let Some(decoration) = current.decoration.as_ref() {
-                            let _ = ui.decorations.write().unwrap().set(decoration.clone());
-                        }
                         tc.set(current).ok();
                         yielding
                     } else {
@@ -573,10 +568,7 @@ impl UiDisplayMut for ImguiMiddleware {
 
                         // Restore the previous thunk context
                         if let Some(yielding) = yielding {
-                            ui.decorations.write().unwrap().take();
-                            if let Some(decoration) = yielding.decoration.as_ref() {
-                                let _ = ui.decorations.write().unwrap().set(decoration.clone());
-                            }
+                            // ui.decorations.write().unwrap().take();
                             tc.set(yielding).ok();
                         }
                     }
