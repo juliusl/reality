@@ -12,6 +12,7 @@ pub mod prelude {
     use loopio::prelude::FieldPacket;
     use loopio::prelude::FrameUpdates;
     use loopio::prelude::KvpExt;
+    use loopio::prelude::ResourceKey;
     use loopio::prelude::Shared;
     use loopio::prelude::ThunkContext;
     use std::cell::RefCell;
@@ -50,6 +51,9 @@ pub mod prelude {
     /// Ui formatter context,
     ///
     pub struct UiFormatter<'frame> {
+        /// Resource key set on the current formatter,
+        /// 
+        rk: ResourceKey<Attribute>,
         /// Handle to the ui builder,
         ///
         pub imgui: &'frame mut imgui::Ui,

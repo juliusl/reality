@@ -71,6 +71,8 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
                 context.process_node_updates().await;
 
+                // TODO: If context contains a LocalAction/RemoteAction, auto publish the transient
+
                 // If set, notifies an event before continuing to the call the next ext
                 if let Some(event) = attr.prop("notify") {
                     if let Some(eh) = tc.engine_handle().await {

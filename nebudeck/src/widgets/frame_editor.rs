@@ -74,7 +74,6 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
             }
         }
 
-        let recv = editing.initialized_frame().await.recv.clone();
         // Gets the current parsed attributes state of the target attribute,
         {
             let node = editing.node().await;
@@ -84,11 +83,6 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                 info!("Found parsed attributes");
                 drop(node);
                 editing.maybe_write_cache(parsed_attributes);
-
-                if let Some(parsed) = editing.cached::<ParsedNode>() {
-                    // parsed.index_decorations(editing.attribute, editing).await;
-                    editing.store_kv(editing.attribute, recv);
-                }
             }
         }
 
@@ -334,20 +328,18 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                             if let Some(cache) = tc.get_mut().unwrap().take_cache::<FrameUpdates>()
                             {
                                 tc.get().unwrap().spawn(move |tc| async move {
-                                    unsafe {
-                                        println!("Outside: {:?}", &rk);
-                                        println!(
-                                            "Putting frame change -- {:?} packets: {}",
-                                            tc.attribute,
-                                            cache.frame.fields.len()
-                                        );
-                                        println!("{:#?}", cache);
-                                        tc.node().await.lazy_put_resource::<FrameUpdates>(
-                                            *cache,
-                                            tc.attribute.transmute(),
-                                        );
-                                        tc.process_node_updates().await;
-                                    }
+                                    println!("Outside: {:?}", &rk);
+                                    println!(
+                                        "Putting frame change -- {:?} packets: {}",
+                                        tc.attribute,
+                                        cache.frame.fields.len()
+                                    );
+                                    println!("{:#?}", cache);
+                                    tc.node().await.lazy_put_resource::<FrameUpdates>(
+                                        *cache,
+                                        tc.attribute.transmute(),
+                                    );
+                                    tc.process_node_updates().await;
                                     Ok(tc)
                                 });
 
