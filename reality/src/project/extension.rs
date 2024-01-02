@@ -38,7 +38,7 @@ type MiddlewareAsync<C, T> = Arc<
 /// Impl variable constraint for middleware,
 ///
 /// **For non-async**
-/// ```rs norun
+/// ```rs no_run
 /// impl Fn(Arc<C>, ThunkContext, anyhow::Result<T>) -> anyhow::Result<T>
 ///     + Sync
 ///     + Send
@@ -46,7 +46,7 @@ type MiddlewareAsync<C, T> = Arc<
 /// ```
 ///
 /// **Async version
-/// ```rs norun
+/// ```rs no_run
 /// impl Fn(Arc<C>, ThunkContext, anyhow::Result<T>) -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
 ///     + Send
 ///     + Sync
@@ -297,7 +297,7 @@ where
     /// Adds middleware to run before returning the inner type,
     ///
     /// **Usage Example**
-    /// ```rs norun
+    /// ```rs no_run
     /// extension.add_before_task(|storage, s| Box::pin(async {
     ///     s
     /// }));
@@ -310,7 +310,7 @@ where
     /// Adds middleware to run after returning the inner type,
     ///
     /// **Usage Example**
-    /// ```rs norun
+    /// ```rs no_run
     /// extension.add_after_task(|storage, s| Box::pin(async {
     ///     s
     /// }));
@@ -323,7 +323,7 @@ where
     /// (Chainable) Adds middleware to run before returning the inner type,
     ///
     /// **Usage Example**
-    /// ```rs norun
+    /// ```rs no_run
     /// extension.before_task(|storage, s| Box::pin(async {
     ///     s
     /// }));
@@ -337,7 +337,7 @@ where
     /// (Chainable) Adds middleware to run after returning the inner type,
     ///
     /// **Usage Example**
-    /// ```rs norun
+    /// ```rs no_run
     /// extension.after_task(|storage, s| Box::pin(async {
     ///     s
     /// }));
