@@ -5,6 +5,7 @@ mod linker;
 mod repr;
 mod tag;
 mod entropy;
+mod util;
 
 #[cfg(feature = "crc-interner")]
 mod crc;

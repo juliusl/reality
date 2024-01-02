@@ -12,7 +12,6 @@ use tokio::task::JoinHandle;
 use tracing::debug;
 use tracing::error;
 use tracing::info;
-use tracing::trace;
 use tracing::warn;
 
 use crate::prelude::Action;

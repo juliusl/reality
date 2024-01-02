@@ -302,7 +302,9 @@ mod tests {
     
             let input = _drepr.as_node().unwrap().input().unwrap();
             eprintln!("{:?}", input);
-        
+
+            let mut command = clap::Command::from(repr);
+            command.print_help().unwrap();
         ()
     }
 }

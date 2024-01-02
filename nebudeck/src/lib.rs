@@ -22,9 +22,9 @@ pub use controller::Controller;
 
 pub mod ext;
 
-#[cfg(feature = "desktop")]
-pub mod desktop;
 #[cfg(feature = "terminal")]
 pub mod terminal;
+#[cfg(feature = "desktop")]
+pub mod desktop;
 #[cfg(feature = "desktop-imgui")]
 pub mod widgets;

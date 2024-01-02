@@ -39,9 +39,6 @@ fn main() -> anyhow::Result<()> {
     + .operation show_frame_editor
     |# help = Shows a frame editor example
 
-    <loopio.enable-wirebus>                 demo://call_test_2/a/demo.test2
-    : .allow_frame_updates                  true
-
     # -- # Demo: Customizable editor for editing and launching plugins
     # -- Also demonstrates the additional markup support
 
@@ -85,12 +82,6 @@ fn main() -> anyhow::Result<()> {
 
     + .host demo
     : .start    start_demo
-
-    : .action   demo_proc/democmd/loopio.std.process
-
-    # -- # Example of a host action title
-    : .action   call_test_2/a/demo.test2
-    |# help = Indexes a path to a plugin
 
     # -- # Example of an action to show a frame editor
     : .action   show_frame_editor/b/nebudeck.frame-editor
@@ -150,7 +141,7 @@ impl ProcessWizard {
         tc.write_cache(process);
         tc.write_cache(wire_server.clone());
 
-        // tokio::spawn(async move { wire_server.clone().start().await });
+        tokio::spawn(async move { wire_server.clone().start().await });
 
         tc.push_ui_node(|ui| {
             if let Err(err) = ProcessWizard.fmt(ui) {

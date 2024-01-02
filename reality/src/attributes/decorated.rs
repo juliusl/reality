@@ -79,6 +79,16 @@ impl<T: Send + Sync + 'static> Decorated<T> {
             .and_then(|p| p.annotations())
             .and_then(|d| d.get(name.as_ref()).cloned())
     }
+
+    /// Returns current doc headers if set,
+    ///
+    pub fn doc_headers(&self) -> Option<Vec<String>> {
+        self.property
+            .as_ref()
+            .and_then(|p| p.node())
+            .and_then(|p| p.doc_headers())
+            .map(|a| a.to_vec())
+    }
 }
 
 impl<T: FromStr + Send + Sync + 'static> FromStr for Decorated<T> {

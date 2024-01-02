@@ -1,4 +1,6 @@
 use std::any::TypeId;
+use std::fs::File;
+use std::path::PathBuf;
 
 use crate::define_intern_table;
 use crate::push_tag;
@@ -16,6 +18,12 @@ define_intern_table!(TYPE_ID: TypeId);
 
 // Intern table for resource parse type names
 define_intern_table!(PARSE_TYPE_NAME: &'static str);
+
+// Intern table for ffi type name
+define_intern_table!(FFI_TYPE_NAME: &'static str);
+
+// Intern table for ffi parse type name
+define_intern_table!(FFI_PARSE_TYPE_NAME: &'static str);
 
 /// Resource level is the lowest level of representation,
 ///
@@ -35,6 +43,12 @@ pub struct ResourceLevel {
     /// Rust type name of the type used to parse node input,
     ///
     parse_type: Option<Tag<&'static str>>,
+    /// (Optional) FFI type name,
+    /// 
+    ffi_type: Option<Tag<&'static str>>,
+    /// (Optional) FFI parse type name,
+    /// 
+    ffi_parse_type: Option<Tag<&'static str>>,
 }
 
 impl ResourceLevel {
@@ -47,6 +61,8 @@ impl ResourceLevel {
             type_name: Tag::new(&TYPE_NAME, std::any::type_name::<T>),
             type_size: Tag::new(&TYPE_SIZE, std::mem::size_of::<T>),
             parse_type: None,
+            ffi_type: None,
+            ffi_parse_type: None,
         }
     }
 
@@ -55,6 +71,20 @@ impl ResourceLevel {
     #[inline]
     pub fn set_parse_type<T>(&mut self) {
         self.parse_type = Some(Tag::new(&PARSE_TYPE_NAME, std::any::type_name::<T>));
+    }
+
+    /// Sets the ffi type name,
+    /// 
+    #[inline]
+    pub fn set_ffi_type<T: FFI>(&mut self) {
+        self.ffi_type = Some(Tag::new(&FFI_TYPE_NAME, T::ffi_type_name));
+    }
+
+    /// Sets the ffi parse type name,
+    /// 
+    #[inline]
+    pub fn set_ffi_parse_type<T: FFI>(&mut self) {
+        self.ffi_parse_type = Some(Tag::new(&FFI_PARSE_TYPE_NAME, T::ffi_type_name));
     }
 }
 
@@ -66,6 +96,14 @@ impl Level for ResourceLevel {
 
         if let Some(parse_type) = self.parse_type {
             push_tag!(interner, parse_type);
+        }
+
+        if let Some(ffi_type_name) = self.ffi_type {
+            push_tag!(interner, ffi_type_name);
+        }
+
+        if let Some(ffi_parse_type_name) = self.ffi_parse_type {
+            push_tag!(interner, ffi_parse_type_name);
         }
 
         interner.set_level_flags(LevelFlags::ROOT);
@@ -136,5 +174,97 @@ impl ResourceRepr {
     #[inline]
     pub fn parse_type_name(&self) -> Option<&'static str> {
         self.0.resource_parse_type_name()
+    }
+}
+
+/// Trait to provide foreign function interface support,
+/// 
+pub trait FFI {
+    /// FFI type name,
+    /// 
+    fn ffi_type_name() -> &'static str;
+}
+
+impl FFI for String {
+    fn ffi_type_name() -> &'static str {
+        "string"
+    }
+}
+
+impl FFI for PathBuf {
+    fn ffi_type_name() -> &'static str {
+        "string"
+    }
+}
+
+impl FFI for File {
+    fn ffi_type_name() -> &'static str {
+        "file"
+    }
+}
+
+impl FFI for bool {
+    fn ffi_type_name() -> &'static str {
+        "bool"
+    }
+}
+
+impl FFI for u8 {
+    fn ffi_type_name() -> &'static str {
+        "u8"
+    }
+}
+
+impl FFI for u16 {
+    fn ffi_type_name() -> &'static str {
+        "u16"
+    }
+}
+
+impl FFI for u32 {
+    fn ffi_type_name() -> &'static str {
+        "u32"
+    }
+}
+
+impl FFI for u64 {
+    fn ffi_type_name() -> &'static str {
+        "u64"
+    }
+}
+
+impl FFI for i8 {
+    fn ffi_type_name() -> &'static str {
+        "i8"
+    }
+}
+
+impl FFI for i16 {
+    fn ffi_type_name() -> &'static str {
+        "i16"
+    }
+}
+
+impl FFI for i32 {
+    fn ffi_type_name() -> &'static str {
+        "i32"
+    }
+}
+
+impl FFI for i64 {
+    fn ffi_type_name() -> &'static str {
+        "i64"
+    }
+}
+
+impl FFI for f32 {
+    fn ffi_type_name() -> &'static str {
+        "f32"
+    }
+}
+
+impl FFI for f64 {
+    fn ffi_type_name() -> &'static str {
+        "f64"
     }
 }
