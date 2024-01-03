@@ -143,6 +143,10 @@ impl StorageTarget for Shared {
                     }
                 }
                 Err(l) => {
+                    // This can mean that the storage target was unexpectedly cloned
+                    // If AsyncStorageTarget is used, this is less likely since the lock on storage is cloned instead of the storage being cloned
+                    // However, if the cache is used on ThunkContext, cloning the context will also clone the cache
+                    eprintln!("COULD NOT TAKE RESOURCE, {:?}", Arc::strong_count(&l));
                     self.resources.insert(key, l);
                     None
                 }

@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::OnceLock;
+use tracing::debug;
 
 use reality::prelude::*;
 use tokio::select;
@@ -11,6 +12,7 @@ use crate::prelude::Action;
 use crate::prelude::Address;
 use crate::prelude::EngineHandle;
 use crate::prelude::Ext;
+use crate::work::WorkState;
 
 /// Background work container,
 ///
@@ -119,7 +121,7 @@ impl BackgroundWorkEngineHandle {
 
 /// API for managing background tasks,
 ///
-#[derive(Clone)]
+// #[derive(Clone)] This can be tricky if the context is cloned since the cache will also be cloned, therefore the call-output wouldn't be able to returned
 pub struct BackgroundFuture {
     /// Address of the background future,
     ///
@@ -160,7 +162,7 @@ impl BackgroundFuture {
     pub fn spawn(&mut self) -> CallStatus {
         if matches!(self.status(), CallStatus::Enabled) {
             if let Some(eh) = self.tc.cached::<EngineHandle>() {
-                println!("Spawning from background future {}", self.address);
+                debug!("Spawning from background future {}", self.address);
                 let address = self.address.to_string();
                 let handle = self.tc.node.runtime.clone().unwrap();
 
@@ -189,7 +191,7 @@ impl BackgroundFuture {
     pub fn spawn_with_updates(&mut self, updates: FrameUpdates) -> CallStatus {
         if matches!(self.status(), CallStatus::Enabled) {
             if let Some(eh) = self.tc.cached::<EngineHandle>() {
-                println!("Spawning from background future {}", self.address);
+                debug!("Spawning from background future {}", self.address);
                 let address = self.address.to_string();
                 let handle = self.tc.node.runtime.clone().unwrap();
 
@@ -224,28 +226,11 @@ impl BackgroundFuture {
         }
     }
 
-    /// Listens to an address that may have spawned in the background,
-    ///
-    pub fn listen(&mut self) -> BackgroundFuture {
-        let address = self.address.clone().with_tag("listen");
-
-        let (_, bg) = self.tc.maybe_store_kv(
-            &address.to_string(),
-            BackgroundFuture {
-                address: address.clone(),
-                tc: self.tc.clone(),
-                cancellation: self.tc.cancellation.child_token(),
-            },
-        );
-
-        bg.deref().clone()
-    }
-
     /// Returns the current status of this future,
     ///
     pub fn status(&self) -> CallStatus {
         if let Some((_, calloutput)) = self.tc.fetch_kv::<CallOutput>(&self.address.to_string()) {
-            match calloutput.deref() {
+            let calloutput = match calloutput.deref() {
                 CallOutput::Spawn(spawned) => match spawned {
                     Some(jh) => {
                         if jh.is_finished() {
@@ -259,34 +244,38 @@ impl BackgroundFuture {
                 CallOutput::Abort(_) => CallStatus::Pending,
                 CallOutput::Skip => CallStatus::Disabled,
                 CallOutput::Update(_) => CallStatus::Pending,
-            }
+            };
+            calloutput
         } else {
             CallStatus::Enabled
         }
     }
 
+    /// Converts the current background future into an actual future,
+    ///
+    /// **Error** Returns an error if the task was not previously spawned, or if
+    /// the running task could not be removed from the cache
+    ///
     pub async fn task(&mut self) -> anyhow::Result<ThunkContext> {
-        let address = self.address.clone();
-        if let Some((_, call)) = self.tc.take_kv::<CallOutput>(&address.to_string()) {
+        if let Some((_, call)) = self.tc.take_kv::<CallOutput>(&self.address.to_string()) {
             match call {
                 CallOutput::Spawn(Some(spawned)) => select! {
                     result = spawned => {
                         let r = result?;
-
                         r
                     },
                     _ = self.cancellation.cancelled() => Err(anyhow!("did not spawn task"))
                 },
-                _ => Err(anyhow!("did not spawn task")),
+                _ => Err(anyhow!("Did not spawn task")),
             }
         } else {
-            Err(anyhow!("did not get output"))
+            Err(anyhow!("Did not get output"))
         }
     }
 
     /// Blocks the current thread to surface the background task onto the current thread,
     ///
-    /// **Note**: This must be called outside of the tokio-runtime.
+    /// **Panic**: This must be called outside of the tokio-runtime or it will result in a panic.
     ///
     pub fn into_foreground(&mut self) -> anyhow::Result<ThunkContext> {
         futures::executor::block_on(self.task())
@@ -297,7 +286,113 @@ impl BackgroundFuture {
     pub fn cancel(&self) {
         self.cancellation.cancel();
     }
+
+    /// Returns work state for configuring the current work state,
+    ///
+    pub fn work_state(&mut self) -> &mut impl WorkState {
+        &mut self.tc
+    }
+
+    /// Blocks the current thread to wait for the background future to complete,
+    ///
+    /// **Error** Returns an error if the background future is ready but returned an error.
+    ///
+    pub fn wait_for_completion<T: BackgroundFutureController>(
+        &mut self,
+        controller: &mut T,
+    ) -> anyhow::Result<ThunkContext> {
+        loop {
+            match self.tick(controller) {
+                Ok(tc) => {
+                    break Ok(tc);
+                }
+                Err(err) if err.to_string().as_str() == "still running" => {
+                    continue;
+                }
+                Err(err) => {
+                    break Err(err);
+                }
+            }
+        }
+    }
+
+    /// Ticks the background future for completion,
+    ///
+    /// **Error** Returns an error if the background future is still running or if the background future is ready but returned an error.
+    ///
+    pub fn tick<T: BackgroundFutureController>(
+        &mut self,
+        controller: &mut T,
+    ) -> anyhow::Result<ThunkContext> {
+        match self.inner_poll_ready(controller) {
+            std::task::Poll::Ready(ready) => Ok(ready?),
+            std::task::Poll::Pending => Err(anyhow!("still running")),
+        }
+    }
+
+    /// Inner polling function,
+    ///
+    pub(crate) fn inner_poll_ready<T: BackgroundFutureController>(
+        &mut self,
+        controller: &mut T,
+    ) -> std::task::Poll<anyhow::Result<ThunkContext>> {
+        match self.status() {
+            CallStatus::Enabled => match controller.on_enabled(self) {
+                std::task::Poll::Ready(Err(err)) => std::task::Poll::Ready(Err(err)),
+                _ => std::task::Poll::Pending,
+            },
+            CallStatus::Disabled => match controller.on_disabled(self) {
+                std::task::Poll::Ready(Err(err)) => std::task::Poll::Ready(Err(err)),
+                _ => std::task::Poll::Pending,
+            },
+            CallStatus::Running => match controller.on_running(self) {
+                std::task::Poll::Ready(Err(err)) => std::task::Poll::Ready(Err(err)),
+                _ => std::task::Poll::Pending,
+            },
+            CallStatus::Pending => controller.on_pending(self),
+        }
+    }
 }
+
+/// Trait for controlling the behavior of a background future,
+///
+pub trait BackgroundFutureController {
+    /// Called when the background future should be enabled,
+    ///
+    fn on_enabled(&mut self, bg: &mut BackgroundFuture) -> std::task::Poll<anyhow::Result<()>> {
+        bg.spawn();
+        std::task::Poll::Pending
+    }
+
+    /// Called when the background future should be disabled,
+    ///
+    fn on_disabled(&mut self, _: &mut BackgroundFuture) -> std::task::Poll<anyhow::Result<()>> {
+        std::task::Poll::Pending
+    }
+
+    /// Called when the current background future is running in the background,
+    ///
+    fn on_running(&mut self, _: &mut BackgroundFuture) -> std::task::Poll<anyhow::Result<()>> {
+        std::task::Poll::Pending
+    }
+
+    /// Called when the current status is pending,
+    ///
+    fn on_pending(
+        &mut self,
+        bg: &mut BackgroundFuture,
+    ) -> std::task::Poll<anyhow::Result<ThunkContext>> {
+        std::task::Poll::Ready(bg.into_foreground())
+    }
+}
+
+/// Default background future controller,
+///
+/// The behavior of this background future is to
+///
+pub struct DefaultController;
+
+impl BackgroundFutureController for DefaultController {}
 
 pub struct BackgroundWorker<P>
 where

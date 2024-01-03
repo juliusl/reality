@@ -6,7 +6,7 @@ use tokio::task::JoinHandle;
 
 use crate::background_work::BackgroundWork;
 use crate::background_work::BackgroundWorkEngineHandle;
-use crate::background_work::CallStatus;
+use crate::background_work::DefaultController;
 use crate::engine::EngineBuilder;
 use crate::prelude::Engine;
 use crate::prelude::EngineHandle;
@@ -70,23 +70,19 @@ impl ForegroundEngine {
                     "background-work.md",
                     r#"
 ```runmd
-# -- # Test the background work
+# -- Background work test operation
+# -- Tests that the background-work system is functioning properly.
 + .operation test_background_work
-<loopio.std.io.println> Hello world a
+<loopio.std.io.println> Hello world from background engine.
 
-# -- # Default engine operation plugins
+# -- Default engine operation plugins
+# -- Initializes components to enable the background work system.
 + .operation default
 <handle/loopio.background-work>
 <list/loopio.published>
 
-# -- # Default host engine tasks
+# -- Default engine host
 + .host engine
-
-# -- # Creates a new background work engine handle
-: .action   default/handle/loopio.background-work
-
-# -- # Retrieves current published resources
-: .action   default/list/loopio.published
 ```
 "#,
                 );
@@ -120,22 +116,10 @@ impl ForegroundEngine {
 
         // This tests that the bg engine is working properly
         if let Ok(mut bg) = bg.call("engine://test_background_work") {
-            loop {
-                match bg.status() {
-                    CallStatus::Enabled => {
-                        bg.spawn();
-                    }
-                    CallStatus::Disabled => {
-                        eprintln!("disabled");
-                        break;
-                    }
-                    CallStatus::Running => std::thread::yield_now(),
-                    CallStatus::Pending => {
-                        bg.clone().into_foreground().ok();
-                        break;
-                    }
-                }
-            }
+            let mut controller = DefaultController;
+
+            bg.wait_for_completion(&mut controller)
+                .expect("should be able to complete");
         }
 
         ForegroundEngine {
@@ -149,9 +133,9 @@ impl ForegroundEngine {
 #[test]
 #[tracing_test::traced_test]
 fn test_foreground_engine() {
-    let mt_engine = ForegroundEngine::new(crate::prelude::Engine::builder());
+    let engine = ForegroundEngine::new(crate::prelude::Engine::builder());
 
-    if let Some(bg) = mt_engine.engine_handle().background() {
+    if let Some(bg) = engine.engine_handle().background() {
         let mut bg = bg.call("test_background_work").unwrap();
         bg.spawn();
         let _ = bg.into_foreground().unwrap();

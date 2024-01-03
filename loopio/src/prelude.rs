@@ -23,6 +23,7 @@ pub use crate::foreground::ForegroundEngine;
 pub use crate::host::Host;
 pub use crate::operation::Operation;
 pub use crate::sequence::Sequence;
+pub use crate::work::WorkState;
 
 pub use reality::prelude::*;
 

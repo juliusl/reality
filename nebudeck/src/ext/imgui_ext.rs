@@ -8,6 +8,7 @@ use imgui::Ui;
 use imgui_wgpu::RendererConfig;
 use imgui_winit_support::WinitPlatform;
 
+use loopio::background_work::BackgroundFutureController;
 use loopio::engine::EnginePacket;
 use loopio::engine::Published;
 use loopio::prelude::*;
@@ -322,6 +323,7 @@ impl DesktopApp for ImguiMiddleware {
                 }
 
                 let mut formatter = UiFormatter {
+                    rk: ResourceKey::root(),
                     imgui: ui,
                     #[cfg(feature = "terminal")]
                     subcommand: None,
