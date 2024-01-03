@@ -1,8 +1,8 @@
 use anyhow::Error;
-use reality::ResourceKey;
-use reality::StorageTarget;
+use reality::prelude::*;
 use tokio::task::JoinError;
 use tokio::task::JoinHandle;
+use tracing::trace;
 
 use crate::background_work::BackgroundWork;
 use crate::background_work::BackgroundWorkEngineHandle;
@@ -11,7 +11,7 @@ use crate::engine::EngineBuilder;
 use crate::prelude::Engine;
 use crate::prelude::EngineHandle;
 use crate::prelude::Published;
-// use crate::prelude::Published;
+use crate::work::WorkState;
 
 /// Type-alias for the background task listening for new engine packets,
 ///
@@ -73,7 +73,7 @@ impl ForegroundEngine {
 # -- Background work test operation
 # -- Tests that the background-work system is functioning properly.
 + .operation test_background_work
-<loopio.std.io.println> Hello world from background engine.
+<test/loopio.foreground-engine-test> Hello world from background engine.
 
 # -- Default engine operation plugins
 # -- Initializes components to enable the background work system.
@@ -88,6 +88,7 @@ impl ForegroundEngine {
                 );
                 builder.enable::<BackgroundWork>();
                 builder.enable::<Published>();
+                builder.enable::<ForegroundEngineTest>();
                 builder.compile().await
             })
             .unwrap();
@@ -115,11 +116,20 @@ impl ForegroundEngine {
             .expect("should be able to create a background handle");
 
         // This tests that the bg engine is working properly
-        if let Ok(mut bg) = bg.call("engine://test_background_work") {
+        if let Ok(mut bg) = bg.call("test_background_work/test/loopio.foreground-engine-test") {
             let mut controller = DefaultController;
 
-            bg.wait_for_completion(&mut controller)
+            let _test_result = bg
+                .wait_for_completion(&mut controller)
                 .expect("should be able to complete");
+
+            // eprintln!("{:?} {:?} {:?}", test_result.attribute, test_result.get_message(), test_result.get_progress());
+            // eprintln!("{:?}", bg.work_state().get_message());
+            // assert_eq!(test_result.get_progress(), Some(1.0));
+            // assert_eq!(
+            //     test_result.get_message(),
+            //     Some("Hello world from background engine.".to_string())
+            // );
         }
 
         ForegroundEngine {
@@ -130,14 +140,70 @@ impl ForegroundEngine {
     }
 }
 
+/// Tests foreground engine,
+///
+#[derive(Reality, Clone, Default)]
+#[plugin_def(call = run_foreground_engine_test)]
+#[parse_def(rename = "foreground-engine-test")]
+struct ForegroundEngineTest {
+    #[reality(derive_fromstr)]
+    name: String,
+    test_progress: f32,
+}
+
+async fn run_foreground_engine_test(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    let init = tc.initialized::<ForegroundEngineTest>().await;
+    trace!("Running foreground engine test -- {:?} {:?}", tc.get_progress(), tc.get_message());
+    tc.set_progress(1.0);
+    tc.set_message(init.name);
+    Ok(())
+}
+
 #[test]
 #[tracing_test::traced_test]
 fn test_foreground_engine() {
+    use crate::work::WorkState;
+    use tower::Service;
+
     let engine = ForegroundEngine::new(crate::prelude::Engine::builder());
 
-    if let Some(bg) = engine.engine_handle().background() {
-        let mut bg = bg.call("test_background_work").unwrap();
+    // TODO: Add foreground engine test plugin
+    if let Some(_bg) = engine.engine_handle().background() {
+        let mut bg = _bg.call("test_background_work/test/loopio.foreground-engine-test").unwrap();
         bg.spawn();
-        let _ = bg.into_foreground().unwrap();
+        let tc = bg.into_foreground().unwrap();
+
+        eprintln!("{:?}", bg.work_state().elapsed());
+        eprintln!("{:?}", bg.work_state().get_start_time());
+        eprintln!("{:?}", bg.work_state().get_stop_time());
+        eprintln!("{:?}", bg.work_state().get_progress());
+        eprintln!("{:?}", bg.work_state().get_message());
+
+        eprintln!("{:?}", tc.elapsed());
+        eprintln!("{:?}", tc.get_start_time());
+        eprintln!("{:?}", tc.get_stop_time());
+        eprintln!("{:?}", tc.get_progress());
+        eprintln!("{:?}", tc.get_message());
+    }
+
+    // Verify background worker works
+    if let Some(bg) = engine.engine_handle().background() {
+        let tc = bg.tc.clone();
+
+        let mut worker = bg
+            .worker(ForegroundEngineTest {
+                name: String::from("Hello world from background worker."),
+                test_progress: 0.0,
+            })
+            .unwrap();
+
+        futures::executor::block_on(async move {
+            let result = worker.call(tc).await.unwrap();
+            assert_eq!(result.get_progress(), Some(1.0));
+            assert_eq!(
+                result.get_message(),
+                Some("Hello world from background worker.".to_string())
+            );
+        });
     }
 }

@@ -2,6 +2,7 @@ pub mod action;
 pub mod address;
 pub mod background_work;
 pub mod engine;
+pub mod errors;
 mod ext;
 pub mod foreground;
 pub mod host;

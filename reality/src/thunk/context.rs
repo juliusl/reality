@@ -421,6 +421,12 @@ impl Context {
         self.__cached.clone()
     }
 
+    /// Sets the current cache,
+    /// 
+    pub fn set_cache(&mut self, shared: Shared) {
+        self.__cached = shared;
+    }
+
     /// Caches the plugin P,
     ///
     pub async fn cache<P: Plugin + Sync + Send + 'static>(&mut self) {

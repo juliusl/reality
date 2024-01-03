@@ -63,6 +63,12 @@ pub trait KvpExt {
     where
         R: Send + Sync + 'static;
 
+    /// Deletes a resource from kv store,
+    ///
+    fn delete_kv<R>(&mut self, key: impl std::hash::Hash) -> Option<ResourceKey<R>>
+    where
+        R: Send + Sync + 'static;
+
     /// Fetch a kv pair by key,
     ///
     fn fetch_kv<R>(
@@ -183,6 +189,17 @@ impl KvpExt for ThunkContext {
         self.__cached
             .resource::<R>(key)
             .map(|c| (key.expect_not_root(), c))
+    }
+
+    /// Deletes a resource from kv store,
+    /// 
+    fn delete_kv<R>(&mut self, key: impl std::hash::Hash) -> Option<ResourceKey<R>>
+    where
+        R: Send + Sync + 'static,
+    {
+        let key = self.attribute.transmute().branch(&key);
+
+        Some(key.transmute()).filter(move |_| self.__cached.remove_resource_at(key))
     }
 
     /// Fetch a mutable reference to a kv pair by key,

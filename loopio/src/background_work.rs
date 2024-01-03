@@ -33,7 +33,7 @@ pub struct BackgroundWork {
 /// Creates a new background work resource,
 ///
 async fn create_background_work_handle(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    println!("Creating background work handle");
+    debug!("Creating background work handle");
     let init = Local.create::<BackgroundWork>(tc).await;
     let (_, bh) = tc.maybe_store_kv::<BackgroundWorkEngineHandle>(
         init.address.to_string(),
@@ -44,7 +44,7 @@ async fn create_background_work_handle(tc: &mut ThunkContext) -> anyhow::Result<
 
     let engine = tc.engine_handle().await;
 
-    println!("Saving to transient {}", engine.is_some());
+    debug!("Saving to transient {}", engine.is_some());
     _bh.tc
         .write_cache(engine.expect("should be bound to an engine"));
     tc.transient_mut()
@@ -79,7 +79,7 @@ pub enum CallStatus {
 }
 
 impl BackgroundWorkEngineHandle {
-    /// Calls an plugin by address and returns the current status,
+    /// Returns a new background future for address hosted by engine,
     ///
     pub fn call(
         &mut self,
@@ -97,6 +97,8 @@ impl BackgroundWorkEngineHandle {
         Ok(bg)
     }
 
+    /// Creates a new background worker which implements tower::Service,
+    ///  
     pub fn worker<P>(
         &mut self,
         plugin: P,
@@ -162,20 +164,30 @@ impl BackgroundFuture {
     pub fn spawn(&mut self) -> CallStatus {
         if matches!(self.status(), CallStatus::Enabled) {
             if let Some(eh) = self.tc.cached::<EngineHandle>() {
+                // TODO: Check work state?
+
                 debug!("Spawning from background future {}", self.address);
                 let address = self.address.to_string();
                 let handle = self.tc.node.runtime.clone().unwrap();
 
                 self.cancellation = self.tc.cancellation.child_token();
                 let cancel = self.cancellation.clone();
+                self.work_state().init();
+                let cache = self.tc.clone_cache();
                 let call_output = CallOutput::Spawn(Some(handle.spawn(async move {
                     select! {
-                        result = eh.run(address) => result,
+                        resource = eh.hosted_resource(address) => {
+                            let mut resource = resource?;
+                            // TODO: Move cache over
+                            resource.context_mut().set_cache(cache);
+                            resource.spawn().expect("should be able to spawn").await?
+                        },
                         _ = cancel.cancelled() => {
                             Err(anyhow!("Call was cancelled"))
                         }
                     }
                 })));
+
                 self.tc.store_kv(&self.address.to_string(), call_output);
                 CallStatus::Running
             } else {
@@ -191,6 +203,7 @@ impl BackgroundFuture {
     pub fn spawn_with_updates(&mut self, updates: FrameUpdates) -> CallStatus {
         if matches!(self.status(), CallStatus::Enabled) {
             if let Some(eh) = self.tc.cached::<EngineHandle>() {
+                self.work_state().reset();
                 debug!("Spawning from background future {}", self.address);
                 let address = self.address.to_string();
                 let handle = self.tc.node.runtime.clone().unwrap();
@@ -216,6 +229,9 @@ impl BackgroundFuture {
                         }
                     }
                 })));
+
+                self.work_state().set_work_start();
+
                 self.tc.store_kv(&self.address.to_string(), call_output);
                 CallStatus::Running
             } else {
@@ -261,6 +277,7 @@ impl BackgroundFuture {
             match call {
                 CallOutput::Spawn(Some(spawned)) => select! {
                     result = spawned => {
+                        self.work_state().set_work_stop();
                         let r = result?;
                         r
                     },
@@ -388,16 +405,23 @@ pub trait BackgroundFutureController {
 
 /// Default background future controller,
 ///
-/// The behavior of this background future is to
+/// **Note** The default behavior is to spawn the background task immediately if enabled. No-op on disabled.
 ///
 pub struct DefaultController;
 
 impl BackgroundFutureController for DefaultController {}
 
+/// Tower wrapper for plugins,
+///
 pub struct BackgroundWorker<P>
 where
     P: Plugin,
 {
+    /// Inner plugin state,
+    ///
+    /// When set the service will be ready and will return a future containing
+    /// the result of calling the inner plugin
+    ///
     inner: OnceLock<P>,
 }
 

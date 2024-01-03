@@ -157,7 +157,7 @@ pub struct Println {
     /// Path to read string from,
     ///
     #[reality(derive_fromstr)]
-    line: String,
+    pub(crate) line: String,
 }
 
 #[async_trait::async_trait]
