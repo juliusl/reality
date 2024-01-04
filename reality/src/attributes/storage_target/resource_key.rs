@@ -199,11 +199,9 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
     }
 
     /// Returns the link version of the resource key if possible,
-    /// 
+    ///
     pub fn into_link(&self) -> Option<ResourceKey<T>> {
-        self.repr().map(|r| {
-            ResourceKey::<T>::with_repr(r)
-        })
+        self.repr().map(|r| ResourceKey::<T>::with_repr(r))
     }
 
     /// Sets the repr for this key,
@@ -357,7 +355,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
     }
 
     /// Returns true if the current key is a link,
-    /// 
+    ///
     pub fn is_link(&self) -> bool {
         if let Some(repr) = self.repr() {
             repr.as_u64() == self.hash_key()

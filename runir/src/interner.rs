@@ -65,7 +65,7 @@ pub struct InternHandle {
     ///
     pub(crate) register_lo: u16,
     /// Data register,
-    /// 
+    ///
     pub(crate) data: u64,
 }
 
@@ -185,7 +185,7 @@ impl InternHandle {
     pub fn resource_parse_type_name(&self) -> Option<&'static str> {
         crate::repr::resource::PARSE_TYPE_NAME.copy(self)
     }
-    
+
     /// Returns the parent of the dependency,
     ///
     #[inline]
@@ -197,8 +197,7 @@ impl InternHandle {
     ///
     #[inline]
     pub fn dependency_name(&self) -> Option<Arc<String>> {
-        crate::repr::dependency::DEPENDENCY_NAME
-            .strong_ref(self)
+        crate::repr::dependency::DEPENDENCY_NAME.strong_ref(self)
     }
 
     /// Returns the name of the receiver,
@@ -307,14 +306,14 @@ impl InternHandle {
     }
 
     /// Returns the node source's parsed span,
-    /// 
+    ///
     #[inline]
     pub fn source_span(&self) -> Option<Arc<SourceSpan>> {
         crate::repr::node::SOURCE_SPAN.strong_ref(self)
     }
 
     /// Returns the node source's relative path,
-    /// 
+    ///
     #[inline]
     pub fn source_relative(&self) -> Option<Arc<PathBuf>> {
         crate::repr::node::SOURCE_RELATIVE.strong_ref(self)
@@ -472,7 +471,11 @@ impl<T: Send + Sync + 'static> InternTable<T> {
         }
         self.inner().send_modify(|t| {
             if let Some(_) = t.insert(handle, Arc::new(value)) {
-                warn!("Replacing intern handle {:?} {:x?}", handle.level_flags(), handle);
+                warn!(
+                    "Replacing intern handle {:?} {:x?}",
+                    handle.level_flags(),
+                    handle
+                );
             }
         });
 

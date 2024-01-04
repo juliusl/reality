@@ -165,7 +165,7 @@ impl From<&ThunkContext> for BackgroundFuture {
 
 impl BackgroundFuture {
     /// Prepares the work state for the background future,
-    /// 
+    ///
     pub fn enable_work_state(&mut self) {
         self.work_state().init();
 

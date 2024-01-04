@@ -107,12 +107,17 @@ impl Project<Shared> {
     pub async fn load_file(self, file: impl AsRef<Path>) -> anyhow::Result<Self> {
         let content = tokio::fs::read_to_string(file.as_ref()).await?;
 
-        self.load_content(file.as_ref().to_path_buf(), content).await
+        self.load_content(file.as_ref().to_path_buf(), content)
+            .await
     }
 
     /// Load content into the project,
     ///
-    pub async fn load_content(self, relative: impl Into<PathBuf>, content: impl AsRef<str>) -> anyhow::Result<Self> {
+    pub async fn load_content(
+        self,
+        relative: impl Into<PathBuf>,
+        content: impl AsRef<str>,
+    ) -> anyhow::Result<Self> {
         let mut loading: Loading<Shared> = self.into();
 
         loading.set_relative(relative);
@@ -180,7 +185,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Clone for Loading<Storage> 
 
 impl<Storage: StorageTarget + Send + Sync + 'static> Loading<Storage> {
     /// Sets the relative path value,
-    /// 
+    ///
     pub fn set_relative(&mut self, relative: impl Into<PathBuf>) {
         self.relative = relative.into();
     }

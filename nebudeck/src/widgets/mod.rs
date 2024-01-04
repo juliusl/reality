@@ -52,7 +52,7 @@ pub mod prelude {
     ///
     pub struct UiFormatter<'frame> {
         /// Resource key set on the current formatter,
-        /// 
+        ///
         pub(crate) rk: ResourceKey<Attribute>,
         /// Handle to the ui builder,
         ///

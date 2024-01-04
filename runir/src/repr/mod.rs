@@ -80,7 +80,7 @@ impl Repr {
     }
 
     /// Returns repr as a uuid,
-    /// 
+    ///
     #[inline]
     pub fn as_uuid(&self) -> uuid::Uuid {
         uuid::Uuid::from_u64_pair(self.tail.as_u64(), 0)
@@ -246,7 +246,11 @@ fn display_runmd(repr: &Repr, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Resu
             writeln!(f, "| path | {path} |")?;
             writeln!(f, "| uuid | {:?} |", node.0.as_uuid())?;
             writeln!(f, "| span | {:?} |", node.span().unwrap_or_default())?;
-            writeln!(f, "| relative | {:?} |", node.relative().unwrap_or_default())?;
+            writeln!(
+                f,
+                "| relative | {:?} |",
+                node.relative().unwrap_or_default()
+            )?;
         }
     }
 

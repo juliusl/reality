@@ -1,9 +1,9 @@
+use anyhow::anyhow;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
-use anyhow::anyhow;
 use tracing::debug;
 use tracing::error;
 use tracing::trace;
@@ -138,7 +138,10 @@ impl ParsedNode {
     ///
     #[inline]
     pub fn parsed(&self) -> impl Iterator<Item = ResourceKey<Attribute>> + '_ {
-        self.attributes.iter().cloned().chain(self.properties.iter().map(|p| p.transmute()))
+        self.attributes
+            .iter()
+            .cloned()
+            .chain(self.properties.iter().map(|p| p.transmute()))
     }
 
     /// Resolve a path,
@@ -156,14 +159,15 @@ impl ParsedNode {
     }
 
     /// Parses and finalizes the current node state,
-    /// 
-    pub(crate) async fn parse<I: InternerFactory>(&mut self, interner: impl Fn() -> I, storage: &Shared) -> anyhow::Result<()> {
+    ///
+    pub(crate) async fn parse<I: InternerFactory>(
+        &mut self,
+        interner: impl Fn() -> I,
+        storage: &Shared,
+    ) -> anyhow::Result<()> {
         if let Some(mut repr) = self.node.repr() {
             if let Some(node) = repr.as_node() {
-                let input = node
-                    .input()
-                    .map(|s| s.to_string())
-                    .unwrap_or(String::new());
+                let input = node.input().map(|s| s.to_string()).unwrap_or(String::new());
                 let tag = node.tag();
 
                 let address = if let Some(ref tag) = tag {
@@ -206,7 +210,7 @@ impl ParsedNode {
                 host.set_extensions(exts);
 
                 trace!("Upgrading node w/ host -- {}", address);
-                
+
                 repr.upgrade(interner(), host).await?;
 
                 if let Some(plugin) = storage.resource::<PluginLevel>(self.node.transmute()) {
@@ -227,8 +231,7 @@ impl ParsedNode {
                             };
 
                             trace!("Upgrading field w/ host -- {}", address);
-                            f.upgrade(interner(), HostLevel::new(address))
-                                .await?;
+                            f.upgrade(interner(), HostLevel::new(address)).await?;
 
                             if let Some(plugin) = storage.resource::<PluginLevel>(a.transmute()) {
                                 trace!("Upgrading field w/ plugin");
@@ -283,7 +286,7 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     ///
     storage: Option<Arc<tokio::sync::RwLock<Storage>>>,
     /// Sets the relative path of the source,
-    /// 
+    ///
     pub(crate) relative: Option<PathBuf>,
     /// Attributes parsed,
     ///

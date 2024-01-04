@@ -44,10 +44,10 @@ pub struct ResourceLevel {
     ///
     parse_type: Option<Tag<&'static str>>,
     /// (Optional) FFI type name,
-    /// 
+    ///
     ffi_type: Option<Tag<&'static str>>,
     /// (Optional) FFI parse type name,
-    /// 
+    ///
     ffi_parse_type: Option<Tag<&'static str>>,
 }
 
@@ -74,14 +74,14 @@ impl ResourceLevel {
     }
 
     /// Sets the ffi type name,
-    /// 
+    ///
     #[inline]
     pub fn set_ffi_type<T: FFI>(&mut self) {
         self.ffi_type = Some(Tag::new(&FFI_TYPE_NAME, T::ffi_type_name));
     }
 
     /// Sets the ffi parse type name,
-    /// 
+    ///
     #[inline]
     pub fn set_ffi_parse_type<T: FFI>(&mut self) {
         self.ffi_parse_type = Some(Tag::new(&FFI_PARSE_TYPE_NAME, T::ffi_type_name));
@@ -141,7 +141,7 @@ impl ResourceRepr {
     }
 
     /// Returns true if the resource parse type matches,
-    /// 
+    ///
     pub fn is_parse_type<T: 'static>(&self) -> bool {
         self.parse_type_name()
             .filter(|n| *n == std::any::type_name::<T>())
@@ -178,10 +178,10 @@ impl ResourceRepr {
 }
 
 /// Trait to provide foreign function interface support,
-/// 
+///
 pub trait FFI {
     /// FFI type name,
-    /// 
+    ///
     fn ffi_type_name() -> &'static str;
 }
 

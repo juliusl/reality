@@ -299,8 +299,11 @@ where
     }
 
     /// Waits for a change to owner and calls listen,
-    /// 
-    pub async fn listen_value(&self, mut listen: impl FnMut(&ProjectedValue)) -> anyhow::Result<()> {
+    ///
+    pub async fn listen_value(
+        &self,
+        mut listen: impl FnMut(&ProjectedValue),
+    ) -> anyhow::Result<()> {
         let mut owner = self.owner.subscribe();
 
         owner.changed().await?;

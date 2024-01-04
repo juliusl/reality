@@ -27,9 +27,9 @@ pub mod ext;
 mod nebudeck;
 pub use nebudeck::Nebudeck;
 
-#[cfg(feature = "terminal")]
-pub mod terminal;
 #[cfg(feature = "desktop")]
 pub mod desktop;
+#[cfg(feature = "terminal")]
+pub mod terminal;
 #[cfg(feature = "desktop-imgui")]
 pub mod widgets;

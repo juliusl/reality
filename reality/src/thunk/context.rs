@@ -175,7 +175,8 @@ impl Context {
             Ok(())
         } else {
             Err(anyhow!(
-                "Current context does not have a linkable resource key {:?}", self.attribute
+                "Current context does not have a linkable resource key {:?}",
+                self.attribute
             ))
         }
     }
@@ -224,7 +225,7 @@ impl Context {
     }
 
     /// Returns the current resource from node storage,
-    /// 
+    ///
     pub async fn current_node_resource<T>(&self) -> Option<T>
     where
         T: ToOwned<Owned = T> + Send + Sync + 'static,
@@ -319,7 +320,7 @@ impl Context {
     /// Returns the packet router initialized for P,
     ///
     pub async fn router<P: Plugin + Sync + Send + 'static>(&self) -> Option<Arc<PacketRouter<P>>> {
-       self.current_node_resource().await
+        self.current_node_resource().await
     }
 
     /// Returns the current **default** frame listener for plugin P,
@@ -339,7 +340,7 @@ impl Context {
     where
         P::Virtual: NewFn<Inner = P>,
     {
-       self.current_node_resource().await
+        self.current_node_resource().await
     }
 
     /// Returns the current wire client if initialized,
@@ -422,7 +423,7 @@ impl Context {
     }
 
     /// Sets the current cache,
-    /// 
+    ///
     pub fn set_cache(&mut self, shared: Shared) {
         self.__cached = shared;
     }

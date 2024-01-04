@@ -192,7 +192,7 @@ impl KvpExt for ThunkContext {
     }
 
     /// Deletes a resource from kv store,
-    /// 
+    ///
     fn delete_kv<R>(&mut self, key: impl std::hash::Hash) -> Option<ResourceKey<R>>
     where
         R: Send + Sync + 'static,

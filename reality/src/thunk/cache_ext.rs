@@ -36,8 +36,8 @@ pub trait CacheExt {
         resource: R,
     ) -> <Shared as StorageTarget>::BorrowMutResource<'_, R>;
 
-     /// Deletes a resource from cache,
-    /// 
+    /// Deletes a resource from cache,
+    ///
     fn delete_cached<R>(&mut self) -> bool
     where
         R: Send + Sync + 'static;
@@ -80,8 +80,8 @@ impl CacheExt for ThunkContext {
 
     fn delete_cached<R>(&mut self) -> bool
     where
-        R: Send + Sync + 'static {
-            self.__cached
-                .remove_resource_at(self.attribute.transmute())
+        R: Send + Sync + 'static,
+    {
+        self.__cached.remove_resource_at(self.attribute.transmute())
     }
 }

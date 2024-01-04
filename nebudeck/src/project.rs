@@ -133,7 +133,7 @@ async fn test_project() {
     let package = project.package().await.unwrap();
     let projects = package.search("*");
     let program = &projects.first().unwrap().program;
-    
+
     // Test preparing the workspace
     let tc = program.context().unwrap();
     let result = tc.call().await.unwrap().unwrap();

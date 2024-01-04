@@ -66,7 +66,11 @@ impl Program {
                     if is_match {
                         let mut program = self.clone();
                         program.entry_point = Some(*a);
-                        matches.push(ProgramMatch { host, node: self.node.node.node(), program });
+                        matches.push(ProgramMatch {
+                            host,
+                            node: self.node.node.node(),
+                            program,
+                        });
                     }
                 }
             }

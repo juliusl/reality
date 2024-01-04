@@ -121,22 +121,32 @@ impl ForegroundEngine {
         // This tests that the bg engine is working properly
         if let Ok(mut bg) = bg.call("test_background_work/test/loopio.foreground-engine-test") {
             let mut controller = DefaultController;
-            let progress = bg.as_ref().cached_ref::<PrivateProgress>().as_deref().cloned();
+            let progress = bg
+                .as_ref()
+                .cached_ref::<PrivateProgress>()
+                .as_deref()
+                .cloned();
             let _ = runtime.handle().spawn(async move {
                 if let Some(progress) = progress {
                     eprintln!("progress found");
 
-                    progress.listen_value(|v| {
-                        assert_eq!(0.5, v.0);
-                    }).await?;
+                    progress
+                        .listen_value(|v| {
+                            assert_eq!(0.5, v.0);
+                        })
+                        .await?;
 
-                    progress.listen_value(|v| {
-                        assert_eq!(0.7, v.0);
-                    }).await?;
+                    progress
+                        .listen_value(|v| {
+                            assert_eq!(0.7, v.0);
+                        })
+                        .await?;
 
-                    progress.listen_value(|v| {
-                        assert_eq!(1.0, v.0);
-                    }).await?;
+                    progress
+                        .listen_value(|v| {
+                            assert_eq!(1.0, v.0);
+                        })
+                        .await?;
                 }
                 Ok::<_, anyhow::Error>(())
             });
@@ -174,15 +184,30 @@ async fn run_foreground_engine_test(tc: &mut ThunkContext) -> anyhow::Result<()>
     tc.set_progress(0.5);
     tc.set_message(init.name);
     let _ = <crate::work::PrivateWorkState as Plugin>::call(tc.clone()).await?;
-    tc.node.runtime.clone().unwrap().spawn(async { tokio::time::sleep(Duration::from_millis(100)).await }).await?;
+    tc.node
+        .runtime
+        .clone()
+        .unwrap()
+        .spawn(async { tokio::time::sleep(Duration::from_millis(100)).await })
+        .await?;
 
     tc.set_progress(0.7);
     let _ = <crate::work::PrivateWorkState as Plugin>::call(tc.clone()).await?;
-    tc.node.runtime.clone().unwrap().spawn(async { tokio::time::sleep(Duration::from_millis(100)).await }).await?;
+    tc.node
+        .runtime
+        .clone()
+        .unwrap()
+        .spawn(async { tokio::time::sleep(Duration::from_millis(100)).await })
+        .await?;
 
     tc.set_progress(1.0);
     let _ = <crate::work::PrivateWorkState as Plugin>::call(tc.clone()).await?;
-    tc.node.runtime.clone().unwrap().spawn(async { tokio::time::sleep(Duration::from_millis(100)).await }).await?;
+    tc.node
+        .runtime
+        .clone()
+        .unwrap()
+        .spawn(async { tokio::time::sleep(Duration::from_millis(100)).await })
+        .await?;
 
     Ok(())
 }

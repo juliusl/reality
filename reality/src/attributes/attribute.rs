@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::{ResourceKey, FieldPacket};
+use crate::{FieldPacket, ResourceKey};
 
 /// Pointer-struct representing the beginning a storage node,
 ///
@@ -41,7 +41,7 @@ impl ResourceKey<Attribute> {
 
 impl ResourceKey<Property> {
     /// Returns an empty packet for this field,
-    /// 
+    ///
     pub fn field_packet(&self) -> Option<FieldPacket> {
         self.empty_packet()
     }

@@ -1,10 +1,10 @@
 mod entity;
+mod entropy;
 mod interner;
 mod level;
 mod linker;
 mod repr;
 mod tag;
-mod entropy;
 mod util;
 
 #[cfg(feature = "crc-interner")]
@@ -51,9 +51,7 @@ mod macros {
     macro_rules! push_tag {
         ($interner:ident, $tag:expr) => {
             let tag = $tag;
-            $interner.push_tag(tag.value(), move |h| {
-                Box::pin(async move { tag.assign(h) })
-            });
+            $interner.push_tag(tag.value(), move |h| Box::pin(async move { tag.assign(h) }));
         };
         (dyn $interner:ident, $tag:expr) => {
             let tag = $tag;
@@ -249,9 +247,7 @@ mod tests {
         let linked = &HANDLES.get(&prev.unwrap()).unwrap();
         eprintln!("{:x?}", linked.upgrade());
 
-        let a = crate::repr::node::ANNOTATIONS
-            .strong_ref(&input)
-            .unwrap();
+        let a = crate::repr::node::ANNOTATIONS.strong_ref(&input).unwrap();
         eprintln!("{:?}", a);
 
         let test = Test::linker::<CrcInterner>().unwrap();

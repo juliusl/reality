@@ -45,7 +45,7 @@ define_intern_table!(SOURCE_SPAN: SourceSpan);
 define_intern_table!(SOURCE_RELATIVE: PathBuf);
 
 /// Type-alias for start-and-end positions from the node's source,
-/// 
+///
 pub type SourceSpan = Range<usize>;
 
 /// Node level is a dynamic level of representation,
@@ -70,7 +70,7 @@ pub struct NodeLevel {
     ///
     idx: Option<Tag<usize, Arc<usize>>>,
     /// Block idx,
-    /// 
+    ///
     bidx: Option<Tag<usize, Arc<usize>>>,
     /// Node source,
     ///
@@ -82,10 +82,10 @@ pub struct NodeLevel {
     ///
     annotations: Option<Tag<BTreeMap<String, String>, Arc<BTreeMap<String, String>>>>,
     /// Position in source this node was parsed from,
-    /// 
+    ///
     span: Option<Tag<SourceSpan, Arc<SourceSpan>>>,
     /// Relative path name of the source for this node,
-    /// 
+    ///
     relative: Option<Tag<PathBuf, Arc<PathBuf>>>,
 }
 
@@ -195,7 +195,7 @@ impl NodeLevel {
         self
     }
 
-       /// Returns the node level w/ idx tag set,
+    /// Returns the node level w/ idx tag set,
     ///
     #[inline]
     pub fn with_block(mut self, idx: usize) -> Self {
@@ -226,9 +226,9 @@ impl NodeLevel {
         self.set_annotations(annotations);
         self
     }
-    
+
     /// Returns the node level w/ source span set,
-    /// 
+    ///
     #[inline]
     pub fn with_source_span(mut self, span: SourceSpan) -> Self {
         self.set_source_span(span);
@@ -310,14 +310,14 @@ impl NodeLevel {
     }
 
     /// Sets the node level source span,
-    /// 
+    ///
     #[inline]
     pub fn set_source_span(&mut self, span: SourceSpan) {
         self.span = Some(Tag::new(&SOURCE_SPAN, Arc::new(span)));
     }
 
     /// Sets the node level source relative path,
-    /// 
+    ///
     #[inline]
     pub fn set_source_relative(&mut self, relative: PathBuf) {
         self.relative = Some(Tag::new(&SOURCE_RELATIVE, Arc::new(relative)));
@@ -461,14 +461,14 @@ impl NodeRepr {
     }
 
     /// Returns node source span,
-    /// 
+    ///
     #[inline]
     pub fn span(&self) -> Option<Arc<SourceSpan>> {
         self.0.source_span()
     }
 
     /// Returns node source relative path,
-    /// 
+    ///
     #[inline]
     pub fn relative(&self) -> Option<Arc<PathBuf>> {
         self.0.source_relative()

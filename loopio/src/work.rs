@@ -39,7 +39,9 @@ pub trait WorkState: AsMut<ThunkContext> + AsRef<ThunkContext> {
     /// Get the current status message,
     ///
     fn get_message(&self) -> Option<String> {
-        self.as_ref().work_state_ref().map(|w| w.status.0.to_string())
+        self.as_ref()
+            .work_state_ref()
+            .map(|w| w.status.0.to_string())
     }
 
     /// Sets the start time for the current work state,
@@ -100,21 +102,36 @@ pub trait WorkState: AsMut<ThunkContext> + AsRef<ThunkContext> {
 }
 
 pub(crate) trait __WorkState: AsRef<ThunkContext> + AsMut<ThunkContext> {
-    fn work_state_mut(&mut self) -> <Shared as StorageTarget>::BorrowMutResource<'_, PrivateWorkState> {
-         self.as_mut().maybe_write_cache(PrivateWorkState::default())
+    fn work_state_mut(
+        &mut self,
+    ) -> <Shared as StorageTarget>::BorrowMutResource<'_, PrivateWorkState> {
+        self.as_mut().maybe_write_cache(PrivateWorkState::default())
     }
 
-    fn work_state_ref(&self) -> Option<<Shared as StorageTarget>::BorrowResource<'_, PrivateWorkState>> {
+    fn work_state_ref(
+        &self,
+    ) -> Option<<Shared as StorageTarget>::BorrowResource<'_, PrivateWorkState>> {
         self.as_ref().cached_ref()
     }
 
-    fn virtual_work_state_ref(&self) -> Option<<Shared as StorageTarget>::BorrowResource<'_, VirtualPrivateWorkState>> {
+    fn virtual_work_state_ref(
+        &self,
+    ) -> Option<<Shared as StorageTarget>::BorrowResource<'_, VirtualPrivateWorkState>> {
         self.as_ref().cached_ref::<VirtualPrivateWorkState>()
     }
 
-    fn virtual_work_state_mut(&mut self, init: Option<VirtualPrivateWorkState>) -> <Shared as StorageTarget>::BorrowMutResource<'_, VirtualPrivateWorkState> {
-        let init = init.unwrap_or(VirtualPrivateWorkState::new(self.work_state_ref().as_deref().cloned().unwrap_or_default()));
-        self.as_mut().maybe_write_cache::<VirtualPrivateWorkState>(init)
+    fn virtual_work_state_mut(
+        &mut self,
+        init: Option<VirtualPrivateWorkState>,
+    ) -> <Shared as StorageTarget>::BorrowMutResource<'_, VirtualPrivateWorkState> {
+        let init = init.unwrap_or(VirtualPrivateWorkState::new(
+            self.work_state_ref()
+                .as_deref()
+                .cloned()
+                .unwrap_or_default(),
+        ));
+        self.as_mut()
+            .maybe_write_cache::<VirtualPrivateWorkState>(init)
     }
 }
 
@@ -167,9 +184,7 @@ impl FromStr for Progress {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Progress(
-            f32::from_str(s)?,
-        ))
+        Ok(Progress(f32::from_str(s)?))
     }
 }
 

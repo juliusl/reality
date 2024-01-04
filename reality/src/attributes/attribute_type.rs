@@ -147,7 +147,7 @@ impl AttributeTypeParser<Shared> {
     ///
     pub fn parseable_field<const IDX: usize, Owner>() -> Self
     where
-        Owner:  Recv + OnParseField<IDX> + Send + Sync + 'static,
+        Owner: Recv + OnParseField<IDX> + Send + Sync + 'static,
         <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
         let mut resource = ResourceLevel::new::<Owner::ProjectedType>();
