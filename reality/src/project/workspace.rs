@@ -76,6 +76,9 @@ impl Empty {
 /// Struct containing a workspace of sources,
 ///
 pub struct Workspace {
+    /// Name of the workspace,
+    ///
+    pub name: String,
     /// Sources added to the workspace,
     ///
     pub sources: Vec<Source>,
@@ -84,9 +87,19 @@ pub struct Workspace {
     pub project: Option<Project<Shared>>,
 }
 
+impl std::fmt::Debug for Workspace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Workspace")
+            .field("name", &self.name)
+            .field("sources", &self.sources)
+            .finish()
+    }
+}
+
 impl Clone for Workspace {
     fn clone(&self) -> Self {
         Self {
+            name: self.name.to_string(),
             sources: self.sources.clone(),
             project: None,
         }
@@ -104,9 +117,16 @@ impl Workspace {
     ///
     pub fn new() -> Self {
         Self {
+            name: String::new(),
             sources: vec![],
             project: None,
         }
+    }
+
+    /// Sets the workspace name,
+    ///
+    pub fn set_name(&mut self, name: impl Into<String>) {
+        self.name = name.into();
     }
 
     /// Set sources on the project loop,

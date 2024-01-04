@@ -20,7 +20,12 @@ pub use controller::BackgroundWork;
 pub use controller::ControlBus;
 pub use controller::Controller;
 
+mod project;
+
 pub mod ext;
+
+mod nebudeck;
+pub use nebudeck::Nebudeck;
 
 #[cfg(feature = "terminal")]
 pub mod terminal;

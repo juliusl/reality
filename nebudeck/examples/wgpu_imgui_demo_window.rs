@@ -14,8 +14,6 @@ use nebudeck::ext::*;
 use nebudeck::widgets::UiDisplayMut;
 use nebudeck::widgets::UiFormatter;
 use nebudeck::ControlBus;
-use std::time::Instant;
-use tracing::trace;
 
 /// Demonstrates how to build on top of the WgpuSystem Desktop App implementation,
 ///
