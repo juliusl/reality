@@ -315,8 +315,8 @@ mod tests {
     pub struct Test2 {
         name: String,
         file: PathBuf,
-        #[reality(attribute_type=Test3, not_wire)]
-        test3: Test3,
+        // #[reality(attribute_type=Test3, not_wire)]
+        // test3: Test3,
     }
 
     #[derive(Reality, Default, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
@@ -421,7 +421,7 @@ mod tests {
             Ok(Test2 {
                 name: String::new(),
                 file: PathBuf::from(""),
-                test3: Test3::A { a: String::new() },
+                // test3: Test3::A { a: String::new() },
             })
         }
     }

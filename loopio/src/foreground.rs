@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::Error;
 use reality::prelude::*;
 use tokio::task::JoinError;
@@ -11,6 +13,7 @@ use crate::engine::EngineBuilder;
 use crate::prelude::Engine;
 use crate::prelude::EngineHandle;
 use crate::prelude::Published;
+use crate::work::PrivateProgress;
 use crate::work::WorkState;
 
 /// Type-alias for the background task listening for new engine packets,
@@ -118,18 +121,31 @@ impl ForegroundEngine {
         // This tests that the bg engine is working properly
         if let Ok(mut bg) = bg.call("test_background_work/test/loopio.foreground-engine-test") {
             let mut controller = DefaultController;
+            let progress = bg.as_ref().cached_ref::<PrivateProgress>().as_deref().cloned();
+            let _ = runtime.handle().spawn(async move {
+                if let Some(progress) = progress {
+                    eprintln!("progress found");
 
-            let _test_result = bg
+                    progress.listen_value(|v| {
+                        assert_eq!(0.5, v.0);
+                    }).await?;
+
+                    progress.listen_value(|v| {
+                        assert_eq!(0.7, v.0);
+                    }).await?;
+
+                    progress.listen_value(|v| {
+                        assert_eq!(1.0, v.0);
+                    }).await?;
+                }
+                Ok::<_, anyhow::Error>(())
+            });
+
+            let _ = bg
                 .wait_for_completion(&mut controller)
                 .expect("should be able to complete");
 
-            // eprintln!("{:?} {:?} {:?}", test_result.attribute, test_result.get_message(), test_result.get_progress());
-            // eprintln!("{:?}", bg.work_state().get_message());
-            // assert_eq!(test_result.get_progress(), Some(1.0));
-            // assert_eq!(
-            //     test_result.get_message(),
-            //     Some("Hello world from background engine.".to_string())
-            // );
+            // runtime.handle().block_on(jh).expect("should be able to join").expect("should be able to complete");
         }
 
         ForegroundEngine {
@@ -142,7 +158,7 @@ impl ForegroundEngine {
 
 /// Tests foreground engine,
 ///
-#[derive(Reality, Clone, Default)]
+#[derive(Reality, Clone, Debug, Default)]
 #[plugin_def(call = run_foreground_engine_test)]
 #[parse_def(rename = "foreground-engine-test")]
 struct ForegroundEngineTest {
@@ -153,9 +169,21 @@ struct ForegroundEngineTest {
 
 async fn run_foreground_engine_test(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = tc.initialized::<ForegroundEngineTest>().await;
-    trace!("Running foreground engine test -- {:?} {:?}", tc.get_progress(), tc.get_message());
-    tc.set_progress(1.0);
+    trace!("running foreground engine test -- {:?}", init);
+
+    tc.set_progress(0.5);
     tc.set_message(init.name);
+    let _ = <crate::work::PrivateWorkState as Plugin>::call(tc.clone()).await?;
+    tc.node.runtime.clone().unwrap().spawn(async { tokio::time::sleep(Duration::from_millis(100)).await }).await?;
+
+    tc.set_progress(0.7);
+    let _ = <crate::work::PrivateWorkState as Plugin>::call(tc.clone()).await?;
+    tc.node.runtime.clone().unwrap().spawn(async { tokio::time::sleep(Duration::from_millis(100)).await }).await?;
+
+    tc.set_progress(1.0);
+    let _ = <crate::work::PrivateWorkState as Plugin>::call(tc.clone()).await?;
+    tc.node.runtime.clone().unwrap().spawn(async { tokio::time::sleep(Duration::from_millis(100)).await }).await?;
+
     Ok(())
 }
 
@@ -165,26 +193,8 @@ fn test_foreground_engine() {
     use crate::work::WorkState;
     use tower::Service;
 
+    // Test self diagnosis works
     let engine = ForegroundEngine::new(crate::prelude::Engine::builder());
-
-    // TODO: Add foreground engine test plugin
-    if let Some(_bg) = engine.engine_handle().background() {
-        let mut bg = _bg.call("test_background_work/test/loopio.foreground-engine-test").unwrap();
-        bg.spawn();
-        let tc = bg.into_foreground().unwrap();
-
-        eprintln!("{:?}", bg.work_state().elapsed());
-        eprintln!("{:?}", bg.work_state().get_start_time());
-        eprintln!("{:?}", bg.work_state().get_stop_time());
-        eprintln!("{:?}", bg.work_state().get_progress());
-        eprintln!("{:?}", bg.work_state().get_message());
-
-        eprintln!("{:?}", tc.elapsed());
-        eprintln!("{:?}", tc.get_start_time());
-        eprintln!("{:?}", tc.get_stop_time());
-        eprintln!("{:?}", tc.get_progress());
-        eprintln!("{:?}", tc.get_message());
-    }
 
     // Verify background worker works
     if let Some(bg) = engine.engine_handle().background() {

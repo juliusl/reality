@@ -12,7 +12,10 @@ use crate::prelude::Action;
 use crate::prelude::Address;
 use crate::prelude::EngineHandle;
 use crate::prelude::Ext;
+use crate::work::PrivateProgress;
+use crate::work::PrivateStatus;
 use crate::work::WorkState;
+use crate::work::__WorkState;
 
 /// Background work container,
 ///
@@ -85,7 +88,7 @@ impl BackgroundWorkEngineHandle {
         &mut self,
         address: impl AsRef<str>,
     ) -> anyhow::Result<<Shared as StorageTarget>::BorrowMutResource<'_, BackgroundFuture>> {
-        let (_rk, bg) = self.tc.maybe_store_kv(
+        let (_rk, mut bg) = self.tc.maybe_store_kv(
             address.as_ref(),
             BackgroundFuture {
                 tc: self.tc.clone(),
@@ -93,6 +96,8 @@ impl BackgroundWorkEngineHandle {
                 cancellation: self.tc.cancellation.child_token(),
             },
         );
+
+        bg.enable_work_state();
 
         Ok(bg)
     }
@@ -159,6 +164,19 @@ impl From<&ThunkContext> for BackgroundFuture {
 }
 
 impl BackgroundFuture {
+    /// Prepares the work state for the background future,
+    /// 
+    pub fn enable_work_state(&mut self) {
+        self.work_state().init();
+
+        let init = { self.tc.virtual_work_state_mut(None) };
+        let progress = init.progress.clone();
+        let status = init.status.clone();
+        drop(init);
+        self.tc.write_cache::<PrivateProgress>(progress);
+        self.tc.write_cache::<PrivateStatus>(status);
+    }
+
     /// Spawns the future if enabled otherwise returns the current state,
     ///
     pub fn spawn(&mut self) -> CallStatus {
@@ -172,15 +190,21 @@ impl BackgroundFuture {
 
                 self.cancellation = self.tc.cancellation.child_token();
                 let cancel = self.cancellation.clone();
-                self.work_state().init();
-                let cache = self.tc.clone_cache();
+
+                // Prepare to run the plugin w/ this context
+                let mut context = self.tc.clone();
                 let call_output = CallOutput::Spawn(Some(handle.spawn(async move {
                     select! {
                         resource = eh.hosted_resource(address) => {
-                            let mut resource = resource?;
-                            // TODO: Move cache over
-                            resource.context_mut().set_cache(cache);
-                            resource.spawn().expect("should be able to spawn").await?
+                            // Rebuild the environment for the current context
+                            let resource = resource?;
+                            context.node = resource.context().node.clone();
+                            context.attribute = resource.context().attribute;
+                            if let Some(plugin) = resource.context().attribute.plugin().and_then(|p| p.call()) {
+                               Ok(plugin(context).await?.unwrap())
+                            } else {
+                                Err(anyhow!("Resource is missing plugin implementation"))
+                            }
                         },
                         _ = cancel.cancelled() => {
                             Err(anyhow!("Call was cancelled"))
@@ -189,6 +213,7 @@ impl BackgroundFuture {
                 })));
 
                 self.tc.store_kv(&self.address.to_string(), call_output);
+
                 CallStatus::Running
             } else {
                 CallStatus::Disabled

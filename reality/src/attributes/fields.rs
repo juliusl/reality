@@ -298,6 +298,24 @@ where
         view(value);
     }
 
+    /// Waits for a change to owner and calls listen,
+    /// 
+    pub async fn listen_value(&self, mut listen: impl FnMut(&ProjectedValue)) -> anyhow::Result<()> {
+        let mut owner = self.owner.subscribe();
+
+        owner.changed().await?;
+
+        let owner = owner.borrow_and_update();
+        let value = if let Some(adapter) = self.table.get_ref.adapter_ref.as_ref() {
+            adapter(self.table.get_ref.root, &owner).1
+        } else {
+            (self.table.get_ref.root)(&owner).1
+        };
+
+        listen(value);
+        Ok(())
+    }
+
     /// Manually, gets a mutable reference to the underlying value,
     ///
     /// **Note** If true is passed from edit, then listeners will be notified of a change even if a change was not made.

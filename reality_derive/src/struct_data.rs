@@ -118,7 +118,7 @@ impl Parse for StructData {
                         meta.input.parse::<Token![=]>()?;
                         replace = meta.input.parse::<Type>().ok();
                     }
-                    
+
                     Ok(())
                 })?;
             }
@@ -253,13 +253,31 @@ impl Parse for StructData {
 }
 
 impl StructData {
+    fn iter_parse_fields(&self) -> impl Iterator<Item = &StructField> {
+        self.fields
+            .iter()
+            .filter(|_| self.replace.is_none())
+            .filter(|f| f.is_parse)
+    }
+
+    fn iter_virtual_fields(&self) -> impl Iterator<Item = &StructField> {
+        self.fields
+            .iter()
+            .filter(|_| self.replace.is_none())
+            .filter(|f| f.is_virtual)
+    }
+
+    fn iter_decorated_fields(&self) -> impl Iterator<Item = &StructField> {
+        self.iter_virtual_fields().filter(|f| f.is_decorated)
+    }
+
     pub(crate) fn virtual_plugin(&self) -> TokenStream {
         let ident = &self.name;
         let virtual_ident = format_ident!("Virtual{}", ident);
         let original = self.generics.clone();
         let (impl_generics, ty_generics, where_clause) = original.split_for_impl();
 
-        let field_helpers_impl = self.fields.iter().filter(|_| self.replace.is_none()).filter(|f| !f.ignore && !f.not_wire).map(|f| {
+        let field_helpers_impl = self.iter_virtual_fields().map(|f| {
             let name = &f.name;
             let field_ident = f.field_name_lit_str();
             let ty = f.field_ty();
@@ -441,7 +459,7 @@ impl StructData {
             }
         });
 
-        let vtable_field_helpers_impl = self.fields.iter().filter(|_| self.replace.is_none()).filter(|f| !f.ignore && !f.not_wire).map(|f| {
+        let vtable_field_helpers_impl = self.iter_virtual_fields().map(|f| {
             let ty = f.field_ty();
             let absolute_ty = &f.ty;
             let offset = &f.offset;
@@ -478,43 +496,30 @@ impl StructData {
             }
         });
 
-        let vtable_field_impl = self
-            .fields
-            .iter()
-            .filter(|_| self.replace.is_none())
-            .filter(|f| !f.ignore && !f.not_wire)
-            .map(|f| {
-                let name = &f.name;
-                let ty = f.field_ty();
-                let absolute_ty = &f.ty;
+        let vtable_field_impl = self.iter_virtual_fields().map(|f| {
+            let name = &f.name;
+            let ty = f.field_ty();
+            let absolute_ty = &f.ty;
 
-                quote_spanned! {f.span=>
-                    pub #name: FieldRef<#ident #ty_generics, #ty, #absolute_ty>,
-                }
-            });
+            quote_spanned! {f.span=>
+                pub #name: FieldRef<#ident #ty_generics, #ty, #absolute_ty>,
+            }
+        });
 
-        let vtable_field_new_impl = self
-            .fields
-            .iter()
-            .filter(|_| self.replace.is_none())
-            .filter(|f| !f.ignore && !f.not_wire)
-            .map(|f| {
-                let name = &f.name;
-                let offset = f.offset;
-                let vtable_helper_fn_ident = format_ident!("__field_offset_{}_vtable", offset);
-                quote_spanned! {f.span=>
-                    #name: FieldRef::new(
-                        owner.clone(),
-                        #ident::#vtable_helper_fn_ident(),
-                    ),
-                }
-            });
+        let vtable_field_new_impl = self.iter_virtual_fields().map(|f| {
+            let name = &f.name;
+            let offset = f.offset;
+            let vtable_helper_fn_ident = format_ident!("__field_offset_{}_vtable", offset);
+            quote_spanned! {f.span=>
+                #name: FieldRef::new(
+                    owner.clone(),
+                    #ident::#vtable_helper_fn_ident(),
+                ),
+            }
+        });
 
         let on_read_fields = self
-            .fields
-            .iter()
-            .filter(|_| self.replace.is_none())
-            .filter(|f| !f.ignore && !f.not_wire)
+            .iter_virtual_fields()
             .map(|f| {
                 let offset = &f.offset;
                 let name = &f.name;
@@ -531,10 +536,7 @@ impl StructData {
             });
 
         let on_write_fields = self
-            .fields
-            .iter()
-            .filter(|_| self.replace.is_none())
-            .filter(|f| !f.ignore && !f.not_wire)
+            .iter_virtual_fields()
             .map(|f| {
                 let offset = &f.offset;
                 let name = &f.name;
@@ -734,7 +736,7 @@ impl StructData {
         let virtual_visit_impls = fields.iter().map(|((absolute_ty, ty), fields)| {
             let owner = &self.name;
 
-            let packet_routes = fields.iter().filter(|f| !f.ignore && !f.not_wire).map(|f| {
+            let packet_routes = fields.iter().filter(|f| f.is_virtual).map(|f| {
                 let offset = &f.offset;
 
                 quote_spanned!(f.span=>
@@ -742,7 +744,7 @@ impl StructData {
                 )
             });
 
-            let packet_routes_mut = fields.iter().filter(|f| !f.ignore && !f.not_wire).map(|f| {
+            let packet_routes_mut = fields.iter().filter(|f| f.is_virtual).map(|f| {
                 let offset = &f.offset;
 
                 quote_spanned!(f.span=>
@@ -785,8 +787,8 @@ impl StructData {
         let visit_impl = self.visit_trait(&impl_generics, &ty_generics, &where_clause);
 
         let symbol = self.attr_symbol(ident);
-        let fields = self.fields.clone();
-        let fields = fields.iter().enumerate().map(|(offset, f)| {
+        // let fields = self.fields.clone();
+        let fields = self.iter_parse_fields().enumerate().map(|(offset, f)| {
             // let ty = &f.field_ty();
             if let Some(_) = f.attribute_type.as_ref() {
                 quote_spanned! {f.span=>
@@ -808,20 +810,11 @@ impl StructData {
             }
         });
 
-        //  Implementation for fields parsers,
-        //
-        let fields_on_parse_impl = self.fields.iter().filter(|_| self.replace.is_none()).map(|f| {
+        let runir_field_impl = self.iter_virtual_fields().map(|f| {
             let field_ident = f.field_name_lit_str();
             let ty = f.field_ty();
             let absolute_ty = &f.ty;
             let offset = &f.offset;
-
-            // Callback to use
-            let callback = f.render_field_parse_callback();
-            let get_fn = f.render_get_fn();
-            let get_mut_fn = f.render_get_mut_fn();
-
-            let mut_value = f.set_of.as_ref().or(f.map_of.as_ref()).map(|_| quote!(mut));
 
             quote_spanned! {f.span=>
                 impl #impl_generics runir::prelude::Field<#offset> for #ident #ty_generics #where_clause {
@@ -833,7 +826,24 @@ impl StructData {
                         #field_ident
                     }
                 }
+            }
+        });
 
+        //  Implementation for fields parsers,
+        //
+        let fields_on_parse_impl = self.iter_virtual_fields().map(|f| {
+            let field_ident = f.field_name_lit_str();
+            let ty = f.field_ty();
+            let offset = &f.offset;
+
+            // Callback to use
+            let callback = f.render_field_parse_callback();
+            let get_fn = f.render_get_fn();
+            let get_mut_fn = f.render_get_mut_fn();
+
+            let mut_value = f.set_of.as_ref().or(f.map_of.as_ref()).map(|_| quote!(mut));
+
+            quote_spanned! {f.span=>
                 impl #impl_generics OnParseField<#offset> for #ident #ty_generics #where_clause {
                     #[allow(unused_variables)]
                     fn on_parse(&mut self, #mut_value value: #ty, _input: &str, _tag: Option<&String>) -> ResourceKey<Property> {
@@ -895,6 +905,8 @@ impl StructData {
                 }
 
                 #virtual_impl
+
+                #(#runir_field_impl)*
 
                 #(#fields_on_parse_impl)*
 
@@ -966,7 +978,7 @@ impl StructData {
                 )
             });
 
-        let to_frame = self.fields.iter().filter(|f| !f.ignore && !f.not_wire && self.replace.is_none()).map(|f| {
+        let to_frame = self.iter_virtual_fields().map(|f| {
             let offset = f.offset;
             // let ty = f.field_ty();
             let pty = &f.ty;
@@ -996,55 +1008,52 @@ impl StructData {
                 }))
         });
 
-        let synchronizable = self
-            .fields
-            .iter()
-            .filter(|f| !f.ignore && f.is_decorated && self.replace.is_none())
-            .map(|f| {
-                let name = &f.name;
+        let _s = self.clone();
+        let synchronizable = _s.iter_decorated_fields().map(|f| {
+            let name = &f.name;
 
-                if f.vec_of.is_some() {
-                    quote_spanned!(f.span=>
-                        for m in self.#name.iter_mut() {
-                            m.sync(context);
-                        }
-                    )
-                } else if f.map_of.is_some() {
-                    quote_spanned!(f.span=>
-                        for (_, m) in self.#name.iter_mut() {
-                            m.sync(context);
-                        }
-                    )
-                } else if f.set_of.is_some() {
-                    let __sync_temp = format_ident!("__sync_temp_{}", name);
-                    quote_spanned!(f.span=>
-                        let mut #__sync_temp = vec![];
-                        while let Some(mut m) = self.#name.pop_first() {
-                            m.sync(context);
-                            #__sync_temp.push(m);
-                        }
-                        for m in #__sync_temp {
-                            self.#name.insert(m);
-                        }
-                    )
-                } else if f.option_of.is_some() {
-                    quote_spanned!(f.span=>
-                        if let Some(f) = self.#name.as_mut() {
-                            f.sync(context);
-                        }
-                    )
-                } else if f.vecdeq_of.is_some() {
-                    quote_spanned!(f.span=>
-                        for m in self.#name.iter_mut() {
-                            m.sync(context);
-                        }
-                    )
-                } else {
-                    quote_spanned!(f.span=>
-                        self.#name.sync(context);
-                    )
-                }
-            });
+            if f.vec_of.is_some() {
+                quote_spanned!(f.span=>
+                    for m in self.#name.iter_mut() {
+                        m.sync(context);
+                    }
+                )
+            } else if f.map_of.is_some() {
+                quote_spanned!(f.span=>
+                    for (_, m) in self.#name.iter_mut() {
+                        m.sync(context);
+                    }
+                )
+            } else if f.set_of.is_some() {
+                let __sync_temp = format_ident!("__sync_temp_{}", name);
+                quote_spanned!(f.span=>
+                    let mut #__sync_temp = vec![];
+                    while let Some(mut m) = self.#name.pop_first() {
+                        m.sync(context);
+                        #__sync_temp.push(m);
+                    }
+                    for m in #__sync_temp {
+                        self.#name.insert(m);
+                    }
+                )
+            } else if f.option_of.is_some() {
+                quote_spanned!(f.span=>
+                    if let Some(f) = self.#name.as_mut() {
+                        f.sync(context);
+                    }
+                )
+            } else if f.vecdeq_of.is_some() {
+                quote_spanned!(f.span=>
+                    for m in self.#name.iter_mut() {
+                        m.sync(context);
+                    }
+                )
+            } else {
+                quote_spanned!(f.span=>
+                    self.#name.sync(context);
+                )
+            }
+        });
 
         let init_virt_plugin = if self.replace.is_none() {
             let ident = &self.name;
@@ -1086,17 +1095,13 @@ impl StructData {
                 format_ident!("Virtual{}", ident)
             };
 
-            let route_fields = self
-                .fields
-                .iter()
-                .filter(|f| self.replace.is_none() && !f.ignore && !f.not_wire)
-                .map(|f| {
-                    let offset = &f.offset;
+            let route_fields = self.iter_virtual_fields().map(|f| {
+                let offset = &f.offset;
 
-                    quote_spanned!(f.span=>
-                        router.route_one::<#offset>()
-                    )
-                });
+                quote_spanned!(f.span=>
+                    router.route_one::<#offset>()
+                )
+            });
 
             quote!(
             impl #impl_generics Plugin for #name #ty_generics #where_clause  {

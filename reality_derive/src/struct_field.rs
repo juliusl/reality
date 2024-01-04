@@ -83,6 +83,8 @@ pub(crate) struct StructField {
     pub not_wire: bool,
     pub is_decorated: bool,
     pub offset: usize,
+    pub is_virtual: bool,
+    pub is_parse: bool,
     pub variant: Option<(Ident, Ident)>,
     /// TODO: Enable aliased struct fields,
     ///
@@ -535,6 +537,8 @@ impl Parse for StructField {
         let mut ext = false;
         let mut plugin = false;
         let mut not_wire = false;
+        let mut is_virtual = true;
+        let mut is_parse = true;
         let span = input.span();
 
         let visibility = input.parse::<Visibility>().ok();
@@ -550,7 +554,19 @@ impl Parse for StructField {
             if attribute.path().is_ident("reality") {
                 attribute.parse_nested_meta(|meta| {
                     if meta.path.is_ident("ignore") {
+                        is_parse = false;
+                        is_virtual = false;
                         ignore = true;
+                    }
+
+                    if meta.path.is_ident("virtual_only") {
+                        is_parse = false;
+                        is_virtual = true;
+                    }
+
+                    if meta.path.is_ident("not_wire") {
+                        is_parse = true;
+                        is_virtual = false;
                     }
 
                     if meta.path.is_ident("rename") {
@@ -705,6 +721,8 @@ impl Parse for StructField {
             name,
             ty,
             is_decorated: false,
+            is_virtual,
+            is_parse,
             variant: None,
             offset: 0,
             __aliased: vec![],
