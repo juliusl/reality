@@ -30,7 +30,7 @@ impl Program {
     ///
     pub async fn create(mut storage: Shared) -> anyhow::Result<Self> {
         if let Some(mut node) = storage.current_resource::<ParsedNode>(ResourceKey::root()) {
-            node.upgrade_node(CrcInterner::default, &storage).await?;
+            node.parse(CrcInterner::default, &storage).await?;
 
             // Important to note here, parsed node is never mutated outside of this
             storage.create_soft_links(&node);
@@ -66,7 +66,7 @@ impl Program {
                     if is_match {
                         let mut program = self.clone();
                         program.entry_point = Some(*a);
-                        matches.push(ProgramMatch { host, program });
+                        matches.push(ProgramMatch { host, node: self.node.node.node(), program });
                     }
                 }
             }

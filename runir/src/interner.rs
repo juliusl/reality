@@ -2,6 +2,7 @@ use std::any::TypeId;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::hash::Hash;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -15,6 +16,7 @@ use tracing::warn;
 
 use crate::entropy::ENTROPY;
 use crate::prelude::Repr;
+use crate::repr::node::SourceSpan;
 
 /// This trait is based on the concept of string interning where the
 /// goal is to store distinct string values.
@@ -302,6 +304,20 @@ impl InternHandle {
     #[inline]
     pub fn annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
         crate::repr::node::ANNOTATIONS.strong_ref(self)
+    }
+
+    /// Returns the node source's parsed span,
+    /// 
+    #[inline]
+    pub fn source_span(&self) -> Option<Arc<SourceSpan>> {
+        crate::repr::node::SOURCE_SPAN.strong_ref(self)
+    }
+
+    /// Returns the node source's relative path,
+    /// 
+    #[inline]
+    pub fn source_relative(&self) -> Option<Arc<PathBuf>> {
+        crate::repr::node::SOURCE_RELATIVE.strong_ref(self)
     }
 
     /// Returns the host address,

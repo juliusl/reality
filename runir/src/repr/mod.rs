@@ -245,6 +245,8 @@ fn display_runmd(repr: &Repr, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Resu
             writeln!(f, "| **Node Tags** | |")?;
             writeln!(f, "| path | {path} |")?;
             writeln!(f, "| uuid | {:?} |", node.0.as_uuid())?;
+            writeln!(f, "| span | {:?} |", node.span().unwrap_or_default())?;
+            writeln!(f, "| relative | {:?} |", node.relative().unwrap_or_default())?;
         }
     }
 

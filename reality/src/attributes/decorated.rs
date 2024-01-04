@@ -265,6 +265,7 @@ mod tests {
 
         let project = project
             .load_content(
+                "test.md",
                 r#"
             ```runmd
             + .test
@@ -287,9 +288,7 @@ mod tests {
                 .current_resource::<ParsedNode>(ResourceKey::root())
                 .unwrap();
 
-            node.upgrade_node(CrcInterner::default, &_node)
-                .await
-                .unwrap();
+            node.parse(CrcInterner::default, &_node).await.unwrap();
             drop(_node);
 
             eprintln!("{:#?}", node);

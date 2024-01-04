@@ -2,11 +2,16 @@ use std::fmt::Debug;
 
 use runir::prelude::*;
 
+use crate::Workspace;
+
 use super::Program;
 
 /// Package containing all programs compiled from a project,
 ///
 pub struct Package {
+    /// Workspace this package was derived from,
+    ///
+    pub(crate) workspace: Workspace,
     /// Programs,
     ///
     pub(crate) programs: Vec<Program>,
@@ -30,6 +35,7 @@ impl Package {
                 if let Some(host) = p.context().ok().and_then(|a| a.attribute.host()) {
                     matches.push(ProgramMatch {
                         host,
+                        node: p.context().ok().and_then(|a| a.attribute.node()),
                         program: p.clone(),
                     });
                 }
@@ -47,6 +53,9 @@ pub struct ProgramMatch {
     /// Host representation
     ///
     pub host: HostRepr,
+    /// Node representation
+    ///
+    pub node: Option<NodeRepr>,
     /// Matched program
     ///
     pub program: Program,
@@ -55,7 +64,8 @@ pub struct ProgramMatch {
 impl Debug for ProgramMatch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ProgramMatch")
-            .field("node", &self.host)
+            .field("host", &self.host)
+            .field("node", &self.node)
             .finish()
     }
 }

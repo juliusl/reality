@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
+use anyhow::anyhow;
 use tracing::debug;
 use tracing::error;
 use tracing::trace;
@@ -153,9 +155,9 @@ impl ParsedNode {
         self.properties.push(prop);
     }
 
-    /// Upgrades the node w/ a host level assigned,
-    ///
-    pub(crate) async fn upgrade_node<I: InternerFactory>(&mut self, interner: impl Fn() -> I, storage: &Shared) -> anyhow::Result<()> {
+    /// Parses and finalizes the current node state,
+    /// 
+    pub(crate) async fn parse<I: InternerFactory>(&mut self, interner: impl Fn() -> I, storage: &Shared) -> anyhow::Result<()> {
         if let Some(mut repr) = self.node.repr() {
             if let Some(node) = repr.as_node() {
                 let input = node
@@ -238,6 +240,8 @@ impl ParsedNode {
                     }
                 }
             }
+        } else {
+            Err(anyhow!("Node is empty"))?;
         }
 
         for (_, rk) in self.paths.iter_mut() {
@@ -254,68 +258,6 @@ impl ParsedNode {
         }
 
         Ok(())
-    }
-
-    pub async fn index_decorations(&self, _rk: ResourceKey<Attribute>, _tc: &mut ThunkContext) {
-        // if let Some(repr) = rk.repr() {
-        //     if let Some(node) = repr.as_node() {
-        //         tc.store_kv(
-        //             rk,
-        //             Decoration {
-        //                 comment_properties: node.annotations().await.as_deref().cloned(),
-        //                 doc_headers: node.doc_headers().await.as_deref().cloned(),
-        //             },
-        //         );
-        //     }
-
-        //     if let Some(recv) = repr.as_recv() {
-        //         if let Some(fields) = recv.fields().await {
-        //             for f in fields.iter() {
-        //                 if let Some(node) = f.as_node() {
-        //                     tc.store_kv(
-        //                         rk,
-        //                         Decoration {
-        //                             comment_properties: node
-        //                                 .annotations()
-        //                                 .await
-        //                                 .as_deref()
-        //                                 .cloned(),
-        //                             doc_headers: node.doc_headers().await.as_deref().cloned(),
-        //                         },
-        //                     );
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-
-        // let mut props = vec![];
-        // if let Some(properties) = self.properties.defined.get(&rk) {
-        //     for prop in properties {
-        //         tc.store_kv(
-        //             prop,
-        //             Decoration {
-        //                 comment_properties: self.properties.comment_properties.get(prop).cloned(),
-        //                 doc_headers: self.properties.doc_headers.get(prop).cloned(),
-        //             },
-        //         );
-        //         props.push(prop);
-        //     }
-        // }
-
-        // let mut packets = vec![];
-        // {
-        //     let node = tc.node().await;
-        //     for prop in props {
-        //         if let Some(fp) = node.current_resource::<FieldPacket>(prop.transmute()) {
-        //             packets.push((*prop, fp));
-        //         }
-        //     }
-        // }
-
-        // for (pk, fp) in packets {
-        //     tc.store_kv(pk, fp);
-        // }
     }
 }
 
@@ -340,13 +282,16 @@ pub struct AttributeParser<Storage: StorageTarget + 'static> {
     /// Reference to centralized-storage,
     ///
     storage: Option<Arc<tokio::sync::RwLock<Storage>>>,
+    /// Sets the relative path of the source,
+    /// 
+    pub(crate) relative: Option<PathBuf>,
     /// Attributes parsed,
     ///
     pub parsed_node: ParsedNode,
-    /// Nodes parsed from source,
+    /// Stack of nodes parsed from source,
     ///
     pub(crate) nodes: Vec<NodeLevel>,
-    /// Fields that have been parsed,
+    /// Stack of fields that have been parsed,
     ///
     pub(crate) fields: Vec<Repr>,
     /// Stack of link recv fns,
@@ -359,6 +304,7 @@ impl<S: StorageTarget + 'static> Default for AttributeParser<S> {
         Self {
             name: Default::default(),
             tag: Default::default(),
+            relative: None,
             block_object_types: Default::default(),
             attribute_types: Default::default(),
             handlers: Default::default(),
@@ -376,6 +322,7 @@ impl<S: StorageTarget + 'static> Clone for AttributeParser<S> {
         Self {
             tag: self.tag.clone(),
             name: self.name.clone(),
+            relative: self.relative.clone(),
             attribute_types: self.attribute_types.clone(),
             block_object_types: self.block_object_types.clone(),
             handlers: self.handlers.clone(),
@@ -770,7 +717,9 @@ impl Node for super::AttributeParser<Shared> {
                 .with_doc_headers(_node_info.line.doc_headers)
                 .with_annotations(_node_info.line.comment_properties)
                 .with_idx(_node_info.idx)
-                .with_block(_block_info.idx);
+                .with_block(_block_info.idx)
+                .with_source_span(_node_info.span.unwrap_or_default())
+                .with_source_relative(self.relative.clone().unwrap_or_default());
             self.nodes.push(node);
         }
     }

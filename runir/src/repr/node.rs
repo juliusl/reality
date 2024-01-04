@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::ops::Range;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::Deserialize;
@@ -36,6 +38,16 @@ define_intern_table!(DOC_HEADERS: Vec<String>);
 // Intern table for node level annotations
 define_intern_table!(ANNOTATIONS: BTreeMap<String, String>);
 
+// Intern table for node level source spans
+define_intern_table!(SOURCE_SPAN: SourceSpan);
+
+// Intern table for node level source relative paths
+define_intern_table!(SOURCE_RELATIVE: PathBuf);
+
+/// Type-alias for start-and-end positions from the node's source,
+/// 
+pub type SourceSpan = Range<usize>;
+
 /// Node level is a dynamic level of representation,
 ///
 /// Node level asserts and records the input paramters for some resource as well as ordinality.
@@ -69,6 +81,12 @@ pub struct NodeLevel {
     /// Node annotations,
     ///
     annotations: Option<Tag<BTreeMap<String, String>, Arc<BTreeMap<String, String>>>>,
+    /// Position in source this node was parsed from,
+    /// 
+    span: Option<Tag<SourceSpan, Arc<SourceSpan>>>,
+    /// Relative path name of the source for this node,
+    /// 
+    relative: Option<Tag<PathBuf, Arc<PathBuf>>>,
 }
 
 impl NodeLevel {
@@ -85,12 +103,15 @@ impl NodeLevel {
             source: None,
             doc_headers: None,
             annotations: None,
+            span: None,
+            relative: None,
         }
     }
 
     /// Creates a new input level representation,
     ///
-    pub fn new_with(
+    #[allow(unused)] // Used in test
+    pub(crate) fn new_with(
         symbol: Option<impl Into<String>>,
         input: Option<impl Into<String>>,
         tag: Option<impl Into<String>>,
@@ -205,6 +226,22 @@ impl NodeLevel {
         self.set_annotations(annotations);
         self
     }
+    
+    /// Returns the node level w/ source span set,
+    /// 
+    #[inline]
+    pub fn with_source_span(mut self, span: SourceSpan) -> Self {
+        self.set_source_span(span);
+        self
+    }
+
+    /// Returns the node level w/ relative source path set,
+    ///
+    #[inline]
+    pub fn with_source_relative(mut self, relative: PathBuf) -> Self {
+        self.set_source_relative(relative);
+        self
+    }
 
     /// Sets the symbol tag for the node level,
     ///
@@ -265,11 +302,25 @@ impl NodeLevel {
         ))
     }
 
-    /// Returns the node level w/ annotations set,
+    /// Sets the node level annotations,
     ///
     #[inline]
     pub fn set_annotations(&mut self, annotations: BTreeMap<String, String>) {
         self.annotations = Some(Tag::new(&ANNOTATIONS, Arc::new(annotations)));
+    }
+
+    /// Sets the node level source span,
+    /// 
+    #[inline]
+    pub fn set_source_span(&mut self, span: SourceSpan) {
+        self.span = Some(Tag::new(&SOURCE_SPAN, Arc::new(span)));
+    }
+
+    /// Sets the node level source relative path,
+    /// 
+    #[inline]
+    pub fn set_source_relative(&mut self, relative: PathBuf) {
+        self.relative = Some(Tag::new(&SOURCE_RELATIVE, Arc::new(relative)));
     }
 }
 
@@ -305,6 +356,14 @@ impl Level for NodeLevel {
 
         if let Some(annotations) = self.annotations.as_ref() {
             push_tag!(dyn interner, annotations);
+        }
+
+        if let Some(source_span) = self.span.as_ref() {
+            push_tag!(dyn interner, source_span);
+        }
+
+        if let Some(source_relative) = self.relative.as_ref() {
+            push_tag!(dyn interner, source_relative);
         }
 
         interner.set_level_flags(LevelFlags::LEVEL_2);
@@ -399,5 +458,19 @@ impl NodeRepr {
     #[inline]
     pub fn annotations(&self) -> Option<Arc<BTreeMap<String, String>>> {
         self.0.annotations()
+    }
+
+    /// Returns node source span,
+    /// 
+    #[inline]
+    pub fn span(&self) -> Option<Arc<SourceSpan>> {
+        self.0.source_span()
+    }
+
+    /// Returns node source relative path,
+    /// 
+    #[inline]
+    pub fn relative(&self) -> Option<Arc<PathBuf>> {
+        self.0.source_relative()
     }
 }

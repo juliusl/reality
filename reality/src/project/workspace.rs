@@ -6,7 +6,9 @@ use tracing::warn;
 
 use super::Source;
 use crate::Project;
+use crate::ResourceKey;
 use crate::Shared;
+use crate::StorageTarget;
 
 /// Pointer struct for creating a workspace based on the current directory,
 ///
@@ -170,10 +172,12 @@ impl Workspace {
                 }
                 Source::TextBuffer { relative, source } => {
                     info!("Compiling {:?}", relative);
-                    project = project.load_content(source).await?;
+                    project = project.load_content(relative, source).await?;
                 }
             }
         }
+
+        project.root.put_resource(self.clone(), ResourceKey::root());
 
         compiled.project = Some(project);
         Ok(compiled)

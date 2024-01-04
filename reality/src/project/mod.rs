@@ -24,6 +24,7 @@ use serde::Serialize;
 pub use source::Source;
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 pub use workspace::CurrentDir;
 pub use workspace::Dir;
@@ -104,15 +105,17 @@ impl Project<Shared> {
     /// Load a file into the project,
     ///
     pub async fn load_file(self, file: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let content = tokio::fs::read_to_string(file).await?;
+        let content = tokio::fs::read_to_string(file.as_ref()).await?;
 
-        self.load_content(content).await
+        self.load_content(file.as_ref().to_path_buf(), content).await
     }
 
     /// Load content into the project,
     ///
-    pub async fn load_content(self, content: impl AsRef<str>) -> anyhow::Result<Self> {
-        let loading: Loading<Shared> = self.into();
+    pub async fn load_content(self, relative: impl Into<PathBuf>, content: impl AsRef<str>) -> anyhow::Result<Self> {
+        let mut loading: Loading<Shared> = self.into();
+
+        loading.set_relative(relative);
 
         let mut parser = runmd::prelude::Parser::new(loading.clone(), loading.clone());
 
@@ -120,7 +123,7 @@ impl Project<Shared> {
 
         drop(parser);
 
-        for (_, n) in loading.0.nodes.write().await.iter() {
+        for (_, n) in loading.project.nodes.write().await.iter() {
             let mut n = n.write().await;
 
             n.drain_dispatch_queues();
@@ -142,31 +145,52 @@ impl Project<Shared> {
             programs.push(program);
         }
 
-        Ok(Package { programs })
+        Ok(Package {
+            workspace: self
+                .root
+                .current_resource::<Workspace>(ResourceKey::root())
+                .unwrap_or_default(),
+            programs,
+        })
     }
 }
 
-struct Loading<Storage: StorageTarget + Send + Sync + 'static>(Arc<Project<Storage>>);
+struct Loading<Storage: StorageTarget + Send + Sync + 'static> {
+    project: Arc<Project<Storage>>,
+    relative: PathBuf,
+}
 
 impl<Storage: StorageTarget + Send + Sync + 'static> From<Project<Storage>> for Loading<Storage> {
     fn from(value: Project<Storage>) -> Self {
-        Loading(Arc::new(value))
+        Loading {
+            project: Arc::new(value),
+            relative: PathBuf::new(),
+        }
     }
 }
 
 impl<Storage: StorageTarget + Send + Sync + 'static> Clone for Loading<Storage> {
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self {
+            project: self.project.clone(),
+            relative: self.relative.clone(),
+        }
     }
 }
 
 impl<Storage: StorageTarget + Send + Sync + 'static> Loading<Storage> {
+    /// Sets the relative path value,
+    /// 
+    pub fn set_relative(&mut self, relative: impl Into<PathBuf>) {
+        self.relative = relative.into();
+    }
+
     /// Unload the inner project,
     ///
     /// Will return an error if during loading a file something took additional strong references on the project
     ///
     pub fn unload(self) -> anyhow::Result<Project<Storage>> {
-        if let Ok(project) = Arc::try_unwrap(self.0) {
+        if let Ok(project) = Arc::try_unwrap(self.project) {
             Ok(project)
         } else {
             panic!("could not unload project")
@@ -195,7 +219,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Loading<Storage> {
 
         // Blocks can have properties and load/unload properties
         if let Some(provider) = self
-            .0
+            .project
             .root
             .current_resource::<BlockPlugin<Storage::Namespace>>(key)
         {
@@ -216,7 +240,7 @@ impl<Storage: StorageTarget + Send + Sync + 'static> Loading<Storage> {
     ) {
         let node_plugin_key = ResourceKey::<NodePlugin<Storage::Namespace>>::with_hash(name);
         if let Some(node_plugin) = self
-            .0
+            .project
             .root
             .current_resource::<NodePlugin<Storage::Namespace>>(node_plugin_key)
         {
@@ -248,7 +272,7 @@ impl runmd::prelude::NodeProvider for Loading<Shared> {
         key_builder.hash(node_info);
         let key = key_builder.finish();
 
-        let target = self.0.root.shared_namespace(key);
+        let target = self.project.root.shared_namespace(key);
         let mut parser = self.create_parser_for_block(block_info, Some(key.transmute()));
         parser.set_storage(target.storage);
 
@@ -258,6 +282,8 @@ impl runmd::prelude::NodeProvider for Loading<Shared> {
             .with_doc_headers(node_info.line.doc_headers.clone())
             .with_annotations(node_info.line.comment_properties.clone())
             .with_idx(node_info.idx)
+            .with_source_span(node_info.span.as_ref().cloned().unwrap_or_default())
+            .with_source_relative(self.relative.clone())
             .with_block(block_info.idx);
 
         if let Some(input) = input {
@@ -266,12 +292,14 @@ impl runmd::prelude::NodeProvider for Loading<Shared> {
         if let Some(tag) = tag {
             node.set_tag(tag);
         }
+
+        parser.relative = Some(self.relative.clone());
         parser.nodes.push(node);
 
         self.apply_plugin(name, input, tag, &mut parser);
 
         if let Some(storage) = parser.clone_storage() {
-            let mut nodes = self.0.nodes.write().await;
+            let mut nodes = self.project.nodes.write().await;
             nodes.insert(key, storage);
         }
 
@@ -427,7 +455,7 @@ mod tests {
     }
 
     #[tokio::test]
-    // #[tracing_test::traced_test]
+    #[tracing_test::traced_test]
     async fn test_project_parser() {
         let mut project = Project::new(crate::Shared::default());
 
@@ -501,7 +529,7 @@ mod tests {
                 .unwrap();
 
             let mut parsed = parsed_node.to_owned();
-            parsed.upgrade_node(CrcInterner::default, &_node).await.unwrap();
+            parsed.parse(CrcInterner::default, &_node).await.unwrap();
 
             eprintln!("{:#}", parsed.node.repr().unwrap());
             eprintln!("-----------------------------------")
@@ -513,6 +541,10 @@ mod tests {
         eprintln!("{:#x?}", matches);
 
         let program = matches.pop().unwrap();
+
+        let node = program.node.unwrap();
+        eprintln!("{:?} {:?}", node.span(), node.relative());
+
         let tc = program.program.context().unwrap();
         let _ = tc.call().await.unwrap();
 
