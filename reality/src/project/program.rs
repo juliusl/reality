@@ -23,6 +23,8 @@ pub struct Program {
     /// Entry point,
     ///
     entry_point: Option<ResourceKey<Attribute>>,
+
+    handle: tokio::runtime::Handle,
 }
 
 impl Program {
@@ -39,6 +41,7 @@ impl Program {
                 node,
                 storage,
                 entry_point: None,
+                handle: tokio::runtime::Handle::current(),
             })
         } else {
             Err(anyhow!("Could not create program, missing parsed node"))
@@ -48,7 +51,11 @@ impl Program {
     /// Returns the thunk context for this program,
     ///
     pub fn context(&self) -> anyhow::Result<ThunkContext> {
-        let mut tc = ThunkContext::from(self.storage.clone().into_thread_safe());
+        let mut tc = ThunkContext::from(
+            self.storage
+                .clone()
+                .into_thread_safe_with(self.handle.clone()),
+        );
         tc.set_attribute(self.entry_point.unwrap_or(self.node.node));
         Ok(tc)
     }

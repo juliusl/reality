@@ -300,7 +300,7 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
     }
 
     /// Returns true if the current resource key can identify as type R,
-    /// 
+    ///
     #[inline]
     pub fn is_resource<R: 'static>(&self) -> bool {
         self.resource()

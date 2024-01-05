@@ -92,7 +92,6 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                     .build(|| {
                         ui.label_text("Resource Key", attr.key().to_string());
 
-
                         defined_properties_section(tc.get().unwrap(), ui);
 
                         let mut queue_update = false;

@@ -32,17 +32,15 @@ impl Dir {
     pub fn workspace(self) -> Workspace {
         let mut workspace = Empty.workspace();
 
-        read_dir(
-            &mut workspace,
-            self.0,
-        );
+        read_dir(&mut workspace, self.0);
 
         workspace
     }
 }
 
 fn read_dir(workspace: &mut Workspace, dir: impl AsRef<Path>) {
-    let read_dir = std::fs::read_dir(dir.as_ref()).expect("should be able to read dir");
+    let read_dir = std::fs::read_dir(dir.as_ref())
+        .expect(format!("should be able to read dir - {:?}", dir.as_ref()).as_str());
 
     for e in read_dir {
         match e {

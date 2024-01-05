@@ -25,6 +25,9 @@ pub type EngineListenerBackgroundTask = JoinHandle<Result<Result<Engine, Error>,
 /// Cannot be created inside of the context of another tokio runtime.
 ///
 pub struct ForegroundEngine {
+    /// Compiled package,
+    /// 
+    pub package: Package,
     /// Engine handle to the main engine,
     ///
     eh: EngineHandle,
@@ -76,16 +79,22 @@ impl ForegroundEngine {
 # -- Background work test operation
 # -- Tests that the background-work system is functioning properly.
 + .operation test_background_work
+|# internal = true
+
 <test/loopio.foreground-engine-test> Hello world from background engine.
 
 # -- Default engine operation plugins
 # -- Initializes components to enable the background work system.
 + .operation default
+|# internal = true
+
 <handle/loopio.background-work>
 <list/loopio.published>
 
 # -- Default engine host
 + .host engine
+|# internal = true
+
 ```
 "#,
                 );
@@ -96,6 +105,7 @@ impl ForegroundEngine {
             })
             .unwrap();
 
+        let package = engine.package.clone().expect("should have compiled a package");
         let mut eh = engine.engine_handle();
 
         let __engine_listener = runtime.spawn(async move {
@@ -128,8 +138,7 @@ impl ForegroundEngine {
                 .cloned();
             let _ = runtime.handle().spawn(async move {
                 if let Some(progress) = progress {
-                    eprintln!("progress found");
-
+                    trace!("Validating foreground engine work-state system");
                     progress
                         .listen_value(|v| {
                             assert_eq!(0.5, v.0);
@@ -159,6 +168,7 @@ impl ForegroundEngine {
         }
 
         ForegroundEngine {
+            package,
             eh,
             runtime,
             __engine_listener,

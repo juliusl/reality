@@ -88,7 +88,7 @@ impl CallAsync for Stdio {
 /// Plugin for reading a file path into transient storage,
 ///
 #[derive(Reality, Serialize, Deserialize, PartialEq, PartialOrd, Clone, Default)]
-#[reality(plugin, rename = "io.read-text-file", group = "loopio.std")]
+#[reality(plugin, rename = "read-text-file", group = "builtin")]
 pub struct ReadTextFile {
     /// Path to read string from,
     ///
@@ -121,7 +121,7 @@ impl CallAsync for ReadTextFile {
 /// Plugin for reading a file path into transient storage,
 ///
 #[derive(Reality, Serialize, Deserialize, PartialEq, Clone, Default)]
-#[reality(plugin, rename = "io.read-file", group = "loopio.std")]
+#[reality(plugin, rename = "read-file", group = "builtin")]
 pub struct ReadFile {
     /// Path to read string from,
     ///
@@ -152,7 +152,7 @@ impl CallAsync for ReadFile {
 /// Plugin for reading a file path into transient storage,
 ///
 #[derive(Reality, Serialize, Deserialize, PartialEq, Clone, Default)]
-#[reality(plugin, rename = "io.println", group = "loopio.std")]
+#[reality(plugin, group = "builtin")]
 pub struct Println {
     /// Path to read string from,
     ///
@@ -172,7 +172,7 @@ impl CallAsync for Println {
 /// Process plugin,
 ///
 #[derive(Reality, Serialize, Debug, PartialEq, PartialOrd, Deserialize, Clone, Default)]
-#[reality(plugin, call = start_process, group = "loopio.std")]
+#[reality(plugin, call = start_process, group = "builtin")]
 pub struct Process {
     /// Name of the program,
     ///

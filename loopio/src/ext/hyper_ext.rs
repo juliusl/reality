@@ -249,7 +249,7 @@ impl Default for UriParam {
 }
 
 #[derive(Reality, Deserialize, Serialize, Default, PartialEq, Debug, Clone)]
-#[reality(plugin, group = "loopio.hyper")]
+#[reality(plugin, group = "builtin")]
 pub struct Request {
     /// Uri to make request to,
     ///

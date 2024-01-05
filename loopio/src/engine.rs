@@ -607,7 +607,7 @@ impl Engine {
                         trace!(address, "Looking up hosted resource");
                         if let Some(tx) = tx.take() {
                             if let Ok(resource) = self.get_resource(address).await {
-                                println!("Sending call output");
+                                trace!("Sending call output");
                                 if let Err(_) = tx.send(resource.into_call_output()) {
                                     error!("Could not call resource");
                                 }
@@ -938,7 +938,7 @@ impl EngineHandle {
 
         match rx.await? {
             CallOutput::Spawn(Some(jh)) => {
-                println!("spawning update");
+                trace!("Spawning update");
                 jh.await?
             }
             CallOutput::Abort(err) => {

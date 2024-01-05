@@ -174,7 +174,7 @@ impl PoemExt for ThunkContext {
 /// Routes requests to a specific engine operation,
 ///
 #[derive(Reality, Serialize, Deserialize, PartialEq, PartialOrd, Default)]
-#[reality(plugin, call = start_engine_proxy, rename = "engine-proxy", group = "loopio.poem")]
+#[reality(plugin, call = start_engine_proxy, rename = "engine-proxy", group = "builtin")]
 pub struct EngineProxy {
     /// Address to host the proxy on,
     ///
@@ -404,7 +404,7 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
 /// Reverse proxy config,
 ///
 #[derive(Reality, Serialize, Deserialize, Clone, PartialEq, Default)]
-#[reality(plugin, call = configure_reverse_proxy, rename = "reverse-proxy-config", group = "loopio.poem")]
+#[reality(plugin, call = configure_reverse_proxy, rename = "reverse-proxy-config", group = "builtin")]
 pub struct ReverseProxyConfig {
     /// Alias this config is for,
     ///
@@ -482,7 +482,7 @@ impl ReverseProxyConfig {
 /// Reverse proxy plugin,
 ///
 #[derive(Reality, Serialize, Deserialize, PartialEq, Default)]
-#[reality(plugin, call = start_reverse_proxy, rename = "reverse-proxy", group = "loopio.poem")]
+#[reality(plugin, call = start_reverse_proxy, rename = "reverse-proxy", group = "builtin")]
 pub struct ReverseProxy {
     /// Address to host the proxy on,
     ///
