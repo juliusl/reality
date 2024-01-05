@@ -52,16 +52,6 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
         editing.write_cache(init.clone());
 
         info!("Found path -- {:?}", editing.attribute);
-        // If enabled, allows available field packets to be decoded,
-        {
-            let node = editing.node().await;
-            if let Some(bus) = node.current_resource::<WireBus>(editing.attribute.transmute()) {
-                info!("Found wire bus");
-                drop(node);
-                editing.maybe_write_cache(bus);
-            }
-        }
-
         // If set, allows the ability to apply frame updates. (**Note** The receiving end must enable updating)
         {
             let node = editing.node().await;
@@ -102,86 +92,6 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                     .build(|| {
                         ui.label_text("Resource Key", attr.key().to_string());
 
-                        // if ui.collapsing_header("DEBUG --", TreeNodeFlags::empty()) {
-                        //     ui.text(debug);
-                        // }
-
-                        // Map of field metadata settings compiled to wire bus,
-                        //
-                        let mut field_map = BTreeMap::<String, Vec<FieldPacket>>::new();
-
-                        if let Some(wb) = tc.get().unwrap().cached_ref::<WireBus>() {
-                            for packet in wb.packets().iter() {
-                                let entry =
-                                    field_map.entry(packet.field_name.to_string()).or_default();
-                                entry.push(packet.clone());
-                            }
-
-                            // Shows the frames available in the wire bus,
-                            //
-                            if ui.collapsing_header("Wire Bus", TreeNodeFlags::empty()) {
-                                let table_flags: TableFlags = TableFlags::REORDERABLE
-                                    | TableFlags::HIDEABLE
-                                    | TableFlags::RESIZABLE
-                                    | TableFlags::NO_BORDERS_IN_BODY
-                                    | TableFlags::SIZING_STRETCH_PROP;
-
-                                if let Some(_h) = ui.begin_table_header_with_flags(
-                                    "table",
-                                    [
-                                        "field_offset",
-                                        "field_name",
-                                        "type_name",
-                                        "type_size",
-                                        "owner_name",
-                                        "attribute_hash",
-                                    ]
-                                    .map(TableColumnSetup::new)
-                                    .map(|mut s| {
-                                        if s.name == "owner_name"
-                                            || s.name == "attribute_hash"
-                                            || s.name == "field_offset"
-                                        {
-                                            s.flags = TableColumnFlags::DEFAULT_HIDE
-                                        } else if s.name == "type_name" {
-                                            s.flags = TableColumnFlags::WIDTH_STRETCH;
-                                        }
-                                        s
-                                    }),
-                                    table_flags,
-                                ) {
-                                    for (_, packet) in wb.packets().iter().enumerate() {
-                                        let FieldPacket {
-                                            data_type_name,
-                                            data_type_size,
-                                            field_offset,
-                                            owner_name,
-                                            field_name,
-                                            attribute_hash,
-                                            ..
-                                        } = packet;
-
-                                        ui.table_next_column();
-                                        ui.text(field_offset.to_string());
-
-                                        ui.table_next_column();
-                                        ui.text(field_name);
-
-                                        ui.table_next_column();
-                                        ui.text(data_type_name);
-
-                                        ui.table_next_column();
-                                        ui.text(data_type_size.to_string());
-
-                                        ui.table_next_column();
-                                        ui.text(owner_name);
-
-                                        ui.table_next_column();
-                                        ui.text(attribute_hash.unwrap_or_default().to_string());
-                                    }
-                                }
-                            }
-                        }
 
                         defined_properties_section(tc.get().unwrap(), ui);
 
@@ -264,7 +174,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
                                                                     .unwrap_or(value.to_string()),
                                                                 widget: widget.to_string(),
                                                                 field: value.to_string(),
-                                                                field_map: field_map.clone(),
+                                                                field_map: BTreeMap::default(),
                                                                 doc_headers: edit
                                                                     .doc_headers()
                                                                     .unwrap_or_default(),

@@ -26,18 +26,21 @@ fn main() -> anyhow::Result<()> {
         "test.md",
         r"
     ```runmd
-    # -- # Enable the wirebus on the demo frame editor
-    + .operation debug_show_frame_editor
-    <loopio.enable-wirebus>                 demo://show_frame_editor/b/nebudeck.frame-editor
+    # -- Show frame editor for the example frame editor
     
+    + .operation debug_show_frame_editor
+
     # -- Debug the frame editor w/ a frame editor
+    
     <nebudeck.frame-editor>                 demo://show_frame_editor/b/nebudeck.frame-editor
     |# title = Demo editor Demo editor 2
     
+    # -- Show example frame editor
+
     + .operation show_frame_editor
     |# help = Shows a frame editor example
 
-    # -- # Demo: Customizable editor for editing and launching plugins
+    # -- Demo: Customizable editor for editing and launching plugins
     # -- Also demonstrates the additional markup support
 
     <b/nebudeck.frame-editor>               demo://call_test_2/a/demo.test2

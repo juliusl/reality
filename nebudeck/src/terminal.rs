@@ -1,4 +1,3 @@
-use clap::value_parser;
 use clap::ArgMatches;
 use std::io::Write;
 use std::ops::DerefMut;

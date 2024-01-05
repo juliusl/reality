@@ -1,4 +1,3 @@
-use std::fmt::Debug;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -18,30 +17,6 @@ use crate::prelude::Action;
 use crate::prelude::Address;
 
 use super::Ext;
-
-/// Converts the type being extended into wire format,
-///
-/// Middleware can be configured on the bus to operate on the frame before applying it.
-///
-#[derive(Default, Debug, Clone)]
-pub struct WireBus {
-    /// Current frame,
-    ///
-    frame: Frame,
-}
-
-impl WireBus {
-    /// Returns a vector of packets currently stored on the bus,
-    ///
-    pub fn packets(&self) -> Vec<FieldPacket> {
-        // TODO: This could be optimized later, but for brevity this is what needs to be returned,
-        [self.frame.recv.clone()]
-            .iter()
-            .chain(self.frame.fields.iter())
-            .cloned()
-            .collect::<Vec<FieldPacket>>()
-    }
-}
 
 /// Struct containing a thunk context from a hosted resource node,
 ///

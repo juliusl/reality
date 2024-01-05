@@ -293,16 +293,6 @@ impl RemoteAction {
 
         let mut transient = context.transient_mut().await;
 
-        // If enabled, allows available field packets to be decoded,
-        {
-            let node = context.node().await;
-            if let Some(bus) = node.current_resource::<WireBus>(context.attribute.transmute()) {
-                debug!("Found wire bus");
-                drop(node);
-                transient.put_resource(bus, context.attribute.transmute());
-            }
-        }
-
         // If set, allows the ability to apply frame updates. (**Note** The receiving end must enable updating)
         {
             let node = context.node().await;
