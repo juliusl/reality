@@ -299,6 +299,15 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         self.repr().and_then(|r| r.as_resource())
     }
 
+    /// Returns true if the current resource key can identify as type R,
+    /// 
+    #[inline]
+    pub fn is_resource<R: 'static>(&self) -> bool {
+        self.resource()
+            .map(|r| r.is_type::<R>())
+            .unwrap_or_default()
+    }
+
     /// Returns the recv repr if found,
     ///
     #[inline]

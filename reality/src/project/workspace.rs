@@ -34,7 +34,7 @@ impl Dir {
 
         read_dir(
             &mut workspace,
-            std::env::current_dir().expect("should be able to read current dir"),
+            self.0,
         );
 
         workspace

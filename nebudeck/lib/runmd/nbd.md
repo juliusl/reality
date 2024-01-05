@@ -12,9 +12,4 @@
 <loopio/builtin.process> cargo
 : .arg  install
 : .arg  loopio
-
-# -- Install commands for a Rust Workspace
-+ workspace .operation install
-
-
 ```

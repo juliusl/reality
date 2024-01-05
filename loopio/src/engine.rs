@@ -409,10 +409,8 @@ impl Engine {
                 context.cancellation = self.cancellation.child_token();
                 self.__published.insert(address, context.clone());
 
-                if let Some(resource) = context.attribute.resource() {
-                    if resource.is_type::<Host>() {
-                        hosts.push(context);
-                    }
+                if context.attribute.is_resource::<Host>() {
+                    hosts.push(context);
                 }
             }
         }
