@@ -219,6 +219,8 @@ pub trait StorageTarget {
             if let Ok(mut queue) = queue.lock() {
                 queue.push_back(Box::new(exec));
             }
+        } else {
+            eprintln!("DISPATCHING IS NOT ENABLED")
         }
     }
 
@@ -232,6 +234,8 @@ pub trait StorageTarget {
             if let Ok(mut queue) = queue.lock() {
                 queue.push_back(Box::new(exec));
             }
+        } else {
+            eprintln!("DISPATCHING IS NOT ENABLED")
         }
     }
 

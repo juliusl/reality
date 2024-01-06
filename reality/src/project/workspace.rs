@@ -45,10 +45,10 @@ fn read_dir(workspace: &mut Workspace, dir: impl AsRef<Path>) {
     for e in read_dir {
         match e {
             Ok(ref entry) => {
-                eprintln!("Scanning current directory -- {:?}", entry.path());
+                debug!("Scanning current directory -- {:?}", entry.path());
                 match entry.path().extension().and_then(|e| e.to_str()) {
                     Some("md") | Some("runmd") => {
-                        eprintln!("Adding -- {:?}", entry.path());
+                        debug!("Adding -- {:?}", entry.path());
                         workspace.add_local(entry.path());
                     }
                     _ => {}
@@ -178,6 +178,8 @@ impl Workspace {
         project.root.put_resource(self.clone(), ResourceKey::root());
 
         compiled.project = Some(project);
+
+        info!("Finished compiling workspace");
         Ok(compiled)
     }
 

@@ -15,7 +15,7 @@ use crate::Controller;
 pub struct Terminal;
 
 impl<T: TerminalApp> Controller<T> for Terminal {
-    fn take_control(self, app: Box<T>, engine: ForegroundEngine) -> BackgroundWork {
+    fn take_control(self, app: Box<T>, engine: ForegroundEngine) -> anyhow::Result<BackgroundWork> {
         let mut app: Box<dyn TerminalApp> = app;
         app.deref_mut().bind(engine.engine_handle());
 
@@ -57,10 +57,10 @@ impl<T: TerminalApp> Controller<T> for Terminal {
                 }
             }
         } else {
-            app.process_command(cli);
+            app.process_command(cli)?;
         }
 
-        None
+        Ok(None)
     }
 }
 
@@ -97,5 +97,5 @@ pub trait TerminalApp: ControlBus {
     ///
     /// **Note**: Relevant only when REPL is disabled
     ///
-    fn process_command(&mut self, command: clap::Command);
+    fn process_command(&mut self, command: clap::Command) -> anyhow::Result<()>;
 }

@@ -339,8 +339,9 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
         let type_name = std::any::type_name::<T>();
 
         type_id.hash(hasher);
+        type_name.hash(hasher);
 
-        hasher.finish() ^ type_name.as_ptr() as u64
+        hasher.finish()
     }
 
     /// Derives type key from repr handle,
@@ -356,7 +357,8 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
 
             if let Some(type_name) = resource.type_name() {
                 trace!("splitting {}", type_name);
-                return Ok((r.as_u64(), hasher.finish() ^ type_name.as_ptr() as u64));
+                type_name.hash(hasher);
+                return Ok((r.as_u64(), hasher.finish()));
             }
         }
 

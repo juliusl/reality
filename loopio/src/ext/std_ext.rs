@@ -158,12 +158,17 @@ pub struct Println {
     ///
     #[reality(derive_fromstr)]
     pub(crate) line: String,
+    #[reality(ffi=String, wire=into_box_from_wire)]
+    pub label: String,
 }
 
 #[async_trait::async_trait]
 impl CallAsync for Println {
     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
-        let initialized = context.initialized::<Println>().await;
+        let initialized = context.as_remote_plugin::<Println>().await;
+        if !initialized.label.is_empty() {
+            print!("[{}] ", initialized.label);
+        }
         println!("{}", initialized.line);
         Ok(())
     }

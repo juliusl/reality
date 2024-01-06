@@ -61,6 +61,13 @@ mod macros {
                 Box::pin(async move { inner.assign(h) })
             });
         };
+        (as $a:expr, $interner:ident, $tag:expr) => {
+            let tag = $tag;
+
+            $interner.push_tag($a.to_string(), move |h| {
+                Box::pin(async move { tag.assign(h) })
+            });
+        };
     }
 }
 
@@ -196,6 +203,8 @@ mod tests {
             type ParseType = String;
 
             type ProjectedType = String;
+
+            type FFIType = String;
 
             fn field_name() -> &'static str {
                 "test"

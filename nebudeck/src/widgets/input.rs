@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use imgui::Ui;
 
-use crate::ext::imgui_ext::AuxUiNode;
+use crate::ext::imgui_ext::ToolUiNode;
 use crate::ext::imgui_ext::UiNode;
 use crate::ext::imgui_ext::UiTypeNode;
 
@@ -244,7 +244,7 @@ async fn create_inspect_action(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
         // Returns CallOutput::Update if the address contains an aux ui type node
         let action = action.bind("show_aux_ui_node", |tc| {
-            if let Some(_) = tc.cached::<AuxUiNode>() {
+            if let Some(_) = tc.cached::<ToolUiNode>() {
                 tc.update()
             } else {
                 tc.skip()

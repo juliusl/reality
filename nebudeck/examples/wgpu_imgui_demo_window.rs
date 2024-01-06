@@ -102,7 +102,7 @@ fn main() -> anyhow::Result<()> {
         .enable_aux_demo_window()
         .middleware()])
     // Opens the window by passing control over to the desktop ControlBus
-    .delegate(desktop, foreground);
+    .delegate(desktop, foreground)?;
 
     Ok(())
 }

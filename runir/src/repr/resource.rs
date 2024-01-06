@@ -22,14 +22,15 @@ define_intern_table!(PARSE_TYPE_NAME: &'static str);
 // Intern table for ffi type name
 define_intern_table!(FFI_TYPE_NAME: &'static str);
 
-// Intern table for ffi parse type name
-define_intern_table!(FFI_PARSE_TYPE_NAME: &'static str);
+// Intern table for ffi value parser
+#[cfg(feature = "util-clap")]
+define_intern_table!(FFI_VALUE_PARSER: Option<clap::builder::Resettable<clap::builder::ValueParser>>);
 
 /// Resource level is the lowest level of representation,
 ///
 /// Resource level asserts compiler information for the resource.
 ///
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct ResourceLevel {
     /// Rust type id assigned by the compiler,
     ///
@@ -46,9 +47,12 @@ pub struct ResourceLevel {
     /// (Optional) FFI type name,
     ///
     ffi_type: Option<Tag<&'static str>>,
-    /// (Optional) FFI parse type name,
+    /// (Optional) FFI clap value parser,
     ///
-    ffi_parse_type: Option<Tag<&'static str>>,
+    /// **Note** Requires `util-clap` feature
+    ///
+    #[cfg(feature = "util-clap")]
+    ffi_value_parser: Option<Tag<Option<clap::builder::Resettable<clap::builder::ValueParser>>>>,
 }
 
 impl ResourceLevel {
@@ -62,7 +66,8 @@ impl ResourceLevel {
             type_size: Tag::new(&TYPE_SIZE, std::mem::size_of::<T>),
             parse_type: None,
             ffi_type: None,
-            ffi_parse_type: None,
+            #[cfg(feature = "util-clap")]
+            ffi_value_parser: None,
         }
     }
 
@@ -76,15 +81,13 @@ impl ResourceLevel {
     /// Sets the ffi type name,
     ///
     #[inline]
-    pub fn set_ffi_type<T: FFI>(&mut self) {
+    pub fn set_ffi<T: FFI>(&mut self) {
         self.ffi_type = Some(Tag::new(&FFI_TYPE_NAME, T::ffi_type_name));
-    }
 
-    /// Sets the ffi parse type name,
-    ///
-    #[inline]
-    pub fn set_ffi_parse_type<T: FFI>(&mut self) {
-        self.ffi_parse_type = Some(Tag::new(&FFI_PARSE_TYPE_NAME, T::ffi_type_name));
+        #[cfg(feature = "util-clap")]
+        {
+            self.ffi_value_parser = Some(Tag::new(&FFI_VALUE_PARSER, T::value_parser))
+        }
     }
 }
 
@@ -102,8 +105,10 @@ impl Level for ResourceLevel {
             push_tag!(interner, ffi_type_name);
         }
 
-        if let Some(ffi_parse_type_name) = self.ffi_parse_type {
-            push_tag!(interner, ffi_parse_type_name);
+        #[cfg(feature = "util-clap")]
+        if let Some(ffi_value_parser) = self.ffi_value_parser.clone() {
+            let ffi_vp_key = format!("{}_value_parser", self.type_name.value());
+            push_tag!(as ffi_vp_key, interner, ffi_value_parser);
         }
 
         interner.set_level_flags(LevelFlags::ROOT);
@@ -148,6 +153,14 @@ impl ResourceRepr {
             .is_some()
     }
 
+    /// Returns true if the resource parse type matches,
+    ///
+    pub fn is_ffi_type<T: FFI + 'static>(&self) -> bool {
+        self.ffi_type_name()
+            .filter(|n| *n == T::ffi_type_name())
+            .is_some()
+    }
+
     /// Returns the tag value of the resource type name,
     ///
     #[inline]
@@ -175,6 +188,23 @@ impl ResourceRepr {
     pub fn parse_type_name(&self) -> Option<&'static str> {
         self.0.resource_parse_type_name()
     }
+
+    /// Returns the FFI type name,
+    ///
+    #[inline]
+    pub fn ffi_type_name(&self) -> Option<&'static str> {
+        self.0.resource_ffi_type_name()
+    }
+
+    /// Returns the FFI clap value parser,
+    ///
+    #[inline]
+    #[cfg(feature = "util-clap")]
+    pub fn ffi_value_parser(
+        &self,
+    ) -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        self.0.resource_ffi_value_parser()
+    }
 }
 
 /// Trait to provide foreign function interface support,
@@ -183,17 +213,47 @@ pub trait FFI {
     /// FFI type name,
     ///
     fn ffi_type_name() -> &'static str;
+
+    /// Clap value parser to use w/ this resource type,
+    ///
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> Option<clap::builder::Resettable<clap::builder::ValueParser>>;
+}
+
+impl FFI for () {
+    fn ffi_type_name() -> &'static str {
+        "unit"
+    }
+
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> std::option::Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        None
+    }
 }
 
 impl FFI for String {
     fn ffi_type_name() -> &'static str {
         "string"
     }
+
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        use clap::builder::IntoResettable;
+
+        Some(clap::value_parser!(Self).into_resettable())
+    }
 }
 
 impl FFI for PathBuf {
     fn ffi_type_name() -> &'static str {
-        "string"
+        "path_buf"
+    }
+
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        use clap::builder::IntoResettable;
+
+        Some(clap::value_parser!(Self).into_resettable())
     }
 }
 
@@ -201,11 +261,23 @@ impl FFI for File {
     fn ffi_type_name() -> &'static str {
         "file"
     }
+
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        None
+    }
 }
 
 impl FFI for bool {
     fn ffi_type_name() -> &'static str {
         "bool"
+    }
+
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        use clap::builder::IntoResettable;
+
+        Some(clap::value_parser!(Self).into_resettable())
     }
 }
 
@@ -213,11 +285,25 @@ impl FFI for u8 {
     fn ffi_type_name() -> &'static str {
         "u8"
     }
+
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        use clap::builder::IntoResettable;
+
+        Some(clap::value_parser!(Self).into_resettable())
+    }
 }
 
 impl FFI for u16 {
     fn ffi_type_name() -> &'static str {
         "u16"
+    }
+
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        use clap::builder::IntoResettable;
+
+        Some(clap::value_parser!(Self).into_resettable())
     }
 }
 
@@ -225,11 +311,25 @@ impl FFI for u32 {
     fn ffi_type_name() -> &'static str {
         "u32"
     }
+
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        use clap::builder::IntoResettable;
+
+        Some(clap::value_parser!(Self).into_resettable())
+    }
 }
 
 impl FFI for u64 {
     fn ffi_type_name() -> &'static str {
         "u64"
+    }
+
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        use clap::builder::IntoResettable;
+
+        Some(clap::value_parser!(Self).into_resettable())
     }
 }
 
@@ -237,11 +337,25 @@ impl FFI for i8 {
     fn ffi_type_name() -> &'static str {
         "i8"
     }
+
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        use clap::builder::IntoResettable;
+
+        Some(clap::value_parser!(Self).into_resettable())
+    }
 }
 
 impl FFI for i16 {
     fn ffi_type_name() -> &'static str {
         "i16"
+    }
+
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        use clap::builder::IntoResettable;
+
+        Some(clap::value_parser!(Self).into_resettable())
     }
 }
 
@@ -249,11 +363,25 @@ impl FFI for i32 {
     fn ffi_type_name() -> &'static str {
         "i32"
     }
+
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        use clap::builder::IntoResettable;
+
+        Some(clap::value_parser!(Self).into_resettable())
+    }
 }
 
 impl FFI for i64 {
     fn ffi_type_name() -> &'static str {
         "i64"
+    }
+
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        use clap::builder::IntoResettable;
+
+        Some(clap::value_parser!(Self).into_resettable())
     }
 }
 
@@ -261,10 +389,24 @@ impl FFI for f32 {
     fn ffi_type_name() -> &'static str {
         "f32"
     }
+
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        use clap::builder::IntoResettable;
+
+        Some(clap::value_parser!(Self).into_resettable())
+    }
 }
 
 impl FFI for f64 {
     fn ffi_type_name() -> &'static str {
         "f64"
+    }
+
+    #[cfg(feature = "util-clap")]
+    fn value_parser() -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        use clap::builder::IntoResettable;
+
+        Some(clap::value_parser!(Self).into_resettable())
     }
 }

@@ -10,6 +10,7 @@ pub mod prelude {
 
     pub use super::resource::ResourceLevel;
     pub use super::resource::ResourceRepr;
+    pub use super::resource::FFI;
 
     pub use super::field::Field;
     pub use super::field::FieldLevel;
@@ -27,6 +28,10 @@ pub mod prelude {
 
     pub use super::host::HostLevel;
     pub use super::host::HostRepr;
+
+    pub type FieldName = &'static str;
+    pub type FieldHelp = String;
+    pub type FFIType = &'static str;
 }
 
 use crate::define_intern_table;
@@ -141,6 +146,48 @@ impl Repr {
         self.get_levels().get(0).copied().map(ResourceRepr)
     }
 
+    /// Returns the ffi_type name of the resource repr,
+    /// 
+    #[inline]
+    pub fn ffi_type(&self) -> Option<FFIType> {
+        self.as_resource().and_then(|r| r.ffi_type_name())
+    }
+
+    /// Returns the field help value derived from the node repr,
+    /// 
+    #[inline]
+    pub fn field_help(&self) -> Option<FieldHelp> {
+        self.as_node().and_then(|r| r.doc_headers()).and_then(|d| d.first().cloned())
+    }
+
+    /// Returns the field name value derived from the field repr,
+    /// 
+    #[inline]
+    pub fn field_name(&self) -> Option<FieldName> {
+        self.as_field().and_then(|r| r.name())
+    }
+
+    /// Returns the value parser for this field,
+    /// 
+    #[inline]
+    #[cfg(feature = "util-clap")]
+    pub fn field_value_parser(&self) -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        self.as_resource().and_then(|r| r.ffi_value_parser())
+    }
+
+    /// Returns values for expressing this field as a cli argument,
+    /// 
+    #[inline]
+    #[cfg(feature = "util-clap")]
+    pub fn split_for_arg(&self) -> Option<(FieldName, Option<FieldHelp>, FFIType, clap::builder::Resettable<clap::builder::ValueParser>)> {
+        match (self.field_name(), self.field_help(), self.ffi_type(), self.field_value_parser()) {
+            (Some(a), b, Some(c), Some(d)) => Some((a, b, c, d)),
+            _ => {
+                None
+            }
+        }
+    }
+
     /// Returns the repr as a dependency repr,
     ///
     #[inline]
@@ -213,6 +260,10 @@ fn display_runmd(repr: &Repr, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Resu
 
         if let Some(parse_type) = resource.parse_type_name() {
             writeln!(f, "| parse-type | `{parse_type}` |")?;
+        }
+
+        if let Some(ffi_type) = resource.ffi_type_name() {
+            writeln!(f, "| ffi-type | `{ffi_type}` |")?;
         }
 
         writeln!(f, "| uuid | {:?} |", resource.0.as_uuid())?;

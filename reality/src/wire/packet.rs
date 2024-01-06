@@ -151,6 +151,28 @@ impl FieldPacket {
         }
     }
 
+    /// Sets the packet into parse mode,
+    ///
+    pub fn parse(mut self, input: String) -> Self {
+        self.wire_data = Some(input.as_bytes().to_vec());
+        self.op = 1;
+        self
+    }
+
+    /// If packet is set in parse mode, converts packet into T from parsing wire as a str,
+    ///
+    pub fn into_box_from_wire<T>(self) -> Option<Box<T>>
+    where
+        T: FromStr + Send + Sync + 'static,
+    {
+        self.wire_data
+            .as_ref()
+            .filter(|_| self.op == 1)
+            .and_then(|d| std::str::from_utf8(&d).ok())
+            .and_then(|s| T::from_str(s).ok())
+            .map(|v| Box::new(v))
+    }
+
     /// Converts a field packet ptr into data,
     ///
     pub fn into_box<T>(self) -> Option<Box<T>>

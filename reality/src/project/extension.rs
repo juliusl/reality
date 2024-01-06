@@ -381,7 +381,7 @@ mod tests {
                 crate::project::tests::Test {
                     name: "hello-world".to_string(),
                     file: "test".into(),
-                    fields: BTreeMap::new(),
+                    // fields: BTreeMap::new(),
                 },
             )
             .await;

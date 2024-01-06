@@ -3,8 +3,10 @@ use std::vec;
 use proc_macro2::Ident;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
+use quote::quote;
 use quote::quote_spanned;
 use quote::ToTokens;
+use syn::Expr;
 use syn::parse::Parse;
 use syn::parse2;
 use syn::Attribute;
@@ -45,6 +47,9 @@ pub(crate) struct StructField {
     /// FromStr for this type,
     ///
     pub derive_fromstr: bool,
+    /// FFI Type,
+    /// 
+    pub ffi: Option<Type>,
     /// Attribute Type,
     ///
     pub attribute_type: Option<Path>,
@@ -85,6 +90,7 @@ pub(crate) struct StructField {
     pub offset: usize,
     pub is_virtual: bool,
     pub is_parse: bool,
+    pub wire: Option<Expr>,
     pub variant: Option<(Ident, Ident)>,
     /// TODO: Enable aliased struct fields,
     ///
@@ -533,6 +539,8 @@ impl Parse for StructField {
         let mut option_of = None;
         let mut set_of = None;
         let mut decorated = None;
+        let mut ffi = None;
+        let mut wire = None;
         let mut derive_fromstr = false;
         let mut ext = false;
         let mut plugin = false;
@@ -578,6 +586,18 @@ impl Parse for StructField {
                     if meta.path.is_ident("parse") {
                         meta.input.parse::<Token![=]>()?;
                         callback = meta.input.parse::<Path>().ok();
+                    }
+
+                    if meta.path.is_ident("ffi") {
+                        if meta.input.parse::<Token![=]>().is_ok() {
+                            ffi = meta.input.parse::<Type>().ok();
+                        }
+                    }
+
+                    if meta.path.is_ident("wire") {
+                        if meta.input.parse::<Token![=]>().is_ok() {
+                            wire = meta.input.parse::<Expr>().ok();
+                        }
                     }
 
                     if meta.path.is_ident("attribute_type") {
@@ -703,7 +723,9 @@ impl Parse for StructField {
 
         let mut field = Self {
             rename,
+            wire,
             derive_fromstr,
+            ffi,
             vec_of,
             vecdeq_of,
             map_of,

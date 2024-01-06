@@ -8,7 +8,6 @@ use imgui::Ui;
 use imgui_wgpu::RendererConfig;
 use imgui_winit_support::WinitPlatform;
 
-use loopio::background_work::BackgroundFutureController;
 use loopio::engine::EnginePacket;
 use loopio::engine::Published;
 use loopio::prelude::*;
@@ -59,13 +58,13 @@ pub struct ImguiMiddleware {
     last_frame: Option<Instant>,
     /// Vector of active ui nodes,
     ///
-    ui_nodes: Vec<UiNode>,
+    user_tool_nodes: Vec<UiNode>,
     /// Vector of active ui nodes,
     ///
     _ui_type_nodes: Vec<UiTypeNode>,
     /// Vector of aux ui nodes,
     ///
-    __aux_ui: Vec<AuxUiNode>,
+    tool_nodes: Vec<(String, ToolUiNode)>,
     /// Update attempted to start,
     ///
     __update_start: Option<Instant>,
@@ -86,11 +85,11 @@ impl ImguiMiddleware {
             renderer: OnceCell::new(),
             open_demo: None,
             last_frame: None,
-            ui_nodes: vec![],
+            user_tool_nodes: vec![],
             _ui_type_nodes: vec![],
             __update_start: None,
             __last_updated: None,
-            __aux_ui: vec![],
+            tool_nodes: vec![],
             published: None,
         }
     }
@@ -105,13 +104,14 @@ impl ImguiMiddleware {
     /// Enables the aux widget demo window,
     ///
     pub fn enable_aux_demo_window(self) -> Self {
-        self.with_aux_node(|handle, imgui, ui| {
+        self.with_aux_node("nbd_demo_window", |handle, imgui, can_show, ui| {
             if let Some(bg) = handle.background() {
                 const ADDRESS_INPUT: &'static str = "Address_Input";
 
                 bg.tc.maybe_store_kv(ADDRESS_INPUT, String::new());
 
                 ui.window("Aux-demo Window")
+                    .opened(can_show)
                     .size([800.0, 600.0], imgui::Condition::Once)
                     .build(|| {
                         let mut __address = None;
@@ -167,7 +167,7 @@ impl ImguiMiddleware {
                                             .expect("should be the owner")
                                             .take_resource::<Vec<UiNode>>(ResourceKey::root())
                                         {
-                                            imgui.ui_nodes.append(&mut _nodes);
+                                            imgui.user_tool_nodes.append(&mut _nodes);
                                         }
                                     }
                                 }
@@ -175,14 +175,13 @@ impl ImguiMiddleware {
                         }
                     });
             }
-            true
         })
     }
 
     /// Enables the demo window,
     ///
     pub fn with_ui_node(mut self, ui_node: UiNode) -> Self {
-        self.ui_nodes.push(ui_node);
+        self.user_tool_nodes.push(ui_node);
         self
     }
 
@@ -190,19 +189,27 @@ impl ImguiMiddleware {
     ///
     pub fn with_aux_node(
         mut self,
-        aux_ui: impl FnMut(&mut EngineHandle, &mut ImguiMiddleware, &Ui) -> bool + Send + Sync + 'static,
+        aux_ui_id: impl Into<String>,
+        aux_ui: impl FnMut(&mut EngineHandle, &mut ImguiMiddleware, &mut bool, &Ui)
+            + Send
+            + Sync
+            + 'static,
     ) -> Self {
-        self.__aux_ui.push(AuxUiNode {
-            engine_handle: None,
-            show_ui: Arc::new(RwLock::new(aux_ui)),
-        });
+        self.tool_nodes.push((
+            aux_ui_id.into(),
+            ToolUiNode {
+                engine_handle: None,
+                show_ui: Arc::new(RwLock::new(aux_ui)),
+                can_show: true,
+            },
+        ));
         self
     }
 
-    fn show_aux_nodes(&mut self, ui: &Ui) {
-        let mut nodes: Vec<AuxUiNode> = self.__aux_ui.drain(..).collect();
+    fn show_tool_nodes(&mut self, ui: &Ui) {
+        let mut nodes: Vec<(String, ToolUiNode)> = self.tool_nodes.drain(..).collect();
 
-        for auxnode in nodes.iter_mut() {
+        for (_, auxnode) in nodes.iter_mut() {
             if auxnode.engine_handle.is_none() {
                 auxnode.engine_handle = Some(
                     self.engine
@@ -212,12 +219,10 @@ impl ImguiMiddleware {
                 );
             }
 
-            if !auxnode.show(self, &ui) {
-                // TODO -- "Close the node"
-            }
+            auxnode.show(self, &ui);
         }
 
-        self.__aux_ui = nodes.drain(..).collect();
+        self.tool_nodes = nodes.drain(..).collect();
     }
 }
 
@@ -325,7 +330,6 @@ impl DesktopApp for ImguiMiddleware {
                 let mut formatter = UiFormatter {
                     rk: ResourceKey::root(),
                     imgui: ui,
-                    #[cfg(feature = "terminal")]
                     subcommand: None,
                     tc: std::sync::Mutex::new(OnceLock::new()),
                     disp: None,
@@ -445,8 +449,10 @@ impl ImguiExt for ThunkContext {
 
 /// Type-alias for an engine handle based UI function signature,
 ///
-pub type AuxUi = Arc<
-    RwLock<dyn FnMut(&mut EngineHandle, &mut ImguiMiddleware, &Ui) -> bool + Sync + Send + 'static>,
+pub type ToolUi = Arc<
+    RwLock<
+        dyn FnMut(&mut EngineHandle, &mut ImguiMiddleware, &mut bool, &Ui) + Sync + Send + 'static,
+    >,
 >;
 
 pub type ShowUiNode = Arc<dyn for<'frame> Fn(&UiFormatter<'frame>) -> bool + Sync + Send + 'static>;
@@ -475,28 +481,33 @@ pub struct UiNode {
     pub show_ui_node: Option<ShowUiNode>,
 }
 
-/// Auxilary UI node, containing a rendering function w/ engine handle,
+/// Tool UI node, containing a rendering function w/ engine handle,
 ///
 #[derive(Clone)]
-pub struct AuxUiNode {
+pub struct ToolUiNode {
     /// Engine handle,
     ///
     pub engine_handle: Option<EngineHandle>,
     /// Function to show ui,
     ///
-    pub show_ui: AuxUi,
+    pub show_ui: ToolUi,
+    /// True if the the node can be shown,
+    ///
+    pub can_show: bool,
 }
 
-impl AuxUiNode {
-    /// Shows the ui attached to a node,
+impl ToolUiNode {
+    /// Shows the ui tool,
     ///
-    pub fn show(&mut self, imgui: &mut ImguiMiddleware, ui: &Ui) -> bool {
+    pub fn show(&mut self, imgui: &mut ImguiMiddleware, ui: &Ui) {
+        if !self.can_show {
+            return;
+        }
+
         if let (Some(handle), Ok(mut show)) =
             (self.engine_handle.as_mut(), self.show_ui.try_write())
         {
-            show(handle, imgui, ui)
-        } else {
-            false
+            show(handle, imgui, &mut self.can_show, ui);
         }
     }
 
@@ -510,11 +521,9 @@ impl AuxUiNode {
         engine_handle: &mut EngineHandle,
         imgui: &mut ImguiMiddleware,
         ui: &Ui,
-    ) -> bool {
+    ) {
         if let Ok(mut show) = self.show_ui.try_write() {
-            show(engine_handle, imgui, ui)
-        } else {
-            false
+            show(engine_handle, imgui, &mut self.can_show, ui);
         }
     }
 }
@@ -545,12 +554,20 @@ impl UiDisplayMut for ImguiMiddleware {
     fn fmt(&mut self, ui: &UiFormatter<'_>) -> anyhow::Result<()> {
         let _ui = &ui.imgui;
 
-        self.show_aux_nodes(_ui);
+        _ui.main_menu_bar(|| {
+            _ui.menu("Tools", || {
+                for (id, node) in self.tool_nodes.iter_mut() {
+                    _ui.menu_item_config(id).build_with_ref(&mut node.can_show);
+                }
+            });
+        });
+
+        self.show_tool_nodes(_ui);
 
         if let Some(eh) = self.engine.get_mut() {
             if let Some(bg) = eh.background() {
                 // Render ui nodes
-                for ui_node in self.ui_nodes.iter_mut() {
+                for ui_node in self.user_tool_nodes.iter_mut() {
                     // Swap current thunk context
                     let yielding = if let Ok(mut tc) = ui.tc.lock() {
                         let yielding = tc.take();

@@ -114,6 +114,7 @@ impl InternerFactory for CrcInterner {
             error: None,
         }
     }
+
 }
 
 impl Hasher for CrcInterner {
@@ -147,10 +148,12 @@ mod tests {
     impl Field<0> for Test {
         type ParseType = String;
         type ProjectedType = String;
+        type FFIType = String;
 
         fn field_name() -> &'static str {
             "test"
         }
+
     }
 
     #[tokio::test]

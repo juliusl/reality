@@ -219,7 +219,7 @@ impl BlockObjectHandler {
             parser.fields.clear();
             parser
         } else {
-            panic!()
+            panic!("could not unload parser")
         }
     }
 }

@@ -137,7 +137,7 @@ impl AttributeTypeParser<Shared> {
     pub async fn link_field(&self, node: NodeLevel) -> anyhow::Result<Repr> {
         trace!("linking - {:?}", node.mount());
         if let Some(field) = self.field {
-            (self.link_field)(self.resource, field, node).await
+            (self.link_field)(self.resource.clone(), field, node).await
         } else {
             Err(anyhow!("Cannot link field"))
         }
@@ -156,6 +156,7 @@ impl AttributeTypeParser<Shared> {
         {
             resource.set_parse_type::<Owner::ParseType>();
         }
+        resource.set_ffi::<Owner::FFIType>();
 
         let mut parser = Self::new::<ParsableField<IDX, Owner>>(resource);
         parser.field = Some(FieldLevel::new::<IDX, Owner>());
@@ -175,6 +176,7 @@ impl AttributeTypeParser<Shared> {
         {
             resource.set_parse_type::<Owner::ParseType>();
         }
+        resource.set_ffi::<Owner::FFIType>();
 
         let mut parser = Self::new::<ParsableAttributeTypeField<IDX, Owner>>(resource);
         parser.field = Some(FieldLevel::new::<IDX, Owner>());
@@ -194,6 +196,7 @@ impl AttributeTypeParser<Shared> {
         {
             resource.set_parse_type::<Owner::ParseType>();
         }
+        resource.set_ffi::<Owner::FFIType>();
 
         let mut parser = Self::new::<ParsableObjectTypeField<IDX, Owner>>(resource);
         parser.field = Some(FieldLevel::new::<IDX, Owner>());

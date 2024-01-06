@@ -5,6 +5,8 @@ use crate::define_intern_table;
 use crate::prelude::*;
 use crate::push_tag;
 
+use super::resource::FFI;
+
 // Intern table for owner type ids
 define_intern_table!(OWNER_ID: TypeId);
 
@@ -35,6 +37,12 @@ pub trait Field<const OFFSET: usize>: Send + Sync + 'static {
     ///
     type ProjectedType: Send + Sync + 'static;
 
+    /// Type to use to represent this field over FFI boundaries,
+    /// 
+    /// **Note** When derived will default to `unit` which can only communicate existance.
+    /// 
+    type FFIType: FFI + Send + Sync + 'static;
+
     /// Name of the field,
     ///
     fn field_name() -> &'static str;
@@ -49,6 +57,7 @@ pub trait Field<const OFFSET: usize>: Send + Sync + 'static {
 
         let mut resource = ResourceLevel::new::<Self::ProjectedType>();
         resource.set_parse_type::<Self::ParseType>();
+        resource.set_ffi::<Self::FFIType>();
 
         linker.push_level(resource)?;
         linker.push_level(FieldLevel::new::<OFFSET, Self>())?;

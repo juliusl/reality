@@ -9,7 +9,7 @@ use nebudeck::ControlBus;
 fn main() {
     let engine = Engine::builder();
 
-    BlankRepl.delegate(Terminal::default(), ForegroundEngine::new(engine));
+    BlankRepl.delegate(Terminal::default(), ForegroundEngine::new(engine)).unwrap();
 }
 
 #[derive(Default)]
@@ -39,13 +39,13 @@ impl TerminalApp for BlankRepl {
         match name {
             "ping" => {
                 println!("pong");
-                todo!()
+                None
             }
             "exit" => {
                 std::process::exit(0);
             }
             _ => {
-                todo!()
+                None
             }
         }
     }
@@ -54,5 +54,7 @@ impl TerminalApp for BlankRepl {
         print!("> ");
     }
 
-    fn process_command(&mut self, _: clap::Command) {}
+    fn process_command(&mut self, _: clap::Command) -> anyhow::Result<()> {
+        Ok(())
+    }
 }

@@ -101,6 +101,8 @@ impl ForegroundEngine {
                 builder.enable::<BackgroundWork>();
                 builder.enable::<Published>();
                 builder.enable::<ForegroundEngineTest>();
+
+                trace!("Compiling workspace {:#?}", builder.workspace);
                 builder.compile().await
             })
             .unwrap();

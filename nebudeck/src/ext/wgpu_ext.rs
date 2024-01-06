@@ -619,7 +619,7 @@ impl ControlBus for WgpuSystem {
         }
     }
 
-    fn delegate(self, controller: impl Controller<Self>, engine: ForegroundEngine) -> BackgroundWork
+    fn delegate(self, controller: impl Controller<Self>, engine: ForegroundEngine) -> anyhow::Result<BackgroundWork>
     where
         Self: Sized,
     {

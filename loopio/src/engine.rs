@@ -924,7 +924,7 @@ impl EngineHandle {
     pub async fn run(&self, address: impl Into<String>) -> anyhow::Result<ThunkContext> {
         let address = address.into();
 
-        println!("Looking for {}", &address);
+        debug!("Looking for {}", &address);
         let (tx, rx) = tokio::sync::oneshot::channel::<CallOutput>();
 
         let packet = EnginePacket {

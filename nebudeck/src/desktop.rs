@@ -1,5 +1,6 @@
 use std::process::exit;
 
+use anyhow::anyhow;
 use loopio::engine::EngineBuilder;
 use loopio::engine::EnginePacket;
 use tracing::error;
@@ -286,11 +287,15 @@ impl Desktop {
 }
 
 impl<A: DesktopApp + 'static> Controller<A> for Desktop {
-    fn take_control(self, mut app: Box<A>, engine: ForegroundEngine) -> BackgroundWork {
+    fn take_control(
+        self,
+        mut app: Box<A>,
+        engine: ForegroundEngine,
+    ) -> anyhow::Result<BackgroundWork> {
         app.bind(engine.engine_handle());
 
         self.open(*app);
-        None
+        Err(anyhow!("Exiting"))
     }
 }
 

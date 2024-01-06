@@ -532,12 +532,16 @@ impl AttributeParser<Shared> {
         Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
         <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
+        let mut resource = ResourceLevel::new::<Owner::ProjectedType>();
+
+        resource.set_ffi::<Owner::FFIType>();
+
         self.add_type_with(
             ident.into(),
             ParsableField::<FIELD_OFFSET, Owner>::parse,
             Owner::link_recv,
             Owner::link_field,
-            ResourceLevel::new::<Owner::ProjectedType>(),
+            resource,
             FieldLevel::new::<FIELD_OFFSET, Owner>(),
         );
     }
@@ -591,12 +595,16 @@ impl AttributeParser<Shared> {
         Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
         Owner::ParseType: AttributeType<Shared> + Send + Sync + 'static,
     {
+        let mut resource = ResourceLevel::new::<Owner::ProjectedType>();
+
+        resource.set_ffi::<Owner::FFIType>();
+
         self.add_type_with(
             ident.into(),
             ParsableAttributeTypeField::<FIELD_OFFSET, Owner>::parse,
             Owner::link_recv,
             Owner::link_field,
-            ResourceLevel::new::<Owner::ProjectedType>(),
+            resource,
             FieldLevel::new::<FIELD_OFFSET, Owner>(),
         );
     }
@@ -915,6 +923,8 @@ mod test {
         impl runir::prelude::Field<0> for Test {
             type ParseType = String;
             type ProjectedType = String;
+            type FFIType = String;
+
             fn field_name() -> &'static str {
                 "test"
             }

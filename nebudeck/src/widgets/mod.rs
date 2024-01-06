@@ -62,7 +62,6 @@ pub mod prelude {
         pub eh: Mutex<EngineHandle>,
         /// Currently available subcommand,
         ///
-        #[cfg(feature = "terminal")]
         pub subcommand: Option<clap::Command>,
         /// Currently available thunk context,
         ///

@@ -2,9 +2,9 @@ use std::fmt::Debug;
 
 use clap::Arg;
 use runir::prelude::*;
-use tracing::{trace, warn};
+use tracing::{trace, warn, debug};
 
-use crate::Workspace;
+use crate::{ResourceKey, Workspace};
 
 use super::Program;
 
@@ -98,7 +98,7 @@ impl From<Package> for clap::Command {
 
             if let Some(ext) = m.host.extensions() {
                 let add = m.host.address().expect("should be an address");
-                println!("Adding subcommand {:?}", add);
+                debug!("Adding subcommand {:?}", add);
 
                 let mut group = clap::Command::new(add.to_string());
 
@@ -124,19 +124,81 @@ impl From<Package> for clap::Command {
                             [g, command, _ext, ..] if g == add.as_str() => {
                                 trace!("Adding ext as subcommand {g} {command} {_ext}");
                                 // This should be unused from cli, but is used to store the ext type name
-                                let ext_arg = Arg::new("_ext").default_value(_ext.to_string());
+                                let ext_arg = Arg::new("_ext")
+                                    .long("_ext")
+                                    .default_value(_ext.to_string());
 
-                                let mut sub =
-                                    clap::Command::new(command.to_string()).arg(ext_arg);
+                                let mut sub = clap::Command::new(command.to_string()).arg(ext_arg);
                                 if let Some(help) = help {
                                     sub = sub.about(help);
+                                }
+
+                                let mut args = vec![];
+                                if let Some(recv) = e.as_recv() {
+                                    trace!("Ext is recv, checking fields");
+                                    if let Some(fields) = recv.fields() {
+                                        for f in fields.iter() {
+                                            trace!("Trying to add field as arg\n\n{:#}\n", f);
+                                            if let Some((field_name, field_help, _, value_parser)) =
+                                                f.split_for_arg()
+                                            {
+                                                trace!("Adding field `{field_name}` as arg");
+                                                let mut arg = Arg::new(field_name)
+                                                    .long(field_name)
+                                                    .value_parser(value_parser);
+
+                                                // Include an empty field packet
+                                                if let Some(field_packet) =
+                                                    ResourceKey::with_repr(*f).field_packet()
+                                                {
+                                                    if let Ok(packet) =
+                                                        bincode::serialize(&field_packet)
+                                                    {
+                                                        trace!("Adding base64 encoded empty packet as arg");
+                                                        let arg_name = format!(
+                                                            "_{field_name}_field_packet_enc"
+                                                        );
+                                                        let field_packet = Arg::new(&arg_name)
+                                                            .long(arg_name)
+                                                            .help(
+                                                                "base64 encoded empty field packet",
+                                                            )
+                                                            .default_value(base64::encode(packet));
+
+                                                        args.push(field_packet);
+                                                    }
+                                                }
+
+                                                // Get the node input and set as the default value
+                                                if let Some(input) =
+                                                    f.as_node().and_then(|n| n.input())
+                                                {
+                                                    arg = arg.default_value(input.to_string());
+                                                }
+
+                                                // Set the field_help
+                                                if let Some(help) = field_help {
+                                                    arg = arg.help(help);
+                                                }
+
+                                                args.push(arg);
+                                            } else {
+                                                trace!("did not split for arg");
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if !args.is_empty() {
+                                    sub = sub.args(args);
                                 }
 
                                 group = group.subcommand(sub);
                             }
                             _ => {
+                                warn!("Unimplemented command {:?}", fragments);
                                 // TODO: Join the middle w/ underscores
-                                unimplemented!()
+                                // unimplemented!()
                             }
                         }
                     }

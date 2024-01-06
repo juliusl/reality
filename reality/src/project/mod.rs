@@ -335,8 +335,8 @@ mod tests {
     pub struct Test {
         pub name: String,
         pub file: PathBuf,
-        #[reality(map_of=String)]
-        pub fields: BTreeMap<String, String>,
+        // #[reality(map_of=String)]
+        // pub fields: BTreeMap<String, String>,
     }
 
     async fn test_noop(_tc: &mut ThunkContext) -> anyhow::Result<()> {
@@ -442,7 +442,7 @@ mod tests {
             Ok(Test {
                 name: String::new(),
                 file: PathBuf::from(""),
-                fields: BTreeMap::new(),
+                // fields: BTreeMap::new(),
             })
         }
     }

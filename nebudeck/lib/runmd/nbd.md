@@ -1,7 +1,7 @@
 
 ```runmd
-# -- Install commands for a Rust Project 
-+ .operation install
+# -- Commands for installing dependencies
++ .operation install-deps
 
 # -- Install nebudeck as a dependency of the current project
 <nebudeck/builtin.process> cargo
@@ -12,4 +12,19 @@
 <loopio/builtin.process> cargo
 : .arg  install
 : .arg  loopio
+
+# -- Adds a new nebudeck project
++ .operation add-project
+
+# -- Adds a new terminal app project
+<terminal/builtin.println> Adding terminal project
+
+# -- Test argument 
+: .label placeholder
+
+# -- Adds a new desktop app project
+<desktop/builtin.println> Adding desktop project
+
+# -- Test argument 
+: .label placeholder
 ```

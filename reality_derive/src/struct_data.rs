@@ -814,6 +814,12 @@ impl StructData {
             let field_ident = f.field_name_lit_str();
             let ty = f.field_ty();
             let absolute_ty = &f.ty;
+            let ffi_ty = f.ffi.as_ref().map(|f| {
+                quote_spanned!(f.span()=>
+                    type FFIType = #f
+                )
+            }).unwrap_or(quote!(type FFIType = ()));
+            
             let offset = &f.offset;
 
             quote_spanned! {f.span=>
@@ -821,6 +827,8 @@ impl StructData {
                     type ParseType = #ty;
 
                     type ProjectedType = #absolute_ty;
+
+                    #ffi_ty;
 
                     fn field_name() -> &'static str {
                         #field_ident
@@ -1221,10 +1229,11 @@ impl StructData {
             let ty = &f.ty;
             let name = f.field_name_lit_str();
             let offset = f.offset;
+            let wire_method = f.wire.as_ref().map(|f| quote_spanned!(f.span()=> #f)).unwrap_or(quote!(into_box));
 
             quote_spanned!(f.span=>
                 (#offset, #name) => {
-                    if let Some(value) = value.into_box::<#ty>() {
+                    if let Some(value) = value.#wire_method::<#ty>() {
                         <Self as SetField<#ty>>::set_field(self, FieldOwned { owner, name, offset, value: *value })
                     } else {
                         tracing::error!("Could not read value for {}.{}", stringify!(#ty), #name);

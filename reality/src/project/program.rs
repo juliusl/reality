@@ -44,7 +44,10 @@ impl Program {
                 handle: tokio::runtime::Handle::current(),
             })
         } else {
-            Err(anyhow!("Could not create program, missing parsed node"))
+            Err(anyhow!(
+                "Could not create program, missing parsed node -- storage items: {}",
+                storage.len()
+            ))
         }
     }
 
