@@ -1,4 +1,3 @@
-use crate::engine::EngineBuilder;
 #[cfg(feature = "hyper-ext")]
 pub use crate::ext::hyper_ext::*;
 
@@ -16,6 +15,7 @@ pub use crate::action::ActionExt;
 pub use crate::address::Address;
 pub use crate::engine::DefaultEngine;
 pub use crate::engine::Engine;
+pub use crate::engine::EngineBuilder;
 pub use crate::engine::EngineHandle;
 pub use crate::engine::Published;
 pub use crate::ext::*;

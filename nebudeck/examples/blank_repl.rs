@@ -1,15 +1,26 @@
 use loopio::engine::Engine;
 use loopio::engine::EngineHandle;
 use loopio::foreground::ForegroundEngine;
+use loopio::prelude::Workspace;
 use nebudeck::terminal::Terminal;
 use nebudeck::terminal::TerminalApp;
 use nebudeck::ControlBus;
+
 /// Minimal example for starting a new terminal repl interaction,
 ///
 fn main() {
-    let engine = Engine::builder();
+    let mut engine = Engine::builder();
 
-    BlankRepl.delegate(Terminal::default(), ForegroundEngine::new(engine)).unwrap();
+    let mut workspace = Workspace::new();
+    workspace.add_local("lib/runmd/blank_repl.md");
+
+    engine.set_workspace(workspace);
+
+    let terminal = Terminal::default();
+
+    BlankRepl
+        .delegate(terminal, ForegroundEngine::new(engine))
+        .unwrap();
 }
 
 #[derive(Default)]
@@ -44,9 +55,7 @@ impl TerminalApp for BlankRepl {
             "exit" => {
                 std::process::exit(0);
             }
-            _ => {
-                None
-            }
+            _ => None,
         }
     }
 

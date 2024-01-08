@@ -114,7 +114,6 @@ impl InternerFactory for CrcInterner {
             error: None,
         }
     }
-
 }
 
 impl Hasher for CrcInterner {
@@ -153,7 +152,6 @@ mod tests {
         fn field_name() -> &'static str {
             "test"
         }
-
     }
 
     #[tokio::test]

@@ -3,13 +3,13 @@ use std::vec;
 use proc_macro2::Ident;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
-use quote::quote;
 use quote::quote_spanned;
 use quote::ToTokens;
-use syn::Expr;
 use syn::parse::Parse;
 use syn::parse2;
+use syn::parse_quote;
 use syn::Attribute;
+use syn::Expr;
 use syn::LitStr;
 use syn::Path;
 use syn::Token;
@@ -48,7 +48,7 @@ pub(crate) struct StructField {
     ///
     pub derive_fromstr: bool,
     /// FFI Type,
-    /// 
+    ///
     pub ffi: Option<Type>,
     /// Attribute Type,
     ///
@@ -589,8 +589,13 @@ impl Parse for StructField {
                     }
 
                     if meta.path.is_ident("ffi") {
-                        if meta.input.parse::<Token![=]>().is_ok() {
+                        if meta.input.lookahead1().peek(Token![=]) {
+                            meta.input.parse::<Token![=]>().expect("should parse");
                             ffi = meta.input.parse::<Type>().ok();
+                            wire = Some(parse_quote!(into_box_from_wire));
+                        } else {
+                            ffi = Some(ty.clone());
+                            wire = Some(parse_quote!(into_box_from_wire));
                         }
                     }
 

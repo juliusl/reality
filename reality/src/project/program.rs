@@ -19,11 +19,12 @@ pub struct Program {
     pub node: ParsedNode,
     /// Shared storage,
     ///
-    storage: Shared,
+    pub storage: Shared,
     /// Entry point,
     ///
     entry_point: Option<ResourceKey<Attribute>>,
-
+    /// Handle to the tokio runtime,
+    ///
     handle: tokio::runtime::Handle,
 }
 

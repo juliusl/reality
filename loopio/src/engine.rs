@@ -88,6 +88,7 @@ impl EngineBuilder {
         P: Plugin + Default + Clone + ToFrame + Send + Sync + 'static,
         P::Virtual: NewFn<Inner = P> + ToOwned<Owned = P>,
     {
+        info!("Enabling plugin {}", P::symbol());
         self.register_with(|parser| {
             parser.with_object_type::<Thunk<P>>();
             parser.push_link_recv::<P>();

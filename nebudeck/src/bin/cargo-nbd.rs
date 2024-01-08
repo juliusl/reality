@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
-use anyhow::anyhow;
-use clap::{Parser, Subcommand};
+use clap::Parser;
+use clap::Subcommand;
 use nebudeck::set_nbd_boot_only;
 use nebudeck::set_nbd_boot_prog;
 use nebudeck::Nebudeck;
+use nebudeck::ProjectTypes;
 
-use loopio::prelude::*;
 use tracing_subscriber::fmt;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -15,11 +15,13 @@ use tracing_subscriber::EnvFilter;
 /// Cargo plugin for nbd dev/boot tools,
 ///
 fn main() -> anyhow::Result<()> {
+    // Set up logging
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())
         .init();
 
+    // Only parse from args before "--"
     let args = std::env::args()
         .take_while(|a| a != "--")
         .collect::<Vec<_>>();
@@ -53,31 +55,38 @@ fn main() -> anyhow::Result<()> {
             set_nbd_boot_prog("nbd_boot build");
             deck.start_cli()?;
         }
-        Commands::Add { dir, project_type } => {
+        Commands::Add {
+            dir,
+            project_type,
+            name,
+        } => {
             let project_args = match project_type {
                 ProjectTypes::Terminal {} => "terminal",
                 ProjectTypes::Desktop { .. } => "desktop",
             };
 
-            let dir = dir
+            // NBD_HOME directory
+            let home_dir = dir
                 .clone()
                 .or(cli.home)
                 .unwrap_or_else(|| std::env::current_dir().unwrap());
 
-            let deck = Nebudeck::init(dir)?;
+            let deck = Nebudeck::init(home_dir)?;
 
+            // Pass in args after "--"
             let rest = std::env::args()
                 .skip_while(|a| a != "--")
                 .skip(1)
                 .collect::<Vec<_>>();
 
-            let args = shlex::join(rest[..].iter().map(|r| r.as_str()));
+            let mut args = shlex::join(rest[..].iter().map(|r| r.as_str()));
+
+            if !args.contains("--name") {
+                args = format!("{args} --name {name}");
+            }
 
             set_nbd_boot_prog(format!("nbd_boot add-project {project_args} {args}"));
-            deck.start_cli_with(|mut e| {
-                e.enable::<ProjectTypes>();
-                e
-            })?;
+            deck.start_cli()?;
         }
         Commands::Run => {
             // Only initialzies .config/nbd if not already initialized, skips rust project check
@@ -123,6 +132,8 @@ enum Commands {
         #[arg(long)]
         dir: Option<PathBuf>,
     },
+    /// Adds a new starter project to env.
+    ///
     /// Appends a new project item to NBD_HOME/run.md,
     ///
     /// Creates a new file under lib/runmd/<PROJECT-NAME>.md.
@@ -133,8 +144,12 @@ enum Commands {
         /// Target directory to add a project to, overrides NBD_HOME.
         #[arg(long)]
         dir: Option<PathBuf>,
+        /// Project type to add.
         #[command(subcommand)]
         project_type: ProjectTypes,
+        /// Name of the project to add.
+        #[arg(long, default_value = "new_project")]
+        name: String,
     },
     /// Builds engines w/ projects specified by NBD_HOME/run.md.
     Build {
@@ -144,72 +159,4 @@ enum Commands {
     },
     /// Runs the engine in the current context, sets NBD_BOOT_ONLY implicitly.
     Run,
-}
-/// Group of project types that can be added w/ cargo-nbd
-///
-#[derive(Reality, Default, Clone, Subcommand)]
-#[plugin_def(
-    call = todo
-)]
-#[parse_def(rename = "project")]
-enum ProjectTypes {
-    /// Terminal app project,
-    ///
-    #[default]
-    Terminal,
-    /// Desktop app project,
-    ///
-    Desktop {
-        /// Enables a wgpu-based desktop app
-        ///
-        #[arg(action)]
-        #[reality(ffi=bool, wire=into_box_from_wire)]
-        wgpu: bool,
-        /// Enables a wgpu-based desktop app w/ imgui middleware. Implicitly sets --wgpu.
-        ///
-        #[arg(action)]
-        #[reality(ffi=bool, wire=into_box_from_wire)]
-        wgpu_imgui: bool,
-    },
-}
-
-async fn todo(_: &mut ThunkContext) -> anyhow::Result<()> {
-    Ok(())
-}
-
-impl FromStr for ProjectTypes {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "terminal" => Ok(Self::Terminal),
-            "desktop" => Ok(Self::Desktop {
-                wgpu: false,
-                wgpu_imgui: false,
-            }),
-            _ => Err(anyhow!("Unknown project type")),
-        }
-    }
-}
-
-#[test]
-fn test_main() -> anyhow::Result<()> {
-    let tmp = std::env::temp_dir().join("test_init");
-    if tmp.exists() {
-        eprintln!("Removing old directory");
-        std::fs::remove_dir_all(&tmp).unwrap()
-    }
-    std::fs::create_dir_all(&tmp).unwrap();
-    let cargo = tmp.join("Cargo.toml");
-    std::fs::write(cargo, "[package]").unwrap();
-
-    let deck = Nebudeck::init(tmp)?;
-
-    set_nbd_boot_prog(format!("nbd_boot add-project terminal --help"));
-    deck.start_cli_with(|mut e| {
-        e.enable::<ProjectTypes>();
-        e
-    })?;
-
-    Ok(())
 }

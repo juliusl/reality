@@ -196,9 +196,13 @@ impl InternHandle {
     /// Returns the resource ffi value parser,
     ///
     #[inline]
-    #[cfg(feature="util-clap")]
-    pub fn resource_ffi_value_parser(&self) -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
-        crate::repr::resource::FFI_VALUE_PARSER.clone(self).and_then(|v| v)
+    #[cfg(feature = "util-clap")]
+    pub fn resource_ffi_value_parser(
+        &self,
+    ) -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+        crate::repr::resource::FFI_VALUE_PARSER
+            .clone(self)
+            .and_then(|v| v)
     }
 
     /// Returns the parent of the dependency,

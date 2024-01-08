@@ -28,6 +28,9 @@ mod nebudeck;
 pub use nebudeck::set_nbd_boot_only;
 pub use nebudeck::set_nbd_boot_prog;
 pub use nebudeck::Nebudeck;
+pub use nebudeck::ProjectTypes;
+
+mod layout;
 
 #[cfg(feature = "desktop")]
 pub mod desktop;

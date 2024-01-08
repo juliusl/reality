@@ -1,4 +1,3 @@
-
 ```runmd
 # -- Commands for installing dependencies
 + .operation install-deps
@@ -17,14 +16,20 @@
 + .operation add-project
 
 # -- Adds a new terminal app project
-<terminal/builtin.println> Adding terminal project
-
-# -- Test argument 
-: .label placeholder
+<terminal/nebudeck.project> terminal
+|# arg.name = new_terminal_project
 
 # -- Adds a new desktop app project
-<desktop/builtin.println> Adding desktop project
+<desktop/nebudeck.project> desktop
+|# arg.name = new_desktop_project
 
-# -- Test argument 
-: .label placeholder
+# -- Title of the desktop app window
+: .title  New Desktop App
+
+# -- Initial window height
+: .height 1920.0
+
+# -- Initial window width
+: .width  1080.0
+
 ```

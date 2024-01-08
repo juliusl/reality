@@ -147,44 +147,58 @@ impl Repr {
     }
 
     /// Returns the ffi_type name of the resource repr,
-    /// 
+    ///
     #[inline]
     pub fn ffi_type(&self) -> Option<FFIType> {
         self.as_resource().and_then(|r| r.ffi_type_name())
     }
 
     /// Returns the field help value derived from the node repr,
-    /// 
+    ///
     #[inline]
     pub fn field_help(&self) -> Option<FieldHelp> {
-        self.as_node().and_then(|r| r.doc_headers()).and_then(|d| d.first().cloned())
+        self.as_node()
+            .and_then(|r| r.doc_headers())
+            .and_then(|d| d.first().cloned())
     }
 
     /// Returns the field name value derived from the field repr,
-    /// 
+    ///
     #[inline]
     pub fn field_name(&self) -> Option<FieldName> {
         self.as_field().and_then(|r| r.name())
     }
 
     /// Returns the value parser for this field,
-    /// 
+    ///
     #[inline]
     #[cfg(feature = "util-clap")]
-    pub fn field_value_parser(&self) -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+    pub fn field_value_parser(
+        &self,
+    ) -> Option<clap::builder::Resettable<clap::builder::ValueParser>> {
         self.as_resource().and_then(|r| r.ffi_value_parser())
     }
 
     /// Returns values for expressing this field as a cli argument,
-    /// 
+    ///
     #[inline]
     #[cfg(feature = "util-clap")]
-    pub fn split_for_arg(&self) -> Option<(FieldName, Option<FieldHelp>, FFIType, clap::builder::Resettable<clap::builder::ValueParser>)> {
-        match (self.field_name(), self.field_help(), self.ffi_type(), self.field_value_parser()) {
+    pub fn split_for_arg(
+        &self,
+    ) -> Option<(
+        FieldName,
+        Option<FieldHelp>,
+        FFIType,
+        clap::builder::Resettable<clap::builder::ValueParser>,
+    )> {
+        match (
+            self.field_name(),
+            self.field_help(),
+            self.ffi_type(),
+            self.field_value_parser(),
+        ) {
             (Some(a), b, Some(c), Some(d)) => Some((a, b, c, d)),
-            _ => {
-                None
-            }
+            _ => None,
         }
     }
 

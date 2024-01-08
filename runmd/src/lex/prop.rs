@@ -36,10 +36,10 @@ impl ReadProp {
 #[logos(skip r"[\r\n ]")]
 #[logos(extras = Context<'s>)]
 enum PropReader<'s> {
-    #[regex(r#"["][a-zA-Z]*[a-zA-Z0-9]+["][ ]*:"#, on_json)]
-    #[regex(r#"[a-zA-Z]*[a-zA-Z0-9]+[ ]*:"#, on_json)]
+    #[regex(r#"["][a-zA-Z]*[a-zA-Z0-9_.-]+["][ ]*:"#, on_json)]
+    #[regex(r#"[a-zA-Z]*[a-zA-Z0-9_.-]+[ ]*:"#, on_json)]
     Json(Prop<'s>),
-    #[regex(r#"[a-zA-Z]*[a-zA-Z0-9]+[ ]*="#, on_toml)]
+    #[regex(r#"[a-zA-Z]*[a-zA-Z0-9_.-]+[ ]*="#, on_toml)]
     Toml(Prop<'s>),
 }
 
@@ -84,5 +84,29 @@ fn on_toml<'a>(lex: &mut Lexer<'a, PropReader<'a>>) -> Filter<Prop<'a>> {
 fn test_prop_reader() {
     let (name, value) = ReadProp.parse("input = hello world").unwrap();
     assert_eq!("input", name.as_str());
+    assert_eq!("hello world", value);
+
+    let (name, value) = ReadProp.parse("in_put = hello world").unwrap();
+    assert_eq!("in_put", name.as_str());
+    assert_eq!("hello world", value);
+
+    let (name, value) = ReadProp.parse("in.put = hello world").unwrap();
+    assert_eq!("in.put", name.as_str());
+    assert_eq!("hello world", value);
+
+    let (name, value) = ReadProp.parse("in-put = hello world").unwrap();
+    assert_eq!("in-put", name.as_str());
+    assert_eq!("hello world", value);
+
+    let (name, value) = ReadProp.parse("in-put: hello world").unwrap();
+    assert_eq!("in-put", name.as_str());
+    assert_eq!("hello world", value);
+
+    let (name, value) = ReadProp.parse("in.put: hello world").unwrap();
+    assert_eq!("in.put", name.as_str());
+    assert_eq!("hello world", value);
+
+    let (name, value) = ReadProp.parse("in_put: hello world").unwrap();
+    assert_eq!("in_put", name.as_str());
     assert_eq!("hello world", value);
 }

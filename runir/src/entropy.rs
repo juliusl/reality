@@ -14,7 +14,8 @@ thread_local!(
 ///
 /// **Note**: Allows for intern handles created on this thread to have their data value set w/ entropy.
 ///
-pub fn set_entropy() {
+pub fn set_entropy() -> u64{
     let (_, e) = uuid::Uuid::new_v4().as_u64_pair();
-    ENTROPY.set(e)
+    ENTROPY.set(e);
+    e
 }

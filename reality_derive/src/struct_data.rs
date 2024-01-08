@@ -819,7 +819,7 @@ impl StructData {
                     type FFIType = #f
                 )
             }).unwrap_or(quote!(type FFIType = ()));
-            
+
             let offset = &f.offset;
 
             quote_spanned! {f.span=>

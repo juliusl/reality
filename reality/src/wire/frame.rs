@@ -7,6 +7,7 @@ use tracing::trace;
 use crate::Attribute;
 use crate::AttributeType;
 use crate::FieldPacket;
+use crate::LocalAnnotations;
 use crate::NewFn;
 use crate::PacketRoutes;
 use crate::Plugin;
@@ -31,7 +32,26 @@ pub struct Frame {
 ///
 #[derive(Clone, Debug, Default)]
 pub struct FrameUpdates {
+    /// Frame to apply,
+    ///
     pub frame: Frame,
+    /// Local annotations to apply w/ frame updates,
+    ///
+    pub annotations: LocalAnnotations,
+}
+
+impl FrameUpdates {
+    /// Sets a property on local annotations,
+    ///
+    pub fn set_property(&mut self, k: impl Into<String>, v: impl Into<String>) {
+        self.annotations.map.insert(k.into(), v.into());
+    }
+
+    /// Returns true if an update exists,
+    ///
+    pub fn has_update(&self) -> bool {
+        self.frame.fields.is_empty() || self.annotations.map.is_empty()
+    }
 }
 
 /// Contains sync primitives for handling changes via framing,

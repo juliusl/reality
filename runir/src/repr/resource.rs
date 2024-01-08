@@ -226,7 +226,8 @@ impl FFI for () {
     }
 
     #[cfg(feature = "util-clap")]
-    fn value_parser() -> std::option::Option<clap::builder::Resettable<clap::builder::ValueParser>> {
+    fn value_parser() -> std::option::Option<clap::builder::Resettable<clap::builder::ValueParser>>
+    {
         None
     }
 }

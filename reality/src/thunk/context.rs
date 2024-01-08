@@ -116,8 +116,8 @@ impl Default for Context {
 }
 
 #[derive(Default, Debug, Clone)]
-struct LocalAnnotations {
-    map: BTreeMap<String, String>,
+pub struct LocalAnnotations {
+    pub(crate) map: BTreeMap<String, String>,
 }
 
 impl Context {
@@ -700,17 +700,21 @@ where
 
         drop(dispatcher);
 
+        let mut annotations = BTreeMap::default();
+
         debug!("dispatched frame updates");
         // // Drain the frame updates dispatcher
         let node = self.context.node().await;
 
         debug!("Looking for updates {:?}", self.context.attribute);
-        if let Some(packets) = node.resource::<FrameUpdates>(self.context.attribute.transmute()) {
+        if let Some(frame_updates) =
+            node.resource::<FrameUpdates>(self.context.attribute.transmute())
+        {
             debug!(
                 "Frame updates enabled, applying field packets, {}",
-                packets.frame.fields.len()
+                frame_updates.frame.fields.len()
             );
-            for field in packets
+            for field in frame_updates
                 .frame
                 .fields
                 .iter()
@@ -721,9 +725,16 @@ where
                     error!("Could not set field");
                 }
             }
+            annotations.append(&mut frame_updates.annotations.map.clone());
         }
 
         drop(node);
+
+        for (k, v) in annotations {
+            self.context
+                .set_property(k, v)
+                .expect("should be able to set property");
+        }
 
         self
     }

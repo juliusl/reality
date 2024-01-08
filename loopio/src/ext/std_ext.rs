@@ -158,7 +158,7 @@ pub struct Println {
     ///
     #[reality(derive_fromstr)]
     pub(crate) line: String,
-    #[reality(ffi=String, wire=into_box_from_wire)]
+    #[reality(ffi)]
     pub label: String,
 }
 

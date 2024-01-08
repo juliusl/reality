@@ -112,7 +112,7 @@ impl DesktopApp for BlankWindow {
         fill_window(window);
     }
 
-    fn after_event(&mut self, desktop: &DesktopContext) {
+    fn after_event(&mut self, _: &DesktopContext) {
         // desktop.event_loop_target.set_control_flow(ControlFlow::Poll);
     }
 }

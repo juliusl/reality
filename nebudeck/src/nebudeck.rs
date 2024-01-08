@@ -3,14 +3,8 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anyhow::anyhow;
-use loopio::engine::Engine;
-use loopio::engine::EngineBuilder;
-use loopio::engine::EngineHandle;
-use loopio::foreground::ForegroundEngine;
-use loopio::prelude::Dir;
-use loopio::prelude::FrameUpdates;
-use loopio::prelude::Package;
-use loopio::prelude::Workspace;
+use clap::Subcommand;
+use loopio::prelude::*;
 
 use tracing::error;
 use tracing::{debug, info};
@@ -103,11 +97,11 @@ impl Nebudeck {
             // Create Run.md manifest if missing
             init_runmd(&home_dir, "run.md", || {
                 r#"
-    ```runmd
-    # -- Nebudeck Project Manifest
-    # -- **Note** If no input is set, the name of the current directory will be used.
-    + .project
-     ```"#
+```runmd
+# -- Nebudeck Project Manifest
+# -- **Note** If no input is set, the name of the current directory will be used.
++ .project
+```"#
             })?;
         } else {
             info!("NBD_BOOT_ONLY is enabled, skipping project initialization");
@@ -145,15 +139,15 @@ impl Nebudeck {
     }
 
     /// Boots nebudeck in cli mode,
-    /// 
+    ///
     pub fn start_cli(self) -> anyhow::Result<()> {
-        self.start_cli_with(|e| e)
+        self.start_cli_with(Engine::builder())
     }
 
     /// Boots nebudeck in cli mode w/ engine builder config,
     ///
-    pub fn start_cli_with(self, config: impl Fn(EngineBuilder) -> EngineBuilder) -> anyhow::Result<()> {
-        let mut booted = self.boot_with(config)?;
+    pub fn start_cli_with(self, engine_builder: EngineBuilder) -> anyhow::Result<()> {
+        let mut booted = self.boot_with(engine_builder)?;
 
         let fg = booted.fg.take().unwrap();
         booted.delegate(Terminal, fg)?;
@@ -163,19 +157,19 @@ impl Nebudeck {
     /// Boots nebudeck
     ///
     fn boot(self) -> anyhow::Result<Self> {
-        self.boot_with(|e| e)
+        self.boot_with(Engine::builder())
     }
 
-    /// Boots nebudeck with config
-    /// 
-    fn boot_with(self, config: impl Fn(EngineBuilder) -> EngineBuilder) -> anyhow::Result<Self> {
-        let mut builder = config(Engine::builder());
+    /// Boots nebudeck with engine builder
+    ///
+    fn boot_with(self, mut engine_builder: EngineBuilder) -> anyhow::Result<Self> {
+        engine_builder.enable::<ProjectTypes>();
 
         debug!("Building workspace {:#?}", self.boot);
 
-        builder.set_workspace(self.boot.clone());
+        engine_builder.set_workspace(self.boot.clone());
 
-        let foreground = ForegroundEngine::new(builder);
+        let foreground = ForegroundEngine::new(engine_builder);
 
         assert!(
             self.boot_package.set(foreground.package.clone()).is_ok(),
@@ -248,63 +242,70 @@ impl TerminalApp for Nebudeck {
         // Resolve the engine address from subcommand settings
         let address = if let Some((group, matches)) = matches.subcommand() {
             debug!("Found group `{}`", group);
-            
             if let Some((subcommand, matches)) = matches.subcommand() {
                 // Collect frame updates from arg matches
-                for arg in matches.ids().filter(|i| !i.as_str().starts_with("_")) {
+                for arg in matches
+                    .ids()
+                    .filter(|i| !i.as_str().starts_with("internal"))
+                {
                     if let Some(input) = matches.get_one::<String>(arg.as_str()) {
-                        if let Some(fp) = matches.get_one::<String>(
-                            format!("_{}_field_packet_enc", arg.as_str()).as_str(),
+                        if let Ok(Some(fp)) = matches.try_get_one::<String>(
+                            format!("internal_{}_field_packet_enc", arg.as_str()).as_str(),
                         ) {
                             debug!("Found argument `{}`", arg);
                             if let Ok(decoded) = decode_field_packet(fp) {
                                 let parse_op = decoded.parse(input.to_string());
                                 frame_updates.frame.fields.push(parse_op);
                             }
+                        } else {
+                            frame_updates.set_property(arg.as_str(), input);
                         }
                     }
                 }
 
                 // Format address
-                if let Some(ext) = matches.get_one::<String>("_ext") {
+                if let Some(ext) = matches.get_one::<String>("internal_ext") {
                     debug!("Found ext type `{}`", ext);
                     format!("{group}/{subcommand}/{ext}")
                 } else {
                     unreachable!()
                 }
-            } else {
+            } else if let Some(mut group) = command
+                .get_subcommands()
+                .find(|s| s.get_name() == group)
+                .cloned()
+            {
                 // If a subcommand is not set, check if the group has any subcommands
-                if let Some(mut group) = command
-                    .get_subcommands()
-                    .find(|s| s.get_name() == group)
-                    .cloned()
-                {
-                    if group.get_subcommands().next().is_some() {
-                        error!("Missing subcommand");
-                        group.print_help().ok();
-                        return Err(anyhow!("Missing command group"));
-                    } else {
-                        // TODO: Configure Host and Sequence arguments
-                        for arg in matches.ids().filter(|i| !i.as_str().starts_with("_")) {
-                            if let Some(input) = matches.get_one::<String>(arg.as_str()) {
-                                if let Some(fp) = matches.get_one::<String>(
-                                    format!("_{}_field_packet_enc", arg.as_str()).as_str(),
-                                ) {
-                                    if let Ok(decoded) = decode_field_packet(fp) {
-                                        debug!("Found argument `{}`", arg);
-                                        let parse_op = decoded.parse(input.to_string());
-                                        frame_updates.frame.fields.push(parse_op);
-                                    }
+                if group.get_subcommands().next().is_some() {
+                    error!("Missing subcommand");
+                    group.print_help().ok();
+                    return Err(anyhow!("Missing command group"));
+                } else {
+                    // TODO: Configure Host and Sequence arguments
+                    for arg in matches
+                        .ids()
+                        .filter(|i| !i.as_str().starts_with("internal"))
+                    {
+                        if let Some(input) = matches.get_one::<String>(arg.as_str()) {
+                            if let Ok(Some(fp)) = matches.try_get_one::<String>(
+                                format!("internal_{}_field_packet_enc", arg.as_str()).as_str(),
+                            ) {
+                                if let Ok(decoded) = decode_field_packet(fp) {
+                                    debug!("Found argument `{}`", arg);
+                                    let parse_op = decoded.parse(input.to_string());
+                                    frame_updates.frame.fields.push(parse_op);
                                 }
+                            } else {
+                                frame_updates.set_property(arg.as_str(), input);
                             }
                         }
-
-                        // Group is actually a subcommand and also the address
-                        group.get_name().to_string()
                     }
-                } else {
-                    unreachable!()
+
+                    // Group is actually a subcommand and also the address
+                    group.get_name().to_string()
                 }
+            } else {
+                unreachable!()
             }
         } else {
             command.print_help().ok();
@@ -318,7 +319,7 @@ impl TerminalApp for Nebudeck {
                 match bg.call(address) {
                     Ok(mut bgf) => {
                         // TODO: Add Progress Controller to stderr
-                        if !frame_updates.frame.fields.is_empty() {
+                        if frame_updates.has_update() {
                             bgf.spawn_with_updates(frame_updates);
                         } else {
                             bgf.spawn();
@@ -361,8 +362,24 @@ fn test_init() {
     let deck = Nebudeck::init(tmp).unwrap();
     eprintln!("{:?}", deck.boot);
 
-    set_nbd_boot_prog("nbd_boot add-project terminal --label example");
-    deck.start_cli_with(|e| e).expect("should be able to process command");
+    set_nbd_boot_prog("nbd_boot add-project terminal");
+    deck.start_cli().expect("should be able to process command");
+
+    // Compiler thread
+    std::thread::Builder::new().name("compile".to_string()).spawn(|| {
+        let _runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+
+        loopio::prelude::runir::prelude::set_entropy();
+
+        let local_set = tokio::task::LocalSet::new();
+        local_set.spawn_local(async {
+
+        });
+
+        
+
+    }).unwrap();
+
     ()
 }
 
@@ -380,4 +397,76 @@ pub fn set_nbd_boot_prog(prog: impl AsRef<str>) {
 ///
 pub fn set_nbd_boot_only() {
     std::env::set_var(NBD_BOOT_ONLY, "1");
+}
+
+/// Group of project types that can be added w/ cargo-nbd
+///
+#[derive(Reality, Debug, Default, Clone, Subcommand)]
+#[plugin_def(
+    call = create_project
+)]
+#[parse_def(rename = "project")]
+pub enum ProjectTypes {
+    /// Terminal app project,
+    ///
+    #[default]
+    Terminal,
+    /// Desktop app project,
+    ///
+    Desktop {
+        /// Title of the window
+        ///
+        #[arg(long, default_value = "Desktop App")]
+        #[reality(ffi)]
+        title: String,
+        /// Height of window
+        ///
+        #[arg(long, default_value = "1080.0")]
+        #[reality(ffi)]
+        height: f32,
+        /// Width of window
+        ///
+        #[arg(long, default_value = "1920.0")]
+        #[reality(ffi)]
+        width: f32,
+    },
+}
+
+/// Create project files,
+///
+async fn create_project(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    let init = tc.as_remote_plugin::<ProjectTypes>().await;
+
+    if let Some(name) = tc.property("name") {
+        eprintln!("Creating project {name}");
+    }
+
+    match init {
+        ProjectTypes::Terminal => {}
+        ProjectTypes::Desktop {
+            title,
+            height,
+            width,
+        } => {
+            eprintln!("{title} {height} x {width}");
+        }
+    }
+
+    Ok(())
+}
+
+impl FromStr for ProjectTypes {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "terminal" => Ok(Self::Terminal),
+            "desktop" => Ok(Self::Desktop {
+                title: String::new(),
+                height: 0.0,
+                width: 0.0,
+            }),
+            _ => Err(anyhow!("Unknown project type")),
+        }
+    }
 }

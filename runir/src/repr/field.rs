@@ -38,9 +38,9 @@ pub trait Field<const OFFSET: usize>: Send + Sync + 'static {
     type ProjectedType: Send + Sync + 'static;
 
     /// Type to use to represent this field over FFI boundaries,
-    /// 
+    ///
     /// **Note** When derived will default to `unit` which can only communicate existance.
-    /// 
+    ///
     type FFIType: FFI + Send + Sync + 'static;
 
     /// Name of the field,

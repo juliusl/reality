@@ -9,6 +9,7 @@ pub mod prelude {
     pub use super::call_async::*;
     pub use super::context::Context as ThunkContext;
     pub use super::context::Local;
+    pub use super::context::LocalAnnotations;
     pub use super::context::Remote;
     pub use super::kvp_ext::*;
     pub use super::plugin::repr::PluginLevel;

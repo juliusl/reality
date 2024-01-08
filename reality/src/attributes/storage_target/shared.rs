@@ -31,14 +31,30 @@ use super::target::StorageTargetKey;
 
 /// Shared thread-safe storage target using Arc and tokio::RwLock,
 ///
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Shared {
     /// Thread-safe resources,
     ///
     resources: HashMap<u64, Arc<RwLock<Box<dyn Send + Sync + 'static>>>>,
 }
 
+impl Default for Shared {
+    fn default() -> Self {
+        let mut shared = Self::new();
+        shared.enable_dispatching();
+        shared
+    }
+}
+
 impl Shared {
+    /// Create a new empty shared storage
+    ///
+    fn new() -> Self {
+        Self {
+            resources: HashMap::default(),
+        }
+    }
+
     /// Creates soft-links for entries that have a repr handle,
     ///
     pub(crate) fn create_soft_links(&mut self, node: &ParsedNode) {

@@ -228,34 +228,37 @@ impl BackgroundFuture {
     pub fn spawn_with_updates(&mut self, updates: FrameUpdates) -> CallStatus {
         if matches!(self.status(), CallStatus::Enabled) {
             if let Some(eh) = self.tc.cached::<EngineHandle>() {
-                self.work_state().reset();
                 debug!("Spawning from background future {}", self.address);
                 let address = self.address.to_string();
                 let handle = self.tc.node.runtime.clone().unwrap();
 
                 self.cancellation = self.tc.cancellation.child_token();
                 let cancel = self.cancellation.clone();
+                let mut context = self.tc.clone();
                 let call_output = CallOutput::Spawn(Some(handle.spawn(async move {
-                    let mut resource = eh.hosted_resource(&address).await?;
-
-                    let rk = resource.plugin_rk();
-                    resource
-                        .context_mut()
-                        .node()
-                        .await
-                        .lazy_put_resource::<FrameUpdates>(updates, rk.transmute());
-
-                    resource.context_mut().process_node_updates().await;
-
                     select! {
-                        result = resource.spawn().unwrap() => result?,
+                        resource = eh.hosted_resource(address) => {
+                            // Rebuild the environment for the current context
+                            let resource = resource?;
+                            let rk = resource.plugin_rk();
+                            context
+                                .node()
+                                .await
+                                .lazy_put_resource::<FrameUpdates>(updates, rk.transmute());
+                            context.process_node_updates().await;
+                            context.node = resource.context().node.clone();
+                            context.attribute = resource.context().attribute;
+                            if let Some(plugin) = resource.context().attribute.plugin().and_then(|p| p.call()) {
+                               Ok(plugin(context).await?.unwrap())
+                            } else {
+                                Err(anyhow!("Resource is missing plugin implementation"))
+                            }
+                        },
                         _ = cancel.cancelled() => {
                             Err(anyhow!("Call was cancelled"))
                         }
                     }
                 })));
-
-                self.work_state().set_work_start();
 
                 self.tc.store_kv(&self.address.to_string(), call_output);
                 CallStatus::Running

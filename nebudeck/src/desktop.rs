@@ -28,7 +28,6 @@ pub mod winit {
 }
 
 use crate::controller::ControlBus;
-use crate::ext::imgui_ext::ImguiExt;
 use crate::BackgroundWork;
 use crate::Controller;
 
@@ -84,9 +83,10 @@ pub struct Placeholder {
     name: String,
 }
 
-async fn placeholder(tc: &mut ThunkContext) -> anyhow::Result<()> {
+async fn placeholder(_: &mut ThunkContext) -> anyhow::Result<()> {
     Ok(())
 }
+
 /// This controller provides access to winit Windowing system and event loop,
 ///
 /// This controller can be used to build a desktop app.

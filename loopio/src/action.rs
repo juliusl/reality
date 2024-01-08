@@ -345,11 +345,11 @@ pub struct ActionFactory {
 
 /// Type-alias for a task future,
 ///
-type Task = Pin<Box<dyn Future<Output = anyhow::Result<ThunkContext>> + Send + Sync + 'static>>;
+type Task = Pin<Box<dyn Future<Output = anyhow::Result<ThunkContext>> + Send + Sync>>;
 
 /// Type-alias for a task fn resource,
 ///
-type TaskFn = Pin<Box<dyn Fn(ThunkContext) -> Task + Send + Sync + 'static>>;
+type TaskFn = Pin<Box<dyn Fn(ThunkContext) -> Task + Send + Sync>>;
 
 impl ActionFactory {
     /// Sets the current address,
@@ -438,7 +438,6 @@ impl ActionFactory {
             key.transmute(),
         );
         drop(storage);
-
         self
     }
 
@@ -507,8 +506,7 @@ pub trait TryCallExt: AsRef<ThunkContext> {
         let mut node = self.as_ref().node.storage.write().await;
         let key = self.as_ref().attribute.branch(symbol);
 
-        let mut tc = self.as_ref().clone();
-        tc.reset();
+        let tc = self.as_ref().clone();
 
         // tc.decoration = node.take_resource::<Decoration>(ResourceKey::root()).map(|d| *d);
         // eprintln!("{:?}", tc.decoration);
@@ -530,8 +528,13 @@ pub trait TryCallExt: AsRef<ThunkContext> {
 
         if let Some(taskfn) = node.take_resource::<TaskFn>(key.transmute()) {
             drop(node);
-            let result = taskfn(tc).await.map(Some);
-            return result;
+            let result = taskfn(tc).await.map(Some)?;
+            {
+                let mut node = self.as_ref().node.storage.write().await;
+                node.put_resource(taskfn, key.transmute());
+            }
+
+            return Ok(result);
         }
 
         Ok(None)
@@ -602,17 +605,15 @@ async fn custom_action(_tc: &mut ThunkContext) -> anyhow::Result<()> {
     eprintln!("custom action init");
 
     // Create the local action
-    let action = LocalAction
-        .build::<Host>(_tc)
-        .await
-        // Add a task
-        .bind_task("test 123", |mut tc| async move {
-            eprintln!("test 123");
+    let action = LocalAction.build::<Host>(_tc).await;
 
-            tc.take_cache::<usize>();
+    // Add a task
+    let action = action.bind_task("test 123", |mut tc| async move {
+        eprintln!("test 123");
+        tc.take_cache::<usize>();
 
-            Ok(tc)
-        });
+        Ok(tc)
+    });
 
     // Publish and retrieve the hosted resource
     let local_action = action

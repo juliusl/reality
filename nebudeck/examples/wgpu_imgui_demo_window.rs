@@ -160,10 +160,10 @@ async fn process_wizard(tc: &mut ThunkContext) -> anyhow::Result<()> {
         // Build a local action
         // **Note** This could be a remote action but since there is no state there's no
         // point in initializing as a RemoteAction.
-        let init = LocalAction.build::<Process>(tc).await;
+        let mut init = LocalAction.build::<Process>(tc).await;
 
         // Bind a task that defines the UI node and dependencies
-        let init = init.bind_task("edit_program_name", ProcessWizard::edit_program_name);
+        init = init.bind_task("edit_program_name", ProcessWizard::edit_program_name);
 
         // Publish the remote action as a hosted resource
         let mut _a = init.publish(eh.clone()).await?;
@@ -233,7 +233,6 @@ impl UiDisplayMut for ProcessWizard {
 
         __ui.show_section("tools", |title, ui, mut inner| {
             let imgui = &ui.imgui;
-
             imgui
                 .window(title)
                 .size([600.0, 800.0], imgui::Condition::Appearing)
@@ -256,7 +255,7 @@ impl UiDisplayMut for ProcessWizard {
                         ui.frame_updates.replace(current_frame_updates);
                     }
 
-                    ui.show_call_button();
+                    ui.show_call_button(ui.rk);
 
                     imgui.label_text("number of pending changes", pending_changes.to_string());
                 });

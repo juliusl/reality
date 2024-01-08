@@ -12,14 +12,15 @@ pub mod prelude {
     use loopio::prelude::FieldPacket;
     use loopio::prelude::FrameUpdates;
     use loopio::prelude::KvpExt;
+    use loopio::prelude::Package;
     use loopio::prelude::ResourceKey;
     use loopio::prelude::Shared;
     use loopio::prelude::ThunkContext;
+    use loopio::work::WorkState;
     use std::cell::RefCell;
     use std::collections::BTreeSet;
     use std::sync::Mutex;
     use std::sync::OnceLock;
-    use std::sync::RwLock;
 
     #[cfg(feature = "desktop-imgui")]
     pub use super::frame_editor::FrameEditor;
@@ -35,7 +36,11 @@ pub mod prelude {
 
     pub use super::servers::Servers;
 
+    /// A section containing a collection of inner ui render functions,
+    ///
     pub struct SectionBody {
+        /// Inner render functions,
+        ///
         inner: Vec<fn(&UiFormatter<'_>)>,
     }
 
@@ -53,7 +58,7 @@ pub mod prelude {
     pub struct UiFormatter<'frame> {
         /// Resource key set on the current formatter,
         ///
-        pub(crate) rk: ResourceKey<Attribute>,
+        pub rk: ResourceKey<Attribute>,
         /// Handle to the ui builder,
         ///
         pub imgui: &'frame mut imgui::Ui,
@@ -154,43 +159,43 @@ pub mod prelude {
 
         /// Shows the call button if applicable,
         ///
-        pub fn show_call_button(&self) {
-            // if let Ok(deco) = self.decorations.read() {
-            //     self.imgui.text(format!("{:#?}", deco));
+        pub fn show_call_button(&self, rk: ResourceKey<Attribute>) {
+            if let Some(address) = rk.prop("address") {
+                if let Some(bg) = self.eh.lock().unwrap().background() {
+                    if let Ok(mut call) = bg.call(address) {
+                        match call.status() {
+                            loopio::background_work::CallStatus::Enabled => {
+                                if self.imgui.button("Run") {
+                                    call.spawn_with_updates(
+                                        self.frame_updates.replace(FrameUpdates::default()),
+                                    );
+                                }
+                            }
+                            loopio::background_work::CallStatus::Disabled => {}
+                            loopio::background_work::CallStatus::Running => {
+                                self.imgui.text(
+                                    call.work_state()
+                                        .get_message()
+                                        .unwrap_or(String::from("working")),
+                                );
 
-            //     if let Some(address) = deco
-            //         .get()
-            //         .and_then(|d| d.comment_properties.as_ref())
-            //         .and_then(|d| d.get("address"))
-            //     {
-            //         if let Some(bg) = self.eh.lock().unwrap().background() {
-            //             if let Ok(mut call) = bg.call(address) {
-            //                 match call.status() {
-            //                     loopio::background_work::CallStatus::Enabled => {
-            //                         if self.imgui.button("Run") {
-            //                             call.spawn_with_updates(
-            //                                 self.frame_updates.replace(FrameUpdates::default()),
-            //                             );
-            //                         }
-            //                     }
-            //                     loopio::background_work::CallStatus::Disabled => {}
-            //                     loopio::background_work::CallStatus::Running => {
-            //                         self.imgui.text("Running");
+                                if let Some(progress) = call.work_state().get_progress() {
+                                    imgui::ProgressBar::new(progress).build(&self.imgui);
+                                }
 
-            //                         self.imgui.same_line();
-            //                         if self.imgui.button("Cancel") {
-            //                             call.cancel();
-            //                         }
-            //                     }
-            //                     loopio::background_work::CallStatus::Pending => {
-            //                         let _ = call.into_foreground().unwrap();
-            //                         eprintln!("Background work finished");
-            //                     }
-            //                 }
-            //             }
-            //         }
-            //     }
-            // }
+                                self.imgui.same_line();
+                                if self.imgui.button("Cancel") {
+                                    call.cancel();
+                                }
+                            }
+                            loopio::background_work::CallStatus::Pending => {
+                                let _ = call.into_foreground().unwrap();
+                                eprintln!("Background work finished");
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         /// Gets a mutable reference to the underlying thunk context,
@@ -221,6 +226,46 @@ pub mod prelude {
                     }
                 }
             }
+        }
+
+        pub fn show_package(&mut self, package: &mut Package) {
+            if let Ok(mut tc) = self.context_mut() {
+                if let Some(tc) = tc.get_mut() {
+                    if let Some((_, mut search_input)) =
+                        tc.fetch_mut_kv::<(String, String)>("search package")
+                    {
+                        self.imgui
+                            .input_text("search package", &mut search_input.0)
+                            .build();
+
+                        let matches = package.search(search_input.0.as_str());
+                        for m in matches {
+                            if let Some(address) = m.host.address() {
+                                self.imgui.text(address.as_str());
+                            }
+
+                            self.imgui
+                                .input_text("search program", &mut search_input.1)
+                                .build();
+
+                            let pm = m.program.search(search_input.1.as_str());
+                            for _m in pm {
+                                if let Some(address) = m.host.address() {
+                                    self.imgui.text(address.as_str());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    impl UiDisplayMut for Package {
+        fn fmt(&mut self, ui: &UiFormatter<'_>) -> anyhow::Result<()> {
+            // -- Package Search
+            // -- Ext search
+            todo!()
         }
     }
 }
