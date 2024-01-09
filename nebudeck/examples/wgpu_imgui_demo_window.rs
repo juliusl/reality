@@ -1,6 +1,5 @@
 use imgui::InputTextCallbackHandler;
 use imgui::TreeNodeFlags;
-use loopio::action::LocalAction;
 use loopio::action::TryCallExt;
 use loopio::foreground::ForegroundEngine;
 use loopio::prelude::AttributeType;
@@ -156,39 +155,39 @@ impl ProcessWizard {
 }
 
 async fn process_wizard(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    if let Some(eh) = tc.engine_handle().await {
-        // Build a local action
-        // **Note** This could be a remote action but since there is no state there's no
-        // point in initializing as a RemoteAction.
-        let mut init = LocalAction.build::<Process>(tc).await;
+    // if let Some(eh) = tc.engine_handle().await {
+    //     // Build a local action
+    //     // **Note** This could be a remote action but since there is no state there's no
+    //     // point in initializing as a RemoteAction.
+    //     let mut init = LocalAction.build::<Process>(tc).await;
 
-        // Bind a task that defines the UI node and dependencies
-        init = init.bind_task("edit_program_name", ProcessWizard::edit_program_name);
+    //     // Bind a task that defines the UI node and dependencies
+    //     init = init.bind_task("edit_program_name", ProcessWizard::edit_program_name);
 
-        // Publish the remote action as a hosted resource
-        let mut _a = init.publish(eh.clone()).await?;
+    //     // Publish the remote action as a hosted resource
+    //     let mut _a = init.publish(eh.clone()).await?;
 
-        // Get the hosted resource published from the action
-        let mut _a = eh.hosted_resource(_a.to_string()).await?;
+    //     // Get the hosted resource published from the action
+    //     let mut _a = eh.hosted_resource(_a.to_string()).await?;
 
-        // Call a task on the hosted resource that will build the ui node
-        if let Some(_tc) = _a.try_call("edit_program_name").await? {
-            if let Some(nodes) = _tc
-                .transient
-                .storage
-                .write()
-                .await
-                .take_resource::<Vec<UiNode>>(_tc.attribute.transmute())
-            {
-                // Transfer transient storage resources over to the current context
-                tc.transient
-                    .storage
-                    .write()
-                    .await
-                    .put_resource(*nodes, ResourceKey::root());
-            }
-        }
-    }
+    //     // Call a task on the hosted resource that will build the ui node
+    //     if let Some(_tc) = _a.try_call("edit_program_name").await? {
+    //         if let Some(nodes) = _tc
+    //             .transient
+    //             .storage
+    //             .write()
+    //             .await
+    //             .take_resource::<Vec<UiNode>>(_tc.attribute.transmute())
+    //         {
+    //             // Transfer transient storage resources over to the current context
+    //             tc.transient
+    //                 .storage
+    //                 .write()
+    //                 .await
+    //                 .put_resource(*nodes, ResourceKey::root());
+    //         }
+    //     }
+    // }
 
     Ok(())
 }

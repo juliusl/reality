@@ -82,7 +82,7 @@ impl Debug for ProgramMatch {
 impl From<Package> for clap::Command {
     fn from(value: Package) -> Self {
         let name = &value.workspace.name;
-        // Package name is the command
+        // Package name is the name of the command
         let mut command = clap::Command::new(name);
 
         // Map out all of the programs into their own subcommand
@@ -157,8 +157,8 @@ fn create_ext_command(group: clap::Command, host: &str, e: &Repr) -> Option<clap
         let fragments = addr.split('/').collect::<Vec<_>>();
         trace!("Adding ext as subcommand {:?}", fragments);
 
+
         if fragments.len() > 3 {
-            // TODO: Join the middle w/ underscores
             warn!("Cannot add as subcommand, more than 3 fragments");
             return None;
         }
@@ -252,7 +252,6 @@ fn create_ext_command(group: clap::Command, host: &str, e: &Repr) -> Option<clap
             }
             _ => {
                 warn!("Unimplemented command {:?}", fragments);
-                // TODO: Join the middle w/ underscores
                 // unimplemented!()
             }
         }

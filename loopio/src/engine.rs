@@ -23,7 +23,7 @@ use reality::prelude::*;
 use runir::prelude::*;
 
 use crate::action::ActionFactory;
-use crate::action::RemoteAction;
+use crate::action::HostAction;
 use crate::background_work::BackgroundWorkEngineHandle;
 use crate::host;
 use crate::host::Event;
@@ -453,50 +453,31 @@ impl Engine {
             }
 
             if let Some(recv) = host.context().attribute.recv() {
-                for mut f in recv.fields().unwrap().iter().cloned() {
+                for f in recv.fields().unwrap().iter().cloned() {
                     if f.as_resource()
                         .map(|r| r.is_parse_type::<Event>())
                         .unwrap_or_default()
                     {
+                        let host_action = HostAction::new(host.context().clone());
+
+                        // Upgrade fields into plugins
                         let name = f
                             .as_node()
                             .and_then(|n| n.input())
                             .map(|i| i.to_string())
                             .unwrap_or(f.as_uuid().to_string());
 
-                        let h = HostLevel::new(format!("?event={name}"));
-                        f.upgrade(CrcInterner::default(), h).await?;
+                        let host_action = host_action
+                            .build(
+                                Event {
+                                    name: name.clone(),
+                                    data: Bytes::default(),
+                                },
+                                f,
+                            )
+                            .await?;
 
-                        let p = PluginLevel::new::<Event>();
-                        f.upgrade(CrcInterner::default(), p).await?;
-
-                        let event_key = ResourceKey::<Event>::with_repr(f);
-                        info!("Created event_key -- {:?}", event_key);
-
-                        let mut node = ParsedNode::default();
-                        node.attributes.push(event_key.transmute());
-
-                        let mut tc = ThunkContext::new();
-                        tc.set_attribute(event_key.transmute());
-
-                        {
-                            let mut _node = tc.node.storage.write().await;
-                            _node.put_resource(node, ResourceKey::root());
-                        }
-
-                        let address = Address::from_str(
-                            format!("{}://?event={}", host.name.value().unwrap(), name).as_str(),
-                        )?;
-                        let remote_action = RemoteAction
-                            .build::<Event>(&mut tc)
-                            .await
-                            .set_address(address)
-                            .set_entrypoint(Event {
-                                name: name.clone(),
-                                data: Bytes::default(),
-                                repr: event_key.repr().unwrap_or_default(),
-                            });
-                        self.__remote_actions.push(remote_action);
+                        self.__remote_actions.push(host_action);
                     }
                 }
             }
@@ -583,8 +564,10 @@ impl Engine {
 
         // Publish all remote actions
         for ra in remote_actions {
-            let address = ra.publish(eh.clone()).await?;
-            info!("Default startup published remote action - {}", address);
+            let published = ra.publish_all(eh.clone()).await?;
+            for p in published {
+                info!("Default startup published remote action - {}", p);
+            }
         }
 
         Ok(startup)
@@ -662,10 +645,13 @@ impl Engine {
                         if let Some(tx) = tx.take() {
                             let address = context.address();
 
-                            trace!(address, "Looking up hosted resource");
                             if let Ok(address) = address.parse::<Address>() {
+                                trace!("Publishing hosted resource {address}");
+
                                 if let Some(mut filter) = address.filter() {
-                                    if let Some((_, event)) = filter.find(|(k, _)| k == "event") {
+                                    if let Some((_, event)) =
+                                        filter.find(|(k, _)| k == "loopio.event")
+                                    {
                                         if !self.__bus.contains_key(&address) {
                                             info!("Detected event publish, registering virtual bus -- {} {}", event, address);
                                             let bus = VirtualBus::from(context.clone());
@@ -869,6 +855,11 @@ impl Debug for EngineAction {
                 .debug_struct("Sync")
                 .field("has_tx", &tx.is_some())
                 .finish(),
+            Self::Bus { address, tx } => f
+                .debug_struct("Bus")
+                .field("address", &address.to_string())
+                .field("has_tx", &tx.is_some())
+                .finish(),
             Self::Shutdown(arg0) => f.debug_tuple("Shutdown").field(arg0).finish(),
             Self::Publish { .. } => f.debug_struct("Publish").finish(),
             #[allow(unreachable_patterns)]
@@ -1031,7 +1022,9 @@ impl EngineHandle {
     /// Returns a virtual bus for some event,
     ///
     pub(crate) async fn event_vbus(&self, host: &str, name: &str) -> anyhow::Result<VirtualBus> {
-        let address: Address = format!("{host}://?event={name}").parse()?;
+        let address: Address = format!("{host}?loopio.event={name}").parse()?;
+
+        debug!("Looking for event vbus {}", address);
 
         let (tx, rx) = tokio::sync::oneshot::channel();
 

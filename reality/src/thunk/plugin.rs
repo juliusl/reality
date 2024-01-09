@@ -34,19 +34,19 @@ pub trait Plugin: ToFrame + BlockObject + CallAsync + Clone + Default {
     /// Returning PluginOutput determines the behavior of the Event.
     ///
     fn call(context: ThunkContext) -> CallOutput {
-        CallOutput::Spawn(context.spawn(|mut c| async {
+        context.spawn(|mut c| async {
             <Self as CallAsync>::call(&mut c).await?;
             Ok(c)
-        }))
+        })
     }
 
     /// Enables virtual mode for this plugin,
     ///
     fn enable_virtual(context: ThunkContext) -> CallOutput {
-        CallOutput::Spawn(context.spawn(|mut c| async {
+        context.spawn(|mut c| async {
             <Self::Virtual as CallAsync>::call(&mut c).await?;
             Ok(c)
-        }))
+        })
     }
 
     /// Converts initialized plugin into frame representation and stores
@@ -56,7 +56,7 @@ pub trait Plugin: ToFrame + BlockObject + CallAsync + Clone + Default {
     where
         Self::Virtual: NewFn<Inner = Self>,
     {
-        CallOutput::Spawn(context.spawn(|c| async {
+        context.spawn(|c| async {
             debug!("Enabling frame");
             let init = c.initialized::<Self>().await;
 
@@ -85,7 +85,7 @@ pub trait Plugin: ToFrame + BlockObject + CallAsync + Clone + Default {
 
             drop(node);
             Ok(c)
-        }))
+        })
     }
 
     /// Sync values from context,
@@ -159,11 +159,9 @@ pub mod repr {
             P: Plugin,
             P::Virtual: NewFn<Inner = P>,
         {
-            Self {
-                call: Tag::new(&CALL, Arc::new(<P as Plugin>::call)),
-                enable_frame: Tag::new(&ENABLE_FRAME, Arc::new(<P as Plugin>::enable_frame)),
-                enable_virtual: Tag::new(&ENABLE_VIRTUAL, Arc::new(<P as Plugin>::enable_virtual)),
-            }
+            Self::new_with::<P>(
+                <P as Plugin>::call,
+            )
         }
 
         /// Returns a new thunk level for P w/ data thunks from Inner,
@@ -175,13 +173,22 @@ pub mod repr {
             Inner: Plugin,
             Inner::Virtual: NewFn<Inner = Inner>,
         {
+            Self::new_with::<Inner>(
+                <P as Plugin>::call,
+            )
+        }
+
+        /// Creates a new plugin level w/ thunk fn's and a custom call thunk fn,
+        ///
+        pub fn new_with<P>(call: ThunkFn) -> Self 
+        where
+            P: Plugin,
+            P::Virtual: NewFn<Inner = P>
+        {
             Self {
-                call: Tag::new(&CALL, Arc::new(<P as Plugin>::call)),
-                enable_frame: Tag::new(&ENABLE_FRAME, Arc::new(<Inner as Plugin>::enable_frame)),
-                enable_virtual: Tag::new(
-                    &ENABLE_VIRTUAL,
-                    Arc::new(<Inner as Plugin>::enable_virtual),
-                ),
+                call: Tag::new(&CALL, Arc::new(call)),
+                enable_frame: Tag::new(&ENABLE_FRAME, Arc::new(<P as Plugin>::enable_frame)),
+                enable_virtual: Tag::new(&ENABLE_VIRTUAL, Arc::new(<P as Plugin>::enable_virtual)),
             }
         }
     }

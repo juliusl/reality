@@ -1,8 +1,10 @@
 use anyhow::anyhow;
 use async_trait::async_trait;
 use futures_util::Future;
+use reality::prelude::runir::prelude::{CrcInterner, HostLevel, Repr};
+use serde::{Deserialize, Serialize};
 use std::pin::Pin;
-use tracing::debug;
+use tracing::info;
 use uuid::Uuid;
 
 use reality::attributes;
@@ -55,7 +57,7 @@ pub trait Action {
 
     /// Spawns the thunk attached to the current context for this action,
     ///
-    fn spawn(&self) -> SpawnResult
+    fn spawn(&self) -> CallOutput
     where
         Self: CallAsync,
     {
@@ -73,7 +75,7 @@ pub trait Action {
     {
         Box::pin(async move {
             let r = self.into_hosted_resource();
-            if let Some(s) = r.spawn() {
+            if let CallOutput::Spawn(Some(s)) = r.spawn() {
                 if let Ok(s) = s.await {
                     s
                 } else {
@@ -99,7 +101,7 @@ pub trait Action {
     /// Converts a pointer to the hosted resource into call output,
     ///
     fn into_call_output(&self) -> CallOutput {
-        CallOutput::Spawn(self.into_hosted_resource().spawn())
+        self.into_hosted_resource().spawn()
     }
 }
 
@@ -251,81 +253,92 @@ impl Action for ThunkContext {
 #[async_trait]
 impl ActionExt for ThunkContext {}
 
-/// Pointer-struct for creating local actions,
+/// Point-struct for creating host actions,
 ///
-pub struct LocalAction;
-
-impl LocalAction {
-    /// Prepares a new local action builder,
+pub struct HostAction {
+    /// Thunk context for the host hosting this action
     ///
-    pub async fn build<P>(self, context: &mut ThunkContext) -> ActionFactory
-    where
-        P: Plugin,
-        P::Virtual: NewFn<Inner = P>,
-    {
-        let inner = context.as_local_plugin::<P>().await;
-        let transient = context.transient_mut().await;
-
-        drop(transient);
-
-        ActionFactory {
-            attribute: context.attribute,
-            storage: context.transient.clone(),
-            address: None,
-        }
-        .set_entrypoint(inner)
-    }
+    host: ThunkContext,
 }
 
-/// Pointer-struct for creating remote action builder,
-///
-pub struct RemoteAction;
-
-impl RemoteAction {
-    /// Prepares a new remote action builder,
+impl HostAction {
+    /// Creates a new host action,
     ///
-    pub async fn build<P>(self, context: &mut ThunkContext) -> ActionFactory
+    pub fn new(host: ThunkContext) -> Self {
+        Self {
+            host,
+        }
+    }
+
+    /// Get the host name,
+    ///
+    pub fn host_name(&self) -> String {
+        // TODO -- fix fallible
+        self.host
+            .attribute
+            .host()
+            .unwrap()
+            .address()
+            .unwrap()
+            .to_string()
+    }
+
+    pub async fn build<P>(self, plugin: P, mut repr: Repr) -> anyhow::Result<ActionFactory>
     where
         P: Plugin,
         P::Virtual: NewFn<Inner = P>,
     {
-        let inner = context.as_remote_plugin::<P>().await;
+        let parsed_node_repr = repr.clone();
 
-        let mut transient = context.transient_mut().await;
+        // Upgrade fields into plugins
+        let name = repr
+            .as_node()
+            .and_then(|n| n.input())
+            .map(|i| i.to_string())
+            .unwrap_or(repr.as_uuid().to_string());
 
-        // If set, allows the ability to apply frame updates. (**Note** The receiving end must enable updating)
+        let plugin_symbol = P::symbol().to_lowercase();
+
+        let h = HostLevel::new(format!("{}?{plugin_symbol}={name}", self.host_name()));
+        repr.upgrade(runir::prelude::CrcInterner::default(), h)
+            .await?;
+
+        let p = PluginLevel::new::<P>();
+        repr.upgrade(runir::prelude::CrcInterner::default(), p)
+            .await?;
+
+        let key = ResourceKey::<P>::with_repr(repr);
+        info!(
+            "Host action resource key is -- {:?} {}",
+            key,
+            self.host_name()
+        );
+
+        // Reconstruct a parsed node
+        let mut node = ParsedNode::default();
+        node.node = self.host.attribute;
+        node.attributes.push(key.transmute());
+
+        let mut tc = ThunkContext::new();
+        tc.set_attribute(key.transmute());
         {
-            let node = context.node().await;
-            if let Some(change_pipeline) =
-                node.current_resource::<FrameUpdates>(context.attribute.transmute())
-            {
-                debug!("Found frame updates");
-                drop(node);
-                transient.put_resource(change_pipeline, context.attribute.transmute());
-            }
+            let mut _node = tc.transient.storage.write().await;
+            _node.put_resource(plugin, key.transmute());
+            _node.put_resource(node, ResourceKey::root());
+            _node.put_resource::<ResourceKey<P>>(key, ResourceKey::root());
         }
 
-        // Get the receiver from the frame to find any decorations
-        let recv = context.initialized_frame().await.recv.clone();
+        let address =
+            Address::from_str(format!("{}?{plugin_symbol}={name}", self.host_name()).as_str())?;
 
-        // Gets the current parsed attributes state of the target attribute,
-        {
-            let node = context.node().await;
-            if let Some(parsed_node) = node.current_resource::<ParsedNode>(ResourceKey::root()) {
-                drop(node);
-                transient.put_resource(parsed_node, ResourceKey::root());
-                transient.put_resource(recv, context.attribute.transmute());
-            }
-        }
+        let action = ActionFactory {
+            attribute: key.transmute(),
+            storage: tc.transient.clone(),
+            address: Some(address),
+            parsed_node_repr,
+        };
 
-        drop(transient);
-
-        ActionFactory {
-            attribute: context.attribute,
-            storage: context.transient.clone(),
-            address: None,
-        }
-        .set_entrypoint(inner)
+        Ok(action)
     }
 }
 
@@ -341,6 +354,9 @@ pub struct ActionFactory {
     /// Optional address to publish this action to,
     ///
     address: Option<Address>,
+    /// Base repr after parsing before host/plugin levels are added,
+    ///
+    parsed_node_repr: Repr,
 }
 
 /// Type-alias for a task future,
@@ -359,124 +375,85 @@ impl ActionFactory {
         self
     }
 
-    /// Sets the entrypoint for the action,
+    /// Adds a task as a branch from the node level of some plugin P,
     ///
-    pub fn set_entrypoint<P>(self, plugin: P) -> Self
+    pub async fn add_task<P>(self, task_name: &str, task: ThunkFn) -> anyhow::Result<Self>
     where
         P: Plugin,
         P::Virtual: NewFn<Inner = P>,
     {
-        let mut storage = self
-            .storage
-            .storage
-            .try_write()
-            .expect("should be able to write");
+        // TODO -- Shares the same resource
+        if let Some(base) = self.address.as_ref() {
+            let mut task_repr = self.parsed_node_repr.clone();
+            let node = base.node();
+            let filter = base.filter_str().expect("should have a filter str");
 
-        let key = self.attribute().transmute();
+            let task_addr = format!("{node}?{filter}&task={task_name}");
 
-        storage.put_resource::<P>(plugin, key);
+            let host_level = HostLevel::new(task_addr);
+            task_repr
+                .upgrade(CrcInterner::default(), host_level)
+                .await?;
 
-        drop(storage);
-        self
-    }
+            let plugin_level = PluginLevel::new_with::<P>(task);
+            task_repr
+                .upgrade(CrcInterner::default(), plugin_level)
+                .await?;
 
-    /// Registers a plugin call to a symbol,
-    ///
-    pub fn enable<P>(self, plugin: P) -> Self
-    where
-        P: Plugin,
-        P::Virtual: NewFn<Inner = P>,
-    {
-        let key = self.attribute().branch(P::symbol());
+            let plugin_init = self
+                .storage
+                .storage
+                .read()
+                .await
+                .current_resource::<P>(self.attribute.transmute())
+                .expect("should exist since action factory was created");
 
-        let mut storage = self
-            .storage
-            .storage
-            .try_write()
-            .expect("should be able to write");
-        storage.put_resource::<P>(plugin, key.transmute());
-        storage.put_resource::<ThunkFn>(<P as Plugin>::call, key.transmute());
-        storage.put_resource::<EnableFrame>(
-            EnableFrame(<P as Plugin>::enable_frame),
-            self.attribute().transmute(),
-        );
-        storage.put_resource::<EnableVirtual>(
-            EnableVirtual(<P as Plugin>::enable_virtual),
-            self.attribute().transmute(),
-        );
-        if let Some(mut attrs) = storage.resource_mut::<ParsedNode>(ResourceKey::root()) {
-            attrs.attributes.push(self.attribute());
-        }
-        storage.put_resource(self.attribute(), ResourceKey::default());
-
-        drop(storage);
-        self
-    }
-
-    /// Binds a task to the action context being built,
-    ///
-    pub fn bind_task<F>(
-        self,
-        symbol: &str,
-        task: impl Fn(ThunkContext) -> F + Copy + Sync + Send + 'static,
-    ) -> Self
-    where
-        Self: Sync,
-        F: Future<Output = anyhow::Result<ThunkContext>> + Sync + Send + 'static,
-    {
-        let key = self.attribute().branch(symbol);
-
-        let mut storage = self
-            .storage
-            .storage
-            .try_write()
-            .expect("should be able to write");
-
-        storage.put_resource(task, key.transmute());
-        storage.put_resource::<TaskFn>(
-            Box::pin(move |tc| Box::pin(async move { task(tc).await })),
-            key.transmute(),
-        );
-        drop(storage);
-        self
-    }
-
-    /// Binds a function to a symbol,
-    ///
-    pub fn bind(self, symbol: &str, plugin: fn(ThunkContext) -> CallOutput) -> Self {
-        let key = self.attribute().branch(symbol);
-
-        let mut storage = self
-            .storage
-            .storage
-            .try_write()
-            .expect("should be able to write");
-        storage.put_resource::<ThunkFn>(plugin, key.transmute());
-        drop(storage);
-        self
-    }
-
-    /// Publishes this factory,
-    ///
-    pub async fn publish(self, eh: EngineHandle) -> anyhow::Result<Address> {
-        let mut tc: ThunkContext = self.storage.into();
-        tc.set_attribute(self.attribute);
-
-        if let Some(address) = self.address.as_ref() {
-            tc.set_property("address", address.to_string())?;
+            let task_key = ResourceKey::<P>::with_repr(task_repr);
+            {
+                let mut node = self.storage.storage.write().await;
+                if let Some(mut parsed_node) = node.resource_mut::<ParsedNode>(ResourceKey::root())
+                {
+                    parsed_node.attributes.push(task_key.transmute());
+                }
+                node.put_resource(plugin_init, task_key);
+                drop(node);
+            }
         }
 
-        eh.publish(tc).await
+        Ok(self)
     }
 
-    /// Publishes this factory and returns the hosted resource,
+    /// Publish all tasks found in the current parsed node available for publishing,
     ///
-    pub async fn publish_hosted_resource(self, eh: EngineHandle) -> anyhow::Result<HostedResource> {
-        if let Ok(address) = self.publish(eh.clone()).await {
-            eh.hosted_resource(address.to_string()).await
-        } else {
-            Err(anyhow!("Could not publish action factory"))
+    pub async fn publish_all(self, eh: EngineHandle) -> anyhow::Result<Vec<Address>> {
+        let mut published = vec![];
+
+        let tc: ThunkContext = self.storage.into();
+
+        if let Some(parsed_node) = tc
+            .node()
+            .await
+            .current_resource::<ParsedNode>(ResourceKey::root())
+        {
+            eprintln!("{:?}", parsed_node);
+
+            for a in parsed_node.attributes {
+                if let Some(host) = a.host().and_then(|h| h.address()) {
+                    if a.plugin().is_some() {
+                        let mut publishing = tc.clone();
+                        publishing.set_attribute(a);
+                        eprintln!("Publishing {}", host);
+
+                        publishing.set_property("address", host.as_str())?;
+
+                        let p = eh.publish(publishing).await?;
+                        published.push(p);
+                    }
+                }
+            }
         }
+
+        Ok(published)
     }
 
     fn attribute(&self) -> ResourceKey<Attribute> {
@@ -578,6 +555,11 @@ async fn test_custom_action() {
             + .operation a
             <test.custom-action>     test_action
             |# address      =       test://custom-action
+            
+            # -- Testing action publishing
+            : .field test_custom_action_field
+
+            + .host test_host
             ```
             "#,
         );
@@ -597,49 +579,71 @@ async fn test_custom_action() {
 struct CustomAction {
     #[reality(derive_fromstr)]
     name: String,
+    #[reality(attribute_type)]
+    field: CustomActionField,
+}
+
+#[derive(Reality, Debug, Default, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
+#[reality(call = custom_action_field, plugin, rename = "custom-action-field", group = "test")]
+struct CustomActionField {
+    #[reality(derive_fromstr)]
+    name: String,
+}
+
+async fn custom_action_field(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    let init = tc.initialized::<CustomActionField>().await;
+    eprintln!("{:?}", init);
+    Ok(())
 }
 
 /// Example of bootstrapping resources,
 ///
 async fn custom_action(_tc: &mut ThunkContext) -> anyhow::Result<()> {
-    eprintln!("custom action init");
+    let eh = _tc
+        .engine_handle()
+        .await
+        .expect("should be bound to an engine");
+
+    let host = eh.hosted_resource("engine://test_host").await?;
 
     // Create the local action
-    let action = LocalAction.build::<Host>(_tc).await;
+    let action = HostAction::new(host.context().clone());
 
-    // Add a task
-    let action = action.bind_task("test 123", |mut tc| async move {
-        eprintln!("test 123");
-        tc.take_cache::<usize>();
+    if let Some(recv) = _tc.attribute.recv() {
+        if let Some(fields) = recv.fields() {
+            let field = fields.first().unwrap();
 
-        Ok(tc)
-    });
+            let action = action.build(CustomActionField::default(), *field).await?;
 
-    // Publish and retrieve the hosted resource
-    let local_action = action
-        .publish_hosted_resource(
-            _tc.engine_handle()
-                .await
-                .expect("should be bound to an engine"),
-        )
-        .await?;
+            // Add a task
+            let action = action
+                .add_task::<CustomActionField>("test_123", |tc| {
+                    tc.spawn(|mut tc| async move {
+                        eprintln!("test_123");
+                        tc.take_cache::<usize>();
 
-    // Call the entry point
-    eprintln!("{}", local_action.address());
-    let __la = local_action.spawn_call().await?;
+                        Ok(tc)
+                    })
+                })
+                .await?;
 
-    // Try to call a registered task or plugin on this action
-    local_action
-        .context()
-        .try_call("test 123")
-        .await?
-        .expect("should have call");
+            let action = action
+                .add_task::<CustomActionField>("test_432", |tc| {
+                    tc.spawn(|tc| async move {
+                        eprintln!("test_432");
+                        Ok(tc)
+                    })
+                })
+                .await?;
 
-    if let Some(mut show) = local_action.context().try_call("show_ui_node").await? {
-        if let Some(__ui_node) = show.take_cache::<()>() {}
+            let published = action.publish_all(eh.clone()).await?;
+            for p in published {
+                eprintln!("{}", p);
+            }
+
+            eh.run("engine://test_host?test.custom-action-field=test_custom_action_field&task=test_432").await?;
+        }
     }
-
-    let _host = local_action.as_plugin::<Host>().await;
 
     Ok(())
 }

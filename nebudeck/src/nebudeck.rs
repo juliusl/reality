@@ -10,11 +10,6 @@ use tracing::error;
 use tracing::{debug, info};
 
 use crate::base64::decode_field_packet;
-use crate::desktop::Desktop;
-use crate::desktop::DesktopApp;
-use crate::ext::imgui_ext::ImguiMiddleware;
-use crate::ext::RenderPipelineMiddleware;
-use crate::ext::WgpuSystem;
 use crate::terminal::Terminal;
 use crate::terminal::TerminalApp;
 use crate::ControlBus;
@@ -25,15 +20,17 @@ pub struct Nebudeck {
     /// Boot workspace,
     ///
     boot: Workspace,
-    /// Nebudeck engine,
-    ///
-    engine: OnceCell<EngineHandle>,
     /// Boot package state,
     ///
     boot_package: OnceCell<Package>,
-    /// Foreground engine,
+    /// Foreground boot engine,
+    /// 
+    /// Booted engine. When start up happens, gets pushed to the background and engine will be set.
     ///
     fg: OnceCell<ForegroundEngine>,
+    /// Nebudeck boot engine handle,
+    ///
+    engine: OnceCell<EngineHandle>,
 }
 
 impl Nebudeck {
@@ -121,8 +118,16 @@ impl Nebudeck {
 
     /// Boots nebudeck and opens dev tools window,
     ///
+    #[cfg(feature = "desktop")]
+    #[cfg(feature = "desktop-imgui")]
     pub fn open(self) -> anyhow::Result<()> {
-        let mut nbd_boot = self.boot()?;
+        use crate::desktop::Desktop;
+        use crate::desktop::DesktopApp;
+        use crate::ext::imgui_ext::ImguiMiddleware;
+        use crate::ext::RenderPipelineMiddleware;
+        use crate::ext::WgpuSystem;
+
+        let mut nbd_boot = self.boot_with(Engine::builder())?;
 
         let desktop = Desktop::new()?;
 
@@ -152,12 +157,6 @@ impl Nebudeck {
         let fg = booted.fg.take().unwrap();
         booted.delegate(Terminal, fg)?;
         Ok(())
-    }
-
-    /// Boots nebudeck
-    ///
-    fn boot(self) -> anyhow::Result<Self> {
-        self.boot_with(Engine::builder())
     }
 
     /// Boots nebudeck with engine builder
@@ -231,7 +230,7 @@ impl TerminalApp for Nebudeck {
 
         let matches = if let Ok(prog) = std::env::var(NBD_BOOT_PROG) {
             let prog = shlex::split(&prog).expect("should be valid cli arguments");
-            info!("`NBD_PROG` env var is set, getting matches from {:?}", prog);
+            info!("`NBD_PROG` env var is set, interpreting command {:?}", prog);
             command.clone().get_matches_from(prog)
         } else {
             command.clone().get_matches()
@@ -345,7 +344,8 @@ impl TerminalApp for Nebudeck {
     }
 }
 
-impl DesktopApp for Nebudeck {}
+#[cfg(feature = "desktop")]
+impl crate::desktop::DesktopApp for Nebudeck {}
 
 #[test]
 #[tracing_test::traced_test]
@@ -364,22 +364,6 @@ fn test_init() {
 
     set_nbd_boot_prog("nbd_boot add-project terminal");
     deck.start_cli().expect("should be able to process command");
-
-    // Compiler thread
-    std::thread::Builder::new().name("compile".to_string()).spawn(|| {
-        let _runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
-
-        loopio::prelude::runir::prelude::set_entropy();
-
-        let local_set = tokio::task::LocalSet::new();
-        local_set.spawn_local(async {
-
-        });
-
-        
-
-    }).unwrap();
-
     ()
 }
 
@@ -437,7 +421,7 @@ pub enum ProjectTypes {
 async fn create_project(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = tc.as_remote_plugin::<ProjectTypes>().await;
 
-    if let Some(name) = tc.property("name") {
+    if let Some(name) = tc.property("arg.name").or(tc.property("name")) {
         eprintln!("Creating project {name}");
     }
 

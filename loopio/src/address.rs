@@ -66,6 +66,12 @@ impl Address {
         self
     }
 
+    /// Returns the value of the node identifier of this address,
+    /// 
+    pub fn node(&self) -> &str {
+        self.node.as_str()
+    }
+
     /// Returns the node address,
     ///
     pub fn node_address(&self) -> String {
@@ -82,6 +88,10 @@ impl Address {
     ///
     pub fn path(&self) -> &str {
         self.path.trim_start_matches('/')
+    }
+
+    pub fn filter_str(&self) -> Option<&str> {
+        self.filter.as_ref().map(|f| f.as_str())
     }
 
     /// Returns the filter as a form_urlencoded Parser,

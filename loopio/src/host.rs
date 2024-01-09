@@ -1,5 +1,4 @@
 use bytes::Bytes;
-use reality::prelude::runir::prelude::Repr;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
@@ -182,9 +181,6 @@ pub struct Event {
     #[serde(skip)]
     #[reality(ignore)]
     pub data: Bytes,
-    #[serde(skip)]
-    #[reality(ignore)]
-    pub repr: Repr,
 }
 
 async fn on_event(tc: &mut ThunkContext) -> anyhow::Result<()> {
@@ -212,19 +208,19 @@ async fn test_host() {
 + .operation a
 |# test = test
     
-<start/loopio.std.io.println>                   Hello World a
+<start/builtin.println>                   Hello World a
 |# notify =     op_b_complete
 
 + .operation b
-<loopio.std.io.println>                         Hello World b
+<builtin.println>                         Hello World b
 |# listen =     op_b_complete
 
 + .operation c
-<start/loopio.std.io.println>                   Hello World c
+<start/builtin.println>                   Hello World c
 |# notify = test_cond
 
 + .operation d
-<loopio.std.io.println>                         Hello World d
+<builtin.println>                         Hello World d
 
 # -- Test sequence decorations
 + .sequence test
@@ -242,7 +238,7 @@ async fn test_host() {
 : .start        test
 
 # -- Example of setting up a notifier
-: .action               c/start/loopio.std.io.println
+: .action               c/start/builtin.println
 |# help     =           Example of adding help documentation
 |# notify   =           ob_b_complete
 

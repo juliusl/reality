@@ -242,7 +242,7 @@ async fn on_proxy(
         ResourceKey::root(),
     );
 
-    if let Some(spawned) = resource.spawn() {
+    if let CallOutput::Spawn(Some(spawned)) = resource.spawn() {
         match spawned.await.map_err(|_| {
             poem::Error::from_string(
                 "Hosted resource is unresponsive",

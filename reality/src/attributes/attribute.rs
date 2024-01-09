@@ -17,8 +17,6 @@ pub struct Attribute;
 #[derive(Hash, PartialEq, Eq, Debug, Default, Clone, Copy)]
 pub struct Property;
 
-struct Map<T>(BTreeMap<String, T>);
-
 impl ResourceKey<Attribute> {
     /// Returns the value of a property set from annotations,
     ///

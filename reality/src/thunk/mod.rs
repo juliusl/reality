@@ -49,16 +49,6 @@ pub mod prelude {
     ///
     pub type ThunkFn = fn(ThunkContext) -> CallOutput;
 
-    /// Wrapper struct for the enable frame fn,
-    ///
-    #[derive(Clone)]
-    pub struct EnableFrame(pub ThunkFn);
-
-    /// Wrapper struct for the enable_virtual fn,
-    ///
-    #[derive(Clone)]
-    pub struct EnableVirtual(pub ThunkFn);
-
     /// Pointer-struct for normalizing plugin types,
     ///
     pub struct Thunk<P>(pub PhantomData<P>)

@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use loopio::action::RemoteAction;
+use loopio::action::HostAction;
 use loopio::prelude::*;
 use serde::Serialize;
 
@@ -203,67 +203,6 @@ impl Input<'_> {
         //         });
         //     }
         // }
-    }
-}
-
-/// Select a resource by address to open in the inspection window,
-///
-#[derive(Reality, Debug, Default, Clone)]
-#[reality(call=create_inspect_action, plugin, group="ui")]
-pub struct Inspect {
-    /// Address of the resource to inspect,
-    ///
-    #[reality(derive_fromstr)]
-    address: Address,
-}
-
-async fn create_inspect_action(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let init = tc.initialized::<Inspect>().await;
-
-    if let Some(eh) = tc.engine_handle().await {
-        // Create a remote action based on a Host resource
-        let action = RemoteAction.build::<Host>(tc).await;
-
-        // Returns CallOutput::Update if the address contains a ui node
-        let action = action.bind("show_ui_node", |tc| {
-            if let Some(_) = tc.cached::<UiNode>() {
-                tc.update()
-            } else {
-                tc.skip()
-            }
-        });
-
-        // Returns CallOutput::Update if the address contains a ui type node
-        let action = action.bind("show_ui_type_node", |tc| {
-            if let Some(_) = tc.cached::<UiTypeNode>() {
-                tc.update()
-            } else {
-                tc.skip()
-            }
-        });
-
-        // Returns CallOutput::Update if the address contains an aux ui type node
-        let action = action.bind("show_aux_ui_node", |tc| {
-            if let Some(_) = tc.cached::<ToolUiNode>() {
-                tc.update()
-            } else {
-                tc.skip()
-            }
-        });
-
-        let storage = action.storage.storage.clone();
-        let mut storage = storage.write().await;
-        init.pack(storage.deref_mut());
-
-        let _inspect = Inspect::default().unpack(storage.deref_mut());
-
-        let published = action.publish(eh).await?;
-
-        eprintln!("published inpsect context -- {published}");
-
-        Ok(())
-    } else {
-        Err(anyhow!("An engine was not bound to the thunk context."))
     }
 }
 

@@ -54,7 +54,7 @@ async fn prepare_workspace(tc: &mut ThunkContext) -> anyhow::Result<()> {
         workspace.add_local(file);
     }
 
-    // Process inline source
+    // Process inline sources
     for source in nbd_project.source.iter() {
         if let Some(value) = source.value() {
             if let Some(tag) = source.tag() {

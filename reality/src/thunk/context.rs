@@ -272,15 +272,17 @@ impl Context {
     ///
     /// **Note** Will start immediately on the tokio-runtime.
     ///
-    pub fn spawn<F>(&self, task: impl FnOnce(Context) -> F + 'static) -> SpawnResult
+    pub fn spawn<F>(&self, task: impl FnOnce(Context) -> F + 'static) -> CallOutput
     where
         F: Future<Output = anyhow::Result<Context>> + Send + 'static,
     {
-        self.node
-            .runtime
-            .clone()
-            .as_ref()
-            .map(|h| h.clone().spawn(task(self.clone())))
+        CallOutput::Spawn(
+            self.node
+                .runtime
+                .clone()
+                .as_ref()
+                .map(|h| h.clone().spawn(task(self.clone()))),
+        )
     }
 
     /// Convenience for `PluginOutput::Skip`
