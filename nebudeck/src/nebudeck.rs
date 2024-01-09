@@ -4,8 +4,10 @@ use std::path::PathBuf;
 
 use anyhow::anyhow;
 use clap::Subcommand;
+use loopio::action::HostAction;
 use loopio::prelude::*;
 
+use loopio::prelude::runir::prelude::Repr;
 use tracing::error;
 use tracing::{debug, info};
 
@@ -24,7 +26,7 @@ pub struct Nebudeck {
     ///
     boot_package: OnceCell<Package>,
     /// Foreground boot engine,
-    /// 
+    ///
     /// Booted engine. When start up happens, gets pushed to the background and engine will be set.
     ///
     fg: OnceCell<ForegroundEngine>,
@@ -122,7 +124,6 @@ impl Nebudeck {
     #[cfg(feature = "desktop-imgui")]
     pub fn open(self) -> anyhow::Result<()> {
         use crate::desktop::Desktop;
-        use crate::desktop::DesktopApp;
         use crate::ext::imgui_ext::ImguiMiddleware;
         use crate::ext::RenderPipelineMiddleware;
         use crate::ext::WgpuSystem;
@@ -425,6 +426,18 @@ async fn create_project(tc: &mut ThunkContext) -> anyhow::Result<()> {
         eprintln!("Creating project {name}");
     }
 
+    if let Some(eh) = tc.engine_handle().await {
+        if let Some(repr) = tc.attribute.repr().and_then(|r| r.downgrade(2).ok()) {
+            let mut _action = HostAction::new(tc.attribute).build(init.clone(), repr).await?;
+            
+            eprintln!("Created host action -- {:?}", _action.address);
+            _action = _action.add_task::<ProjectTypes>("test", thunk_fn!(test)).await?;
+    
+            let published = _action.publish_all(eh).await?;
+            published.iter().for_each(|p| eprintln!("{p}"));
+        }
+    }
+
     match init {
         ProjectTypes::Terminal => {}
         ProjectTypes::Desktop {
@@ -439,6 +452,9 @@ async fn create_project(tc: &mut ThunkContext) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn test(_: &mut ThunkContext) -> anyhow::Result<()> {
+    Ok(())
+}
 impl FromStr for ProjectTypes {
     type Err = anyhow::Error;
 

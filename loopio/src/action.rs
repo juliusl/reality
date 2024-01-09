@@ -1,10 +1,13 @@
-use anyhow::anyhow;
 use async_trait::async_trait;
 use futures_util::Future;
-use reality::prelude::runir::prelude::{CrcInterner, HostLevel, Repr};
-use serde::{Deserialize, Serialize};
+use reality::prelude::runir::prelude::CrcInterner;
+use reality::prelude::runir::prelude::HostLevel;
+use reality::prelude::runir::prelude::Repr;
+use serde::Deserialize;
+use serde::Serialize;
 use std::pin::Pin;
 use tracing::info;
+use tracing::trace;
 use uuid::Uuid;
 
 use reality::attributes;
@@ -67,26 +70,6 @@ pub trait Action {
         })
     }
 
-    /// Returns a future that contains the result of the action,
-    ///
-    fn spawn_call(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<ThunkContext>> + Send + '_>>
-    where
-        Self: Sync,
-    {
-        Box::pin(async move {
-            let r = self.into_hosted_resource();
-            if let CallOutput::Spawn(Some(s)) = r.spawn() {
-                if let Ok(s) = s.await {
-                    s
-                } else {
-                    Err(anyhow!("Task could not join"))
-                }
-            } else {
-                Err(anyhow!("Did not spawn a a task"))
-            }
-        })
-    }
-
     /// Convert the action into a generic hosted resource,
     ///
     fn into_hosted_resource(&self) -> HostedResource {
@@ -96,12 +79,6 @@ pub trait Action {
             rk: self.plugin_rk(),
             binding: Some(self.context().clone()),
         }
-    }
-
-    /// Converts a pointer to the hosted resource into call output,
-    ///
-    fn into_call_output(&self) -> CallOutput {
-        self.into_hosted_resource().spawn()
     }
 }
 
@@ -258,87 +235,83 @@ impl ActionExt for ThunkContext {}
 pub struct HostAction {
     /// Thunk context for the host hosting this action
     ///
-    host: ThunkContext,
+    host: ResourceKey<Attribute>,
 }
 
 impl HostAction {
     /// Creates a new host action,
     ///
-    pub fn new(host: ThunkContext) -> Self {
-        Self {
-            host,
-        }
+    pub fn new(host: ResourceKey<Attribute>) -> Self {
+        Self { host }
     }
 
     /// Get the host name,
     ///
-    pub fn host_name(&self) -> String {
-        // TODO -- fix fallible
+    fn host_name(&self) -> Option<String> {
         self.host
-            .attribute
             .host()
-            .unwrap()
-            .address()
-            .unwrap()
-            .to_string()
+            .and_then(|h| h.address())
+            .map(|a| a.to_string())
     }
 
+    /// Build the host actoin and return the parent,
+    ///
     pub async fn build<P>(self, plugin: P, mut repr: Repr) -> anyhow::Result<ActionFactory>
     where
         P: Plugin,
         P::Virtual: NewFn<Inner = P>,
     {
-        let parsed_node_repr = repr.clone();
+        if let Some(host_name) = self.host_name() {
+            let parsed_node_repr = repr.clone();
 
-        // Upgrade fields into plugins
-        let name = repr
-            .as_node()
-            .and_then(|n| n.input())
-            .map(|i| i.to_string())
-            .unwrap_or(repr.as_uuid().to_string());
+            // Upgrade fields into plugins
+            let name = repr
+                .as_node()
+                .and_then(|n| n.input())
+                .map(|i| i.to_string())
+                .unwrap_or(repr.as_uuid().to_string());
 
-        let plugin_symbol = P::symbol().to_lowercase();
+            let plugin_symbol = P::symbol().to_lowercase();
 
-        let h = HostLevel::new(format!("{}?{plugin_symbol}={name}", self.host_name()));
-        repr.upgrade(runir::prelude::CrcInterner::default(), h)
-            .await?;
+            let h = HostLevel::new(format!("{}?{plugin_symbol}={name}", host_name));
+            repr.upgrade(runir::prelude::CrcInterner::default(), h)
+                .await?;
 
-        let p = PluginLevel::new::<P>();
-        repr.upgrade(runir::prelude::CrcInterner::default(), p)
-            .await?;
+            let p = PluginLevel::new::<P>();
+            repr.upgrade(runir::prelude::CrcInterner::default(), p)
+                .await?;
 
-        let key = ResourceKey::<P>::with_repr(repr);
-        info!(
-            "Host action resource key is -- {:?} {}",
-            key,
-            self.host_name()
-        );
+            let key = ResourceKey::<P>::with_repr(repr);
+            info!("Host action resource key is -- {:?} {}", key, host_name);
 
-        // Reconstruct a parsed node
-        let mut node = ParsedNode::default();
-        node.node = self.host.attribute;
-        node.attributes.push(key.transmute());
+            // Reconstruct a parsed node
+            let mut node = ParsedNode::default();
+            node.node = self.host;
+            node.attributes.push(key.transmute());
 
-        let mut tc = ThunkContext::new();
-        tc.set_attribute(key.transmute());
-        {
-            let mut _node = tc.transient.storage.write().await;
-            _node.put_resource(plugin, key.transmute());
-            _node.put_resource(node, ResourceKey::root());
-            _node.put_resource::<ResourceKey<P>>(key, ResourceKey::root());
+            let mut tc = ThunkContext::new();
+            tc.set_attribute(key.transmute());
+            {
+                let mut _node = tc.node.storage.write().await;
+                _node.put_resource(plugin, key.transmute());
+                _node.put_resource(node, ResourceKey::root());
+                _node.put_resource::<ResourceKey<P>>(key, ResourceKey::root());
+            }
+
+            let address =
+                Address::from_str(format!("{}?{plugin_symbol}={name}", host_name).as_str())?;
+
+            let action = ActionFactory {
+                attribute: key.transmute(),
+                storage: tc.node.clone(),
+                address: Some(address),
+                parsed_node_repr,
+            };
+
+            Ok(action)
+        } else {
+            Err(anyhow::anyhow!("Missing host name"))
         }
-
-        let address =
-            Address::from_str(format!("{}?{plugin_symbol}={name}", self.host_name()).as_str())?;
-
-        let action = ActionFactory {
-            attribute: key.transmute(),
-            storage: tc.transient.clone(),
-            address: Some(address),
-            parsed_node_repr,
-        };
-
-        Ok(action)
     }
 }
 
@@ -353,7 +326,7 @@ pub struct ActionFactory {
     pub storage: AsyncStorageTarget<Shared>,
     /// Optional address to publish this action to,
     ///
-    address: Option<Address>,
+    pub address: Option<Address>,
     /// Base repr after parsing before host/plugin levels are added,
     ///
     parsed_node_repr: Repr,
@@ -382,7 +355,6 @@ impl ActionFactory {
         P: Plugin,
         P::Virtual: NewFn<Inner = P>,
     {
-        // TODO -- Shares the same resource
         if let Some(base) = self.address.as_ref() {
             let mut task_repr = self.parsed_node_repr.clone();
             let node = base.node();
@@ -435,14 +407,12 @@ impl ActionFactory {
             .await
             .current_resource::<ParsedNode>(ResourceKey::root())
         {
-            eprintln!("{:?}", parsed_node);
-
             for a in parsed_node.attributes {
                 if let Some(host) = a.host().and_then(|h| h.address()) {
                     if a.plugin().is_some() {
                         let mut publishing = tc.clone();
                         publishing.set_attribute(a);
-                        eprintln!("Publishing {}", host);
+                        trace!("Publishing {}", host);
 
                         publishing.set_property("address", host.as_str())?;
 
@@ -454,10 +424,6 @@ impl ActionFactory {
         }
 
         Ok(published)
-    }
-
-    fn attribute(&self) -> ResourceKey<Attribute> {
-        self.attribute
     }
 }
 
@@ -607,7 +573,7 @@ async fn custom_action(_tc: &mut ThunkContext) -> anyhow::Result<()> {
     let host = eh.hosted_resource("engine://test_host").await?;
 
     // Create the local action
-    let action = HostAction::new(host.context().clone());
+    let action = HostAction::new(host.context().attribute);
 
     if let Some(recv) = _tc.attribute.recv() {
         if let Some(fields) = recv.fields() {

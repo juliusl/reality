@@ -37,6 +37,10 @@ impl ResourceKey<Attribute> {
     pub fn doc_headers(&self) -> Option<Arc<Vec<String>>> {
         self.node().and_then(|n| n.doc_headers())
     }
+
+    pub fn address(&self) -> Option<Arc<String>> {
+        self.host().and_then(|h| h.address())
+    }
 }
 
 impl ResourceKey<Property> {

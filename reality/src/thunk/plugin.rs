@@ -159,9 +159,7 @@ pub mod repr {
             P: Plugin,
             P::Virtual: NewFn<Inner = P>,
         {
-            Self::new_with::<P>(
-                <P as Plugin>::call,
-            )
+            Self::new_with::<P>(<P as Plugin>::call)
         }
 
         /// Returns a new thunk level for P w/ data thunks from Inner,
@@ -173,17 +171,15 @@ pub mod repr {
             Inner: Plugin,
             Inner::Virtual: NewFn<Inner = Inner>,
         {
-            Self::new_with::<Inner>(
-                <P as Plugin>::call,
-            )
+            Self::new_with::<Inner>(<P as Plugin>::call)
         }
 
         /// Creates a new plugin level w/ thunk fn's and a custom call thunk fn,
         ///
-        pub fn new_with<P>(call: ThunkFn) -> Self 
+        pub fn new_with<P>(call: ThunkFn) -> Self
         where
             P: Plugin,
-            P::Virtual: NewFn<Inner = P>
+            P::Virtual: NewFn<Inner = P>,
         {
             Self {
                 call: Tag::new(&CALL, Arc::new(call)),

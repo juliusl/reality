@@ -33,7 +33,7 @@ async fn main() {
     });
 
     let host = eh.hosted_resource("engine://testhost").await.unwrap();
-    let _task = host.spawn_call().await.unwrap();
+    let _task = host.spawn().await.unwrap().unwrap();
     ()
 }
 

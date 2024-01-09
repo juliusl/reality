@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use bytes::Bytes;
 use serde::Deserialize;
 use serde::Serialize;
@@ -90,7 +91,11 @@ impl Host {
 
                 resource.context_mut().write_cache(self.event.clone());
 
-                resource.spawn_call().await
+                if let Some(result) = resource.spawn().await? {
+                    Ok(result)
+                } else {
+                    Err(anyhow!("Start action did not spawn a task"))
+                }
             } else {
                 Err(anyhow::anyhow!("Start action is not set"))
             }
@@ -168,7 +173,8 @@ impl Action for Host {
 #[derive(
     Reality, Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord,
 )]
-#[reality(call=on_event, plugin)]
+#[plugin_def(call=on_event)]
+#[parse_def(group = "builtin")]
 pub struct Event {
     /// Name of this event,
     ///
@@ -196,8 +202,6 @@ async fn on_event(tc: &mut ThunkContext) -> anyhow::Result<()> {
 #[tokio::test]
 #[tracing_test::traced_test]
 async fn test_host() {
-    runir::prelude::set_entropy();
-
     let mut workspace = Workspace::new();
     workspace.add_buffer(
         "demo.md",
@@ -251,8 +255,6 @@ async fn test_host() {
 ```
     "#,
     );
-
-    // tokio::time::sleep(Duration::from_secs(5)).await;
 
     let engine = crate::engine::Engine::builder().build();
     let engine = engine.compile(workspace).await.unwrap();

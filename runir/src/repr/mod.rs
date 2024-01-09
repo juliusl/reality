@@ -36,6 +36,7 @@ pub mod prelude {
 
 use crate::define_intern_table;
 use crate::prelude::*;
+use anyhow::anyhow;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Display;
@@ -113,6 +114,39 @@ impl Repr {
         let linked = Tag::new(&HANDLES, Arc::new(from)).link(&to).await?;
         self.tail = linked;
         Ok(())
+    }
+
+    /// Downgrade the Repr by count,
+    /// 
+    /// **Error** Returns an error if count exceeds current repr level
+    /// 
+    pub fn downgrade(
+        &self,
+        count: usize,
+    ) -> anyhow::Result<Repr> {
+        let levels = self.get_levels();
+        
+        if let Some(end) = levels.len().checked_sub(count) {
+            let mut levels = levels[..end].to_vec();
+
+            match (levels.pop(), levels.pop()) {
+                (Some(mut tail), Some(next)) => {
+                    let link = tail.register() ^ next.register();
+
+                    tail.link = link;
+                    return Ok(Repr { tail })
+                    
+                },
+                (Some(tail), None) => {
+                    return Ok(Repr { tail })
+                },
+                _ => {
+
+                }
+            }
+        }
+
+        Err(anyhow!("Could not downgrade level {} by {count}", levels.len()))
     }
 
     /// Return a vector containing an intern handle pointing to each level of this representation,

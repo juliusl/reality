@@ -452,10 +452,10 @@ async fn test_seq() -> anyhow::Result<()> {
     });
 
     let seq = eh.hosted_resource("engine://test").await.unwrap();
-    seq.spawn_call().await?;
-    seq.spawn_call().await?;
-    seq.spawn_call().await?;
-    seq.spawn_call().await?;
+    seq.spawn().await?.unwrap();
+    seq.spawn().await?.unwrap();
+    seq.spawn().await?.unwrap();
+    seq.spawn().await?.unwrap();
 
     let testseq = eh
         .hosted_resource("test-host://b/t/demo.testseq")

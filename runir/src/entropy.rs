@@ -14,8 +14,19 @@ thread_local!(
 ///
 /// **Note**: Allows for intern handles created on this thread to have their data value set w/ entropy.
 ///
-pub fn set_entropy() -> u64{
+pub(crate) fn set_entropy() -> u64 {
     let (_, e) = uuid::Uuid::new_v4().as_u64_pair();
     ENTROPY.set(e);
     e
+}
+
+/// Create a new entropy aware runtime,
+///
+pub fn new_runtime() -> tokio::runtime::Builder {
+    let entropy = set_entropy();
+    let mut runtime = tokio::runtime::Builder::new_multi_thread();
+    runtime
+        .enable_all()
+        .on_thread_start(move || ENTROPY.set(entropy));
+    runtime
 }

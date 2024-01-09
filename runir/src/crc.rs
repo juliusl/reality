@@ -290,6 +290,7 @@ mod tests {
         let parent_type_name = parent.unwrap().as_resource().unwrap().type_name().unwrap();
         eprintln!("{}", parent_type_name);
 
+        let before_upgrade = _drepr.clone();
         let upgrade = NodeLevel::new().with_input("hello world");
         _drepr
             .upgrade(CrcInterner::default(), upgrade)
@@ -301,6 +302,9 @@ mod tests {
 
         let mut command = clap::Command::from(repr);
         command.print_help().unwrap();
+
+        let downgraded = _drepr.downgrade(1).unwrap();
+        assert_eq!(before_upgrade, downgraded);
         ()
     }
 }

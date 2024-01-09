@@ -26,7 +26,7 @@ pub type EngineListenerBackgroundTask = JoinHandle<Result<Result<Engine, Error>,
 ///
 pub struct ForegroundEngine {
     /// Compiled package,
-    /// 
+    ///
     pub package: Package,
     /// Engine handle to the main engine,
     ///
@@ -107,7 +107,10 @@ impl ForegroundEngine {
             })
             .unwrap();
 
-        let package = engine.package.clone().expect("should have compiled a package");
+        let package = engine
+            .package
+            .clone()
+            .expect("should have compiled a package");
         let mut eh = engine.engine_handle();
 
         let __engine_listener = runtime.spawn(async move {
@@ -125,49 +128,49 @@ impl ForegroundEngine {
             eh
         });
 
-        // // Run diagnostics before returning the foreground engine
-        // let bg = eh
-        //     .background()
-        //     .expect("should be able to create a background handle");
+        // Run diagnostics before returning the foreground engine
+        let bg = eh
+            .background()
+            .expect("should be able to create a background handle");
 
-        // // This tests that the bg engine is working properly
-        // if let Ok(mut bg) = bg.call("test_background_work/test/loopio.foreground-engine-test") {
-        //     let mut controller = DefaultController;
-        //     let progress = bg
-        //         .as_ref()
-        //         .cached_ref::<PrivateProgress>()
-        //         .as_deref()
-        //         .cloned();
-        //     let _ = runtime.handle().spawn(async move {
-        //         if let Some(progress) = progress {
-        //             trace!("Validating foreground engine work-state system");
-        //             progress
-        //                 .listen_value(|v| {
-        //                     assert_eq!(0.5, v.0);
-        //                 })
-        //                 .await?;
+        // This tests that the bg engine is working properly
+        if let Ok(mut bg) = bg.call("test_background_work/test/loopio.foreground-engine-test") {
+            let mut controller = DefaultController;
+            let progress = bg
+                .as_ref()
+                .cached_ref::<PrivateProgress>()
+                .as_deref()
+                .cloned();
+            let _ = runtime.handle().spawn(async move {
+                if let Some(progress) = progress {
+                    trace!("Validating foreground engine work-state system");
+                    progress
+                        .listen_value(|v| {
+                            assert_eq!(0.5, v.0);
+                        })
+                        .await?;
 
-        //             progress
-        //                 .listen_value(|v| {
-        //                     assert_eq!(0.7, v.0);
-        //                 })
-        //                 .await?;
+                    progress
+                        .listen_value(|v| {
+                            assert_eq!(0.7, v.0);
+                        })
+                        .await?;
 
-        //             progress
-        //                 .listen_value(|v| {
-        //                     assert_eq!(1.0, v.0);
-        //                 })
-        //                 .await?;
-        //         }
-        //         Ok::<_, anyhow::Error>(())
-        //     });
+                    progress
+                        .listen_value(|v| {
+                            assert_eq!(1.0, v.0);
+                        })
+                        .await?;
+                }
+                Ok::<_, anyhow::Error>(())
+            });
 
-        //     let _ = bg
-        //         .wait_for_completion(&mut controller)
-        //         .expect("should be able to complete");
+            let _ = bg
+                .wait_for_completion(&mut controller)
+                .expect("should be able to complete");
 
-        //     // runtime.handle().block_on(jh).expect("should be able to join").expect("should be able to complete");
-        // }
+            // runtime.handle().block_on(jh).expect("should be able to join").expect("should be able to complete");
+        }
 
         ForegroundEngine {
             package,
@@ -230,12 +233,7 @@ fn test_foreground_engine() {
     use crate::work::WorkState;
     use tower::Service;
 
-    let mut builder = crate::prelude::Engine::builder();
-
-    builder.runtime_builder = tokio::runtime::Builder::new_current_thread();
-    builder.runtime_builder.enable_all();
-
-    runir::prelude::set_entropy();
+    let builder = crate::prelude::Engine::builder();
 
     // Test self diagnosis works
     let engine = ForegroundEngine::new(builder);

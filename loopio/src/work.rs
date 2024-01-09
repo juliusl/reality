@@ -139,7 +139,6 @@ impl __WorkState for ThunkContext {}
 
 /// Private work state plugin
 ///
-#[allow(non_camel_case_types)]
 #[derive(Reality, Default, Debug, Clone)]
 #[plugin_def(
     call = on_update

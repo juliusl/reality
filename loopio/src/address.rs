@@ -67,7 +67,7 @@ impl Address {
     }
 
     /// Returns the value of the node identifier of this address,
-    /// 
+    ///
     pub fn node(&self) -> &str {
         self.node.as_str()
     }

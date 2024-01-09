@@ -272,7 +272,7 @@ impl Context {
     ///
     /// **Note** Will start immediately on the tokio-runtime.
     ///
-    pub fn spawn<F>(&self, task: impl FnOnce(Context) -> F + 'static) -> CallOutput
+    pub fn spawn<F>(&self, task: impl FnOnce(Context) -> F + Sync + 'static) -> CallOutput
     where
         F: Future<Output = anyhow::Result<Context>> + Send + 'static,
     {

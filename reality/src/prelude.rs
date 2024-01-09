@@ -70,6 +70,7 @@ pub use crate::resource_owned;
 pub use crate::take;
 pub use crate::task;
 pub use crate::task_mut;
+pub use crate::thunk_fn;
 
 pub use crate::thunk::*;
 

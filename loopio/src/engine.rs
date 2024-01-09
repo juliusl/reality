@@ -258,8 +258,7 @@ impl Engine {
     ///
     #[inline]
     pub fn builder() -> EngineBuilder {
-        let mut runtime = tokio::runtime::Builder::new_multi_thread();
-        runtime.enable_all();
+        let runtime = runir::prelude::new_runtime();
 
         EngineBuilder::new(runtime)
     }
@@ -426,9 +425,7 @@ impl Engine {
                     let addr = address.to_string();
                     let resource = self.get_resource(addr).await?;
 
-                    let eh = self
-                        .engine_handle()
-                        .with_host(host.name.value().cloned().unwrap_or("engine".to_string()));
+                    let eh = self.engine_handle().with_host(_host.attribute);
 
                     resource
                         .context()
@@ -458,7 +455,7 @@ impl Engine {
                         .map(|r| r.is_parse_type::<Event>())
                         .unwrap_or_default()
                     {
-                        let host_action = HostAction::new(host.context().clone());
+                        let host_action = HostAction::new(host.context().attribute);
 
                         // Upgrade fields into plugins
                         let name = f
@@ -549,7 +546,7 @@ impl Engine {
         )
     }
 
-    /// Default start up procedure,
+    /// Default start-up procedure,
     ///
     pub async fn default_startup(
         mut self,
@@ -592,7 +589,7 @@ impl Engine {
                         if let Some(tx) = tx.take() {
                             if let Ok(resource) = self.get_resource(address).await {
                                 trace!("Sending call output");
-                                if let Err(_) = tx.send(resource.into_call_output()) {
+                                if let Err(_) = tx.send(resource.spawn()) {
                                     error!("Could not call resource");
                                 }
                             } else {
@@ -650,7 +647,7 @@ impl Engine {
 
                                 if let Some(mut filter) = address.filter() {
                                     if let Some((_, event)) =
-                                        filter.find(|(k, _)| k == "loopio.event")
+                                        filter.find(|(k, _)| k == Event::symbol())
                                     {
                                         if !self.__bus.contains_key(&address) {
                                             info!("Detected event publish, registering virtual bus -- {} {}", event, address);
@@ -876,7 +873,7 @@ impl Debug for EngineAction {
 pub struct EngineHandle {
     /// Host this handle is attached to,
     ///
-    pub host: Option<String>,
+    pub host: Option<ResourceKey<Attribute>>,
     /// Sends engine packets to the engine,
     ///
     sender: Arc<tokio::sync::mpsc::UnboundedSender<EnginePacket>>,
@@ -906,8 +903,8 @@ impl Debug for EngineHandle {
 impl EngineHandle {
     /// Returns the handle w/ host set,
     ///
-    pub fn with_host(mut self, host: impl Into<String>) -> Self {
-        self.host = Some(host.into());
+    pub fn with_host(mut self, host: ResourceKey<Attribute>) -> Self {
+        self.host = Some(host);
         self
     }
 
@@ -1022,7 +1019,7 @@ impl EngineHandle {
     /// Returns a virtual bus for some event,
     ///
     pub(crate) async fn event_vbus(&self, host: &str, name: &str) -> anyhow::Result<VirtualBus> {
-        let address: Address = format!("{host}?loopio.event={name}").parse()?;
+        let address: Address = format!("{host}?{}={name}", Event::symbol()).parse()?;
 
         debug!("Looking for event vbus {}", address);
 
@@ -1043,7 +1040,10 @@ impl EngineHandle {
     /// Listens for an event,
     ///
     pub(crate) async fn listen(&self, event: impl AsRef<str>) -> anyhow::Result<()> {
-        let host = self.host.clone().unwrap_or(String::from("engine"));
+        let host = self
+            .host
+            .and_then(|h| h.address().as_deref().cloned())
+            .unwrap_or(String::from("engine"));
 
         match self.event_vbus(&host, event.as_ref()).await {
             Ok(mut vbus) => {
@@ -1074,7 +1074,10 @@ impl EngineHandle {
         event: impl AsRef<str>,
         data: Option<Bytes>,
     ) -> anyhow::Result<()> {
-        let host = self.host.clone().unwrap_or(String::from("engine"));
+        let host = self
+            .host
+            .and_then(|h| h.address().as_deref().cloned())
+            .unwrap_or(String::from("engine"));
 
         match self.event_vbus(&host, event.as_ref()).await {
             Ok(mut vbus) => {

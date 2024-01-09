@@ -57,8 +57,8 @@ mod test {
         assert_eq!("Hello World", packet_data);
 
         let packet = crate::FieldPacket::new_data(String::from("Hello World"));
-        // let packet = packet.into_box::<Vec<u8>>();
-        // assert!(packet.is_none());
+        let packet = packet.into_box::<Vec<u8>>();
+        assert!(packet.is_none());
     }
 
     #[tokio::test]

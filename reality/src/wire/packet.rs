@@ -153,6 +153,8 @@ impl FieldPacket {
 
     /// Sets the packet into parse mode,
     ///
+    /// TODO: parse_insert/parse_push/parse
+    ///
     pub fn parse(mut self, input: String) -> Self {
         self.wire_data = Some(input.as_bytes().to_vec());
         self.op = 1;

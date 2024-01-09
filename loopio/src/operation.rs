@@ -48,7 +48,7 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
     if let Some(eh) = tc.engine_handle().await {
         if let Some(host) = eh.host {
-            debug!(op = init.name, "Host is set on operation -- {}://", host);
+            debug!(op = init.name, "Host is set on operation -- {:?}", host);
         }
     }
 
@@ -390,7 +390,7 @@ mod test {
         });
 
         let resource = _engine.get_resource("demo://b").await.unwrap();
-        let _ = resource.spawn_call().await.unwrap();
+        let _ = resource.spawn().await.unwrap();
 
         // if let Some(repr) = resource.context().attribute.repr() {
         //     eprintln!("{:#}", repr);

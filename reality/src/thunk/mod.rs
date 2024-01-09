@@ -129,7 +129,6 @@ pub mod prelude {
     where
         P: Plugin + Send + Sync + 'static,
     {
-        ///
         async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
             <P as CallAsync>::call(context).await
         }
