@@ -50,9 +50,11 @@ async fn create_background_work_handle(tc: &mut ThunkContext) -> anyhow::Result<
     debug!("Saving to transient {}", engine.is_some());
     _bh.tc
         .write_cache(engine.expect("should be bound to an engine"));
-    tc.transient_mut()
-        .await
-        .put_resource(_bh, ResourceKey::root());
+    let mut transient = tc.transient_mut().await;
+
+    let mut root = transient.root();
+    root.put(_bh);
+
     Ok(())
 }
 

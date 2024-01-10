@@ -26,7 +26,7 @@ pub(crate) struct Project {
     source: Vec<Decorated<String>>,
 }
 
-/// Prepares a project workspace
+/// Prepares a runmd workspace at the root of the current node storage target,
 ///
 async fn prepare_workspace(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let mut nbd_project = tc.initialized::<Project>().await;
@@ -75,10 +75,11 @@ async fn prepare_workspace(tc: &mut ThunkContext) -> anyhow::Result<()> {
         }
     }
 
-    // Puts the new workspace in transient storage
+    // Puts the new workspace in node storage
     tc.node()
         .await
-        .lazy_put_resource(workspace, ResourceKey::root());
+        .root_ref()
+        .lazy_put(workspace);
 
     tc.process_node_updates().await;
 
@@ -103,28 +104,28 @@ async fn prepare_workspace(tc: &mut ThunkContext) -> anyhow::Result<()> {
 //     Ok(())
 // }
 
-async fn create_action(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    if let Some(eh) = tc.engine_handle().await {
-        let init = tc.as_remote_plugin::<Project>().await;
+// async fn create_action(tc: &mut ThunkContext) -> anyhow::Result<()> {
+//     if let Some(eh) = tc.engine_handle().await {
+//         let init = tc.as_remote_plugin::<Project>().await;
 
-        if let Some(downgraded) = tc.attribute.repr().and_then(|r| r.downgrade(2).ok()) {
-            let action = HostAction::new(tc.attribute)
-                .build(init, downgraded)
-                .await?;
+//         if let Some(downgraded) = tc.attribute.repr().and_then(|r| r.downgrade(2).ok()) {
+//             let action = HostAction::new(tc.attribute)
+//                 .build(init, downgraded)
+//                 .await?;
 
-            let action = action
-                .add_task::<Project>("prepare_workspace", thunk_fn!(prepare_workspace))
-                .await?;
+//             let action = action
+//                 .add_task::<Project>("prepare_workspace", thunk_fn!(prepare_workspace))
+//                 .await?;
 
-            // let action = action.add_task::<Project>("task_name", thunk_fn!(compile_workspace)).await?;
+//             // let action = action.add_task::<Project>("task_name", thunk_fn!(compile_workspace)).await?;
 
-            let results = action.publish_all(eh).await?;
-            for r in results {}
-        }
-    }
+//             let results = action.publish_all(eh).await?;
+//             for r in results {}
+//         }
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 #[tokio::test]
 async fn test_project() {
@@ -181,9 +182,9 @@ async fn test_project() {
     let tc = program.context().unwrap();
     let result = tc.call().await.unwrap().unwrap();
     let workspace = result
-        .transient_mut()
-        .await
-        .take_resource::<loopio::prelude::Workspace>(ResourceKey::root())
+        .node.storage.write().await
+        .root()
+        .take::<loopio::prelude::Workspace>()
         .unwrap();
 
     // Test that the inline source compiles and runs

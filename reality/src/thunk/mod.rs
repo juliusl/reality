@@ -166,14 +166,15 @@ pub mod prelude {
             let parser = <P as BlockObject>::on_unload(parser, storage.clone(), rk).await;
             let _storage = storage.storage.read().await;
 
-            if let Some(tl) = _storage.current_resource::<PluginLevel>(ResourceKey::root()) {
+            if let Some(tl) = _storage.root_ref().current::<PluginLevel>() {
                 drop(_storage);
 
                 if let Some(mut parsed) = storage
                     .storage
                     .write()
                     .await
-                    .resource_mut::<ParsedNode>(ResourceKey::root())
+                    .root()
+                    .get_mut::<ParsedNode>()
                 {
                     if let Some(mut repr) = parsed.node.repr() {
                         if let Err(err) = repr.upgrade(CrcInterner::default(), tl).await {

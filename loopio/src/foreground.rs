@@ -7,7 +7,6 @@ use tokio::task::JoinHandle;
 use tracing::trace;
 
 use crate::background_work::BackgroundWork;
-use crate::background_work::BackgroundWorkEngineHandle;
 use crate::background_work::DefaultController;
 use crate::engine::EngineBuilder;
 use crate::prelude::Engine;
@@ -120,11 +119,7 @@ impl ForegroundEngine {
 
         eh = runtime.block_on(async move {
             let tc = eh.run("engine://default").await.unwrap();
-            let transient = tc.transient().await;
-            let handle =
-                transient.current_resource::<BackgroundWorkEngineHandle>(ResourceKey::root());
-            assert!(handle.is_some());
-            eh.background_work = Some(handle.unwrap());
+            eh.background_work = tc.transient().await.root_ref().current();
             eh
         });
 

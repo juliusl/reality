@@ -96,7 +96,8 @@ impl HyperExt for ThunkContext {
     async fn take_response(&mut self) -> Option<hyper::Response<hyper::Body>> {
         self.transient_mut()
             .await
-            .take_resource::<Response<Body>>(ResourceKey::root())
+            .root()
+            .take::<Response<Body>>()
             .map(|r| *r)
     }
 
@@ -323,10 +324,7 @@ impl CallAsync for Request {
             .request(request, uri.scheme_str() == Some("https"))
             .await?;
 
-        context
-            .transient_mut()
-            .await
-            .put_resource(response, ResourceKey::root());
+        context.transient_mut().await.root().put(response);
 
         Ok(())
     }

@@ -24,6 +24,7 @@ pub enum Tokens<'source> {
     /// Comment value,
     ///
     #[regex("[/][/][^\r\n]+")]
+    #[regex("[#][^\r\n]+")]
     Comment(&'source str),
 }
 

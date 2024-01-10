@@ -30,10 +30,9 @@ pub trait Ext {
 impl Ext for ThunkContext {
     /// Returns the current engine handle,
     ///
+    #[inline]
     async fn engine_handle(&self) -> Option<EngineHandle> {
-        self.node()
-            .await
-            .current_resource::<EngineHandle>(ResourceKey::root())
+        self.node().await.root_ref().current()
     }
 }
 

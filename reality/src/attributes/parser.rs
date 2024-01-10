@@ -791,7 +791,7 @@ impl Node for super::AttributeParser<Shared> {
 
     fn completed(mut self: Box<Self>) {
         if let Some(storage) = self.storage() {
-            storage.lazy_put_resource(self.parsed_node.clone(), ResourceKey::root());
+            storage.root_ref().lazy_put(self.parsed_node.clone());
         }
 
         if let Some(mut storage) = self.storage_mut() {
@@ -1018,7 +1018,7 @@ mod test {
         for (node, store) in nodes.clone().iter() {
             let mut store = store.read().await;
 
-            let attributes = store.resource::<ParsedNode>(ResourceKey::root()).unwrap();
+            let attributes = store.root_ref().current::<ParsedNode>().unwrap();
 
             if let Some(node) = attributes.node.repr() {
                 eprintln!("{:#}", node);

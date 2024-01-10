@@ -153,7 +153,8 @@ impl Project<Shared> {
         Ok(Package {
             workspace: self
                 .root
-                .current_resource::<Workspace>(ResourceKey::root())
+                .root_ref()
+                .current()
                 .unwrap_or_default(),
             programs,
         })
@@ -530,7 +531,8 @@ mod tests {
             let _node = node.read().await;
 
             let parsed_node = _node
-                .current_resource::<ParsedNode>(ResourceKey::root())
+                .root_ref()
+                .current::<ParsedNode>()
                 .unwrap();
 
             let mut parsed = parsed_node.to_owned();
@@ -542,7 +544,7 @@ mod tests {
 
         let package = _project.package().await.unwrap();
 
-        let mut matches = package.search("app/reality.test");
+        let mut matches = package.search("reality.test");
         eprintln!("{:#x?}", matches);
 
         let program = matches.pop().unwrap();

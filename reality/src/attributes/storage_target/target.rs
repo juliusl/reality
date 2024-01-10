@@ -69,7 +69,7 @@ pub trait StorageTarget {
 
     /// Returns true if a resource was removed,
     ///
-    fn remove_resource_at(&mut self, _key: ResourceKey<Attribute>) -> bool {
+    fn remove_resource_at<R: Send + Sync + 'static>(&mut self, _key: ResourceKey<R>) -> bool {
         false
     }
 
@@ -388,5 +388,177 @@ pub trait StorageTarget {
         Self: Sized + 'static,
     {
         self.lazy_dispatch_mut(move |s| callback.handle(s, arg))
+    }
+
+    /// Returns a storage entry for rk,
+    ///
+    fn entry<'a: 'b, 'b>(
+        &'a mut self,
+        rk: impl Into<ResourceKey<Attribute>>,
+    ) -> StorageEntry<'b, Self>
+    where
+        Self: Sized + 'static,
+    {
+        StorageEntry {
+            rk: rk.into(),
+            storage: self,
+        }
+    }
+
+    /// Returns the root storage entry,
+    ///
+    fn root<'a: 'b, 'b>(&'a mut self) -> StorageEntry<'b, Self>
+    where
+        Self: Sized + 'static,
+    {
+        self.entry(ResourceKey::root())
+    }
+
+    /// Returns a storage entry ref for rk,
+    ///
+    fn entry_ref<'a: 'b, 'b>(
+        &'a self,
+        rk: impl Into<ResourceKey<Attribute>>,
+    ) -> StorageEntryRef<'b, Self>
+    where
+        Self: Sized + 'static,
+    {
+        StorageEntryRef {
+            rk: rk.into(),
+            storage: self,
+        }
+    }
+
+    /// Returns the root storage entry ref,
+    ///
+    fn root_ref<'a: 'b, 'b>(&'a self) -> StorageEntryRef<'b, Self>
+    where
+        Self: Sized + 'static,
+    {
+        self.entry_ref(ResourceKey::root())
+    }
+}
+
+/// Storage entry scoped to a resource key,
+///
+pub struct StorageEntry<'a, S: StorageTarget> {
+    rk: ResourceKey<Attribute>,
+    storage: &'a mut S,
+}
+
+pub struct StorageEntryRef<'a, S: StorageTarget> {
+    rk: ResourceKey<Attribute>,
+    storage: &'a S,
+}
+
+impl<'a, S: StorageTarget> StorageEntry<'a, S> {
+    /// Initializes the resource if it hasn't been initialized already and borrows a mutable reference to it,
+    ///
+    pub fn maybe_put<R: Send + Sync + 'static>(
+        &mut self,
+        init: impl Fn() -> R,
+    ) -> S::BorrowMutResource<'_, R> {
+        if !self.exists::<R>() {
+            self.put(init());
+        }
+
+        self.get_mut().expect("should exist")
+    }
+
+    /// Put a resource in this entry,
+    ///
+    pub fn put<R: Send + Sync + 'static>(&mut self, resource: R) {
+        self.storage.put_resource(resource, self.rk.transmute());
+    }
+
+    /// Lazily put a resource in this entry,
+    ///
+    /// **Note**: Requires dispatching to be enabled. When the dispatcher queues are drained next,
+    /// this will replace any existing resource.
+    ///
+    pub fn lazy_put<R: Send + Sync + 'static>(&self, resource: R)
+    where
+        S: 'static,
+    {
+        self.storage
+            .lazy_put_resource(resource, self.rk.transmute())
+    }
+
+    /// Borrows a resource contained in this entry,
+    ///
+    pub fn get<R: Send + Sync + 'static>(&self) -> Option<S::BorrowResource<'_, R>> {
+        self.storage.resource(self.rk.transmute())
+    }
+
+    /// Borrows a resource contained in this entry,
+    ///
+    pub fn get_mut<R: Send + Sync + 'static>(&mut self) -> Option<S::BorrowMutResource<'_, R>> {
+        self.storage.resource_mut(self.rk.transmute())
+    }
+
+    /// Take a resource from this entry,
+    ///
+    /// **Note**: If the entry is currently linked, this function will return None.
+    /// However, removeing the resource will explicitly remove the entry leaving the link.
+    ///
+    pub fn take<R: Send + Sync + 'static>(&mut self) -> Option<Box<R>> {
+        self.storage.take_resource(self.rk.transmute())
+    }
+
+    /// Returns an owned reference to the current state of the resource,
+    ///
+    pub fn current<R>(&self) -> Option<R>
+    where
+        R: ToOwned<Owned = R> + Send + Sync + 'static,
+    {
+        self.storage.current_resource(self.rk.transmute())
+    }
+
+    /// Returns true if the resource exists in this storage entry,
+    ///
+    pub fn exists<R: Send + Sync + 'static>(&self) -> bool {
+        self.storage.contains::<R>(self.rk.transmute())
+    }
+
+    /// Removes a resource at this storage entry,
+    ///
+    pub fn remove<R: Send + Sync + 'static>(&mut self) -> bool {
+        self.storage.remove_resource_at(self.rk)
+    }
+}
+
+impl<'a, S: StorageTarget> StorageEntryRef<'a, S> {
+    /// Lazily put a resource in this entry,
+    ///
+    /// **Note**: Requires dispatching to be enabled. When the dispatcher queues are drained next,
+    /// this will replace any existing resource.
+    ///
+    pub fn lazy_put<R: Send + Sync + 'static>(&self, resource: R)
+    where
+        S: 'static,
+    {
+        self.storage
+            .lazy_put_resource(resource, self.rk.transmute())
+    }
+
+    /// Borrows a resource contained in this entry,
+    ///
+    pub fn get<R: Send + Sync + 'static>(&self) -> Option<S::BorrowResource<'_, R>> {
+        self.storage.resource(self.rk.transmute())
+    }
+
+    /// Returns an owned reference to the current state of the resource,
+    ///
+    pub fn current<R>(&self) -> Option<R>
+    where
+        R: ToOwned<Owned = R> + Send + Sync + 'static,
+    {
+        self.storage.current_resource(self.rk.transmute())
+    }
+
+    /// Returns true if the resource exists in this storage entry,
+    ///
+    pub fn exists<R: Send + Sync + 'static>(&self) -> bool {
+        self.storage.contains::<R>(self.rk.transmute())
     }
 }

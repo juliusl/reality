@@ -296,8 +296,10 @@ impl HostAction {
             {
                 let mut _node = tc.node.storage.write().await;
                 _node.put_resource(plugin, key.transmute());
-                _node.put_resource(node, ResourceKey::root());
-                _node.put_resource::<ResourceKey<P>>(key, ResourceKey::root());
+
+                let mut root = _node.root();
+                root.put(node);
+                root.put(key);
             }
 
             let address =
@@ -385,10 +387,13 @@ impl ActionFactory {
             let task_key = ResourceKey::<P>::with_repr(task_repr);
             {
                 let mut node = self.storage.storage.write().await;
-                if let Some(mut parsed_node) = node.resource_mut::<ParsedNode>(ResourceKey::root())
-                {
+
+                let mut root = node.root();
+
+                if let Some(mut parsed_node) = root.get_mut::<ParsedNode>() {
                     parsed_node.attributes.push(task_key.transmute());
                 }
+
                 node.put_resource(plugin_init, task_key);
                 drop(node);
             }
@@ -404,11 +409,7 @@ impl ActionFactory {
 
         let tc: ThunkContext = self.storage.into();
 
-        if let Some(parsed_node) = tc
-            .node()
-            .await
-            .current_resource::<ParsedNode>(ResourceKey::root())
-        {
+        if let Some(parsed_node) = tc.node().await.root_ref().current::<ParsedNode>() {
             for a in parsed_node.attributes {
                 if let Some(host) = a.host().and_then(|h| h.address()) {
                     if a.plugin().is_some() {
@@ -436,7 +437,8 @@ impl From<ActionFactory> for ThunkContext {
             .storage
             .try_write()
             .expect("should be able to write")
-            .put_resource(value.attribute, ResourceKey::root());
+            .root()
+            .put(value.attribute);
         value.storage.into()
     }
 }

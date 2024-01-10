@@ -130,8 +130,9 @@ impl EngineBuilder {
         #[cfg(feature = "hyper-ext")]
         self.register_with(|p| {
             if let Some(s) = p.storage() {
-                s.lazy_put_resource(secure_client(), ResourceKey::root());
-                s.lazy_put_resource(local_client(), ResourceKey::root());
+                let root = s.root_ref();
+                root.lazy_put(secure_client());
+                root.lazy_put(local_client());
             }
         });
 
@@ -340,9 +341,12 @@ impl Engine {
             res.bind_node(nk.transmute());
             T::set_identifiers(&mut res, &name, tag.map(|t| t.to_string()).as_ref());
 
-            storage.put_resource(res, nk.transmute());
-            storage.put_resource(PluginLevel::new::<T>(), nk.transmute());
-            storage.put_resource::<ResourceKey<T>>(nk, ResourceKey::root());
+            let mut node = storage.entry(nk.transmute());
+            node.put(res);
+            node.put(PluginLevel::new::<T>());
+
+            let mut root = storage.root();
+            root.put::<ResourceKey<T>>(nk);
         }
         parser.parsed_node.attributes.pop();
         parser.parsed_node.attributes.push(nk.transmute());
@@ -363,14 +367,17 @@ impl Engine {
             let name = name
                 .map(|n| n.to_string())
                 .unwrap_or(format!("{}", uuid::Uuid::new_v4()));
-            let node = target.parsed_node.node;
+            let nk = target.parsed_node.node;
             if let Some(mut storage) = target.storage_mut() {
                 let mut operation = Operation::new(name, tag.map(|t| t.to_string()));
-                operation.bind_node(node.transmute());
+                operation.bind_node(nk.transmute());
 
-                storage.put_resource(PluginLevel::new::<Operation>(), node.transmute());
-                storage.put_resource(operation, node.transmute());
-                storage.put_resource(node.transmute::<Operation>(), ResourceKey::root());
+                let mut node = storage.entry(nk.transmute());
+                node.put(PluginLevel::new::<Operation>());
+                node.put(operation);
+
+                let mut root = storage.root();
+                root.put(nk.transmute::<Operation>());
             }
             for p in plugins.iter() {
                 p(target);
@@ -415,11 +422,7 @@ impl Engine {
 
                     let eh = self.engine_handle().with_host(_host.attribute);
 
-                    resource
-                        .context()
-                        .node()
-                        .await
-                        .lazy_put_resource(eh, ResourceKey::root());
+                    resource.context().node().await.root_ref().lazy_put(eh);
 
                     resource.context().process_node_updates().await;
 
@@ -487,7 +490,10 @@ impl Engine {
             // Drain dispatch queues
             {
                 let mut node = resource.context_mut().node.storage.write().await;
-                node.maybe_put_resource(self.engine_handle(), ResourceKey::root());
+
+                let mut root = node.root();
+                root.maybe_put(|| self.engine_handle());
+
                 node.drain_dispatch_queues();
             }
             {
@@ -728,7 +734,8 @@ async fn build_published(tc: &mut ThunkContext) -> anyhow::Result<()> {
                 .storage
                 .write()
                 .await
-                .put_resource(published.clone(), ResourceKey::root());
+                .root()
+                .put(published.clone());
         };
     }
 

@@ -64,7 +64,8 @@ impl From<AsyncStorageTarget<Shared>> for Context {
 
         if let Ok(mut storage) = value.storage.try_write() {
             let attribute = storage
-                .take_resource(ResourceKey::root())
+                .root()
+                .take()
                 .map(|a| *a)
                 .unwrap_or(ResourceKey::root());
             Self {
@@ -407,7 +408,7 @@ impl Context {
             node.current_resource::<P>(self.attribute.transmute())
                 .or_else(|| {
                     if include_root {
-                        node.current_resource::<P>(ResourceKey::root())
+                        node.root_ref().current::<P>()
                     } else {
                         None
                     }
@@ -747,7 +748,7 @@ where
         // Index decorations into the current cache,
         {
             let _node = self.context.node().await;
-            let node = _node.current_resource::<ParsedNode>(ResourceKey::root());
+            let node = _node.root_ref().current::<ParsedNode>();
             drop(_node);
 
             if let Some(node) = node {

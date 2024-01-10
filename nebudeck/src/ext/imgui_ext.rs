@@ -155,7 +155,8 @@ impl ImguiMiddleware {
                                                 .storage
                                                 .try_read()
                                                 .map(|t| t
-                                                    .contains::<Vec<UiNode>>(ResourceKey::root()))
+                                                    .root_ref()
+                                                    .exists::<Vec<UiNode>>())
                                                 .unwrap_or_default()
                                         );
 
@@ -165,7 +166,8 @@ impl ImguiMiddleware {
                                             .clone()
                                             .try_write()
                                             .expect("should be the owner")
-                                            .take_resource::<Vec<UiNode>>(ResourceKey::root())
+                                            .root()
+                                            .take::<Vec<UiNode>>()
                                         {
                                             imgui.user_tool_nodes.append(&mut _nodes);
                                         }

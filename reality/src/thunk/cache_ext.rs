@@ -82,6 +82,7 @@ impl CacheExt for ThunkContext {
     where
         R: Send + Sync + 'static,
     {
-        self.__cached.remove_resource_at(self.attribute.transmute())
+        self.__cached
+            .remove_resource_at(self.attribute.transmute::<R>())
     }
 }

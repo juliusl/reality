@@ -175,7 +175,7 @@ impl Workspace {
             }
         }
 
-        project.root.put_resource(self.clone(), ResourceKey::root());
+        project.root.root().put(self.clone());
 
         compiled.project = Some(project);
 

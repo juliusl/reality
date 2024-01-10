@@ -285,7 +285,8 @@ mod tests {
 
             let _node = tc.node().await;
             let mut node = _node
-                .current_resource::<ParsedNode>(ResourceKey::root())
+                .root_ref()
+                .current::<ParsedNode>()
                 .unwrap();
 
             node.parse(CrcInterner::default, &_node).await.unwrap();

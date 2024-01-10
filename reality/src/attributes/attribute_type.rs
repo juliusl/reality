@@ -430,7 +430,7 @@ where
         let mut properties = None;
         if let Some(mut storage) = parser.storage_mut() {
             // If set by parse, it must be set w/ a resource key set to None
-            let resource = { storage.take_resource::<Owner::ParseType>(ResourceKey::root()) };
+            let resource = { storage.root().take::<Owner::ParseType>() };
 
             if let Some(resource) = resource {
                 borrow_mut!(storage, Owner, key, |owner| => {
@@ -500,7 +500,7 @@ where
         let mut properties = None;
         if let Some(mut storage) = parser.storage_mut() {
             // If set by parse, it must be set w/ a resource key set to None
-            let resource = { storage.take_resource::<Owner::ParseType>(ResourceKey::root()) };
+            let resource = { storage.root().take::<Owner::ParseType>() };
 
             if let Some(resource) = resource {
                 borrow_mut!(storage, Owner, key, |owner| => {

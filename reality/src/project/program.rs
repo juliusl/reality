@@ -32,7 +32,7 @@ impl Program {
     /// Creates a program,
     ///
     pub async fn create(mut storage: Shared) -> anyhow::Result<Self> {
-        if let Some(mut node) = storage.current_resource::<ParsedNode>(ResourceKey::root()) {
+        if let Some(mut node) = storage.root_ref().current::<ParsedNode>() {
             node.parse(CrcInterner::default, &storage).await?;
 
             // Important to note here, parsed node is never mutated outside of this

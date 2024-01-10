@@ -299,10 +299,10 @@ mod test {
     
         # -- Example plugin
         # -- Example plugin in operation a
-        <loopio.std.io.println>                     Hello World a
+        <builtin.println>                     Hello World a
     
         # -- Example plugin b
-        <loopio.std.io.println>                     Hello World b
+        <builtin.println>                     Hello World b
     
         # -- Another example
         + .operation b
@@ -310,10 +310,10 @@ mod test {
     
         # -- Example plugin
         # -- Example plugin in operation b
-        <a/loopio.std.io.println>                   Hello World aa
+        <a/builtin.println>                   Hello World aa
     
         # -- Example plugin b
-        <loopio.std.io.println>                     Hello World bb
+        <builtin.println>                     Hello World bb
     
         # -- Example demo host
         + .host demo
@@ -323,7 +323,7 @@ mod test {
         |# help = example of mapping to an operation
     
         # -- Example of a mapped action to within an operation
-        : .action   b/a/loopio.std.io.println
+        : .action   b/a/builtin.println
         |# help = example of mapping to an operation within an operation
     
         ```
@@ -368,9 +368,7 @@ mod test {
 
         {
             let node = resource.context().node().await;
-            let parsed_node = node
-                .current_resource::<ParsedNode>(ResourceKey::root())
-                .unwrap();
+            let parsed_node = node.root_ref().current::<ParsedNode>().unwrap();
             eprintln!("{:#?}", parsed_node);
         }
 
