@@ -306,8 +306,7 @@ impl BackgroundFuture {
                 CallOutput::Spawn(Some(spawned)) => select! {
                     result = spawned => {
                         self.work_state().set_work_stop();
-                        let r = result?;
-                        r
+                        result?
                     },
                     _ = self.cancellation.cancelled() => Err(anyhow!("did not spawn task"))
                 },

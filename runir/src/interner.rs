@@ -112,9 +112,7 @@ impl InternHandle {
     ///
     #[inline]
     pub fn register(&self) -> u32 {
-        let register = bytemuck::cast::<[u16; 2], u32>([self.register_lo, self.register_hi]);
-
-        register
+        bytemuck::cast::<[u16; 2], u32>([self.register_lo, self.register_hi])
     }
 
     /// Returns true if the current handle is a root handle,
@@ -152,7 +150,7 @@ impl InternHandle {
             });
         }
 
-        let mut current = self.clone();
+        let mut current = *self;
         current.link = 0;
 
         (prev_handle, current)
@@ -489,7 +487,7 @@ impl<T: Send + Sync + 'static> InternTable<T> {
             }
         }
         self.inner().send_modify(|t| {
-            if let Some(_) = t.insert(handle, Arc::new(value)) {
+            if t.insert(handle, Arc::new(value)).is_some() {
                 warn!(
                     "Replacing intern handle {:?} {:x?}",
                     handle.level_flags(),

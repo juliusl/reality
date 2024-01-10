@@ -42,14 +42,6 @@ use crate::prelude::secure_client;
 #[cfg(feature = "hyper-ext")]
 use crate::prelude::local_client;
 
-pub struct DefaultEngine;
-
-impl DefaultEngine {
-    pub fn new(self) -> Engine {
-        Engine::builder().build()
-    }
-}
-
 pub struct EngineBuilder {
     /// Plugins to register w/ the Engine
     ///
@@ -338,11 +330,7 @@ impl Engine {
         T::parse(parser, &name);
 
         let nk = parser.parsed_node.node.transmute::<T>();
-        let node = parser
-            .parsed_node
-            .last()
-            .expect("should have a node level")
-            .clone();
+        let node = *parser.parsed_node.last().expect("should have a node level");
         if let Some(mut storage) = parser.storage_mut() {
             storage.drain_dispatch_queues();
             let mut res = storage
@@ -435,13 +423,9 @@ impl Engine {
 
                     resource.context().process_node_updates().await;
 
-                    let address = address.clone().with_host(
-                        host.name
-                            .value
-                            .as_ref()
-                            .map(|v| v.as_str())
-                            .unwrap_or("engine"),
-                    );
+                    let address = address
+                        .clone()
+                        .with_host(host.name.value.as_deref().unwrap_or("engine"));
 
                     // Registers the action to address, can be fetched w/ self.get_resource
                     info!("Registering host action - {}", address);
@@ -495,7 +479,7 @@ impl Engine {
         if let Some(resource) = self.__internal_resources.get(&address).or(self
             .__published
             .get(&address)
-            .map(|tc| tc.into_hosted_resource())
+            .map(|tc| tc.get_hosted_resource())
             .as_ref())
         {
             let mut resource = resource.clone();
@@ -589,7 +573,7 @@ impl Engine {
                         if let Some(tx) = tx.take() {
                             if let Ok(resource) = self.get_resource(address).await {
                                 trace!("Sending call output");
-                                if let Err(_) = tx.send(resource.spawn()) {
+                                if tx.send(resource.spawn()).is_err() {
                                     error!("Could not call resource");
                                 }
                             } else {
@@ -604,14 +588,14 @@ impl Engine {
                             if let Ok(mut resource) = self.get_resource(address).await {
                                 let mut published = self
                                     .__published
-                                    .iter()
-                                    .map(|(a, _)| a.to_string())
+                                    .keys()
+                                    .map(|a| a.to_string())
                                     .collect::<Vec<_>>();
                                 published.append(
                                     &mut self
                                         .__internal_resources
-                                        .iter()
-                                        .map(|(a, _)| a.to_string())
+                                        .keys()
+                                        .map(|a| a.to_string())
                                         .collect::<Vec<_>>(),
                                 );
 
@@ -619,7 +603,7 @@ impl Engine {
                                     label: String::new(),
                                     resources: published
                                         .iter()
-                                        .filter_map(|a| Decorated::from_str(&a).ok())
+                                        .filter_map(|a| Decorated::from_str(a).ok())
                                         .collect(),
                                 };
 
@@ -627,13 +611,13 @@ impl Engine {
                                     resource.context_mut().write_cache(published);
                                 }
 
-                                if let Err(_) = tx.send(Some(resource)) {
+                                if tx.send(Some(resource)).is_err() {
                                     error!("Could not call resource");
                                 }
                                 continue;
                             }
 
-                            if let Err(_) = tx.send(None) {
+                            if tx.send(None).is_err() {
                                 eprintln!("Could not send spawn result");
                             }
                         }
@@ -663,20 +647,19 @@ impl Engine {
                                 {
                                     self.__published.insert(address.clone(), context);
 
-                                    if let Err(_) = tx.send(Ok(address)) {
+                                    if tx.send(Ok(address)).is_err() {
                                         error!("Could not publish resource");
                                     }
-                                } else {
-                                    if let Err(_) = tx.send(Err(anyhow!(
+                                } else if tx
+                                    .send(Err(anyhow!(
                                         "Could not publish {address}, already occupied"
-                                    ))) {
-                                        error!("Could not publish resource");
-                                    }
-                                }
-                            } else {
-                                if let Err(_) = tx.send(Err(anyhow!("Could not parse {address}"))) {
+                                    )))
+                                    .is_err()
+                                {
                                     error!("Could not publish resource");
                                 }
+                            } else if tx.send(Err(anyhow!("Could not parse {address}"))).is_err() {
+                                error!("Could not publish resource");
                             }
                         }
                     }
@@ -885,7 +868,7 @@ pub struct EngineHandle {
 impl Clone for EngineHandle {
     fn clone(&self) -> Self {
         Self {
-            host: self.host.clone(),
+            host: self.host,
             sender: self.sender.clone(),
             background_work: self.background_work.clone(),
         }
@@ -918,7 +901,7 @@ impl EngineHandle {
 
         let packet = EnginePacket {
             action: EngineAction::Call {
-                address: address.into(),
+                address,
                 tx: Some(tx),
             },
         };

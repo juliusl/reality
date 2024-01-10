@@ -208,11 +208,11 @@ impl<S: StorageTarget> Clone for AttributeTypeParser<S> {
     fn clone(&self) -> Self {
         Self {
             ident: self.ident.clone(),
-            parse: self.parse.clone(),
-            link_recv: self.link_recv.clone(),
-            link_field: self.link_field.clone(),
+            parse: self.parse,
+            link_recv: self.link_recv,
+            link_field: self.link_field,
             resource: self.resource.clone(),
-            field: self.field.clone(),
+            field: self.field,
         }
     }
 }

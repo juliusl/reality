@@ -440,7 +440,7 @@ async fn test_seq() -> anyhow::Result<()> {
     "#,
     );
 
-    let mut engine = crate::prelude::DefaultEngine.new();
+    let mut engine = crate::prelude::Engine::builder().build();
     engine.enable::<TestSeq>();
 
     let engine = engine.compile(workspace).await?;

@@ -814,7 +814,7 @@ impl ExtensionLoader for super::AttributeParser<Shared> {
     ) -> Option<BoxedNode> {
         let mut parser = self.clone();
 
-        if parser.fields.len() > 0 {
+        if !parser.fields.is_empty() {
             let _ = parser.unload().await;
         }
 
@@ -881,17 +881,15 @@ impl ExtensionLoader for super::AttributeParser<Shared> {
         if handler.is_some() {
             let parser = self.clone();
             *self = handler.unwrap().on_unload(parser).await;
-        } else {
-            if let Some(link_recv) = self.link_recv.pop() {
-                let fields = self.fields.len();
+        } else if let Some(link_recv) = self.link_recv.pop() {
+            let fields = self.fields.len();
 
-                if let Some(last) = self.nodes.iter().rev().skip(fields).next() {
-                    if let Ok(recv) = link_recv(last.clone(), self.fields.clone()).await {
-                        trace!("Unloading node, setting recv from last link_recv");
-                        self.parsed_node.node.set_repr(recv);
-                        self.fields.clear();
-                        self.link_recv.clear();
-                    }
+            if let Some(last) = self.nodes.iter().rev().nth(fields) {
+                if let Ok(recv) = link_recv(last.clone(), self.fields.clone()).await {
+                    trace!("Unloading node, setting recv from last link_recv");
+                    self.parsed_node.node.set_repr(recv);
+                    self.fields.clear();
+                    self.link_recv.clear();
                 }
             }
         }

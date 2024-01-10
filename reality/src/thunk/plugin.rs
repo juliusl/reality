@@ -202,9 +202,7 @@ pub mod repr {
 
         type Mount = ();
 
-        fn mount(&self) -> Self::Mount {
-            ()
-        }
+        fn mount(&self) -> Self::Mount {}
     }
 
     impl TryFrom<Repr> for PluginRepr {

@@ -84,9 +84,7 @@ impl Level for RecvLevel {
 
     type Mount = ();
 
-    fn mount(&self) -> Self::Mount {
-        ()
-    }
+    fn mount(&self) -> Self::Mount {}
 }
 
 /// Wrapper-struct for an intern handle providing api's to access receiver level tags,

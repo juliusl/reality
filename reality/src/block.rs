@@ -203,7 +203,7 @@ impl BlockObjectHandler {
 
             let f = parser.fields.len();
             trace!("fields -- {f}");
-            if let Some(recv) = parser.nodes.iter().rev().skip(f).next() {
+            if let Some(recv) = parser.nodes.iter().rev().nth(f) {
                 trace!("trying unloading -- {:?}", recv.mount());
                 match (self.link_recv)(recv.clone(), parser.fields.clone()).await {
                     Ok(recv) => {

@@ -13,7 +13,6 @@ pub use crate::ext::wire_ext::*;
 pub use crate::action::Action;
 pub use crate::action::ActionExt;
 pub use crate::address::Address;
-pub use crate::engine::DefaultEngine;
 pub use crate::engine::Engine;
 pub use crate::engine::EngineBuilder;
 pub use crate::engine::EngineHandle;

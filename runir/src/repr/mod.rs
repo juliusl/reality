@@ -108,7 +108,7 @@ impl Repr {
 
         let to = Tag::new(&HANDLES, Arc::new(handle));
 
-        let mut from = self.tail.clone();
+        let mut from = self.tail;
         from.link = 0;
 
         let linked = Tag::new(&HANDLES, Arc::new(from)).link(&to).await?;
@@ -117,15 +117,12 @@ impl Repr {
     }
 
     /// Downgrade the Repr by count,
-    /// 
+    ///
     /// **Error** Returns an error if count exceeds current repr level
-    /// 
-    pub fn downgrade(
-        &self,
-        count: usize,
-    ) -> anyhow::Result<Repr> {
+    ///
+    pub fn downgrade(&self, count: usize) -> anyhow::Result<Repr> {
         let levels = self.get_levels();
-        
+
         if let Some(end) = levels.len().checked_sub(count) {
             let mut levels = levels[..end].to_vec();
 
@@ -134,19 +131,17 @@ impl Repr {
                     let link = tail.register() ^ next.register();
 
                     tail.link = link;
-                    return Ok(Repr { tail })
-                    
-                },
-                (Some(tail), None) => {
-                    return Ok(Repr { tail })
-                },
-                _ => {
-
+                    return Ok(Repr { tail });
                 }
+                (Some(tail), None) => return Ok(Repr { tail }),
+                _ => {}
             }
         }
 
-        Err(anyhow!("Could not downgrade level {} by {count}", levels.len()))
+        Err(anyhow!(
+            "Could not downgrade level {} by {count}",
+            levels.len()
+        ))
     }
 
     /// Return a vector containing an intern handle pointing to each level of this representation,
@@ -177,7 +172,7 @@ impl Repr {
     ///
     #[inline]
     pub fn as_resource(&self) -> Option<ResourceRepr> {
-        self.get_levels().get(0).copied().map(ResourceRepr)
+        self.get_levels().first().copied().map(ResourceRepr)
     }
 
     /// Returns the ffi_type name of the resource repr,
@@ -399,7 +394,7 @@ impl Display for NodeRepr {
         if let Some(source) = self.source() {
             writeln!(f, "```runmd")?;
             for line in source.lines() {
-                if !line.starts_with("#") {
+                if !line.starts_with('#') {
                     writeln!(f, "{}", line)?;
                 }
             }

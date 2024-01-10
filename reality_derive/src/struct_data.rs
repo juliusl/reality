@@ -724,8 +724,8 @@ impl StructData {
         let fields = self.fields.iter().fold(HashMap::new(), |mut acc, f| {
             let key = (&f.ty, f.field_ty());
 
-            if !acc.contains_key(&key) {
-                acc.insert(key, vec![f.clone()]);
+            if let std::collections::hash_map::Entry::Vacant(e) = acc.entry(key) {
+                e.insert(vec![f.clone()]);
             } else if let Some(list) = acc.get_mut(&key) {
                 list.push(f.clone());
             }
@@ -790,7 +790,7 @@ impl StructData {
         // let fields = self.fields.clone();
         let fields = self.iter_parse_fields().enumerate().map(|(offset, f)| {
             // let ty = &f.field_ty();
-            if let Some(_) = f.attribute_type.as_ref() {
+            if f.attribute_type.as_ref().is_some() {
                 quote_spanned! {f.span=>
                     parser.add_parseable_attribute_type_field::<#offset, Self>();
                 }
@@ -1180,7 +1180,7 @@ impl StructData {
 
         let mut from_shared = None;
         if !self.fields.iter().any(|f| f.variant.is_some()) {
-            from_shared = Some(self.clone().from_shared());
+            from_shared = Some(self.clone().pack_unpack_impl());
         }
 
         let object_type_trait = quote_spanned!(self.span=>
@@ -1257,7 +1257,7 @@ impl StructData {
         )
     }
 
-    fn from_shared(self) -> TokenStream {
+    fn pack_unpack_impl(self) -> TokenStream {
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
         let name = &self.name;
         let fields = self.fields.iter().filter(|f| !f.ignore && self.replace.is_none()).map(|f| {

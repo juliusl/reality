@@ -48,6 +48,8 @@ define_intern_table!(SOURCE_RELATIVE: PathBuf);
 ///
 pub type SourceSpan = Range<usize>;
 
+type NodeAnnotations = Tag<BTreeMap<String, String>, Arc<BTreeMap<String, String>>>;
+
 /// Node level is a dynamic level of representation,
 ///
 /// Node level asserts and records the input paramters for some resource as well as ordinality.
@@ -80,13 +82,19 @@ pub struct NodeLevel {
     doc_headers: Option<Tag<Vec<String>, Arc<Vec<String>>>>,
     /// Node annotations,
     ///
-    annotations: Option<Tag<BTreeMap<String, String>, Arc<BTreeMap<String, String>>>>,
+    annotations: Option<NodeAnnotations>,
     /// Position in source this node was parsed from,
     ///
     span: Option<Tag<SourceSpan, Arc<SourceSpan>>>,
     /// Relative path name of the source for this node,
     ///
     relative: Option<Tag<PathBuf, Arc<PathBuf>>>,
+}
+
+impl Default for NodeLevel {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NodeLevel {
@@ -111,6 +119,7 @@ impl NodeLevel {
     /// Creates a new input level representation,
     ///
     #[allow(unused)] // Used in test
+    #[allow(clippy::too_many_arguments)] // Used in test
     pub(crate) fn new_with(
         symbol: Option<impl Into<String>>,
         input: Option<impl Into<String>>,

@@ -72,7 +72,7 @@ pub trait Action {
 
     /// Convert the action into a generic hosted resource,
     ///
-    fn into_hosted_resource(&self) -> HostedResource {
+    fn get_hosted_resource(&self) -> HostedResource {
         HostedResource {
             address: self.address(),
             node_rk: self.node_rk(),
@@ -262,7 +262,7 @@ impl HostAction {
         P::Virtual: NewFn<Inner = P>,
     {
         if let Some(host_name) = self.host_name() {
-            let parsed_node_repr = repr.clone();
+            let parsed_node_repr = repr;
 
             // Upgrade fields into plugins
             let name = repr
@@ -285,8 +285,10 @@ impl HostAction {
             info!("Host action resource key is -- {:?} {}", key, host_name);
 
             // Reconstruct a parsed node
-            let mut node = ParsedNode::default();
-            node.node = self.host;
+            let mut node = ParsedNode {
+                node: self.host,
+                ..Default::default()
+            };
             node.attributes.push(key.transmute());
 
             let mut tc = ThunkContext::new();
@@ -356,7 +358,7 @@ impl ActionFactory {
         P::Virtual: NewFn<Inner = P>,
     {
         if let Some(base) = self.address.as_ref() {
-            let mut task_repr = self.parsed_node_repr.clone();
+            let mut task_repr = self.parsed_node_repr;
             let node = base.node();
             let filter = base.filter_str().expect("should have a filter str");
 
@@ -455,7 +457,7 @@ pub trait TryCallExt: AsRef<ThunkContext> {
         // eprintln!("{:?}", tc.decoration);
 
         if let Some(_thunk) = node.resource::<ThunkFn>(key.transmute()) {
-            let thunk = _thunk.clone();
+            let thunk = *_thunk;
             drop(_thunk);
 
             return match thunk(tc) {

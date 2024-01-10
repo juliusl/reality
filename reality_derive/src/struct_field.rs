@@ -599,10 +599,8 @@ impl Parse for StructField {
                         }
                     }
 
-                    if meta.path.is_ident("wire") {
-                        if meta.input.parse::<Token![=]>().is_ok() {
-                            wire = meta.input.parse::<Expr>().ok();
-                        }
+                    if meta.path.is_ident("wire") && meta.input.parse::<Token![=]>().is_ok() {
+                        wire = meta.input.parse::<Expr>().ok();
                     }
 
                     if meta.path.is_ident("attribute_type") {

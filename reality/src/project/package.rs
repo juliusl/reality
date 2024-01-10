@@ -94,7 +94,7 @@ impl From<Package> for clap::Command {
             // Check if package should be skipped
             if m.node
                 .and_then(|n| n.annotations())
-                .map(|a| matches!(a.get("internal"), Some(ref val) if val.as_str() == "true"))
+                .map(|a| matches!(a.get("internal"), Some(val) if val.as_str() == "true"))
                 .unwrap_or_default()
             {
                 trace!("skipping internal");

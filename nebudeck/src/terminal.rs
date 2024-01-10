@@ -1,14 +1,10 @@
-use anyhow::anyhow;
 use clap::ArgMatches;
 use std::io::Write;
 use std::ops::DerefMut;
-use tracing::debug;
 use tracing::error;
-use tracing::info;
 
 use loopio::prelude::*;
 
-use crate::base64::decode_field_packet;
 use crate::controller::ControlBus;
 use crate::BackgroundWork;
 use crate::Controller;

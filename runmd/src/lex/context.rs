@@ -162,7 +162,7 @@ impl<'a> Context<'a> {
     pub fn append_property(&mut self) {
         if let Some(line) = self.analyzing.as_mut().and_then(|b| b.lines.last_mut()) {
             if let Some(comment) = line.comment.as_ref().and_then(|c| c.last()) {
-                if let Some((name, value)) = ReadProp.parse(&comment) {
+                if let Some((name, value)) = ReadProp.parse(comment) {
                     line.comment_properties.insert(name, value);
                 }
             }

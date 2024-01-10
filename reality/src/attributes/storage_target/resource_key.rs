@@ -58,7 +58,7 @@ impl<T: Send + Sync + 'static> ResourceKeyHashBuilder<T, DefaultHasher> {
 
 /// Struct containing properties of a resource key,
 ///
-#[derive(Serialize, Deserialize, Hash)]
+#[derive(Serialize, Deserialize)]
 pub struct ResourceKey<T: Send + Sync + 'static> {
     /// Resource key data,
     ///
@@ -376,6 +376,12 @@ impl<T: Send + Sync + 'static> ResourceKey<T> {
     }
 }
 
+impl<T: Send + Sync + 'static> Hash for ResourceKey<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.data.hash(state);
+    }
+}
+
 impl<T: Send + Sync + 'static> Eq for ResourceKey<T> {}
 
 impl<T: Send + Sync + 'static> PartialEq for ResourceKey<T> {
@@ -392,7 +398,7 @@ impl<T: Send + Sync + 'static> Ord for ResourceKey<T> {
 
 impl<T: Send + Sync + 'static> PartialOrd for ResourceKey<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.data.partial_cmp(&other.data)
+        Some(self.cmp(other))
     }
 }
 

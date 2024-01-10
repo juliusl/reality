@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::anyhow;
 use tracing::warn;
 
-use loopio::{prelude::*, action::HostAction};
+use loopio::{action::HostAction, prelude::*};
 
 /// Nebudeck project loading plugin
 ///
@@ -85,39 +85,41 @@ async fn prepare_workspace(tc: &mut ThunkContext) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn compile_workspace(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    if let Some(workspace) = tc.node().await.current_resource::<Workspace>(ResourceKey::root()) {
-        // let _engine = if let Some(mut builder) = tc.transient_mut().await.take_resource::<EngineBuilder>(ResourceKey::root()) {
-        //     builder.set_workspace(workspace.clone());
-        //     (*builder).compile().await?
-        // } else {
-            // let mut builder = Engine::builder();
-            // builder.set_workspace(workspace.clone());
-            // builder.compile().await?;
-    }
+// async fn compile_workspace(tc: &mut ThunkContext) -> anyhow::Result<()> {
+//     if let Some(workspace) = tc.node().await.current_resource::<Workspace>(ResourceKey::root()) {
+//         // let _engine = if let Some(mut builder) = tc.transient_mut().await.take_resource::<EngineBuilder>(ResourceKey::root()) {
+//         //     builder.set_workspace(workspace.clone());
+//         //     (*builder).compile().await?
+//         // } else {
+//             // let mut builder = Engine::builder();
+//             // builder.set_workspace(workspace.clone());
+//             // builder.compile().await?;
+//     }
 
-    // if let Some(engine) = tc.transient_mut().await.take_resource::<Engine>(ResourceKey::root()) {
-    //     engine.compile(workspace).await?
-    // } else 
+//     // if let Some(engine) = tc.transient_mut().await.take_resource::<Engine>(ResourceKey::root()) {
+//     //     engine.compile(workspace).await?
+//     // } else
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 async fn create_action(tc: &mut ThunkContext) -> anyhow::Result<()> {
     if let Some(eh) = tc.engine_handle().await {
         let init = tc.as_remote_plugin::<Project>().await;
-    
+
         if let Some(downgraded) = tc.attribute.repr().and_then(|r| r.downgrade(2).ok()) {
-            let action = HostAction::new(tc.attribute).build(init, downgraded).await?;
+            let action = HostAction::new(tc.attribute)
+                .build(init, downgraded)
+                .await?;
 
-            let action = action.add_task::<Project>("task_name", thunk_fn!(prepare_workspace)).await?;
+            let action = action
+                .add_task::<Project>("prepare_workspace", thunk_fn!(prepare_workspace))
+                .await?;
 
-            let action = action.add_task::<Project>("task_name", thunk_fn!(compile_workspace)).await?;
+            // let action = action.add_task::<Project>("task_name", thunk_fn!(compile_workspace)).await?;
 
             let results = action.publish_all(eh).await?;
-            for r in results {
-
-            }
+            for r in results {}
         }
     }
 
@@ -185,7 +187,7 @@ async fn test_project() {
         .unwrap();
 
     // Test that the inline source compiles and runs
-    let engine = DefaultEngine.new().compile(*workspace).await.unwrap();
+    let engine = Engine::builder().build().compile(*workspace).await.unwrap();
     let (eh, _) = engine.default_startup().await.unwrap();
     let _ = eh.run("engine://hello-world").await.unwrap();
 }

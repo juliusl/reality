@@ -170,7 +170,7 @@ impl FieldPacket {
         self.wire_data
             .as_ref()
             .filter(|_| self.op == 1)
-            .and_then(|d| std::str::from_utf8(&d).ok())
+            .and_then(|d| std::str::from_utf8(d).ok())
             .and_then(|s| T::from_str(s).ok())
             .map(|v| Box::new(v))
     }

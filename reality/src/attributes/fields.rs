@@ -513,6 +513,16 @@ impl<Owner: Plugin, Value, ProjectedValue> Clone for FieldVTable<Owner, Value, P
     }
 }
 
+type AdapterFn<R, Owner, Value> = Arc<dyn Fn(R, &mut Owner, Value) -> bool + Sync + Send + 'static>;
+
+type AdapterRefFn<R, Owner, Value> =
+    Arc<dyn Fn(R, &Owner) -> (&str, &Value) + Sync + Send + 'static>;
+
+type AdapterRefMutFn<R, Owner, Value> =
+    Arc<dyn Fn(R, &mut Owner) -> (&str, &mut Value) + Sync + Send + 'static>;
+
+type AdapterRefOWnedFn<R, Owner, Value> = Arc<dyn Fn(R, Owner) -> Value + Sync + Send + 'static>;
+
 /// Wrapper over some root fn R w/ optional adapter options,
 ///
 struct AdapterRef<R: Clone, Owner, Value> {
@@ -521,17 +531,16 @@ struct AdapterRef<R: Clone, Owner, Value> {
     root: R,
     /// Adapter fn,
     ///
-    adapter: Option<Arc<dyn Fn(R, &mut Owner, Value) -> bool + Sync + Send + 'static>>,
+    adapter: Option<AdapterFn<R, Owner, Value>>,
     /// Adapter ref fn,
     ///
-    adapter_ref: Option<Arc<dyn Fn(R, &Owner) -> (&str, &Value) + Sync + Send + 'static>>,
+    adapter_ref: Option<AdapterRefFn<R, Owner, Value>>,
     /// Adapter ref mut fn,
     ///
-    adapter_ref_mut:
-        Option<Arc<dyn Fn(R, &mut Owner) -> (&str, &mut Value) + Sync + Send + 'static>>,
+    adapter_ref_mut: Option<AdapterRefMutFn<R, Owner, Value>>,
     /// Adapter ref to owned ref,
     ///
-    adapter_ref_owned: Option<Arc<dyn Fn(R, Owner) -> Value + Sync + Send + 'static>>,
+    adapter_ref_owned: Option<AdapterRefOWnedFn<R, Owner, Value>>,
 }
 
 impl<R: Clone, Owner, Value> Clone for AdapterRef<R, Owner, Value> {

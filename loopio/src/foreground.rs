@@ -141,7 +141,7 @@ impl ForegroundEngine {
                 .cached_ref::<PrivateProgress>()
                 .as_deref()
                 .cloned();
-            let _ = runtime.handle().spawn(async move {
+            runtime.handle().spawn(async move {
                 if let Some(progress) = progress {
                     trace!("Validating foreground engine work-state system");
                     progress
@@ -165,8 +165,7 @@ impl ForegroundEngine {
                 Ok::<_, anyhow::Error>(())
             });
 
-            let _ = bg
-                .wait_for_completion(&mut controller)
+            bg.wait_for_completion(&mut controller)
                 .expect("should be able to complete");
 
             // runtime.handle().block_on(jh).expect("should be able to join").expect("should be able to complete");

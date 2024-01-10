@@ -40,7 +40,7 @@ impl Dir {
 
 fn read_dir(workspace: &mut Workspace, dir: impl AsRef<Path>) {
     let read_dir = std::fs::read_dir(dir.as_ref())
-        .expect(format!("should be able to read dir - {:?}", dir.as_ref()).as_str());
+        .unwrap_or_else(|_| panic!("should be able to read dir - {:?}", dir.as_ref()));
 
     for e in read_dir {
         match e {

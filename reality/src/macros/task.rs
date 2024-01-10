@@ -43,25 +43,27 @@ macro_rules! task_mut {
 }
 
 /// Formats a call_async fn into a thunk_fn closure,
-/// 
+///
 /// **Example**
 /// ```rs no_run
-/// 
+///
 /// async fn call_async(tc: &mut ThunkContext) -> anyhow::Result<()> {
 ///     Ok(())
 /// }
-/// 
+///
 /// ..
-/// 
+///
 /// thunk_fn!(call_async) // Creates a closure matching a ThunkFn signature
-/// 
+///
 /// ```
 #[macro_export]
 macro_rules! thunk_fn {
     ($call_async:ident) => {
-        |tc: ThunkContext| tc.spawn(|mut tc| async move {
-            $call_async(&mut tc).await?;
-            Ok(tc)
-        })
+        |tc: ThunkContext| {
+            tc.spawn(|mut tc| async move {
+                $call_async(&mut tc).await?;
+                Ok(tc)
+            })
+        }
     };
 }

@@ -62,7 +62,7 @@ impl Nebudeck {
         /// Initializes a runmd file,
         ///
         fn init_runmd(
-            home_dir: &PathBuf,
+            home_dir: &Path,
             file: impl AsRef<Path>,
             init: fn() -> &'static str,
         ) -> anyhow::Result<PathBuf> {
@@ -89,7 +89,7 @@ impl Nebudeck {
             include_str!("../lib/runmd/nbd.md")
         })?;
 
-        if !std::env::var(NBD_BOOT_ONLY).is_ok() {
+        if std::env::var(NBD_BOOT_ONLY).is_err() {
             // Create lib/runmd if missing
             let _ = init_dir(&home_dir, "lib/runmd/")?;
 
@@ -348,29 +348,9 @@ impl TerminalApp for Nebudeck {
 #[cfg(feature = "desktop")]
 impl crate::desktop::DesktopApp for Nebudeck {}
 
-#[test]
-#[tracing_test::traced_test]
-fn test_init() {
-    let tmp = std::env::temp_dir().join("test_init");
-    if tmp.exists() {
-        eprintln!("Removing old directory");
-        std::fs::remove_dir_all(&tmp).unwrap()
-    }
-    std::fs::create_dir_all(&tmp).unwrap();
-    let cargo = tmp.join("Cargo.toml");
-    std::fs::write(cargo, "[package]").unwrap();
+const NBD_BOOT_PROG: &str = "NBD_BOOT_PROG";
 
-    let deck = Nebudeck::init(tmp).unwrap();
-    eprintln!("{:?}", deck.boot);
-
-    set_nbd_boot_prog("nbd_boot add-project terminal");
-    deck.start_cli().expect("should be able to process command");
-    ()
-}
-
-const NBD_BOOT_PROG: &'static str = "NBD_BOOT_PROG";
-
-const NBD_BOOT_ONLY: &'static str = "NBD_BOOT_ONLY";
+const NBD_BOOT_ONLY: &str = "NBD_BOOT_ONLY";
 
 /// Sets NBD_BOOT_PROG w/ arguments to use w/ nbd_boot,
 ///
@@ -428,11 +408,15 @@ async fn create_project(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
     if let Some(eh) = tc.engine_handle().await {
         if let Some(repr) = tc.attribute.repr().and_then(|r| r.downgrade(2).ok()) {
-            let mut _action = HostAction::new(tc.attribute).build(init.clone(), repr).await?;
-            
+            let mut _action = HostAction::new(tc.attribute)
+                .build(init.clone(), repr)
+                .await?;
+
             eprintln!("Created host action -- {:?}", _action.address);
-            _action = _action.add_task::<ProjectTypes>("test", thunk_fn!(test)).await?;
-    
+            _action = _action
+                .add_task::<ProjectTypes>("test", thunk_fn!(test))
+                .await?;
+
             let published = _action.publish_all(eh).await?;
             published.iter().for_each(|p| eprintln!("{p}"));
         }
@@ -469,4 +453,24 @@ impl FromStr for ProjectTypes {
             _ => Err(anyhow!("Unknown project type")),
         }
     }
+}
+
+#[test]
+#[tracing_test::traced_test]
+fn test_init() {
+    let tmp = std::env::temp_dir().join("test_init");
+    if tmp.exists() {
+        eprintln!("Removing old directory");
+        std::fs::remove_dir_all(&tmp).unwrap()
+    }
+    std::fs::create_dir_all(&tmp).unwrap();
+    let cargo = tmp.join("Cargo.toml");
+    std::fs::write(cargo, "[package]").unwrap();
+
+    let deck = Nebudeck::init(tmp).unwrap();
+    eprintln!("{:?}", deck.boot);
+
+    set_nbd_boot_prog("nbd_boot add-project terminal");
+    deck.start_cli().expect("should be able to process command");
+    ()
 }

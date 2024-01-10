@@ -91,7 +91,7 @@ impl Address {
     }
 
     pub fn filter_str(&self) -> Option<&str> {
-        self.filter.as_ref().map(|f| f.as_str())
+        self.filter.as_deref()
     }
 
     /// Returns the filter as a form_urlencoded Parser,
@@ -129,13 +129,13 @@ impl FromStr for Address {
             filter: Option<&str>,
         ) -> anyhow::Result<Address> {
             match (node, tag, filter) {
-                (None, None, None) if path == "" => { // Node address
+                (None, None, None) if path.is_empty() => { // Node address
                     Ok(Address::new(String::new()).with_host(host))
                 },
-                (None, None, Some(filter)) if path == "" => { // Node address
+                (None, None, Some(filter)) if path.is_empty() => { // Node address
                     Ok(Address::new(String::new()).with_host(host).with_filter(filter))
                 },
-                (None, Some(tag), Some(filter)) if path == "" => { // Node address
+                (None, Some(tag), Some(filter)) if path.is_empty() => { // Node address
                     Ok(Address::new(String::new()).with_host(host).with_tag(tag).with_filter(filter))
                 },
                 (None, _, _) => {

@@ -73,12 +73,12 @@ impl Tag<InternHandle, Arc<InternHandle>> {
         let from = self.create_value.clone();
         let to = next.create_value.clone();
 
-        if !from.level_flags().is_empty() {
-            if from.level_flags().bits() << 1 != to.level_flags().bits() {
-                Err(anyhow::anyhow!(
-                    "Trying to link an intern handle out of order"
-                ))?;
-            }
+        if !from.level_flags().is_empty()
+            && from.level_flags().bits() << 1 != to.level_flags().bits()
+        {
+            Err(anyhow::anyhow!(
+                "Trying to link an intern handle out of order"
+            ))?;
         }
 
         let link = from.register() ^ to.register();
