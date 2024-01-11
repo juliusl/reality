@@ -12,6 +12,7 @@ use crate::ResourceKey;
 use crate::ResourceKeyHashBuilder;
 use crate::Shared;
 use crate::StorageTarget;
+use crate::StorageTargetEntry;
 use async_trait::async_trait;
 pub use extension::Transform;
 pub use host::RegisterWith;
@@ -151,11 +152,7 @@ impl Project<Shared> {
         }
 
         Ok(Package {
-            workspace: self
-                .root
-                .root_ref()
-                .current()
-                .unwrap_or_default(),
+            workspace: self.root.root_ref().current().unwrap_or_default(),
             programs,
         })
     }
@@ -530,10 +527,7 @@ mod tests {
         for (k, node) in _project.nodes.write().await.iter_mut() {
             let _node = node.read().await;
 
-            let parsed_node = _node
-                .root_ref()
-                .current::<ParsedNode>()
-                .unwrap();
+            let parsed_node = _node.root_ref().current::<ParsedNode>().unwrap();
 
             let mut parsed = parsed_node.to_owned();
             parsed.parse(CrcInterner::default, &_node).await.unwrap();

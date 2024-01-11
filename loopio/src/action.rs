@@ -404,7 +404,7 @@ impl ActionFactory {
 
     /// Publish all tasks found in the current parsed node available for publishing,
     ///
-    pub async fn publish_all(self, eh: EngineHandle) -> anyhow::Result<Vec<Address>> {
+    pub async fn publish(self, eh: EngineHandle) -> anyhow::Result<Vec<Address>> {
         let mut published = vec![];
 
         let tc: ThunkContext = self.storage.into();
@@ -606,7 +606,7 @@ async fn custom_action(_tc: &mut ThunkContext) -> anyhow::Result<()> {
                 })
                 .await?;
 
-            let published = action.publish_all(eh.clone()).await?;
+            let published = action.publish(eh.clone()).await?;
             for p in published {
                 eprintln!("{}", p);
             }

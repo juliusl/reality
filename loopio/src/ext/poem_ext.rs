@@ -98,20 +98,12 @@ pub trait PoemExt {
 impl PoemExt for ThunkContext {
     #[inline]
     async fn take_response_parts(&mut self) -> Option<ResponseParts> {
-        self.transient_mut()
-            .await
-            .root()
-            .take()
-            .map(|b| *b)
+        self.transient_mut().await.root().take().map(|b| *b)
     }
 
     #[inline]
     async fn take_body(&mut self) -> Option<poem::Body> {
-        self.transient_mut()
-            .await
-            .root()
-            .take()
-            .map(|b| *b)
+        self.transient_mut().await.root().take().map(|b| *b)
     }
 
     #[inline]
@@ -145,27 +137,17 @@ impl PoemExt for ThunkContext {
 
     #[inline]
     async fn replace_header_map(&mut self, header_map: HeaderMap) {
-        self.transient_mut()
-            .await
-            .root()
-            .put(header_map)
+        self.transient_mut().await.root().put(header_map)
     }
 
     #[inline]
     async fn get_path_vars(&mut self) -> Option<PathVars> {
-        self.transient()
-            .await
-            .root_ref()
-            .current()
+        self.transient().await.root_ref().current()
     }
 
     #[inline]
     async fn take_request(&self) -> Option<PoemRequest> {
-        self.transient_mut()
-            .await
-            .root()
-            .take()
-            .map(|r| *r)
+        self.transient_mut().await.root().take().map(|r| *r)
     }
 
     #[inline]
@@ -237,14 +219,17 @@ async fn on_proxy(
     let mut resource = operation.clone();
     resource.context_mut().reset();
 
-    resource.context_mut().transient_mut().await.root().put(
-        PoemRequest {
+    resource
+        .context_mut()
+        .transient_mut()
+        .await
+        .root()
+        .put(PoemRequest {
             path: path_vars,
             uri: req.uri().clone(),
             headers: req.headers().clone(),
             body: Some(body),
-        },
-    );
+        });
 
     if let CallOutput::Spawn(Some(spawned)) = resource.spawn() {
         match spawned.await.map_err(|_| {

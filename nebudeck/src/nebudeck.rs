@@ -417,7 +417,7 @@ async fn create_project(tc: &mut ThunkContext) -> anyhow::Result<()> {
                 .add_task::<ProjectTypes>("test", thunk_fn!(test))
                 .await?;
 
-            let published = _action.publish_all(eh).await?;
+            let published = _action.publish(eh).await?;
             published.iter().for_each(|p| eprintln!("{p}"));
         }
     }

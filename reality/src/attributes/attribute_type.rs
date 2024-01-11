@@ -25,8 +25,7 @@ use super::visit::Field;
 use super::visit::FieldMut;
 use super::AttributeParser;
 use super::StorageTarget;
-use crate::prelude::FieldPacket;
-use crate::prelude::FieldPacketType;
+use crate::prelude::*;
 
 /// Type-alias for a Recv::link_recv fn,
 ///

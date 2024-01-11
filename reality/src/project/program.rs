@@ -6,6 +6,7 @@ use crate::ParsedNode;
 use crate::ResourceKey;
 use crate::Shared;
 use crate::StorageTarget;
+use crate::StorageTargetEntry;
 use crate::ThunkContext;
 
 use super::package::ProgramMatch;

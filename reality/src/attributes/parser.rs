@@ -30,6 +30,7 @@ use crate::PluginLevel;
 use crate::ResourceKey;
 use crate::SetIdentifiers;
 use crate::Shared;
+use crate::StorageTargetEntry;
 use crate::ThunkContext;
 
 /// Represents a resource that has been assigned a path,

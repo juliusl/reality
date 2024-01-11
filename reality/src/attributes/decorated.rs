@@ -284,10 +284,7 @@ mod tests {
             let mut tc: ThunkContext = target.into();
 
             let _node = tc.node().await;
-            let mut node = _node
-                .root_ref()
-                .current::<ParsedNode>()
-                .unwrap();
+            let mut node = _node.root_ref().current::<ParsedNode>().unwrap();
 
             node.parse(CrcInterner::default, &_node).await.unwrap();
             drop(_node);

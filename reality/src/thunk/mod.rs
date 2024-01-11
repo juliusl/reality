@@ -42,6 +42,8 @@ pub mod prelude {
     use crate::ParsedNode;
     use crate::ResourceKey;
     use crate::SetField;
+    use crate::StorageTargetEntry;
+    use crate::StorageTargetEntryMut;
     use runir::prelude::CrcInterner;
     use tracing::error;
 
@@ -169,12 +171,8 @@ pub mod prelude {
             if let Some(tl) = _storage.root_ref().current::<PluginLevel>() {
                 drop(_storage);
 
-                if let Some(mut parsed) = storage
-                    .storage
-                    .write()
-                    .await
-                    .root()
-                    .get_mut::<ParsedNode>()
+                if let Some(mut parsed) =
+                    storage.storage.write().await.root().get_mut::<ParsedNode>()
                 {
                     if let Some(mut repr) = parsed.node.repr() {
                         if let Err(err) = repr.upgrade(CrcInterner::default(), tl).await {

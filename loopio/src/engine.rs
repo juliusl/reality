@@ -551,7 +551,7 @@ impl Engine {
 
         // Publish all remote actions
         for ra in remote_actions {
-            let published = ra.publish_all(eh.clone()).await?;
+            let published = ra.publish(eh.clone()).await?;
             for p in published {
                 info!("Default startup published remote action - {}", p);
             }

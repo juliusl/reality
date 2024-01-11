@@ -74,6 +74,8 @@ pub mod prelude {
     pub use super::resource_key::ResourceKey;
     pub use super::resource_key::ResourceKeyHashBuilder;
     pub use super::target::StorageTarget;
+    pub use super::target::StorageTargetEntry;
+    pub use super::target::StorageTargetEntryMut;
     pub use super::target::StorageTargetKey;
 
     cfg_async_dispatcher! {

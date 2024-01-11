@@ -143,6 +143,7 @@ pub trait StorageTarget {
 
     /// Returns a hashed key by Type and optional resource_id,
     ///
+    #[inline]
     fn key<T: Send + Sync + 'static>(resource_key: StorageTargetKey<T>) -> u64
     where
         Self: Sized,
@@ -328,6 +329,7 @@ pub trait StorageTarget {
 
     /// Adds a callback as a resource,
     ///
+    #[inline]
     fn add_callback<Arg: Send + Sync + 'static, H: Handler<Self, Arg>>(
         &mut self,
         resource_key: StorageTargetKey<Callback<Self, Arg>>,
@@ -341,6 +343,7 @@ pub trait StorageTarget {
     ///
     /// Returns true if a callback exists and was queued
     ///
+    #[inline]
     fn callback<Arg: Send + Sync + 'static>(
         &self,
         resource_key: StorageTargetKey<Callback<Self, Arg>>,
@@ -355,6 +358,7 @@ pub trait StorageTarget {
     ///
     /// Returns true if a callback exists and was queued,
     ///
+    #[inline]
     fn callback_mut<Arg: Send + Sync + 'static>(
         &self,
         resource_key: StorageTargetKey<CallbackMut<Self, Arg>>,
@@ -369,6 +373,7 @@ pub trait StorageTarget {
     ///
     /// Returns true if a callback exists and was queued
     ///
+    #[inline]
     fn lazy_callback<Arg: Send + Sync + 'static>(&self, callback: Callback<Self, Arg>, arg: Arg)
     where
         Self: Sized + 'static,
@@ -380,6 +385,7 @@ pub trait StorageTarget {
     ///
     /// Returns true if a callback exists and was queued,
     ///
+    #[inline]
     fn lazy_callback_mut<Arg: Send + Sync + 'static>(
         &self,
         callback: CallbackMut<Self, Arg>,
@@ -392,6 +398,7 @@ pub trait StorageTarget {
 
     /// Returns a storage entry for rk,
     ///
+    #[inline]
     fn entry<'a: 'b, 'b>(
         &'a mut self,
         rk: impl Into<ResourceKey<Attribute>>,
@@ -407,6 +414,7 @@ pub trait StorageTarget {
 
     /// Returns the root storage entry,
     ///
+    #[inline]
     fn root<'a: 'b, 'b>(&'a mut self) -> StorageEntry<'b, Self>
     where
         Self: Sized + 'static,
@@ -416,6 +424,7 @@ pub trait StorageTarget {
 
     /// Returns a storage entry ref for rk,
     ///
+    #[inline]
     fn entry_ref<'a: 'b, 'b>(
         &'a self,
         rk: impl Into<ResourceKey<Attribute>>,
@@ -431,6 +440,7 @@ pub trait StorageTarget {
 
     /// Returns the root storage entry ref,
     ///
+    #[inline]
     fn root_ref<'a: 'b, 'b>(&'a self) -> StorageEntryRef<'b, Self>
     where
         Self: Sized + 'static,
@@ -439,22 +449,80 @@ pub trait StorageTarget {
     }
 }
 
-/// Storage entry scoped to a resource key,
-///
-pub struct StorageEntry<'a, S: StorageTarget> {
-    rk: ResourceKey<Attribute>,
-    storage: &'a mut S,
+pub trait StorageTargetEntry<S>: AsRef<S> + AsRef<ResourceKey<Attribute>>
+where
+    S: StorageTarget,
+{
+    /// Returns a reference to the storage target,
+    ///
+    #[inline]
+    fn storage(&self) -> &S {
+        self.as_ref()
+    }
+
+    /// Returns the resource key of this entry,
+    ///
+    #[inline]
+    fn resource_key(&self) -> ResourceKey<Attribute> {
+        *self.as_ref()
+    }
+
+    /// Lazily put a resource in this entry,
+    ///
+    /// **Note**: Requires dispatching to be enabled. When the dispatcher queues are drained next,
+    /// this will replace any existing resource.
+    ///
+    #[inline]
+    fn lazy_put<R: Send + Sync + 'static>(&self, resource: R)
+    where
+        S: 'static,
+    {
+        self.storage()
+            .lazy_put_resource(resource, self.resource_key().transmute())
+    }
+
+    /// Borrows a resource contained in this entry,
+    ///
+    #[inline]
+    fn get<R: Send + Sync + 'static>(&self) -> Option<S::BorrowResource<'_, R>> {
+        self.storage().resource(self.resource_key().transmute())
+    }
+
+    /// Returns an owned reference to the current state of the resource,
+    ///
+    #[inline]
+    fn current<R>(&self) -> Option<R>
+    where
+        R: ToOwned<Owned = R> + Send + Sync + 'static,
+    {
+        self.storage()
+            .current_resource(self.resource_key().transmute())
+    }
+
+    /// Returns true if the resource exists in this storage entry,
+    ///
+    #[inline]
+    fn exists<R: Send + Sync + 'static>(&self) -> bool {
+        self.storage()
+            .contains::<R>(self.resource_key().transmute())
+    }
 }
 
-pub struct StorageEntryRef<'a, S: StorageTarget> {
-    rk: ResourceKey<Attribute>,
-    storage: &'a S,
-}
+pub trait StorageTargetEntryMut<S>: StorageTargetEntry<S> + AsMut<S>
+where
+    S: StorageTarget,
+{
+    /// Returns a mutable reference to the underlying storage target,
+    ///
+    #[inline]
+    fn storage_mut(&mut self) -> &mut S {
+        self.as_mut()
+    }
 
-impl<'a, S: StorageTarget> StorageEntry<'a, S> {
     /// Initializes the resource if it hasn't been initialized already and borrows a mutable reference to it,
     ///
-    pub fn maybe_put<R: Send + Sync + 'static>(
+    #[inline]
+    fn maybe_put<R: Send + Sync + 'static>(
         &mut self,
         init: impl Fn() -> R,
     ) -> S::BorrowMutResource<'_, R> {
@@ -467,33 +535,20 @@ impl<'a, S: StorageTarget> StorageEntry<'a, S> {
 
     /// Put a resource in this entry,
     ///
-    pub fn put<R: Send + Sync + 'static>(&mut self, resource: R) {
-        self.storage.put_resource(resource, self.rk.transmute());
-    }
+    #[inline]
+    fn put<R: Send + Sync + 'static>(&mut self, resource: R) {
+        let key = self.resource_key().transmute();
 
-    /// Lazily put a resource in this entry,
-    ///
-    /// **Note**: Requires dispatching to be enabled. When the dispatcher queues are drained next,
-    /// this will replace any existing resource.
-    ///
-    pub fn lazy_put<R: Send + Sync + 'static>(&self, resource: R)
-    where
-        S: 'static,
-    {
-        self.storage
-            .lazy_put_resource(resource, self.rk.transmute())
+        self.storage_mut().put_resource(resource, key);
     }
 
     /// Borrows a resource contained in this entry,
     ///
-    pub fn get<R: Send + Sync + 'static>(&self) -> Option<S::BorrowResource<'_, R>> {
-        self.storage.resource(self.rk.transmute())
-    }
+    #[inline]
+    fn get_mut<R: Send + Sync + 'static>(&mut self) -> Option<S::BorrowMutResource<'_, R>> {
+        let key = self.resource_key().transmute();
 
-    /// Borrows a resource contained in this entry,
-    ///
-    pub fn get_mut<R: Send + Sync + 'static>(&mut self) -> Option<S::BorrowMutResource<'_, R>> {
-        self.storage.resource_mut(self.rk.transmute())
+        self.storage_mut().resource_mut(key)
     }
 
     /// Take a resource from this entry,
@@ -501,64 +556,73 @@ impl<'a, S: StorageTarget> StorageEntry<'a, S> {
     /// **Note**: If the entry is currently linked, this function will return None.
     /// However, removeing the resource will explicitly remove the entry leaving the link.
     ///
-    pub fn take<R: Send + Sync + 'static>(&mut self) -> Option<Box<R>> {
-        self.storage.take_resource(self.rk.transmute())
-    }
+    #[inline]
+    fn take<R: Send + Sync + 'static>(&mut self) -> Option<Box<R>> {
+        let key = self.resource_key().transmute();
 
-    /// Returns an owned reference to the current state of the resource,
-    ///
-    pub fn current<R>(&self) -> Option<R>
-    where
-        R: ToOwned<Owned = R> + Send + Sync + 'static,
-    {
-        self.storage.current_resource(self.rk.transmute())
-    }
-
-    /// Returns true if the resource exists in this storage entry,
-    ///
-    pub fn exists<R: Send + Sync + 'static>(&self) -> bool {
-        self.storage.contains::<R>(self.rk.transmute())
+        self.storage_mut().take_resource(key)
     }
 
     /// Removes a resource at this storage entry,
     ///
-    pub fn remove<R: Send + Sync + 'static>(&mut self) -> bool {
-        self.storage.remove_resource_at(self.rk)
+    #[inline]
+    fn remove<R: Send + Sync + 'static>(&mut self) -> bool {
+        let key = self.resource_key().transmute();
+        self.storage_mut().remove_resource_at::<R>(key)
     }
 }
 
-impl<'a, S: StorageTarget> StorageEntryRef<'a, S> {
-    /// Lazily put a resource in this entry,
-    ///
-    /// **Note**: Requires dispatching to be enabled. When the dispatcher queues are drained next,
-    /// this will replace any existing resource.
-    ///
-    pub fn lazy_put<R: Send + Sync + 'static>(&self, resource: R)
-    where
-        S: 'static,
-    {
+/// Storage entry scoped to a resource key,
+///
+pub struct StorageEntry<'a, S: StorageTarget> {
+    rk: ResourceKey<Attribute>,
+    storage: &'a mut S,
+}
+
+/// Storage entry reference scoped to a resource key,
+///
+pub struct StorageEntryRef<'a, S: StorageTarget> {
+    rk: ResourceKey<Attribute>,
+    storage: &'a S,
+}
+
+impl<'a, S: StorageTarget> AsRef<S> for StorageEntryRef<'a, S> {
+    #[inline]
+    fn as_ref(&self) -> &S {
         self.storage
-            .lazy_put_resource(resource, self.rk.transmute())
-    }
-
-    /// Borrows a resource contained in this entry,
-    ///
-    pub fn get<R: Send + Sync + 'static>(&self) -> Option<S::BorrowResource<'_, R>> {
-        self.storage.resource(self.rk.transmute())
-    }
-
-    /// Returns an owned reference to the current state of the resource,
-    ///
-    pub fn current<R>(&self) -> Option<R>
-    where
-        R: ToOwned<Owned = R> + Send + Sync + 'static,
-    {
-        self.storage.current_resource(self.rk.transmute())
-    }
-
-    /// Returns true if the resource exists in this storage entry,
-    ///
-    pub fn exists<R: Send + Sync + 'static>(&self) -> bool {
-        self.storage.contains::<R>(self.rk.transmute())
     }
 }
+
+impl<'a, S: StorageTarget> AsRef<ResourceKey<Attribute>> for StorageEntryRef<'a, S> {
+    #[inline]
+    fn as_ref(&self) -> &ResourceKey<Attribute> {
+        &self.rk
+    }
+}
+
+impl<'a, S: StorageTarget> AsRef<S> for StorageEntry<'a, S> {
+    #[inline]
+    fn as_ref(&self) -> &S {
+        self.storage
+    }
+}
+
+impl<'a, S: StorageTarget> AsMut<S> for StorageEntry<'a, S> {
+    #[inline]
+    fn as_mut(&mut self) -> &mut S {
+        self.storage
+    }
+}
+
+impl<'a, S: StorageTarget> AsRef<ResourceKey<Attribute>> for StorageEntry<'a, S> {
+    #[inline]
+    fn as_ref(&self) -> &ResourceKey<Attribute> {
+        &self.rk
+    }
+}
+
+impl<'a, S: StorageTarget> StorageTargetEntry<S> for StorageEntry<'a, S> {}
+
+impl<'a, S: StorageTarget> StorageTargetEntryMut<S> for StorageEntry<'a, S> {}
+
+impl<'a, S: StorageTarget> StorageTargetEntry<S> for StorageEntryRef<'a, S> {}

@@ -26,6 +26,8 @@ use crate::ParsedNode;
 use crate::ResourceKey;
 use crate::Shared;
 use crate::StorageTarget;
+use crate::StorageTargetEntry;
+use crate::StorageTargetEntryMut;
 use crate::StorageTargetKey;
 use crate::WireClient;
 use crate::WireServer;

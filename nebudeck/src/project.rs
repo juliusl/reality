@@ -76,10 +76,7 @@ async fn prepare_workspace(tc: &mut ThunkContext) -> anyhow::Result<()> {
     }
 
     // Puts the new workspace in node storage
-    tc.node()
-        .await
-        .root_ref()
-        .lazy_put(workspace);
+    tc.node().await.root_ref().lazy_put(workspace);
 
     tc.process_node_updates().await;
 
@@ -182,7 +179,10 @@ async fn test_project() {
     let tc = program.context().unwrap();
     let result = tc.call().await.unwrap().unwrap();
     let workspace = result
-        .node.storage.write().await
+        .node
+        .storage
+        .write()
+        .await
         .root()
         .take::<loopio::prelude::Workspace>()
         .unwrap();

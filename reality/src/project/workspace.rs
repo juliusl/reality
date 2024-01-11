@@ -6,9 +6,9 @@ use tracing::warn;
 
 use super::Source;
 use crate::Project;
-use crate::ResourceKey;
 use crate::Shared;
 use crate::StorageTarget;
+use crate::StorageTargetEntryMut;
 
 /// Pointer struct for creating a workspace based on the current directory,
 ///

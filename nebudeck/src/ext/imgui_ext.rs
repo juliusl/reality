@@ -154,9 +154,7 @@ impl ImguiMiddleware {
                                             __tc.transient
                                                 .storage
                                                 .try_read()
-                                                .map(|t| t
-                                                    .root_ref()
-                                                    .exists::<Vec<UiNode>>())
+                                                .map(|t| t.root_ref().exists::<Vec<UiNode>>())
                                                 .unwrap_or_default()
                                         );
 

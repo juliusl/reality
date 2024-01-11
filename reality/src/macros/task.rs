@@ -66,4 +66,12 @@ macro_rules! thunk_fn {
             })
         }
     };
+    ($call_async:path) => {
+        |tc: ThunkContext| {
+            tc.spawn(|mut tc| async move {
+                $call_async(&mut tc).await?;
+                Ok(tc)
+            })
+        }
+    };
 }
