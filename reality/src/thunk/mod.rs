@@ -24,7 +24,6 @@ pub mod prelude {
     pub use crate::Shared;
     pub use crate::StorageTarget;
     pub use crate::ToFrame;
-    use async_trait::async_trait;
     pub use futures_util::Future;
     pub use futures_util::FutureExt;
     use runir::prelude::Linker;
@@ -83,7 +82,6 @@ pub mod prelude {
         }
     }
 
-    #[async_trait(?Send)]
     impl<P> runir::prelude::Recv for Thunk<P>
     where
         P: Plugin + Send + Sync + 'static,
@@ -95,15 +93,15 @@ pub mod prelude {
 
         /// Links a node level to a receiver and returns a new Repr,
         ///
-        async fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
+        fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
         where
             Self: Sized + Send + Sync + 'static,
         {
-            let mut repr = Linker::new::<P>();
+            let mut repr = Linker::new_crc::<P>();
             let recv = RecvLevel::new::<P>(fields);
             repr.push_level(recv)?;
             repr.push_level(node.clone())?;
-            repr.link().await
+            repr.link()
         }
     }
 
@@ -175,7 +173,7 @@ pub mod prelude {
                     storage.storage.write().await.root().get_mut::<ParsedNode>()
                 {
                     if let Some(mut repr) = parsed.node.repr() {
-                        if let Err(err) = repr.upgrade(CrcInterner::default(), tl).await {
+                        if let Err(err) = repr.upgrade(CrcInterner::default(), tl) {
                             error!("{err}");
                         }
 

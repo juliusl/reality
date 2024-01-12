@@ -66,7 +66,7 @@ impl Tag<InternHandle, Arc<InternHandle>> {
     /// Creates and assigns an intern handle representing the link between the current intern handle and the
     /// next intern handle.
     ///
-    pub async fn link(
+    pub fn link(
         &self,
         next: &Tag<InternHandle, Arc<InternHandle>>,
     ) -> anyhow::Result<InternHandle> {

@@ -193,14 +193,14 @@ impl ParsedNode {
                             };
 
                             let host = HostLevel::new(address);
-                            e.upgrade(interner(), host).await?;
+                            e.upgrade(interner(), host)?;
 
                             if let Some(ext) = self.attributes.get(i) {
                                 if let Some(plugin) =
                                     storage.resource::<PluginLevel>(ext.transmute())
                                 {
                                     trace!("Upgrading ext w/ plugin");
-                                    e.upgrade(interner(), plugin.clone()).await?;
+                                    e.upgrade(interner(), plugin.clone())?;
                                 }
                             }
                         }
@@ -212,11 +212,11 @@ impl ParsedNode {
 
                 trace!("Upgrading node w/ host -- {}", address);
 
-                repr.upgrade(interner(), host).await?;
+                repr.upgrade(interner(), host)?;
 
                 if let Some(plugin) = storage.resource::<PluginLevel>(self.node.transmute()) {
                     trace!("Upgrading node w/ plugin");
-                    repr.upgrade(interner(), plugin.clone()).await?;
+                    repr.upgrade(interner(), plugin.clone())?;
                 }
 
                 self.node.set_repr(repr);
@@ -232,11 +232,11 @@ impl ParsedNode {
                             };
 
                             trace!("Upgrading field w/ host -- {}", address);
-                            f.upgrade(interner(), HostLevel::new(address)).await?;
+                            f.upgrade(interner(), HostLevel::new(address))?;
 
                             if let Some(plugin) = storage.resource::<PluginLevel>(a.transmute()) {
                                 trace!("Upgrading field w/ plugin");
-                                f.upgrade(interner(), plugin.clone()).await?;
+                                f.upgrade(interner(), plugin.clone())?;
                             }
 
                             a.set_repr(f);
@@ -424,12 +424,10 @@ impl AttributeParser<Shared> {
         T: runir::prelude::Recv + Send + Sync + 'static,
     {
         self.link_recv.push(|n, f| {
-            Box::pin(async move {
-                let mut repr = Linker::new::<T>();
-                repr.push_level(RecvLevel::new::<T>(f))?;
-                repr.push_level(n)?;
-                repr.link().await
-            })
+            let mut repr = Linker::new_crc::<T>();
+            repr.push_level(RecvLevel::new::<T>(f))?;
+            repr.push_level(n)?;
+            repr.link()
         })
     }
 
@@ -769,7 +767,7 @@ impl Node for super::AttributeParser<Shared> {
                 cattr.parse(self, input.unwrap_or_default());
 
                 if let Some(last) = self.nodes.last() {
-                    match cattr.link_field(last.clone()).await {
+                    match cattr.link_field(last.clone()) {
                         Ok(field_repr) => {
                             self.fields.push(field_repr);
 
@@ -886,7 +884,7 @@ impl ExtensionLoader for super::AttributeParser<Shared> {
             let fields = self.fields.len();
 
             if let Some(last) = self.nodes.iter().rev().nth(fields) {
-                if let Ok(recv) = link_recv(last.clone(), self.fields.clone()).await {
+                if let Ok(recv) = link_recv(last.clone(), self.fields.clone()) {
                     trace!("Unloading node, setting recv from last link_recv");
                     self.parsed_node.node.set_repr(recv);
                     self.fields.clear();
@@ -962,25 +960,21 @@ mod test {
                     }
                 },
                 |n, f| {
-                    Box::pin(async move {
-                        let mut repr = Linker::new::<()>();
-                        repr.push_level(RecvLevel::new::<Example>(f))?;
-                        repr.push_level(n)?;
+                    let mut repr = Linker::new_crc::<()>();
+                    repr.push_level(RecvLevel::new::<Example>(f))?;
+                    repr.push_level(n)?;
 
-                        repr.link().await
-                    })
+                    repr.link()
                 },
                 |r, f, n| {
-                    Box::pin(async move {
-                        eprintln!("---{:?}", r.mount());
-                        eprintln!("---{:?}", f.mount());
-                        eprintln!("---{:?}", n.mount());
-                        let mut factory = Linker::<CrcInterner>::default();
-                        factory.push_level(r)?;
-                        factory.push_level(f)?;
-                        factory.push_level(n)?;
-                        factory.link().await
-                    })
+                    eprintln!("---{:?}", r.mount());
+                    eprintln!("---{:?}", f.mount());
+                    eprintln!("---{:?}", n.mount());
+                    let mut factory = Linker::<CrcInterner>::default();
+                    factory.push_level(r)?;
+                    factory.push_level(f)?;
+                    factory.push_level(n)?;
+                    factory.link()
                 },
                 ResourceLevel::new::<String>(),
                 FieldLevel::new::<0, Test>(),

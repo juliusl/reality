@@ -85,6 +85,13 @@ impl Repr {
         self.tail.as_u64()
     }
 
+    /// Returns the entity id value,
+    ///
+    #[inline]
+    pub fn as_entity(&self) -> Option<u64> {
+        self.tail.entity()
+    }
+
     /// Returns repr as a uuid,
     ///
     #[inline]
@@ -94,13 +101,13 @@ impl Repr {
 
     /// Upgrades a representation in place w/ a new level,
     ///
-    pub async fn upgrade(
+    pub fn upgrade(
         &mut self,
         mut interner: impl InternerFactory,
         level: impl Level,
     ) -> anyhow::Result<()> {
         // Configure a new handle
-        let handle = level.configure(&mut interner).wait_for_ready().await;
+        let handle = level.configure(&mut interner)?;
 
         // TODO -- error handling
         // 1) Need verify the interner factory is the same as what was previously used
@@ -111,7 +118,7 @@ impl Repr {
         let mut from = self.tail;
         from.link = 0;
 
-        let linked = Tag::new(&HANDLES, Arc::new(from)).link(&to).await?;
+        let linked = Tag::new(&HANDLES, Arc::new(from)).link(&to)?;
         self.tail = linked;
         Ok(())
     }

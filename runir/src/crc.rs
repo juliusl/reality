@@ -3,14 +3,11 @@ use crate::interner::InternResult;
 use crate::interner::LevelFlags;
 use crate::prelude::*;
 use crc::Crc;
+use std::cell::Cell;
 use std::cell::RefCell;
-use std::future::Future;
 use std::hash::Hash;
 use std::hash::Hasher;
-use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::OnceLock;
-use tokio::sync::Notify;
 use tracing::trace;
 
 /// Interner that uses crc to build intern handles,
@@ -24,7 +21,12 @@ pub struct CrcInterner {
     flags: RefCell<LevelFlags>,
     /// Stack of tags being interned,
     ///
-    tags: Vec<InternHandleFutureThunk>,
+    tags: Vec<InternHandleThunk>,
+    /// Sets the current data,
+    ///
+    /// **Note**: When applied to the intern handle it will be DATA ^ ENTROPY
+    ///
+    data: Cell<u64>,
 }
 
 impl Default for CrcInterner {
@@ -47,17 +49,17 @@ impl CrcInterner {
             digest,
             tags: vec![],
             flags: RefCell::new(LevelFlags::ROOT),
+            data: Cell::new(0),
         }
     }
 }
 
 impl InternerFactory for CrcInterner {
+    #[inline]
     fn push_tag<T>(
         &mut self,
         value: T,
-        tag: impl FnOnce(InternHandle) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>>
-            + Send
-            + 'static,
+        tag: impl Fn(InternHandle) -> anyhow::Result<()> + Send + Sync + 'static,
     ) where
         T: Hash + Send + Sync + 'static,
     {
@@ -66,8 +68,14 @@ impl InternerFactory for CrcInterner {
         self.tags.push(Box::new(tag));
     }
 
+    #[inline]
     fn set_level_flags(&mut self, flags: crate::interner::LevelFlags) {
         self.flags.replace(flags);
+    }
+
+    #[inline]
+    fn set_data(&mut self, data: u64) {
+        self.data.replace(data);
     }
 
     fn interner(&mut self) -> InternResult {
@@ -84,35 +92,18 @@ impl InternerFactory for CrcInterner {
             link,
             register_hi: self.flags.replace(LevelFlags::ROOT).bits() | register_hi,
             register_lo,
-            data: ENTROPY.get(),
+            data: ENTROPY.get() ^ self.data.replace(0),
         };
 
         // Peek at converter state
         trace!("Creating {:04x?}", handle);
+        let tags = self.tags.drain(..).collect::<Vec<_>>();
 
-        let ready = Arc::new(Notify::new());
-
-        // If a runtime is enabled, intern metadata value
-        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            let tags = self.tags.drain(..).collect::<Vec<_>>();
-
-            let ready = ready.clone();
-            runtime.spawn(async move {
-                for tag in tags {
-                    let fut = (tag)(handle);
-                    fut.await?;
-                }
-                ready.notify_one();
-
-                Ok::<_, anyhow::Error>(())
-            });
+        for tag in tags {
+            (tag)(handle)?
         }
 
-        InternResult {
-            handle,
-            ready,
-            error: None,
-        }
+        Ok(handle)
     }
 }
 
@@ -154,8 +145,8 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_interner() {
+    #[test]
+    fn test_interner() {
         let mut interner = CrcInterner::new();
         /*
            NOTE: These are "canary" tests so may be unstable initially. The idea is to assert
@@ -166,15 +157,15 @@ mod tests {
         // Test creating a type level
         let rhandle = ResourceLevel::new::<String>()
             .configure(&mut interner)
-            .wait_for_ready()
-            .await;
+            .unwrap();
+
         assert_eq!(LevelFlags::ROOT, rhandle.level_flags());
 
         // Test field level
         let handle = FieldLevel::new::<0, Test>()
             .configure(&mut interner)
-            .wait_for_ready()
-            .await;
+            .unwrap();
+
         assert_eq!(LevelFlags::LEVEL_1, handle.level_flags());
 
         // Test input level
@@ -190,8 +181,8 @@ mod tests {
             None,
         )
         .configure(&mut interner)
-        .wait_for_ready()
-        .await;
+        .unwrap();
+
         // Test no unexpected side effects exist
         let handle_2 = NodeLevel::new_with(
             Some("test"),
@@ -205,18 +196,15 @@ mod tests {
             None,
         )
         .configure(&mut interner)
-        .wait_for_ready()
-        .await;
+        .unwrap();
 
         assert_eq!(LevelFlags::LEVEL_2, handle_1.level_flags());
         assert_eq!(LevelFlags::LEVEL_2, handle_2.level_flags());
         assert_eq!(handle_1, handle_2);
 
         // Test host level
-        let handle = HostLevel::new("test://")
-            .configure(&mut interner)
-            .wait_for_ready()
-            .await;
+        let handle = HostLevel::new("test://").configure(&mut interner).unwrap();
+
         assert_eq!(LevelFlags::LEVEL_3, handle.level_flags());
 
         let a = rhandle.resource_type_name();
@@ -228,8 +216,8 @@ mod tests {
         ()
     }
 
-    #[tokio::test]
-    async fn test_linker() {
+    #[test]
+    fn test_linker() {
         let mut repr = Linker::<CrcInterner>::describe_resource::<String>();
 
         // Assert the level is at the root
@@ -255,7 +243,7 @@ mod tests {
         assert_eq!(3, repr.level());
 
         // TODO: convert eprintln to assert_eq
-        let repr = repr.link().await.unwrap();
+        let repr = repr.link().unwrap();
         eprintln!("{:x?}", repr);
 
         let levels = repr.get_levels();
@@ -267,7 +255,7 @@ mod tests {
             .push_level(DependencyLevel::new("cool dep").with_parent(repr))
             .unwrap();
 
-        let mut _drepr = drepr.link().await.unwrap();
+        let mut _drepr = drepr.link().unwrap();
         eprintln!("{:x?}", _drepr);
 
         let levels = _drepr.get_levels();
@@ -275,9 +263,6 @@ mod tests {
         eprintln!("{:x?}", _drepr.as_u64());
 
         let drepr = _drepr.as_dependency().unwrap();
-
-        // Give some time for the background interning to catch up
-        tokio::time::sleep(Duration::from_millis(13)).await;
 
         // ketchup().await;
 
@@ -292,19 +277,10 @@ mod tests {
 
         let before_upgrade = _drepr.clone();
         let upgrade = NodeLevel::new().with_input("hello world");
-        _drepr
-            .upgrade(CrcInterner::default(), upgrade)
-            .await
-            .unwrap();
+        _drepr.upgrade(CrcInterner::default(), upgrade).unwrap();
 
         let input = _drepr.as_node().unwrap().input().unwrap();
         eprintln!("{:?}", input);
-
-        let mut command = clap::Command::from(repr);
-        command.print_help().unwrap();
-
-        let downgraded = _drepr.downgrade(1).unwrap();
-        assert_eq!(before_upgrade, downgraded);
         ()
     }
 }

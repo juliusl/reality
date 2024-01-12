@@ -1,12 +1,9 @@
-use ::core::pin::Pin;
 use std::fmt::Debug;
-use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::DerefMut;
 use std::str::FromStr;
 
 use anyhow::anyhow;
-use async_trait::async_trait;
 use runir::prelude::*;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -29,13 +26,11 @@ use crate::prelude::*;
 
 /// Type-alias for a Recv::link_recv fn,
 ///
-pub type LinkRecvFn =
-    fn(NodeLevel, Vec<Repr>) -> Pin<Box<dyn Future<Output = anyhow::Result<Repr>>>>;
+pub type LinkRecvFn = fn(NodeLevel, Vec<Repr>) -> anyhow::Result<Repr>;
 
 /// Type-alias for a Recv::link_field fn,
 ///
-pub type LinkFieldFn =
-    fn(ResourceLevel, FieldLevel, NodeLevel) -> Pin<Box<dyn Future<Output = anyhow::Result<Repr>>>>;
+pub type LinkFieldFn = fn(ResourceLevel, FieldLevel, NodeLevel) -> anyhow::Result<Repr>;
 
 /// Trait to implement a type as an AttributeType,
 ///
@@ -126,17 +121,17 @@ impl AttributeTypeParser<Shared> {
 
     /// Links a receiver to node and fields,
     ///
-    pub async fn link_recv(&self, node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr> {
+    pub fn link_recv(&self, node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr> {
         trace!("linking recv - {:?}", node.mount());
-        (self.link_recv)(node, fields).await
+        (self.link_recv)(node, fields)
     }
 
     /// Links a field to a node,
     ///
-    pub async fn link_field(&self, node: NodeLevel) -> anyhow::Result<Repr> {
+    pub fn link_field(&self, node: NodeLevel) -> anyhow::Result<Repr> {
         trace!("linking - {:?}", node.mount());
         if let Some(field) = self.field {
-            (self.link_field)(self.resource.clone(), field, node).await
+            (self.link_field)(self.resource.clone(), field, node)
         } else {
             Err(anyhow!("Cannot link field"))
         }
@@ -268,7 +263,6 @@ where
     _owner: PhantomData<Owner>,
 }
 
-#[async_trait(?Send)]
 impl<const FIELD_OFFSET: usize, Owner> Recv for ParsableField<FIELD_OFFSET, Owner>
 where
     Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
@@ -280,21 +274,21 @@ where
 
     /// Links a node level to a receiver and returns a new Repr,
     ///
-    async fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
+    fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
     where
         Self: Sized + Send + Sync + 'static,
     {
-        Owner::link_recv(node, fields).await
+        Owner::link_recv(node, fields)
     }
 
     /// Links a node level to a field level and returns a new Repr,
     ///
-    async fn link_field(
+    fn link_field(
         resource: ResourceLevel,
         field: FieldLevel,
         node: NodeLevel,
     ) -> anyhow::Result<Repr> {
-        Owner::link_field(resource, field, node).await
+        Owner::link_field(resource, field, node)
     }
 }
 
@@ -375,7 +369,6 @@ where
     }
 }
 
-#[async_trait(?Send)]
 impl<const FIELD_OFFSET: usize, Owner> runir::prelude::Recv
     for ParsableAttributeTypeField<FIELD_OFFSET, Owner>
 where
@@ -388,21 +381,21 @@ where
 
     /// Links a node level to a receiver and returns a new Repr,
     ///
-    async fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
+    fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
     where
         Self: Sized + Send + Sync + 'static,
     {
-        Owner::link_recv(node, fields).await
+        Owner::link_recv(node, fields)
     }
 
     /// Links a node level to a field level and returns a new Repr,
     ///
-    async fn link_field(
+    fn link_field(
         resource: ResourceLevel,
         field: FieldLevel,
         node: NodeLevel,
     ) -> anyhow::Result<Repr> {
-        Owner::link_field(resource, field, node).await
+        Owner::link_field(resource, field, node)
     }
 }
 
@@ -445,7 +438,6 @@ where
     }
 }
 
-#[async_trait(?Send)]
 impl<const FIELD_OFFSET: usize, Owner> runir::prelude::Recv
     for ParsableObjectTypeField<FIELD_OFFSET, Owner>
 where
@@ -458,21 +450,21 @@ where
 
     /// Links a node level to a receiver and returns a new Repr,
     ///
-    async fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
+    fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
     where
         Self: Sized + Send + Sync + 'static,
     {
-        Owner::link_recv(node, fields).await
+        Owner::link_recv(node, fields)
     }
 
     /// Links a node level to a field level and returns a new Repr,
     ///
-    async fn link_field(
+    fn link_field(
         resource: ResourceLevel,
         field: FieldLevel,
         node: NodeLevel,
     ) -> anyhow::Result<Repr> {
-        Owner::link_field(resource, field, node).await
+        Owner::link_field(resource, field, node)
     }
 }
 

@@ -1,9 +1,7 @@
 use std::any::TypeId;
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::hash::Hash;
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::Weak;
@@ -11,12 +9,14 @@ use std::sync::Weak;
 use anyhow::anyhow;
 use serde::Deserialize;
 use serde::Serialize;
-use tokio::sync::Notify;
 use tracing::warn;
 
+use crate::entity::ENTITY;
 use crate::entropy::ENTROPY;
 use crate::prelude::Repr;
 use crate::repr::node::SourceSpan;
+
+pub type InternResult = anyhow::Result<InternHandle>;
 
 /// This trait is based on the concept of string interning where the
 /// goal is to store distinct string values.
@@ -31,9 +31,7 @@ pub trait InternerFactory {
     fn push_tag<T: Hash + Send + Sync + 'static>(
         &mut self,
         value: T,
-        assign: impl FnOnce(InternHandle) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>>
-            + Send
-            + 'static,
+        assign: impl Fn(InternHandle) -> anyhow::Result<()> + Send + Sync + 'static,
     );
 
     /// Sets the current level flags for the interner,
@@ -41,6 +39,12 @@ pub trait InternerFactory {
     /// **Note**: The flag should be cleared when interner is called
     ///
     fn set_level_flags(&mut self, flags: LevelFlags);
+
+    /// Sets the current data value for the interner,
+    ///
+    /// **Note**: The data value will be clearned when interner is called
+    ///
+    fn set_data(&mut self, data: u64);
 
     /// Finishes generating the current intern handle and consumes the current stack of tags,
     ///
@@ -85,6 +89,20 @@ impl From<u64> for InternHandle {
 }
 
 impl InternHandle {
+    /// Returns the current data value,
+    ///
+    pub fn data(&self) -> u64 {
+        self.data ^ ENTROPY.get()
+    }
+
+    /// Returns the current entity id of the intern handle,
+    ///
+    pub fn entity(&self) -> Option<u64> {
+        let data = self.data();
+
+        ENTITY.copy(self).filter(|v| *v == data).map(|_| data)
+    }
+
     /// Returns the current level flag enabled for this intern handle,
     ///
     #[inline]
@@ -348,44 +366,6 @@ impl InternHandle {
     #[inline]
     pub fn host_extensions(&self) -> Option<Arc<Vec<Repr>>> {
         crate::repr::host::EXTENSIONS.strong_ref(self)
-    }
-}
-
-/// Return type that can be notified when the handle is ready for use,
-///
-pub struct InternResult {
-    /// The inner intern handle,
-    ///
-    pub(crate) handle: InternHandle,
-
-    /// Notifies when the intern handle is ready,
-    ///
-    pub(crate) ready: Arc<Notify>,
-
-    /// If an error occurred this will be set,
-    ///
-    pub(crate) error: Option<anyhow::Error>,
-}
-
-impl InternResult {
-    /// Waits for the intern handle to be ready,
-    ///
-    pub async fn wait_for_ready(self) -> InternHandle {
-        self.ready.notified().await;
-        self.handle
-    }
-
-    /// Returns as std result,
-    ///
-    /// **Note** Since this is not waiting for the intern handle to be ready, it's possible trying to use this handle
-    /// will not return anything.
-    ///
-    pub fn result(mut self) -> anyhow::Result<(Arc<Notify>, InternHandle)> {
-        if let Some(err) = self.error.take() {
-            Err(err)
-        } else {
-            Ok((self.ready, self.handle))
-        }
     }
 }
 

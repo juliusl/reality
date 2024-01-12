@@ -5,7 +5,6 @@ mod level;
 mod linker;
 mod repr;
 mod tag;
-mod util;
 
 #[cfg(feature = "crc-interner")]
 mod crc;
@@ -22,19 +21,19 @@ mod macros {
     ///
     /// ...
     ///
-    /// async fn test() -> anyhow::Result<()> {
+    /// fn test() -> anyhow::Result<()> {
     ///     // Assigns an intern handle for value
-    ///     EXAMPLE.assign_intern(InternHandle::default(), "hello world").await?;
+    ///     EXAMPLE.assign_intern(InternHandle::default(), "hello world")?;
     ///
     ///     // Get a handle
-    ///     let handle = EXAMPLE.handle(..).await?;
+    ///     let handle = EXAMPLE.handle(..)?;
     ///     
     ///     // Upgrade to the stored value
     ///     let value = handle.upgrade().unwrap_or_default();
     ///     assert_eq!("hello world".to_string(), value.to_string());
     ///
     ///     // Create a strong reference
-    ///     let value: Arc<T> = EXAMPLE.strong_ref(..).await?;
+    ///     let value: Arc<T> = EXAMPLE.strong_ref(..)?;
     /// }
     /// ```
     ///
@@ -51,22 +50,18 @@ mod macros {
     macro_rules! push_tag {
         ($interner:ident, $tag:expr) => {
             let tag = $tag;
-            $interner.push_tag(tag.value(), move |h| Box::pin(async move { tag.assign(h) }));
+            $interner.push_tag(tag.value(), move |h| tag.assign(h));
         };
         (dyn $interner:ident, $tag:expr) => {
             let tag = $tag;
 
             let inner = tag.clone();
-            $interner.push_tag(tag.value(), move |h| {
-                Box::pin(async move { inner.assign(h) })
-            });
+            $interner.push_tag(tag.value(), move |h| inner.assign(h));
         };
         (as $a:expr, $interner:ident, $tag:expr) => {
             let tag = $tag;
 
-            $interner.push_tag($a.to_string(), move |h| {
-                Box::pin(async move { tag.assign(h) })
-            });
+            $interner.push_tag($a.to_string(), move |h| tag.assign(h));
         };
     }
 }
@@ -91,17 +86,14 @@ pub mod prelude {
     #[cfg(feature = "crc-interner")]
     pub use super::crc::CrcInterner;
 
+    pub use super::entity::EntityInterner;
+
     pub use super::entropy::new_runtime;
 
     /// Type-alias for a function that takes an intern handle and returns a future,
     ///
-    pub type InternHandleFutureThunk = Box<
-        dyn FnOnce(
-                InternHandle,
-            ) -> std::pin::Pin<
-                Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send>,
-            > + Send,
-    >;
+    pub type InternHandleThunk =
+        Box<dyn Fn(InternHandle) -> anyhow::Result<()> + Send + Sync + 'static>;
 }
 
 #[allow(dead_code)]
@@ -194,9 +186,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[test]
     #[tracing_test::traced_test]
-    async fn test_intern_handle_link() {
+    fn test_intern_handle_link() {
         struct Test;
 
         impl Field<0> for Test {
@@ -215,12 +207,10 @@ mod tests {
 
         let resource = ResourceLevel::new::<String>()
             .configure(&mut interner)
-            .wait_for_ready()
-            .await;
+            .unwrap();
         let field = FieldLevel::new::<0, Test>()
             .configure(&mut interner)
-            .wait_for_ready()
-            .await;
+            .unwrap();
 
         let mut annotations = BTreeMap::new();
         annotations.insert("description".to_string(), "really cool node".to_string());
@@ -229,14 +219,13 @@ mod tests {
             .with_input("hello world")
             .with_annotations(annotations)
             .configure(&mut interner)
-            .wait_for_ready()
-            .await;
+            .unwrap();
 
         let from = Tag::new(&HANDLES, Arc::new(resource));
         let to = Tag::new(&HANDLES, Arc::new(field));
 
         // TODO: convert eprintlns to asserts
-        let linked = from.link(&to).await.unwrap();
+        let linked = from.link(&to).unwrap();
         eprintln!("{:x?}", linked);
 
         let (prev, current) = linked.node();
@@ -248,7 +237,7 @@ mod tests {
         let from = Tag::new(&HANDLES, Arc::new(field));
         let to = Tag::new(&HANDLES, Arc::new(input));
 
-        let linked = from.link(&to).await.unwrap();
+        let linked = from.link(&to).unwrap();
 
         let (prev, current) = linked.node();
         eprintln!("{:x?} -> {:x?}", prev, current);
@@ -259,8 +248,8 @@ mod tests {
         let a = crate::repr::node::ANNOTATIONS.strong_ref(&input).unwrap();
         eprintln!("{:?}", a);
 
-        let test = Test::linker::<CrcInterner>().unwrap();
-        eprintln!("{:x?}", test.link().await.unwrap());
+        let mut test = Test::linker::<CrcInterner>().unwrap();
+        eprintln!("{:x?}", test.link().unwrap());
         ()
     }
 }

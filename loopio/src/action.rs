@@ -274,12 +274,10 @@ impl HostAction {
             let plugin_symbol = P::symbol().to_lowercase();
 
             let h = HostLevel::new(format!("{}?{plugin_symbol}={name}", host_name));
-            repr.upgrade(runir::prelude::CrcInterner::default(), h)
-                .await?;
+            repr.upgrade(runir::prelude::CrcInterner::default(), h)?;
 
             let p = PluginLevel::new::<P>();
-            repr.upgrade(runir::prelude::CrcInterner::default(), p)
-                .await?;
+            repr.upgrade(runir::prelude::CrcInterner::default(), p)?;
 
             let key = ResourceKey::<P>::with_repr(repr);
             info!("Host action resource key is -- {:?} {}", key, host_name);
@@ -367,14 +365,10 @@ impl ActionFactory {
             let task_addr = format!("{node}?{filter}&task={task_name}");
 
             let host_level = HostLevel::new(task_addr);
-            task_repr
-                .upgrade(CrcInterner::default(), host_level)
-                .await?;
+            task_repr.upgrade(CrcInterner::default(), host_level)?;
 
             let plugin_level = PluginLevel::new_with::<P>(task);
-            task_repr
-                .upgrade(CrcInterner::default(), plugin_level)
-                .await?;
+            task_repr.upgrade(CrcInterner::default(), plugin_level)?;
 
             let plugin_init = self
                 .storage

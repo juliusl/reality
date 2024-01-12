@@ -467,10 +467,10 @@ async fn test_set_repr() {
     let mut rk = ResourceKey::<Attribute>::new();
     eprintln!("{:x?}", uuid::Uuid::from_u128(rk.data));
 
-    let mut repr = Linker::new::<String>();
+    let mut repr = Linker::new_crc::<String>();
     repr.push_level(DependencyLevel::new("test")).unwrap();
 
-    let repr = repr.link().await.unwrap();
+    let repr = repr.link().unwrap();
     rk.set_repr(repr);
     eprintln!("{:x?}", uuid::Uuid::from_u128(rk.data));
 

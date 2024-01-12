@@ -1,8 +1,6 @@
-use futures::StreamExt;
-use std::sync::Arc;
-
 use crate::prelude::*;
 use crate::repr::HANDLES;
+use std::sync::Arc;
 
 /// Struct for linking together levels into a single representation,
 ///
@@ -17,13 +15,24 @@ where
     /// Vector of intern handles tags for each level of the current representation,
     ///
     levels: Vec<Tag<InternHandle, Arc<InternHandle>>>,
-    /// Interning ready notifications,
-    ///
-    ready_notify: Vec<Arc<tokio::sync::Notify>>,
 }
 
 impl Linker<CrcInterner> {
-    pub fn new<T: Send + Sync + 'static>() -> Self {
+    /// Returns a new linker w/ a crc-interner,
+    ///
+    pub fn new_crc<T: Send + Sync + 'static>() -> Self {
+        Self::describe_resource::<T>()
+    }
+}
+
+impl Linker<EntityInterner<CrcInterner>> {
+    /// Returns a new linker w/ an entity crc-interner,
+    ///
+    /// **Note** This allows single level intern handles because
+    /// each new handle is assigned a counter value in addition to
+    /// the checksum hash of the resource type,
+    ///
+    pub fn new_entity_crc<T: Send + Sync + 'static>() -> Self {
         Self::describe_resource::<T>()
     }
 }
@@ -31,28 +40,15 @@ impl Linker<CrcInterner> {
 impl<I: InternerFactory + Default> Linker<I> {
     /// Constructs and returns a new representation,
     ///
-    pub async fn link(&self) -> anyhow::Result<Repr> {
-        use futures::TryStreamExt;
+    pub fn link(&mut self) -> anyhow::Result<Repr> {
+        let tail = self.levels.iter().try_fold(
+            Tag::new(&HANDLES, Arc::new(InternHandle::default())),
+            |from, to| {
+                let _ = from.link(to)?;
 
-        tracing::trace!("Creating repr, waiting for background interning to catch up");
-        // Since these levels aren't shared once the factory takes ownership,
-        // notify_one will reserve a permit and Notified should return immediately
-        for r in self.ready_notify.iter() {
-            r.notified().await;
-        }
-        tracing::trace!("Background interning is all caught up");
-
-        let tail = futures::stream::iter(self.levels.iter())
-            .map(Ok::<_, anyhow::Error>)
-            .try_fold(
-                Tag::new(&HANDLES, Arc::new(InternHandle::default())),
-                |from, to| async move {
-                    let _ = from.link(to).await?;
-
-                    Ok(to.clone())
-                },
-            )
-            .await?;
+                Ok::<_, anyhow::Error>(to.clone())
+            },
+        )?;
 
         let tail = tail.value();
 
@@ -67,9 +63,7 @@ impl<I: InternerFactory + Default> Linker<I> {
     ///
     pub fn push_level(&mut self, level: impl Level) -> anyhow::Result<()> {
         // Configure a new handle
-        let (ready, handle) = level.configure(&mut self.interner).result()?;
-
-        self.ready_notify.push(ready);
+        let handle = level.configure(&mut self.interner)?;
 
         // Handle errors
         if let Some(last) = self.levels.last() {
@@ -105,5 +99,26 @@ impl<I: InternerFactory + Default> Linker<I> {
     #[inline]
     pub fn level(&self) -> usize {
         self.levels.len() - 1
+    }
+}
+
+#[allow(unused)]
+mod tests {
+    use super::Linker;
+
+    #[test]
+    fn test_entity_crc() {
+        struct Test {
+            name: String,
+        }
+
+        let mut linker = Linker::new_entity_crc::<Test>();
+        let a = linker.link().unwrap();
+        let b = linker.link().unwrap();
+
+        eprintln!("{:x?}", a);
+        eprintln!("{:x?}", b);
+
+        ()
     }
 }

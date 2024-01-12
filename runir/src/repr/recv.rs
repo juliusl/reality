@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use crate::define_intern_table;
 use crate::prelude::*;
 use crate::push_tag;
@@ -14,7 +12,6 @@ define_intern_table!(RECV_FIELDS: Vec<Repr>);
 
 /// Allows types to link runmd nodes to their respective type/field representation levels,
 ///
-#[async_trait(?Send)]
 pub trait Recv {
     /// Symbol for this receiver,
     ///
@@ -22,20 +19,20 @@ pub trait Recv {
 
     /// Links a node level to a receiver and returns a new Repr,
     ///
-    async fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
+    fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
     where
         Self: Sized + Send + Sync + 'static,
     {
-        let mut repr = Linker::new::<Self>();
+        let mut repr = Linker::new_crc::<Self>();
         let recv = RecvLevel::new::<Self>(fields);
         repr.push_level(recv)?;
         repr.push_level(node.clone())?;
-        repr.link().await
+        repr.link()
     }
 
     /// Links a node level to a field level and returns a new Repr,
     ///
-    async fn link_field(
+    fn link_field(
         resource: ResourceLevel,
         field: FieldLevel,
         node: NodeLevel,
@@ -44,7 +41,7 @@ pub trait Recv {
         repr.push_level(resource)?;
         repr.push_level(field)?;
         repr.push_level(node)?;
-        repr.link().await
+        repr.link()
     }
 }
 
