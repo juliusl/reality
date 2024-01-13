@@ -3,7 +3,6 @@ use crate::interner::InternResult;
 use crate::interner::LevelFlags;
 use crate::prelude::*;
 use crc::Crc;
-use std::cell::Cell;
 use std::cell::RefCell;
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -18,7 +17,7 @@ pub struct CrcInterner {
     digest: RefCell<crc::Digest<'static, u32>>,
     /// Sets the current level flag,
     ///
-    flags: RefCell<LevelFlags>,
+    flags: LevelFlags,
     /// Stack of tags being interned,
     ///
     tags: Vec<InternHandleThunk>,
@@ -26,7 +25,7 @@ pub struct CrcInterner {
     ///
     /// **Note**: When applied to the intern handle it will be DATA ^ ENTROPY
     ///
-    data: Cell<u64>,
+    data: u64,
 }
 
 impl Default for CrcInterner {
@@ -48,8 +47,8 @@ impl CrcInterner {
         CrcInterner {
             digest,
             tags: vec![],
-            flags: RefCell::new(LevelFlags::ROOT),
-            data: Cell::new(0),
+            flags: LevelFlags::ROOT,
+            data: 0,
         }
     }
 }
@@ -70,12 +69,12 @@ impl InternerFactory for CrcInterner {
 
     #[inline]
     fn set_level_flags(&mut self, flags: crate::interner::LevelFlags) {
-        self.flags.replace(flags);
+        self.flags = flags;
     }
 
     #[inline]
     fn set_data(&mut self, data: u64) {
-        self.data.replace(data);
+        self.data = data;
     }
 
     fn interner(&mut self) -> InternResult {
@@ -90,9 +89,9 @@ impl InternerFactory for CrcInterner {
         // Register a new intern handle
         let handle = InternHandle {
             link,
-            register_hi: self.flags.replace(LevelFlags::ROOT).bits() | register_hi,
+            register_hi: self.flags.bits() | register_hi,
             register_lo,
-            data: ENTROPY.get() ^ self.data.replace(0),
+            data: ENTROPY.get() ^ self.data,
         };
 
         // Peek at converter state

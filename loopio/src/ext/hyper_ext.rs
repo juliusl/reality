@@ -12,6 +12,7 @@ use poem::http::uri::Scheme;
 use reality::prelude::*;
 use serde::Deserialize;
 use serde::Serialize;
+use tracing::debug;
 use tracing::warn;
 
 use crate::prelude::Action;
@@ -93,12 +94,22 @@ impl HyperExt for ThunkContext {
         }
     }
 
+    /// Take a response from the current thunk context,
+    ///
     async fn take_response(&mut self) -> Option<hyper::Response<hyper::Body>> {
-        self.transient_mut()
-            .await
-            .root()
-            .take::<Response<Body>>()
-            .map(|r| *r)
+        if let Some(transient_target) = self.context_mut().reset() {
+            debug!("Response found");
+            transient_target
+                .storage
+                .write()
+                .await
+                .root()
+                .take::<Response<Body>>()
+                .map(|r| *r)
+        } else {
+            warn!("No response found");
+            None
+        }
     }
 
     /// Registers an internal host alias,
@@ -106,33 +117,36 @@ impl HyperExt for ThunkContext {
     /// When the scheme/host of the alias uri is received, the scheme/host of the replacement will be applied instead.
     ///
     async fn register_internal_host_alias(&mut self, alias: Uri, replace: Uri) {
-        let _key = (alias.scheme(), alias.host());
+        let key = (alias.scheme(), alias.host());
 
-        let _value = (
+        let value = (
             replace.scheme().cloned(),
             replace.host().map(|s| s.to_string()),
             replace.port_u16(),
         );
 
-        let _init = self.initialized::<EngineProxy>().await;
+        let init = self.initialized::<EngineProxy>().await;
 
-        // if let Some(eh) = self.engine_handle().await {
-        //     if let Ok(host) = eh
-        //         .hosted_resource(format!("{}://", alias.scheme_str().unwrap_or_default()))
-        //         .await
-        //     {
-        //         unsafe {
-        //             let host = host.context().node_mut().await;
-        //             host.put_resource(init, None);
-
-        //             let key =
-        //                 ResourceKey::<(Option<Scheme>, Option<String>, Option<u16>)>::with_hash(
-        //                     key,
-        //                 );
-        //             host.put_resource(value, Some(key));
-        //         }
-        //     }
-        // }
+        if let Some(eh) = self.engine_handle().await {
+            if let Ok(mut host) = eh
+                .hosted_resource(alias.scheme_str().unwrap_or_default())
+                .await
+            {
+                {
+                    let node = host.context().node().await;
+                    let root = node.root_ref();
+                    root.lazy_put(init);
+    
+                    let key =
+                        ResourceKey::<(Option<Scheme>, Option<String>, Option<u16>)>::with_hash(
+                            key,
+                        );
+                    node.lazy_put_resource(value, key);
+                }
+            
+                host.context_mut().process_node_updates().await;
+            }
+        }
     }
 
     /// Lookup an alias for a host internall w/ the scheme/host of a uri being resolved,
@@ -144,7 +158,7 @@ impl HyperExt for ThunkContext {
 
         if let Some(eh) = self.engine_handle().await {
             let host = if let Ok(host) = eh
-                .hosted_resource(format!("{}://", resolve.scheme_str().unwrap_or_default()))
+                .hosted_resource(resolve.scheme_str().unwrap_or_default())
                 .await
             {
                 let host = host.context().node().await;
@@ -276,14 +290,14 @@ impl CallAsync for Request {
     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
         let initialized = context.initialized::<Request>().await;
 
-        // println!("Starting request {:?}", initialized);
+        debug!("Starting request {:?}", initialized);
 
         let uri = context
             .internal_host_lookup(initialized.uri.as_ref())
             .await
             .unwrap_or(initialized.uri.as_ref().clone());
 
-        // println!("Resolved uri {:?}", uri);
+        debug!("Resolved uri {:?}", uri);
         let mut request = hyper::Request::builder().uri(&uri);
 
         // Handle setting method on request

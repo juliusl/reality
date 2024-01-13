@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::anyhow;
 use tracing::warn;
 
-use loopio::{action::HostAction, prelude::*};
+use loopio::prelude::*;
 
 /// Nebudeck project loading plugin
 ///

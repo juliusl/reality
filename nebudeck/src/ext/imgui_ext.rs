@@ -149,23 +149,19 @@ impl ImguiMiddleware {
                                     loopio::background_work::CallStatus::Pending => {
                                         ui.text("Pending");
                                         let __tc = _bg.into_foreground().unwrap();
+
                                         eprintln!(
                                             "Background work finished {}",
-                                            __tc.transient
-                                                .storage
-                                                .try_read()
+                                            __tc.try_transient_ref()
                                                 .map(|t| t.root_ref().exists::<Vec<UiNode>>())
                                                 .unwrap_or_default()
                                         );
 
-                                        if let Some(mut _nodes) = __tc
-                                            .transient
-                                            .storage
-                                            .clone()
-                                            .try_write()
-                                            .expect("should be the owner")
-                                            .root()
-                                            .take::<Vec<UiNode>>()
+                                        let mut transient_mut =
+                                            __tc.try_transient_mut().expect("should be the owner");
+
+                                        if let Some(mut _nodes) =
+                                            transient_mut.root().take::<Vec<UiNode>>()
                                         {
                                             imgui.user_tool_nodes.append(&mut _nodes);
                                         }
@@ -417,9 +413,7 @@ impl ImguiExt for ThunkContext {
         show: impl for<'a, 'b> Fn(&'a UiFormatter<'_>) -> bool + Send + Sync + 'static,
     ) {
         let mut storage = self
-            .transient
-            .storage
-            .try_write()
+            .try_transient_mut()
             .expect("should only be called during transient code");
 
         let mut nodes = storage.maybe_put_resource(vec![], self.attribute.transmute());
@@ -434,9 +428,7 @@ impl ImguiExt for ThunkContext {
         show: impl for<'a, 'b> Fn(&'a UiFormatter<'b>) -> bool + Send + Sync + 'static,
     ) {
         let mut storage = self
-            .transient
-            .storage
-            .try_write()
+            .try_transient_mut()
             .expect("should only be called during transient code");
 
         let mut nodes = storage.maybe_put_resource(vec![], self.attribute.transmute());
@@ -610,9 +602,7 @@ impl UiDisplayMut for ImguiMiddleware {
                             }
                         }
                         loopio::background_work::CallStatus::Pending => {
-                            let mut __tc = _bg.into_foreground().unwrap();
-
-                            if let Ok(mut storage) = __tc.transient.clone().storage.try_write() {
+                            if let Some(mut storage) = _bg.into_foreground()?.try_transient_mut() {
                                 self.published =
                                     Some(Published::default().unpack(storage.deref_mut()));
                             }

@@ -41,6 +41,7 @@ flexbuffers = { version = "2.0.0", optional = true }
 hyper_serde = { version = "0.13.2", optional = true }
 tower = "0.4.13"
 thiserror = "1.0.56"
+tracing-subscriber = "0.3.18"
 
 [[example]]
 name = "utility-demo"

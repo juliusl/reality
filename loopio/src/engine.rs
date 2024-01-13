@@ -73,6 +73,11 @@ impl EngineBuilder {
         }
     }
 
+    pub fn enable_isolation(mut self) -> Self {
+        self.runtime_builder = runir::prelude::new_runtime();
+        self
+    }
+
     /// Enables as a thunk for plugin P,
     ///
     pub fn enable<P>(&mut self)
@@ -251,7 +256,8 @@ impl Engine {
     ///
     #[inline]
     pub fn builder() -> EngineBuilder {
-        let runtime = runir::prelude::new_runtime();
+        let mut runtime = tokio::runtime::Builder::new_multi_thread();
+        runtime.enable_all();
 
         EngineBuilder::new(runtime)
     }
@@ -630,8 +636,10 @@ impl Engine {
                     }
                     EngineAction::Publish { context, mut tx } => {
                         if let Some(tx) = tx.take() {
+                            trace!("Looking up address");
                             let address = context.address();
 
+                            trace!("Got address {address}");
                             if let Ok(address) = address.parse::<Address>() {
                                 trace!("Publishing hosted resource {address}");
 
@@ -667,6 +675,8 @@ impl Engine {
                             } else if tx.send(Err(anyhow!("Could not parse {address}"))).is_err() {
                                 error!("Could not publish resource");
                             }
+                        } else {
+                            panic!("Expected a response channel")
                         }
                     }
                     EngineAction::Sync { mut tx } => {
@@ -726,16 +736,10 @@ async fn build_published(tc: &mut ThunkContext) -> anyhow::Result<()> {
         let mut _a = eh.hosted_resource("engine://engine").await?;
 
         if let Some(published) = _a.context().cached::<Published>() {
-            published
-                .clone()
-                .pack(tc.transient.storage.write().await.deref_mut());
+            let mut transient = tc.transient_mut().await;
+            published.clone().pack(transient.deref_mut());
 
-            tc.transient
-                .storage
-                .write()
-                .await
-                .root()
-                .put(published.clone());
+            transient.root().put(published.clone());
         };
     }
 
@@ -848,7 +852,7 @@ impl Debug for EngineAction {
                 .field("has_tx", &tx.is_some())
                 .finish(),
             Self::Shutdown(arg0) => f.debug_tuple("Shutdown").field(arg0).finish(),
-            Self::Publish { .. } => f.debug_struct("Publish").finish(),
+            Self::Publish { tx, .. } => f.debug_struct("Publish").field("has_tx", &tx.is_some()).finish(),
             #[allow(unreachable_patterns)]
             _ => Ok(()),
         }
@@ -1029,7 +1033,7 @@ impl EngineHandle {
 
     /// Listens for an event,
     ///
-    pub(crate) async fn listen(&self, event: impl AsRef<str>) -> anyhow::Result<()> {
+    pub(crate) async fn listen(&self, event: impl AsRef<str>) -> anyhow::Result<Option<Bytes>> {
         let host = self
             .host
             .and_then(|h| h.address().as_deref().cloned())
@@ -1043,12 +1047,18 @@ impl EngineHandle {
                 let mut port = futures_util::StreamExt::boxed(&mut next);
 
                 info!("Listening for event -- {}", event.as_ref());
+
+                let mut message = None::<Bytes>;
                 if let Some((_, event)) = port.next().await {
                     info!("Got event -- {:?}", event);
+
+                    if !event.data.is_empty() {
+                        message = Some(event.data);
+                    }
                 }
 
                 info!("Finished listening");
-                Ok(())
+                Ok(message)
             }
             Err(err) => {
                 error!("Could not listen for event {err}");

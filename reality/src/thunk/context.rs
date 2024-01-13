@@ -7,6 +7,7 @@ use futures_util::stream::BoxStream;
 use futures_util::Future;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
+use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use tracing::error;
@@ -43,7 +44,7 @@ pub struct Context {
     pub node: AsyncStorageTarget<Shared>,
     /// Transient storage target,
     ///
-    pub transient: AsyncStorageTarget<Shared>,
+    pub transient: OnceCell<AsyncStorageTarget<Shared>>,
     /// Cancellation token that can be used by the engine to signal shutdown,
     ///
     pub cancellation: tokio_util::sync::CancellationToken,
@@ -62,8 +63,6 @@ pub struct Context {
 
 impl From<AsyncStorageTarget<Shared>> for Context {
     fn from(value: AsyncStorageTarget<Shared>) -> Self {
-        let handle = value.runtime.clone().expect("should have a runtime");
-
         if let Ok(mut storage) = value.storage.try_write() {
             let attribute = storage
                 .root()
@@ -73,7 +72,7 @@ impl From<AsyncStorageTarget<Shared>> for Context {
             Self {
                 node: value.clone(),
                 attribute,
-                transient: Shared::default().into_thread_safe_with(handle),
+                transient: OnceCell::new(),
                 cancellation: storage
                     .take_resource(attribute.transmute())
                     .map(|a| *a)
@@ -91,7 +90,7 @@ impl From<AsyncStorageTarget<Shared>> for Context {
             Self {
                 node: value.clone(),
                 attribute: ResourceKey::root(),
-                transient: Shared::default().into_thread_safe_with(handle),
+                transient: OnceCell::new(),
                 cancellation: CancellationToken::new(),
                 variant_id: None,
                 __cached: Shared::default(),
@@ -126,12 +125,14 @@ pub struct LocalAnnotations {
 impl Context {
     /// Returns a new blank thunk context,
     ///
+    #[inline]
     pub fn new() -> Self {
         Self::from(Shared::default().into_thread_safe())
     }
 
     /// Unpacks some resource from cached storage,
     ///
+    #[inline]
     pub fn unpack<T>(&mut self) -> Option<T>
     where
         T: Pack + Sync + Send + Clone + 'static,
@@ -145,17 +146,25 @@ impl Context {
     /// checks local annotations.
     ///
     pub fn property(&self, name: impl AsRef<str>) -> Option<String> {
+        debug!("Getting property `{}`", name.as_ref());
         let local = self.attribute.into_link().and_then(|key| {
             self.fetch_kv::<LocalAnnotations>(key)
                 .and_then(|a| a.1.map.get(name.as_ref()).cloned())
         });
 
-        local.or(self
-            .attribute
-            .repr()
-            .and_then(|d| d.as_node())
-            .and_then(|d| d.annotations())
-            .and_then(|c| c.get(name.as_ref()).cloned()))
+        debug!("Local value is {:?}", local);
+        local.or_else(|| {
+            debug!("Looking for runir annotations");
+            let repr = self.attribute
+                .repr();
+            debug!("{:?}", repr);
+            repr.and_then(|d| d.as_node())
+                .and_then(|d| {
+                    debug!("Getting annotations");
+                    d.annotations()
+                })
+                .and_then(|c| c.get(name.as_ref()).cloned())
+        })
     }
 
     /// Sets a property for the current context w/ local annotations,
@@ -201,6 +210,7 @@ impl Context {
 
     /// Returns the tag value if one was set for this context,
     ///
+    #[inline]
     pub fn tag(&self) -> Option<Arc<String>> {
         self.attribute
             .repr()
@@ -210,25 +220,28 @@ impl Context {
 
     /// Reset the transient storage,
     ///
-    pub fn reset(&mut self) {
-        let handle = self.node.runtime.clone().expect("should have a runtime");
-        self.transient = Shared::default().into_thread_safe_with(handle);
+    #[inline]
+    pub fn reset(&mut self) -> Option<AsyncStorageTarget<Shared>> {
+        self.transient.take()
     }
 
     /// Sets the attribute for this context,
     ///
+    #[inline]
     pub fn set_attribute(&mut self, attribute: ResourceKey<Attribute>) {
         self.attribute = attribute;
     }
 
     /// Get read access to source storage,
     ///
+    #[inline]
     pub async fn node(&self) -> tokio::sync::RwLockReadGuard<Shared> {
         self.node.storage.read().await
     }
 
     /// Returns the current resource from node storage,
     ///
+    #[inline]
     pub async fn current_node_resource<T>(&self) -> Option<T>
     where
         T: ToOwned<Owned = T> + Send + Sync + 'static,
@@ -245,6 +258,7 @@ impl Context {
 
     /// Processes any pending node updates,
     ///
+    #[inline]
     pub async fn process_node_updates(&self) {
         self.node.storage.write().await.drain_dispatch_queues();
     }
@@ -253,20 +267,75 @@ impl Context {
     ///
     /// **Note**: During an operation run dispatch queues are drained before each thunk execution.
     ///
+    #[inline]
     pub async fn transient(&self) -> Shared {
-        self.transient.storage.latest().await
+        self.transient_target().await.storage.latest().await
     }
 
     /// Returns a writeable reference to transient storage,
     ///
+    #[inline]
     pub async fn transient_mut(&self) -> tokio::sync::RwLockWriteGuard<Shared> {
-        self.transient.storage.write().await
+        self.transient_target().await.storage.write().await
     }
 
     /// Returns a readable reference to transient storage,
     ///
+    #[inline]
     pub async fn transient_ref(&self) -> tokio::sync::RwLockReadGuard<Shared> {
-        self.transient.storage.read().await
+        self.transient_target().await.storage.read().await
+    }
+
+    /// Returns a writeable reference to transient storage,
+    ///
+    #[inline]
+    pub fn try_transient_mut(&self) -> Option<tokio::sync::RwLockWriteGuard<Shared>> {
+        self.try_transient_target()
+            .and_then(|s| s.storage.try_write().ok())
+    }
+
+    /// Returns a readable reference to transient storage,
+    ///
+    #[inline]
+    pub fn try_transient_ref(&self) -> Option<tokio::sync::RwLockReadGuard<Shared>> {
+        self.try_transient_target()
+            .and_then(|s| s.storage.try_read().ok())
+    }
+
+    /// Returns and initializes the transient storage target,
+    ///
+    #[inline]
+    pub async fn transient_target(&self) -> &AsyncStorageTarget<Shared> {
+        self.transient
+            .get_or_init(|| {
+                let handle = self
+                    .node
+                    .runtime
+                    .as_ref()
+                    .expect("should be bound to a tokio runtime")
+                    .clone();
+                async { Shared::default().into_thread_safe_with(handle) }
+            })
+            .await
+    }
+
+    /// Tries to return a reference to the transient target,
+    ///
+    #[inline]
+    pub fn try_transient_target(&self) -> Option<&AsyncStorageTarget<Shared>> {
+        if !self.transient.initialized() {
+            let handle = self
+                .node
+                .runtime
+                .as_ref()
+                .expect("should be bound to a tokio runtime")
+                .clone();
+            let _ = self
+                .transient
+                .set(Shared::default().into_thread_safe_with(handle));
+        }
+
+        self.transient.get()
     }
 
     /// Spawn a task w/ this context,
@@ -275,6 +344,7 @@ impl Context {
     ///
     /// **Note** Will start immediately on the tokio-runtime.
     ///
+    #[inline]
     pub fn spawn<F>(&self, task: impl FnOnce(Context) -> F + Sync + 'static) -> CallOutput
     where
         F: Future<Output = anyhow::Result<Context>> + Send + 'static,
@@ -290,18 +360,21 @@ impl Context {
 
     /// Convenience for `PluginOutput::Skip`
     ///
+    #[inline]
     pub fn skip(&self) -> CallOutput {
         CallOutput::Skip
     }
 
     /// Convenience for `PluginOutput::Abort(..)`
     ///
+    #[inline]
     pub fn abort(&self, error: impl Into<anyhow::Error>) -> CallOutput {
         CallOutput::Abort(Err(error.into()))
     }
 
     /// Convenience for `PluginOutput::Skip`
     ///
+    #[inline]
     pub fn update(self) -> CallOutput {
         CallOutput::Update(Some(self))
     }
@@ -310,6 +383,7 @@ impl Context {
     ///
     /// **Note**: This is the state that was evaluated at the start of the application, when the runmd was parsed.
     ///
+    #[inline]
     pub async fn initialized<P: Plugin + Sync + Send + 'static>(&self) -> P {
         let node = self.node().await;
 
@@ -324,6 +398,7 @@ impl Context {
 
     /// Returns the packet router initialized for P,
     ///
+    #[inline]
     pub async fn router<P: Plugin + Sync + Send + 'static>(&self) -> Option<Arc<PacketRouter<P>>> {
         self.current_node_resource().await
     }
@@ -332,6 +407,7 @@ impl Context {
     ///
     /// **Note**: The default frame listener only has a buffer_len of 1.
     ///
+    #[inline]
     pub async fn listener<P: Plugin + Sync + Send + 'static>(&self) -> Option<FrameListener<P>>
     where
         P::Virtual: NewFn<Inner = P>,
@@ -341,6 +417,7 @@ impl Context {
 
     /// Returns the current wire server if initialized,
     ///
+    #[inline]
     pub async fn wire_server<P: Plugin + Sync + Send + 'static>(&self) -> Option<Arc<WireServer<P>>>
     where
         P::Virtual: NewFn<Inner = P>,
@@ -350,6 +427,7 @@ impl Context {
 
     /// Returns the current wire client if initialized,
     ///
+    #[inline]
     pub async fn wire_client<P: Plugin + Sync + Send + 'static>(&self) -> Option<WireClient<P>>
     where
         P::Virtual: NewFn<Inner = P>,
@@ -359,6 +437,7 @@ impl Context {
 
     /// Listens for one packet,
     ///
+    #[inline]
     pub async fn listen_one<P: Plugin + Sync + Send + 'static>(self) -> ThunkContext {
         if let Some(router) = self.router().await {
             P::listen_one(router).await;
@@ -368,6 +447,7 @@ impl Context {
 
     /// Creates a new initializer,
     ///
+    #[inline]
     pub async fn initialize<'a: 'b, 'b, P: Plugin + Sync + Send + 'static>(
         &'a mut self,
     ) -> Initializer<'b, P> {
@@ -382,6 +462,7 @@ impl Context {
 
     /// Retrieves the initialized frame state of the plugin,
     ///
+    #[inline]
     pub async fn initialized_frame(&self) -> Frame {
         self.current_node_resource().await.unwrap_or_default()
     }
@@ -390,6 +471,7 @@ impl Context {
     ///
     /// **Note** Initializes a new dispatcher if one is not already present,
     ///
+    #[inline]
     pub async fn dispatcher<T: Default + Sync + Send + 'static>(&self) -> Dispatcher<Shared, T> {
         self.node
             .maybe_intialize_dispatcher(self.attribute.transmute())
@@ -401,6 +483,7 @@ impl Context {
     /// - Searches the current context for a resource P
     /// - If include_root is true, searches the root resource key for resource P as well
     ///
+    #[inline]
     pub async fn find_and_cache<P: ToOwned<Owned = P> + Send + Sync + 'static>(
         &mut self,
         include_root: bool,
@@ -423,18 +506,21 @@ impl Context {
 
     /// Returns a clone of the current cache,
     ///
+    #[inline]
     pub fn clone_cache(&self) -> Shared {
         self.__cached.clone()
     }
 
     /// Sets the current cache,
     ///
+    #[inline]
     pub fn set_cache(&mut self, shared: Shared) {
         self.__cached = shared;
     }
 
     /// Caches the plugin P,
     ///
+    #[inline]
     pub async fn cache<P: Plugin + Sync + Send + 'static>(&mut self) {
         let next = self.initialized().await;
 
@@ -444,6 +530,7 @@ impl Context {
 
     /// Scans if a resource exists for the current context,
     ///
+    #[inline]
     pub async fn scan_node_for<P: ToOwned<Owned = P> + Sync + Send + 'static>(&self) -> Option<P> {
         self.current_node_resource().await
     }
@@ -515,58 +602,6 @@ impl Context {
             }
         }
         .boxed()
-    }
-
-    /// Apply all thunks in attribute order,
-    ///
-    pub async fn apply_thunks(self) -> anyhow::Result<Self> {
-        let node = crate::Node(self.node.storage.clone());
-        node.stream_attributes()
-            .map(Ok)
-            .try_fold(self, Self::apply)
-            .await
-    }
-
-    /// Apply thunks w/ middleware,
-    ///
-    pub async fn apply_thunks_with<Fut>(
-        self,
-        middle: impl Fn(Self, ResourceKey<Attribute>) -> Fut + Copy + Clone + Send + Sync + 'static,
-    ) -> anyhow::Result<Self>
-    where
-        Fut: Future<Output = anyhow::Result<Self>>,
-    {
-        let node = crate::Node(self.node.storage.clone());
-        node.stream_attributes()
-            .map(Ok)
-            .try_fold(self, |mut acc, next| async move {
-                acc.set_attribute(next);
-
-                Self::apply((middle)(acc, next).await?, next).await
-            })
-            .await
-    }
-
-    /// Applies thunk associated to attr,
-    ///
-    pub async fn apply(mut self, attr: ResourceKey<Attribute>) -> anyhow::Result<Self> {
-        // TODO: Might be a hot spot
-        {
-            debug!("Applying changes to transient storage");
-            self.transient_mut().await.drain_dispatch_queues();
-
-            debug!("Applying changes to node storage");
-            self.node.storage.write().await.drain_dispatch_queues();
-        }
-
-        self.set_attribute(attr);
-        let previous = self.clone();
-
-        match self.call().await {
-            Ok(Some(tc)) => Ok(tc),
-            Ok(None) => Ok(previous),
-            Err(err) => Err(err),
-        }
     }
 
     /// Schedules garbage collection of the variant,

@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use async_trait::async_trait;
+use bytes::Bytes;
 use poem::get;
 use poem::http::HeaderMap;
 use poem::http::*;
@@ -22,7 +24,10 @@ use poem::Route;
 use poem::RouteMethod;
 use reality::prelude::*;
 use reality::CommaSeperatedStrings;
+use tracing::debug;
 use tracing::error;
+use tracing::info;
+use tracing::warn;
 
 use crate::action::ActionExt;
 use crate::ext::*;
@@ -57,13 +62,9 @@ pub trait PoemExt {
     ///
     async fn get_path_vars(&mut self) -> Option<PathVars>;
 
-    /// Take the request body from storage,
+    /// Take body and response parts from transient target splitting for re-constructing a response,
     ///
-    async fn take_body(&mut self) -> Option<poem::Body>;
-
-    /// Take headers from storage,
-    ///
-    async fn take_response_parts(&mut self) -> Option<ResponseParts>;
+    async fn split_for_response(&mut self) -> Option<(ResponseParts, poem::Body)>;
 
     /// Set the status code on the response,
     ///
@@ -96,14 +97,19 @@ pub trait PoemExt {
 
 #[async_trait]
 impl PoemExt for ThunkContext {
-    #[inline]
-    async fn take_response_parts(&mut self) -> Option<ResponseParts> {
-        self.transient_mut().await.root().take().map(|b| *b)
-    }
+    async fn split_for_response(&mut self) -> Option<(ResponseParts, poem::Body)> {
+        if let Some(target) = self.reset() {
+            let mut target = target.storage.write().await;
 
-    #[inline]
-    async fn take_body(&mut self) -> Option<poem::Body> {
-        self.transient_mut().await.root().take().map(|b| *b)
+            let mut root = target.root();
+
+            match (root.take::<ResponseParts>(), root.take::<poem::Body>()) {
+                (Some(parts), Some(body)) => Some((*parts, *body)),
+                _ => None,
+            }
+        } else {
+            None
+        }
     }
 
     #[inline]
@@ -161,7 +167,10 @@ impl PoemExt for ThunkContext {
 /// Routes requests to a specific engine operation,
 ///
 #[derive(Reality, Serialize, Deserialize, PartialEq, PartialOrd, Default)]
-#[reality(plugin, call = start_engine_proxy, rename = "engine-proxy", group = "builtin")]
+#[plugin_def(
+    call = start_engine_proxy
+)]
+#[parse_def(group = "builtin", rename = "engine-proxy")]
 pub struct EngineProxy {
     /// Address to host the proxy on,
     ///
@@ -179,91 +188,71 @@ pub struct EngineProxy {
     ///
     #[reality(map_of=Decorated<Address>)]
     route: BTreeMap<String, Decorated<Address>>,
+
+    #[reality(ignore)]
+    #[serde(skip)]
+    routes: Vec<RouteConfig>,
 }
 
-impl Debug for EngineProxy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EngineProxy")
-            .field("address", &self.address)
-            .field("alias", &self.alias)
-            .field("path", &self.path)
-            .field("route", &self.route)
-            .finish()
+#[derive(Clone)]
+pub struct RouteConfig {
+    path: String,
+    resource: HostedResource,
+    methods: Option<Delimitted<',', String>>,
+}
+
+impl PartialEq for RouteConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path && self.methods == other.methods
     }
 }
 
-impl Clone for EngineProxy {
-    fn clone(&self) -> Self {
-        Self {
-            address: self.address.clone(),
-            alias: self.alias.clone(),
-            route: self.route.clone(),
-            path: self.path.clone(),
+impl PartialOrd for RouteConfig {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.path.partial_cmp(&other.path) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
         }
+        self.methods.partial_cmp(&other.methods)
     }
 }
 
-/// Type-alias for parsed path variable from a request,
-///
-pub type PathVars = Path<BTreeMap<String, String>>;
+impl RouteConfig {
+    /// Configures a poem route w/ an endpoint,
+    ///
+    pub fn configure_route<E: Endpoint + 'static>(
+        &self,
+        route: Route,
+        endpoint: impl Fn() -> E,
+    ) -> Route {
+        let ep = move |resource: &HostedResource| endpoint().data(resource.clone());
 
-#[poem::handler]
-async fn on_proxy(
-    req: &poem::Request,
-    mut body: Body,
-    operation: Data<&HostedResource>,
-) -> poem::Result<poem::Response> {
-    let mut body = RequestBody::new(body);
-    let path_vars = PathVars::from_request(req, &mut body).await?;
+        let resource = &self.resource;
 
-    let mut resource = operation.clone();
-    resource.context_mut().reset();
-
-    resource
-        .context_mut()
-        .transient_mut()
-        .await
-        .root()
-        .put(PoemRequest {
-            path: path_vars,
-            uri: req.uri().clone(),
-            headers: req.headers().clone(),
-            body: Some(body),
-        });
-
-    if let CallOutput::Spawn(Some(spawned)) = resource.spawn() {
-        match spawned.await.map_err(|_| {
-            poem::Error::from_string(
-                "Hosted resource is unresponsive",
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        })? {
-            Ok(mut context) => {
-                #[cfg(feature = "hyper-ext")]
-                match context.take_response().await {
-                    Some(response) => Ok(response.into()),
-                    None => Ok(poem::Response::builder()
-                        .status(StatusCode::NOT_FOUND)
-                        .finish()),
-                }
-
-                #[cfg(not(feature = "hyper-ext"))]
-                match (context.take_response_parts(), context.take_body()) {
-                    (Some(parts), Some(body)) => Ok(poem::Response::from_parts(parts, body)),
-                    _ => Ok(poem::Response::builder()
-                        .status(StatusCode::NOT_FOUND)
-                        .finish()),
-                }
-            }
-            Err(err) => Err(poem::Error::from_string(
-                format!("{err}"),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )),
+        if let Some(methods) = self.methods.as_ref() {
+            // Parse the methods from decoration properties
+            let methods = methods
+                .clone()
+                .into_iter()
+                .filter_map(|m| Method::from_str(&m).ok());
+            let route_method = methods.fold(RouteMethod::new(), move |route, m| match m {
+                Method::GET => route.get(ep(resource)),
+                Method::HEAD => route.head(ep(resource)),
+                Method::OPTIONS => route.options(ep(resource)),
+                Method::PUT => route.put(ep(resource)),
+                Method::POST => route.post(ep(resource)),
+                Method::PATCH => route.patch(ep(resource)),
+                Method::DELETE => route.delete(ep(resource)),
+                Method::CONNECT => route.connect(ep(resource)),
+                Method::TRACE => route.trace(ep(resource)),
+                _ => route,
+            });
+            debug!("Adding route {}", self.path);
+            route.at(self.path.to_string(), route_method)
+        } else {
+            debug!("Adding route {}", self.path);
+            route.at(self.path.to_string(), get(ep(resource)))
         }
-    } else {
-        Ok(poem::Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .finish())
     }
 }
 
@@ -297,53 +286,36 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
         }
     }
 
+    let route_config =
+        initialized
+            .path
+            .iter()
+            .fold(vec![], |mut config_collection, (setting, path)| {
+                let config = RouteConfig {
+                    path: path.value().expect("should have a path value").to_string(),
+                    resource: resources.get(&setting).cloned().unwrap_or_default(),
+                    methods: path
+                        .property("methods")
+                        .and_then(|m| CommaSeperatedStrings::from_str(m.as_str()).ok()),
+                };
+                config_collection.push(config);
+                config_collection
+            });
+
+    // Update the route_config setting
+    let (attr, routes) = (context.attribute, route_config.clone());
+    context.node().await.lazy_dispatch_mut(move |s| {
+        if let Some(mut proxy) = s.entry(attr).get_mut::<EngineProxy>() {
+            proxy.routes = routes;
+        }
+    });
+
+    context.process_node_updates().await;
+
     // Create route handler
-    let route = initialized
-        .path
-        .iter()
-        .fold(Route::new(), |route, (setting, path)| {
-            let ep = |setting| {
-                if let Some(resource) = resources.get(&setting) {
-                    on_proxy.data(resource.clone())
-                } else {
-                    // TODO -- Create a "landing page hosted resource"
-                    on_proxy.data(HostedResource::default())
-                }
-            };
-
-            // Setting name
-            if let Some(methods) = path
-                .property("methods")
-                .and_then(|m| CommaSeperatedStrings::from_str(m.as_str()).ok())
-            {
-                // Parse the methods from decoration properties
-                let methods = methods
-                    .into_iter()
-                    .filter_map(|m| Method::from_str(&m).ok());
-                let route_method = methods.fold(RouteMethod::new(), move |route, m| match m {
-                    Method::GET => route.get(ep(setting)),
-                    Method::HEAD => route.head(ep(setting)),
-                    Method::OPTIONS => route.options(ep(setting)),
-                    Method::PUT => route.put(ep(setting)),
-                    Method::POST => route.post(ep(setting)),
-                    Method::PATCH => route.patch(ep(setting)),
-                    Method::DELETE => route.delete(ep(setting)),
-                    Method::CONNECT => route.connect(ep(setting)),
-                    Method::TRACE => route.trace(ep(setting)),
-                    _ => route,
-                });
-
-                if let Some(path) = path.value() {
-                    route.at(path, route_method)
-                } else {
-                    route
-                }
-            } else if let Some(path) = path.value() {
-                route.at(path, get(ep(setting)))
-            } else {
-                route
-            }
-        });
+    let route = route_config.iter().fold(Route::new(), |route, config| {
+        config.configure_route(route, || on_proxy)
+    });
 
     let listener = TcpListener::bind(&initialized.address)
         .into_acceptor()
@@ -361,18 +333,23 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
         let replace_with = Uri::builder()
             .scheme("http")
             .authority(format!("localhost:{}", port))
-            .path_and_query("/")
-            .build();
+            .path_and_query(format!("/?engine-proxy={}", attr.address().unwrap_or_default()))
+            .build()?;
         let alias = Uri::builder()
             .scheme(scheme.clone())
             .authority(alias)
             .path_and_query("/")
-            .build();
+            .build()?;
 
         eprintln!("Adding alias: {:?} -> {:?}", alias, replace_with);
-        context
-            .register_internal_host_alias(alias?, replace_with?)
-            .await;
+
+        if let Some(notify) = context.property("notify") {
+            info!("Notifying {notify}");
+            if let Some(eh) = context.engine_handle().await {
+                let message = Bytes::copy_from_slice(replace_with.to_string().as_bytes());
+                eh.notify(notify, Some(message)).await?;
+            }
+        }
     }
 
     eprintln!(
@@ -388,6 +365,96 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
         .await?;
 
     Ok(())
+}
+
+impl Debug for EngineProxy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EngineProxy")
+            .field("address", &self.address)
+            .field("alias", &self.alias)
+            .field("path", &self.path)
+            .field("route", &self.route)
+            .finish()
+    }
+}
+
+impl Clone for EngineProxy {
+    fn clone(&self) -> Self {
+        Self {
+            address: self.address.clone(),
+            alias: self.alias.clone(),
+            route: self.route.clone(),
+            path: self.path.clone(),
+            routes: self.routes.clone(),
+        }
+    }
+}
+
+/// Type-alias for parsed path variable from a request,
+///
+pub type PathVars = Path<BTreeMap<String, String>>;
+
+#[poem::handler]
+async fn on_proxy(
+    req: &poem::Request,
+    mut body: Body,
+    operation: Data<&HostedResource>,
+) -> poem::Result<poem::Response> {
+    let mut body = RequestBody::new(body);
+    let path_vars = PathVars::from_request(req, &mut body).await?;
+
+    let mut resource = operation.clone();
+    if let Some(_previous) = resource.context_mut().reset() {
+        warn!("Previous transient target detected");
+    }
+
+    resource
+        .context_mut()
+        .transient_mut()
+        .await
+        .root()
+        .put(PoemRequest {
+            path: path_vars,
+            uri: req.uri().clone(),
+            headers: req.headers().clone(),
+            body: Some(body),
+        });
+
+    if let CallOutput::Spawn(Some(spawned)) = resource.spawn() {
+        match spawned.await.map_err(|_| {
+            poem::Error::from_string(
+                "Hosted resource is unresponsive",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })? {
+            Ok(mut context) => {
+                #[cfg(feature = "hyper-ext")]
+                match context.take_response().await {
+                    Some(response) => Ok(response.into()),
+                    None => Ok(poem::Response::builder()
+                        .status(StatusCode::NOT_FOUND)
+                        .finish()),
+                }
+
+                #[cfg(not(feature = "hyper-ext"))]
+                if let Some((parts, body)) = context.split_for_response().await {
+                    Ok(poem::Response::from_parts(parts, body))
+                } else {
+                    Ok(poem::Response::builder()
+                        .status(StatusCode::NOT_FOUND)
+                        .finish())
+                }
+            }
+            Err(err) => Err(poem::Error::from_string(
+                format!("{err}"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )),
+        }
+    } else {
+        Ok(poem::Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .finish())
+    }
 }
 
 /// Reverse proxy config,
@@ -486,36 +553,32 @@ pub struct ReverseProxy {
 async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = tc.as_remote_plugin::<ReverseProxy>().await;
 
-    let _bus = tc.virtual_bus(init.address.parse::<Address>()?).await;
+    let mut route = Route::new();
 
-    // TODO -- Get the address of the engine_proxies
+    let client = Arc::new(hyper_ext::local_client());
 
-    // // let mut routes = BTreeMap::new();
+    for host in init.forward.iter() {
+        let key = ResourceKey::with_hash(host.as_ref().to_string());
+        let mut transient = tc.transient_mut().await;
+        let entry = transient.entry(key);
 
-    // for host in init.forward.iter() {
-    //     let mut transient = tc.transient_mut().await;
-    //     let resource = transient
-    //         .take_resource::<EngineProxy>(Some(ResourceKey::with_hash(host.as_ref().to_string())));
-    //     eprintln!("Processing reverse proxy config for {}", host.as_ref(),);
-    //     // if let Some(resource) = resource {
-    //     //     for (address, route_method) in resource.routes {
-    //     //         eprintln!("Forwarding route {}", address);
-    //     //         routes.insert(address, route_method);
-    //     //     }
-    //     // }
-    // }
+        if let (Some(rp_config), Some(routes), Some(internal_host)) = (
+            entry.get::<ReverseProxyConfig>(),
+            entry.get::<Vec<RouteConfig>>(),
+            entry.get::<Arc<Uri>>()
+        ) {
+            route = routes.iter().fold(Route::new(), |route, config| {
+                config.configure_route(route, || rp_config.decorate(on_forward_request.data(client.clone()).data(internal_host.clone())))
+            });
+        };
+    }
 
-    // let mut route = Route::new();
-    // for (address, _route) in routes {
-    //     route = route.at(address, _route);
-    // }
+    let listener = TcpListener::bind(&init.address);
+    eprintln!("Listening to {}", init.address);
 
-    // let listener = TcpListener::bind(&init.address);
-    // eprintln!("Listening to {}", init.address);
-
-    // poem::Server::new(listener)
-    //     .run_with_graceful_shutdown(route, tc.cancellation.child_token().cancelled(), None)
-    //     .await?;
+    poem::Server::new(listener)
+        .run_with_graceful_shutdown(route, tc.cancellation.child_token().cancelled(), None)
+        .await?;
 
     Ok(())
 }
@@ -547,6 +610,7 @@ async fn on_forward_request(
     }
 
     let uri = internal_host.clone();
+    eprintln!("{:?}", uri);
     if let (Some(scheme), Some(host), Some(port)) = (uri.scheme(), uri.host(), uri.port_u16()) {
         let forwarding = Uri::builder()
             .scheme(scheme.clone())
@@ -585,31 +649,63 @@ async fn on_forward_request(
 async fn configure_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = tc.initialized::<ReverseProxyConfig>().await;
 
-    if let (Some(_host), Some(internal_host)) = (
-        init.alias.as_ref().scheme_str(),
-        tc.internal_host_lookup(init.alias.as_ref()).await,
-    ) {
-        let client = Arc::new(hyper_ext::local_client());
-        let _client = &client;
-
-        let internal_host = Arc::new(internal_host);
-        let _internal_host = &internal_host;
-
-        // if let Some(mut engine_proxy) = tc.scan_host_for::<EngineProxy>(host).await {
-        //     println!("Configuring reverse proxy for {}", init.alias.as_ref());
-        //     let config = || init.clone().decorate(on_forward_request);
-        //     // create_routes!(
-        //     //     move || { config().data(client.clone()).data(internal_host.clone()) },
-        //     //     tc,
-        //     //     engine_proxy,
-        //     //     [head, get, post, put, patch, delete]
-        //     // );
-
-        //     tc.transient_mut().await.put_resource(
-        //         engine_proxy,
-        //         Some(ResourceKey::with_hash(init.alias.to_string())),
-        //     );
-        // }
+    if let Some((_, event_message)) = tc.fetch_kv::<Bytes>("inbound_event_message") {
+        debug!("Got event_message {:?}", event_message);
+        if let Ok(internal_host) = std::str::from_utf8(&event_message)
+            .map_err(|e| anyhow!(e))
+            .and_then(|s| Uri::from_str(s).map_err(|e| anyhow!(e)))
+        {
+            debug!("Parsed event_message {:?}", internal_host);
+            let client = Arc::new(hyper_ext::local_client());
+    
+            let address = internal_host.query().map(|q| q.trim_start_matches("engine-proxy=").to_string());
+            let internal_host = Arc::new(format!("http://localhost:{}", internal_host.port_u16().expect("should have a port")).parse::<Uri>()?);
+    
+            if let Some(engine_proxy) = tc.engine_handle().await.expect("should be bound to an engine").hosted_resource(address.unwrap()).await.ok() {
+                let engine_proxy = engine_proxy.context().initialized::<EngineProxy>().await;
+                debug!(
+                    "Getting route config from engine proxy for {}\n{:#?}",
+                    init.alias.as_ref(),
+                    engine_proxy
+                );
+                let mut transient = tc.transient_mut().await;
+                let mut entry = transient.entry(ResourceKey::with_hash(init.alias.to_string()));
+                entry.put(engine_proxy.routes.clone());
+                entry.put(init.clone());
+                entry.put(client);
+                entry.put(internal_host.clone());
+            }
+            debug!("Configured reverse proxy for {:?} -> {internal_host}", init.alias);
+        }
     }
+
+    // if let (Some(_host), Some(internal_host)) = (
+    //     init.alias.as_ref().scheme_str(),
+    //     tc.internal_host_lookup(init.alias.as_ref()).await,
+    // ) {
+    //     let client = Arc::new(hyper_ext::local_client());
+    //     let _client = &client;
+
+    //     let internal_host = Arc::new(internal_host);
+    //     let _internal_host = &internal_host;
+
+    //     if let Some(engine_proxy) = tc.scan_node_for::<EngineProxy>().await {
+    //         debug!(
+    //             "Getting route config from engine proxy for {}",
+    //             init.alias.as_ref()
+    //         );
+    //         tc.transient_mut().await.put_resource(
+    //             engine_proxy.routes.clone(),
+    //             ResourceKey::<Vec<RouteConfig>>::with_hash(init.alias.to_string()),
+    //         );
+
+    //         tc.transient_mut().await.put_resource(
+    //             init.clone(),
+    //             ResourceKey::<_>::with_hash(init.alias.to_string()),
+    //         );
+    //     }
+
+    //     debug!("Configured reverse proxy for {_host} -> {internal_host}");
+    // }
     Ok(())
 }

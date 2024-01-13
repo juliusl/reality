@@ -60,7 +60,9 @@ impl AsRef<ThunkContext> for HostedResource {
 #[async_trait]
 impl CallAsync for HostedResource {
     async fn call(tc: &mut ThunkContext) -> anyhow::Result<()> {
-        tc.call().await?;
+        if let Some(next) = tc.call().await? {
+            tc.transient = next.transient.clone();
+        }
         Ok(())
     }
 }

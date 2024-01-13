@@ -407,9 +407,7 @@ impl<T: Send + Sync + 'static> InternTable<T> {
     /// inner table lock is poisoned.
     ///
     pub fn get(&self, handle: &InternHandle) -> anyhow::Result<Weak<T>> {
-        let table = self.inner().borrow();
-
-        if let Some(value) = table.get(handle) {
+        if let Some(value) = self.inner().borrow().get(handle) {
             Ok(Arc::downgrade(value))
         } else {
             Err(anyhow!("Not interned {:?}", handle))

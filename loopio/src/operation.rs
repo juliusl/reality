@@ -1,6 +1,8 @@
 use anyhow::anyhow;
+use bytes::Bytes;
 use futures_util::Future;
 use futures_util::FutureExt;
+use tracing::info;
 use std::fmt::Debug;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -44,7 +46,7 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let mut init = tc.initialized::<Operation>().await;
     init.bind(tc.clone());
 
-    debug!(op = init.name, "Starting operation");
+    info!(op = init.name, "Starting operation");
 
     if let Some(eh) = tc.engine_handle().await {
         if let Some(host) = eh.host {
@@ -57,17 +59,22 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
         if let Some(ext) = ext {
             let mut context = tc.clone();
             for e in ext.iter() {
+                info!(op = init.name, "Running next operation step -- {}", e);
+            
                 let attr = ResourceKey::<Attribute>::with_repr(*e);
                 context.set_attribute(attr);
 
                 // If set, listens for an event before continuing to call the next ext
                 if let Some(event) = attr.prop("listen") {
+                    info!(op = init.name, "Operation is listening for {event}");
                     if let Some(eh) = tc.engine_handle().await {
-                        eh.listen(event).await?;
+                        if let Some(message) = eh.listen(event).await? {
+                            context.store_kv("inbound_event_message", message);
+                        }
                     }
                 }
 
-                context = context.call().await?.unwrap();
+                context = context.call().await?.unwrap_or(context);
 
                 context.process_node_updates().await;
 
@@ -75,12 +82,16 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
                 // If set, notifies an event before continuing to the call the next ext
                 if let Some(event) = attr.prop("notify") {
+                    info!(op = init.name, "Operation is notifying {event}");
                     if let Some(eh) = tc.engine_handle().await {
-                        // TODO: Read/Put message
-                        eh.notify(event, None).await?;
+                        let message = context.fetch_kv::<Bytes>("outbound_event_message").map(|b| b.1.clone());
+                        eh.notify(event, message).await?;
                     }
                 }
             }
+
+            tc.transient = context.transient.clone();
+            debug!("Before returning transient is -- {}", tc.transient.initialized());
         }
     }
 
@@ -109,37 +120,6 @@ impl Operation {
             context: None,
             spawned: None,
             node: Default::default(),
-        }
-    }
-
-    /// Executes the operation,
-    ///
-    pub async fn execute(&self) -> anyhow::Result<ThunkContext> {
-        if let Some(context) = self.context.clone() {
-            context
-                .apply_thunks_with(|c, _next| async move {
-                    trace!("Executing next {:?}", _next);
-                    Ok(c)
-                })
-                .await
-        } else {
-            Err(anyhow!("Could not execute operation, "))
-        }
-    }
-
-    /// Spawns the underlying operation, storing a handle anc cancellation token in the current struct,
-    ///
-    pub fn spawn(&mut self) {
-        if self.spawned.is_some() {
-            warn!("Existing spawned task exists");
-        }
-
-        if let Some(cancelled) = self.context.as_ref().map(|c| c.cancellation.clone()) {
-            let spawned = self.clone();
-            self.spawned = Some((
-                cancelled,
-                tokio::spawn(async move { spawned.execute().await }),
-            ));
         }
     }
 

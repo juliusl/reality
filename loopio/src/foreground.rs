@@ -66,6 +66,8 @@ impl ForegroundEngine {
     /// Creates a new foreground engine from a workspace,
     ///
     pub fn new(mut builder: EngineBuilder) -> ForegroundEngine {
+        builder = builder.enable_isolation();
+
         let runtime = builder.runtime_builder.build().unwrap();
 
         let engine = runtime
@@ -119,7 +121,12 @@ impl ForegroundEngine {
 
         eh = runtime.block_on(async move {
             let tc = eh.run("engine://default").await.unwrap();
+            let isinit = tc.transient.initialized();
+            eprintln!("is transient init {}", isinit);
             eh.background_work = tc.transient().await.root_ref().current();
+            let isinit = tc.transient.initialized();
+            eprintln!("post, is transient init {}", isinit);
+            eprintln!("Finished default startup -- bg: {}", eh.background_work.is_some());
             eh
         });
 

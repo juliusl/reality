@@ -1,14 +1,12 @@
 use imgui::InputTextCallbackHandler;
 use imgui::TreeNodeFlags;
 use loopio::action::HostAction;
-use loopio::action::TryCallExt;
 use loopio::foreground::ForegroundEngine;
 use loopio::prelude::AttributeType;
 use loopio::prelude::*;
 use nebudeck::desktop::*;
 use nebudeck::ext::imgui_ext::ImguiExt;
 use nebudeck::ext::imgui_ext::ImguiMiddleware;
-use nebudeck::ext::imgui_ext::UiNode;
 use nebudeck::ext::WgpuSystem;
 use nebudeck::ext::*;
 use nebudeck::widgets::UiDisplayMut;
@@ -120,7 +118,7 @@ async fn test(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = Local.create::<Test>(tc).await;
     println!("{:#?}", init);
 
-    let mut storage = tc.transient.storage.write().await;
+    let mut storage = tc.transient_mut().await;
     init.pack::<Shared>(&mut storage);
 
     Ok(())
@@ -167,7 +165,12 @@ async fn process_wizard(tc: &mut ThunkContext) -> anyhow::Result<()> {
                 let mut init = HostAction::new(host).build::<Process>(init, repr).await?;
 
                 // Bind a task that defines the UI node and dependencies
-                init = init.add_task::<Process>("edit_program_name", thunk_fn!(ProcessWizard::edit_program_name)).await?;
+                init = init
+                    .add_task::<Process>(
+                        "edit_program_name",
+                        thunk_fn!(ProcessWizard::edit_program_name),
+                    )
+                    .await?;
 
                 // Publish the remote action as a hosted resource
                 let mut _a = init.publish(eh.clone()).await?;

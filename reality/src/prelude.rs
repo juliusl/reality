@@ -47,6 +47,7 @@ pub use crate::SetField;
 pub use crate::SetIdentifiers;
 pub use crate::Shared;
 pub use crate::Source;
+pub use crate::StorageEntry;
 pub use crate::StorageTarget;
 pub use crate::StorageTargetEntry;
 pub use crate::StorageTargetEntryMut;

@@ -73,6 +73,8 @@ pub mod prelude {
 
     pub use super::resource_key::ResourceKey;
     pub use super::resource_key::ResourceKeyHashBuilder;
+    pub use super::target::StorageEntry;
+    pub use super::target::StorageEntryRef;
     pub use super::target::StorageTarget;
     pub use super::target::StorageTargetEntry;
     pub use super::target::StorageTargetEntryMut;

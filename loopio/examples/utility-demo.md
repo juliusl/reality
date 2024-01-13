@@ -1,27 +1,30 @@
     ```runmd
+    + .operation a
+    <builtin.println>       Hello World
+
     + .operation test_std_io                                            # Tests std io utilities
-    <store/loopio.stdio.println>          Hello World                   # Prints a new line
+    <store/builtin.println>          Hello World                   # Prints a new line
     | abc
     |   def
     |     ghi
-    <..io.read-text-file>   loopio/examples/test.txt                    # Read a text file into transient storage
+    <builtin.read-text-file>   loopio/examples/test.txt                    # Read a text file into transient storage
     <user.test>             Hello World 2                               # Verifies the file
 
     + .operation test_hyper                                             # Tests hyper utilities
     <user.echo>                                                         # Echoes an incoming request, Also schedules a shutdown
-    <store/loopio.hyper.request>  testhost://test-engine-proxy/test     # Enable utilities
+    <store/builtin.request>  testhost://start_engine_proxy/test     # Enable utilities
 
     + .operation test_process
-    <store/loopio.std.process>    ls
+    <store/builtin.process>    ls
     : .arg -la
     : .piped true
     <user.test>
 
-    + .operation test-engine-proxy                                      # Tests poem utilities
-    <loopio.poem.engine-proxy> localhost:0                              # Runs a local server that can start operations or sequences
+    + .operation start_engine_proxy                                      # Tests poem utilities
+    <builtin.engine-proxy> localhost:0                              # Runs a local server that can start operations or sequences
     |# notify = test-engine-proxy
 
-    : .alias testhost://test-engine-proxy
+    : .alias testhost://start_engine_proxy
     
     : test          .route test_std_io
     : test_2        .route run_println
@@ -34,17 +37,17 @@
     : test_handler  .path /test-handler/:name
 
     + .operation start_reverse_proxy
-    <loopio.poem.reverse-proxy-config>  testhost://test-engine-proxy
+    <builtin.reverse-proxy-config>  testhost://start_engine_proxy
     |# listen = test-engine-proxy
     
-    <loopio.poem.reverse-proxy>         localhost:3576
-    : .host testhost://test-engine-proxy
+    <builtin.reverse-proxy>         localhost:3576
+    : .forward testhost://start_engine_proxy
 
     + .sequence start_tests                                             # Sequence that starts the demo
     : .step test_std_io
     |# kind = once
     
-    : .step start_reverse_proxy, test_poem
+    : .step testhost://start_engine_proxy, testhost://start_reverse_proxy
     : .loop false
 
     + .sequence run_println                                             # Sequence that can be called by the engine proxy
@@ -53,6 +56,8 @@
 
     + .host testhost                                                    # Host configured w/ a starting sequence
     : .start        start_tests
+    : .action       start_reverse_proxy
+    : .action       start_engine_proxy
     : .event        test-engine-proxy
     
 

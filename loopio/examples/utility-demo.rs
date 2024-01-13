@@ -3,37 +3,52 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bytes::BufMut;
 use bytes::BytesMut;
-use loopio::action::Action;
 use loopio::engine::Engine;
+use loopio::foreground::ForegroundEngine;
 use loopio::prelude::PoemExt;
 use loopio::prelude::StdExt;
 
 use loopio::prelude::flexbuffers_ext::FlexbufferExt;
 use reality::prelude::*;
 
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt;
+use tracing_subscriber::prelude::*;
+
 /// Demo and test bed for utility plugins and extensions,
 ///
-#[tokio::main]
-async fn main() {
+fn main() {
+    std::env::set_var("RUST_LOG", "reality=info,loopio=debug");
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::from_default_env())
+        .init();
+
     let utility_runmd = include_str!("utility-demo.md");
 
     let mut workspace = Workspace::new();
     workspace.add_buffer("test_utilities.md", utility_runmd);
 
-    let mut engine = Engine::builder();
+    let mut engine = Engine::builder().enable_isolation();
     engine.enable::<Test>();
     engine.enable::<Echo>();
-    let engine = engine.build();
-    let engine = engine.compile(workspace).await.unwrap();
+    engine.set_workspace(workspace);
 
-    // let mut host = engine.get_host("testhost").await.expect("should have host");
-    let (eh, _) = engine.spawn(|_, packet| {
-        println!("{:?}", packet);
-        Some(packet)
-    });
+    // let engine = engine.compile().await.unwrap();
 
-    let host = eh.hosted_resource("engine://testhost").await.unwrap();
-    let _task = host.spawn().await.unwrap().unwrap();
+    // let (eh, _) = engine.default_startup().await.unwrap();
+
+    // let _ = eh.run("a").await.unwrap();
+
+    let fg = ForegroundEngine::new(engine);
+
+    if let Some(bg) = fg.engine_handle().background() {
+        if let Some(mut opa) = bg.call("start_tests").ok() {
+            opa.spawn();
+
+            opa.into_foreground().unwrap();
+        }
+    }
     ()
 }
 

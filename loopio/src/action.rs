@@ -65,7 +65,9 @@ pub trait Action {
         Self: CallAsync,
     {
         self.context().spawn(|mut tc| async move {
+            trace!("Begin spawn tx: {}", tc.transient.initialized());
             <Self as CallAsync>::call(&mut tc).await?;
+            trace!("End spawn tx: {} {}", tc.transient.initialized(), std::any::type_name::<Self>());
             Ok(tc)
         })
     }
@@ -186,8 +188,9 @@ impl Action for HostedResource {
 impl Action for ThunkContext {
     #[inline]
     fn address(&self) -> String {
-        self.property("address")
-            .map(|s| s.to_string())
+        let address = self.property("address");
+
+        address.map(|s| s.to_string())
             .unwrap_or(self.variant_id.unwrap_or(Uuid::new_v4()).to_string())
     }
 

@@ -139,7 +139,8 @@ where
                 .put_resource(Ok((controller, anyhow::Ok::<T>(init))), key);
 
             let mut dispatcher = target
-                .transient
+                .transient_target()
+                .await
                 .dispatcher::<anyhow::Result<(C, anyhow::Result<T>)>>(self.resource_key)
                 .await;
             dispatcher.enable().await;
