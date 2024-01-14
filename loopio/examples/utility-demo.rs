@@ -38,7 +38,10 @@ fn main() {
         if let Some(mut tests) = bg.call("start_tests").ok() {
             assert!(tests.spawn().is_running());
 
-            tests.into_foreground().unwrap();
+            assert!(
+                tests.into_foreground().is_err(),
+                "should return an error to shutdown"
+            );
         }
     }
     ()

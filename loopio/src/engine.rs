@@ -1,27 +1,3 @@
-use anyhow::anyhow;
-use bytes::Bytes;
-use futures_util::StreamExt;
-use serde::Deserialize;
-use serde::Serialize;
-
-use host::Host;
-use tracing::debug;
-
-use std::collections::BTreeMap;
-use std::fmt::Debug;
-use std::sync::Arc;
-
-use tokio::runtime::Handle;
-use tokio::task::JoinHandle;
-use tokio_util::sync::CancellationToken;
-
-use tracing::error;
-use tracing::info;
-use tracing::trace;
-
-use reality::prelude::*;
-use runir::prelude::*;
-
 use crate::action::ActionFactory;
 use crate::action::HostAction;
 use crate::background_work::BackgroundWorkEngineHandle;
@@ -35,6 +11,25 @@ use crate::prelude::EngineBuildMiddleware;
 use crate::prelude::Ext;
 use crate::prelude::VirtualBus;
 use crate::sequence::Sequence;
+use anyhow::anyhow;
+use bytes::Bytes;
+use futures_util::StreamExt;
+use host::Host;
+use reality::prelude::*;
+use runir::prelude::*;
+use serde::Deserialize;
+use serde::Serialize;
+use std::collections::BTreeMap;
+use std::fmt::Debug;
+use std::sync::Arc;
+use tokio::runtime::Handle;
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
+use tracing::debug;
+use tracing::error;
+use tracing::info;
+use tracing::trace;
+use tracing::warn;
 
 #[cfg(feature = "hyper-ext")]
 use crate::prelude::secure_client;
@@ -697,7 +692,7 @@ impl Engine {
                         }
                     }
                     EngineAction::Shutdown(delay) => {
-                        trace!(delay_ms = delay.as_millis(), "Shutdown requested");
+                        warn!(delay_ms = delay.as_millis(), "Shutdown requested");
                         tokio::time::sleep(delay).await;
                         self.cancellation.cancel();
                         break;

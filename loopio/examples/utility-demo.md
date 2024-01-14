@@ -2,17 +2,29 @@
     + .operation a
     <builtin.println>       Hello World
 
-    + .operation test_std_io                                            # Tests std io utilities
-    <store/builtin.println>          Hello World                   # Prints a new line
+    # -- Tests std io utilities
+    + .operation test_std_io
+
+    # -- Prints a new line
+    <store/builtin.println>          Hello World
     | abc
     |   def
     |     ghi
-    <builtin.read-text-file>   loopio/examples/test.txt                    # Read a text file into transient storage
-    <user.test>             Hello World 2                               # Verifies the file
 
-    + .operation test_hyper                                             # Tests hyper utilities
-    <user.echo>                                                         # Echoes an incoming request, Also schedules a shutdown
-    <store/builtin.request>  testhost://start_engine_proxy/test     # Enable utilities
+    # -- Read a text file into transient storage
+    <builtin.read-text-file>   loopio/examples/test.txt
+
+    # -- Verifies the file
+    <user.test>             Hello World 2
+
+    # -- Tests hyper utilities
+    + .operation test_hyper
+
+    # -- Echoes an incoming request, Also schedules a shutdown
+    <user.echo>
+
+    # -- Enable utilities
+    <store/builtin.request>  testhost://start_engine_proxy/test     
 
     + .operation test_process
     <store/builtin.process>    ls
@@ -20,8 +32,11 @@
     : .piped true
     <user.test>
 
-    + .operation start_engine_proxy                                      # Tests poem utilities
-    <builtin.engine-proxy> localhost:0                              # Runs a local server that can start operations or sequences
+    # -- Tests poem utilities
+    + .operation start_engine_proxy
+
+    # -- Runs a local server that can start operations or sequences
+    <builtin.engine-proxy> localhost:0
     |# notify = test-engine-proxy
 
     : .alias testhost://start_engine_proxy
@@ -49,18 +64,21 @@
     <builtin.reverse-proxy>         localhost:3576
     : .forward testhost://start_engine_proxy
 
-    + .sequence start_tests                                             # Sequence that starts the demo
+    # -- Sequence that starts the demo
+    + .sequence start_tests
     : .step test_std_io
     |# kind = once
     
     : .step start_engine_proxy, start_reverse_proxy
     : .loop false
 
-    + .sequence run_println                                             # Sequence that can be called by the engine proxy
+    # -- Sequence that can be called by the engine proxy
+    + .sequence run_println
     : .step test_std_io
     : .loop false
 
-    + .host testhost                                                    # Host configured w/ a starting sequence
+    # -- Host configured w/ a starting sequence
+    + .host testhost
     : .start        start_tests
     : .action       start_reverse_proxy
     : .action       start_engine_proxy
