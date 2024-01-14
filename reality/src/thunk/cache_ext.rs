@@ -33,7 +33,7 @@ pub trait CacheExt {
     ///
     fn maybe_write_cache<R: Sync + Send + 'static>(
         &mut self,
-        resource: R,
+        resource: impl FnOnce() -> R,
     ) -> <Shared as StorageTarget>::BorrowMutResource<'_, R>;
 
     /// Deletes a resource from cache,
@@ -72,7 +72,7 @@ impl CacheExt for ThunkContext {
 
     fn maybe_write_cache<R: Sync + Send + 'static>(
         &mut self,
-        resource: R,
+        resource: impl FnOnce() -> R,
     ) -> <Shared as StorageTarget>::BorrowMutResource<'_, R> {
         self.__cached
             .maybe_put_resource(resource, self.attribute.transmute())
@@ -84,5 +84,6 @@ impl CacheExt for ThunkContext {
     {
         self.__cached
             .remove_resource_at(self.attribute.transmute::<R>())
+            .is_some()
     }
 }

@@ -60,7 +60,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
             {
                 info!("Found change pipeline");
                 drop(node);
-                editing.maybe_write_cache(change_pipeline);
+                editing.maybe_write_cache(|| change_pipeline);
             }
         }
 
@@ -72,7 +72,7 @@ async fn enable_frame_editor(tc: &mut ThunkContext) -> anyhow::Result<()> {
             {
                 info!("Found parsed attributes");
                 drop(node);
-                editing.maybe_write_cache(parsed_attributes);
+                editing.maybe_write_cache(|| parsed_attributes);
             }
         }
 

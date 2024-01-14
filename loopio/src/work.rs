@@ -105,7 +105,7 @@ pub(crate) trait __WorkState: AsRef<ThunkContext> + AsMut<ThunkContext> {
     fn work_state_mut(
         &mut self,
     ) -> <Shared as StorageTarget>::BorrowMutResource<'_, PrivateWorkState> {
-        self.as_mut().maybe_write_cache(PrivateWorkState::default())
+        self.as_mut().maybe_write_cache(PrivateWorkState::default)
     }
 
     fn work_state_ref(
@@ -131,7 +131,7 @@ pub(crate) trait __WorkState: AsRef<ThunkContext> + AsMut<ThunkContext> {
                 .unwrap_or_default(),
         ));
         self.as_mut()
-            .maybe_write_cache::<VirtualPrivateWorkState>(init)
+            .maybe_write_cache::<VirtualPrivateWorkState>(|| init)
     }
 }
 

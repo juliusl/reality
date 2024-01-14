@@ -136,14 +136,14 @@ impl HyperExt for ThunkContext {
                     let node = host.context().node().await;
                     let root = node.root_ref();
                     root.lazy_put(init);
-    
+
                     let key =
                         ResourceKey::<(Option<Scheme>, Option<String>, Option<u16>)>::with_hash(
                             key,
                         );
                     node.lazy_put_resource(value, key);
                 }
-            
+
                 host.context_mut().process_node_updates().await;
             }
         }

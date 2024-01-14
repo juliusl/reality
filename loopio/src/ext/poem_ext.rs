@@ -180,15 +180,10 @@ pub struct EngineProxy {
     ///
     #[reality(option_of=String)]
     alias: Option<String>,
-    ///
-    ///
-    #[reality(map_of=Decorated<String>)]
-    path: BTreeMap<String, Decorated<String>>,
     /// Map of routes to the operations they map to,
     ///
-    #[reality(map_of=Decorated<Address>)]
-    route: BTreeMap<String, Decorated<Address>>,
-
+    #[reality(vec_of=Decorated<Address>)]
+    route: Vec<Decorated<Address>>,
     #[reality(ignore)]
     #[serde(skip)]
     routes: Vec<RouteConfig>,
@@ -261,21 +256,15 @@ impl RouteConfig {
 async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
     let initialized = Remote.create::<EngineProxy>(context).await;
 
+    debug!("Starting {:?}", initialized);
     // Find hosted resources to route to
     let mut resources = BTreeMap::new();
-    for (setting, handler) in initialized.route.iter().filter_map(|(k, v)| {
-        if v.value().is_some() {
-            Some((k, v))
-        } else {
-            None
-        }
-    }) {
-        let address = handler.value().expect("should exist just checked");
+    for address in initialized.route.iter().filter_map(|v| v.value()) {
         if let Some(eh) = context.engine_handle().await {
             match eh.hosted_resource(address.to_string()).await {
                 Ok(resource) => {
-                    trace!("Adding hosted resource for setting - {setting}");
-                    resources.insert(setting, resource);
+                    trace!("Adding hosted resource for setting - {address}");
+                    resources.insert(address, resource);
                 }
                 Err(err) => {
                     error!("Could not find hosted resource -- {err}");
@@ -286,21 +275,27 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
         }
     }
 
-    let route_config =
-        initialized
-            .path
-            .iter()
-            .fold(vec![], |mut config_collection, (setting, path)| {
-                let config = RouteConfig {
-                    path: path.value().expect("should have a path value").to_string(),
-                    resource: resources.get(&setting).cloned().unwrap_or_default(),
-                    methods: path
-                        .property("methods")
-                        .and_then(|m| CommaSeperatedStrings::from_str(m.as_str()).ok()),
-                };
-                config_collection.push(config);
-                config_collection
-            });
+    let route_config = initialized
+        .route
+        .iter()
+        .fold(vec![], |mut config_collection, route| {
+            let path = route
+                .property("path")
+                .or(route.value().map(|r| r.to_string()));
+
+            let config = RouteConfig {
+                path: path.expect("should have a path value").to_string(),
+                resource: resources
+                    .get(&route.value().unwrap())
+                    .cloned()
+                    .unwrap_or_default(),
+                methods: route
+                    .property("methods")
+                    .and_then(|m| CommaSeperatedStrings::from_str(m.as_str()).ok()),
+            };
+            config_collection.push(config);
+            config_collection
+        });
 
     // Update the route_config setting
     let (attr, routes) = (context.attribute, route_config.clone());
@@ -333,7 +328,10 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
         let replace_with = Uri::builder()
             .scheme("http")
             .authority(format!("localhost:{}", port))
-            .path_and_query(format!("/?engine-proxy={}", attr.address().unwrap_or_default()))
+            .path_and_query(format!(
+                "/?engine-proxy={}",
+                attr.address().unwrap_or_default()
+            ))
             .build()?;
         let alias = Uri::builder()
             .scheme(scheme.clone())
@@ -372,7 +370,6 @@ impl Debug for EngineProxy {
         f.debug_struct("EngineProxy")
             .field("address", &self.address)
             .field("alias", &self.alias)
-            .field("path", &self.path)
             .field("route", &self.route)
             .finish()
     }
@@ -384,7 +381,6 @@ impl Clone for EngineProxy {
             address: self.address.clone(),
             alias: self.alias.clone(),
             route: self.route.clone(),
-            path: self.path.clone(),
             routes: self.routes.clone(),
         }
     }
@@ -565,10 +561,16 @@ async fn start_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
         if let (Some(rp_config), Some(routes), Some(internal_host)) = (
             entry.get::<ReverseProxyConfig>(),
             entry.get::<Vec<RouteConfig>>(),
-            entry.get::<Arc<Uri>>()
+            entry.get::<Arc<Uri>>(),
         ) {
             route = routes.iter().fold(Route::new(), |route, config| {
-                config.configure_route(route, || rp_config.decorate(on_forward_request.data(client.clone()).data(internal_host.clone())))
+                config.configure_route(route, || {
+                    rp_config.decorate(
+                        on_forward_request
+                            .data(client.clone())
+                            .data(internal_host.clone()),
+                    )
+                })
             });
         };
     }
@@ -656,12 +658,26 @@ async fn configure_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
             .and_then(|s| Uri::from_str(s).map_err(|e| anyhow!(e)))
         {
             debug!("Parsed event_message {:?}", internal_host);
-            let client = Arc::new(hyper_ext::local_client());
-    
-            let address = internal_host.query().map(|q| q.trim_start_matches("engine-proxy=").to_string());
-            let internal_host = Arc::new(format!("http://localhost:{}", internal_host.port_u16().expect("should have a port")).parse::<Uri>()?);
-    
-            if let Some(engine_proxy) = tc.engine_handle().await.expect("should be bound to an engine").hosted_resource(address.unwrap()).await.ok() {
+
+            let address = internal_host
+                .query()
+                .map(|q| q.trim_start_matches("engine-proxy=").to_string());
+            let internal_host = Arc::new(
+                format!(
+                    "http://localhost:{}",
+                    internal_host.port_u16().expect("should have a port")
+                )
+                .parse::<Uri>()?,
+            );
+
+            if let Some(engine_proxy) = tc
+                .engine_handle()
+                .await
+                .expect("should be bound to an engine")
+                .hosted_resource(address.unwrap())
+                .await
+                .ok()
+            {
                 let engine_proxy = engine_proxy.context().initialized::<EngineProxy>().await;
                 debug!(
                     "Getting route config from engine proxy for {}\n{:#?}",
@@ -672,40 +688,14 @@ async fn configure_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
                 let mut entry = transient.entry(ResourceKey::with_hash(init.alias.to_string()));
                 entry.put(engine_proxy.routes.clone());
                 entry.put(init.clone());
-                entry.put(client);
                 entry.put(internal_host.clone());
             }
-            debug!("Configured reverse proxy for {:?} -> {internal_host}", init.alias);
+            debug!(
+                "Configured reverse proxy for {:?} -> {internal_host}",
+                init.alias
+            );
         }
     }
 
-    // if let (Some(_host), Some(internal_host)) = (
-    //     init.alias.as_ref().scheme_str(),
-    //     tc.internal_host_lookup(init.alias.as_ref()).await,
-    // ) {
-    //     let client = Arc::new(hyper_ext::local_client());
-    //     let _client = &client;
-
-    //     let internal_host = Arc::new(internal_host);
-    //     let _internal_host = &internal_host;
-
-    //     if let Some(engine_proxy) = tc.scan_node_for::<EngineProxy>().await {
-    //         debug!(
-    //             "Getting route config from engine proxy for {}",
-    //             init.alias.as_ref()
-    //         );
-    //         tc.transient_mut().await.put_resource(
-    //             engine_proxy.routes.clone(),
-    //             ResourceKey::<Vec<RouteConfig>>::with_hash(init.alias.to_string()),
-    //         );
-
-    //         tc.transient_mut().await.put_resource(
-    //             init.clone(),
-    //             ResourceKey::<_>::with_hash(init.alias.to_string()),
-    //         );
-    //     }
-
-    //     debug!("Configured reverse proxy for {_host} -> {internal_host}");
-    // }
     Ok(())
 }

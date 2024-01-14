@@ -416,7 +416,7 @@ impl ImguiExt for ThunkContext {
             .try_transient_mut()
             .expect("should only be called during transient code");
 
-        let mut nodes = storage.maybe_put_resource(vec![], self.attribute.transmute());
+        let mut nodes = storage.maybe_put_resource(Vec::new, self.attribute.transmute());
         nodes.push(UiNode {
             show_ui_node: Some(Arc::new(show)),
             context: self.clone(),
@@ -431,7 +431,7 @@ impl ImguiExt for ThunkContext {
             .try_transient_mut()
             .expect("should only be called during transient code");
 
-        let mut nodes = storage.maybe_put_resource(vec![], self.attribute.transmute());
+        let mut nodes = storage.maybe_put_resource(Vec::new, self.attribute.transmute());
         nodes.push(UiTypeNode {
             show_ui_node: Some(Arc::new(show)),
             dispatcher: self.dispatcher::<G>().await.transmute(),

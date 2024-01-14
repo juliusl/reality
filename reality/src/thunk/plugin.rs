@@ -75,13 +75,13 @@ pub trait Plugin: ToFrame + BlockObject + CallAsync + Clone + Default {
 
             let mut node = c.node.storage.write().await;
             debug!("Create packet routes for resource");
-            node.maybe_put_resource(listener, c.attribute.transmute());
+            node.maybe_put_resource(|| listener, c.attribute.transmute());
 
             debug!("Create packet routes for resource");
-            node.maybe_put_resource(std::sync::Arc::new(packet_router), c.attribute.transmute());
+            node.maybe_put_resource(|| std::sync::Arc::new(packet_router), c.attribute.transmute());
 
             debug!("Putting frame for resource");
-            node.maybe_put_resource(frame, c.attribute.transmute());
+            node.maybe_put_resource(|| frame, c.attribute.transmute());
 
             drop(node);
             Ok(c)

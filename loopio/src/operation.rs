@@ -1,14 +1,11 @@
-use anyhow::anyhow;
 use bytes::Bytes;
 use futures_util::Future;
 use futures_util::FutureExt;
-use tracing::info;
 use std::fmt::Debug;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
-use tracing::trace;
-use tracing::warn;
+use tracing::info;
 
 use crate::prelude::*;
 
@@ -60,7 +57,7 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
             let mut context = tc.clone();
             for e in ext.iter() {
                 info!(op = init.name, "Running next operation step -- {}", e);
-            
+
                 let attr = ResourceKey::<Attribute>::with_repr(*e);
                 context.set_attribute(attr);
 
@@ -84,14 +81,19 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
                 if let Some(event) = attr.prop("notify") {
                     info!(op = init.name, "Operation is notifying {event}");
                     if let Some(eh) = tc.engine_handle().await {
-                        let message = context.fetch_kv::<Bytes>("outbound_event_message").map(|b| b.1.clone());
+                        let message = context
+                            .fetch_kv::<Bytes>("outbound_event_message")
+                            .map(|b| b.1.clone());
                         eh.notify(event, message).await?;
                     }
                 }
             }
 
             tc.transient = context.transient.clone();
-            debug!("Before returning transient is -- {}", tc.transient.initialized());
+            debug!(
+                "Before returning transient is -- {}",
+                tc.transient.initialized()
+            );
         }
     }
 

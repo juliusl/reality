@@ -288,12 +288,12 @@ where
 
     if let Some(link) = tc.attribute.into_link() {
         debug!("Enabled virtual dependencies for link {:?}", link);
-        storage.maybe_put_resource(wire_server.clone(), link.transmute());
-        storage.maybe_put_resource(wire_server.new_client(), link.transmute());
+        storage.maybe_put_resource(|| wire_server.clone(), link.transmute());
+        storage.maybe_put_resource(|| wire_server.new_client(), link.transmute());
     } else {
         debug!("Enabled virtual dependencies for {:?}", tc.attribute);
-        storage.maybe_put_resource(wire_server.clone(), tc.attribute.transmute());
-        storage.maybe_put_resource(wire_server.new_client(), tc.attribute.transmute());
+        storage.maybe_put_resource(|| wire_server.clone(), tc.attribute.transmute());
+        storage.maybe_put_resource(|| wire_server.new_client(), tc.attribute.transmute());
     }
 
     Ok(())

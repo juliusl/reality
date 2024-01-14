@@ -505,7 +505,7 @@ impl Engine {
             {
                 resource
                     .context_mut()
-                    .maybe_write_cache(self.engine_handle());
+                    .maybe_write_cache(|| self.engine_handle());
             }
 
             Ok(resource)
@@ -852,7 +852,10 @@ impl Debug for EngineAction {
                 .field("has_tx", &tx.is_some())
                 .finish(),
             Self::Shutdown(arg0) => f.debug_tuple("Shutdown").field(arg0).finish(),
-            Self::Publish { tx, .. } => f.debug_struct("Publish").field("has_tx", &tx.is_some()).finish(),
+            Self::Publish { tx, .. } => f
+                .debug_struct("Publish")
+                .field("has_tx", &tx.is_some())
+                .finish(),
             #[allow(unreachable_patterns)]
             _ => Ok(()),
         }

@@ -1,19 +1,17 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use bytes::BufMut;
-use bytes::BytesMut;
 use loopio::engine::Engine;
 use loopio::foreground::ForegroundEngine;
 use loopio::prelude::PoemExt;
 use loopio::prelude::StdExt;
 
-use loopio::prelude::flexbuffers_ext::FlexbufferExt;
+use loopio::prelude::flexbuffers_ext::FlexbufferCacheExt;
 use reality::prelude::*;
 
-use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
+use tracing_subscriber::EnvFilter;
 
 /// Demo and test bed for utility plugins and extensions,
 ///
@@ -29,24 +27,18 @@ fn main() {
     let mut workspace = Workspace::new();
     workspace.add_buffer("test_utilities.md", utility_runmd);
 
-    let mut engine = Engine::builder().enable_isolation();
+    let mut engine = Engine::builder();
     engine.enable::<Test>();
     engine.enable::<Echo>();
     engine.set_workspace(workspace);
 
-    // let engine = engine.compile().await.unwrap();
-
-    // let (eh, _) = engine.default_startup().await.unwrap();
-
-    // let _ = eh.run("a").await.unwrap();
-
     let fg = ForegroundEngine::new(engine);
 
     if let Some(bg) = fg.engine_handle().background() {
-        if let Some(mut opa) = bg.call("start_tests").ok() {
-            opa.spawn();
+        if let Some(mut tests) = bg.call("start_tests").ok() {
+            assert!(tests.spawn().is_running());
 
-            opa.into_foreground().unwrap();
+            tests.into_foreground().unwrap();
         }
     }
     ()
@@ -62,37 +54,41 @@ struct Test {
 #[async_trait]
 impl CallAsync for Test {
     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
-        context.enable_flexbuffer().await;
+        // Test flexbuffer api
+        context
+            .flexbuffer_scope()
+            .reset()
+            .start_map()
+            .push("name", "jello");
+        
+        // Test that the update was persisted on drop
         {
-            let mut total_buf = BytesMut::new();
-            context
-                .write_flexbuffer(|b| {
-                    b.start_map().push("name", "jello");
-                    total_buf.put(b.view());
-                })
-                .await?;
+            let reader = context.flexbuffer_view().expect("should be enabled");
+            let value = reader
+                .as_map()
+                .index("name")
+                .ok()
+                .and_then(|r| r.as_map().index("value").ok())
+                .map(|v| v.as_str());
+            eprintln!("{:?}", value);
+            assert_eq!(Some("jello"), value);
         }
 
-        let mut __name = Vec::new();
-        context
-            .read_flexbuffer(|r| {
-                if let Some(name) = r.as_map().index("name").ok() {
-                    assert_eq!("jello", name.as_str());
-                    println!("reading from flexbuffer node -- {name}");
-                    __name.push(name.as_str().to_string());
-                }
-            })
-            .await?;
-
-        // println!("Printing from outside -- {:?}", __name);
         let initialized = context.initialized::<Test>().await;
 
+        // Test that the read-text-file result is found from transient storage
         let content = context.find_file_text("loopio/examples/test.txt").await;
         println!("{:?}", content);
         assert_eq!(initialized.expect.as_str(), content.unwrap_or_default());
 
+        // Test the command result can be found from transient storage
         if let Some(result) = context.find_command_result("ls").await {
             println!("{}", String::from_utf8(result.output)?);
+        }
+
+        // Test the request is passed from the reverse/engine proxy
+        if let Some(request) = context.take_request().await {
+            eprintln!("{:#?}", request.path);
         }
 
         Ok(())

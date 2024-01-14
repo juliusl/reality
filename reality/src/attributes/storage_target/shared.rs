@@ -81,6 +81,8 @@ impl Shared {
 }
 
 impl StorageTarget for Shared {
+    type ResourceCell = Arc<RwLock<Box<dyn Send + Sync + 'static>>>;
+
     type BorrowResource<'a, T: Send + Sync + 'static> = RwLockReadGuard<'a, T>;
 
     type BorrowMutResource<'a, T: Send + Sync + 'static> = RwLockMappedWriteGuard<'a, T>;
@@ -91,21 +93,23 @@ impl StorageTarget for Shared {
         Shared::default()
     }
 
-    fn remove_resource_at<R: Send + Sync + 'static>(&mut self, key: ResourceKey<R>) -> bool {
-        let key = Self::key::<R>(key);
+    fn remove_resource_at<R: Send + Sync + 'static>(&mut self, rk: ResourceKey<R>) -> Option<(ResourceKey<R>, Self::ResourceCell)> {
+        let key = Self::key::<R>(rk);
 
-        self.resources.remove(&key).is_some()
+        self.resources.remove(&key).map(|r| {
+            (rk, r)
+        })
     }
 
     fn maybe_put_resource<T: Send + Sync + 'static>(
         &mut self,
-        resource: T,
+        resource: impl FnOnce() -> T,
         resource_key: StorageTargetKey<T>,
     ) -> Self::BorrowMutResource<'_, T> {
         let key = Self::key::<T>(resource_key);
 
         if !self.resources.contains_key(&key) {
-            self.put_resource(resource, resource_key);
+            self.put_resource(resource(), resource_key);
         }
 
         self.resource_mut(resource_key).expect("should exist")

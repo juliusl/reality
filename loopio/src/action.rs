@@ -67,7 +67,11 @@ pub trait Action {
         self.context().spawn(|mut tc| async move {
             trace!("Begin spawn tx: {}", tc.transient.initialized());
             <Self as CallAsync>::call(&mut tc).await?;
-            trace!("End spawn tx: {} {}", tc.transient.initialized(), std::any::type_name::<Self>());
+            trace!(
+                "End spawn tx: {} {}",
+                tc.transient.initialized(),
+                std::any::type_name::<Self>()
+            );
             Ok(tc)
         })
     }
@@ -190,7 +194,8 @@ impl Action for ThunkContext {
     fn address(&self) -> String {
         let address = self.property("address");
 
-        address.map(|s| s.to_string())
+        address
+            .map(|s| s.to_string())
             .unwrap_or(self.variant_id.unwrap_or(Uuid::new_v4()).to_string())
     }
 

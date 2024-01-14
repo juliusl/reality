@@ -128,7 +128,7 @@ pub mod prelude {
                 let tc = tc.get_mut().unwrap();
                 // Insert the label to pending changes,
                 {
-                    let mut pending = tc.maybe_write_cache(BTreeSet::new());
+                    let mut pending = tc.maybe_write_cache(BTreeSet::new);
                     pending.insert(label.to_string());
                 }
 
@@ -262,7 +262,7 @@ pub mod prelude {
     }
 
     impl UiDisplayMut for Package {
-        fn fmt(&mut self, ui: &UiFormatter<'_>) -> anyhow::Result<()> {
+        fn fmt(&mut self, _ui: &UiFormatter<'_>) -> anyhow::Result<()> {
             // -- Package Search
             // -- Ext search
             todo!()

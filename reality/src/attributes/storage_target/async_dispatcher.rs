@@ -96,7 +96,7 @@ impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
             .deref()
             .write()
             .await
-            .maybe_put_resource(T::default(), resource_key);
+            .maybe_put_resource(T::default, resource_key);
 
         dispatcher
     }

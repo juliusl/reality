@@ -199,7 +199,7 @@ impl KvpExt for ThunkContext {
     {
         let key = self.attribute.transmute().branch(&key);
 
-        Some(key.transmute()).filter(move |_| self.__cached.remove_resource_at::<R>(key))
+        Some(key.transmute()).filter(move |_| self.__cached.remove_resource_at::<R>(key).is_some())
     }
 
     /// Fetch a mutable reference to a kv pair by key,

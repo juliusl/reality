@@ -26,15 +26,21 @@
 
     : .alias testhost://start_engine_proxy
     
-    : test          .route test_std_io
-    : test_2        .route run_println
-    : test_handler  .route test_hyper
-    : test_3        .route test_process
+    # -- Route /test
+    : .route test_std_io
+    |# path = /test
 
-    : test          .path /test
-    : test_2        .path /test2
-    : test_3        .path /test3
-    : test_handler  .path /test-handler/:name
+    # -- Route /test2
+    : .route run_println
+    |# path = /test2
+
+    # -- Route /test2
+    : .route test_hyper
+    |# path = /test3
+
+    # -- Route /test2
+    : .route test_process
+    |# path = /test-handler/:name
 
     + .operation start_reverse_proxy
     <builtin.reverse-proxy-config>  testhost://start_engine_proxy

@@ -4,6 +4,7 @@ use anyhow::Error;
 use reality::prelude::*;
 use tokio::task::JoinError;
 use tokio::task::JoinHandle;
+use tracing::info;
 use tracing::trace;
 
 use crate::background_work::BackgroundWork;
@@ -122,11 +123,13 @@ impl ForegroundEngine {
         eh = runtime.block_on(async move {
             let tc = eh.run("engine://default").await.unwrap();
             let isinit = tc.transient.initialized();
-            eprintln!("is transient init {}", isinit);
+            trace!("is transient init {}", isinit);
             eh.background_work = tc.transient().await.root_ref().current();
             let isinit = tc.transient.initialized();
-            eprintln!("post, is transient init {}", isinit);
-            eprintln!("Finished default startup -- bg: {}", eh.background_work.is_some());
+            trace!("post, is transient init {}", isinit);
+            info!(
+                "Finished default startup"
+            );
             eh
         });
 

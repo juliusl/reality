@@ -9,6 +9,10 @@ pub type StorageTargetKey<T> = ResourceKey<T>;
 /// Trait generalizing a storage target that can be used to initialize and store application resources,
 ///
 pub trait StorageTarget {
+    /// Resource storage cell,
+    /// 
+    type ResourceCell;
+
     /// Container for borrowing a resource from the storage target,
     ///
     type BorrowResource<'a, T: Send + Sync + 'static>: Deref<Target = T> + Send + Sync
@@ -67,10 +71,14 @@ pub trait StorageTarget {
         self.len() == 0
     }
 
-    /// Returns true if a resource was removed,
+    /// Returns the existing entry if a resource was removed,
+    /// 
+    /// **Note**: Unlike take(), this will remove the entire resource cell from the storage target.
+    /// 
+    /// take() can only remove a resource if no strong references exist.
     ///
-    fn remove_resource_at<R: Send + Sync + 'static>(&mut self, _key: ResourceKey<R>) -> bool {
-        false
+    fn remove_resource_at<R: Send + Sync + 'static>(&mut self, _key: ResourceKey<R>) -> Option<(ResourceKey<R>, Self::ResourceCell)> {
+        None
     }
 
     /// Returns a copy of the current value of a resource,
@@ -88,7 +96,7 @@ pub trait StorageTarget {
     ///
     fn maybe_put_resource<T: Send + Sync + 'static>(
         &mut self,
-        _resource: T,
+        _resource: impl FnOnce() -> T,
         _resource_key: StorageTargetKey<T>,
     ) -> Self::BorrowMutResource<'_, T>;
 
@@ -200,7 +208,7 @@ pub trait StorageTarget {
     ///
     fn lazy_maybe_put_resource<T: Send + Sync + 'static>(
         &self,
-        resource: T,
+        resource: impl FnOnce() -> T + Send + Sync + 'static,
         resource_key: StorageTargetKey<T>,
     ) where
         Self: 'static,
@@ -553,7 +561,7 @@ where
 
     /// Take a resource from this entry,
     ///
-    /// **Note**: If the entry is currently linked, this function will return None.
+    /// **Note**: If the entry has existing strong references, this function will return None.
     /// However, removeing the resource will explicitly remove the entry leaving the link.
     ///
     #[inline]
@@ -563,10 +571,10 @@ where
         self.storage_mut().take_resource(key)
     }
 
-    /// Removes a resource at this storage entry,
+    /// Removes the storage entry's resource cell from the storage target,
     ///
     #[inline]
-    fn remove<R: Send + Sync + 'static>(&mut self) -> bool {
+    fn remove<R: Send + Sync + 'static>(&mut self) -> Option<(ResourceKey<R>, <S as StorageTarget>::ResourceCell)> {
         let key = self.resource_key().transmute();
         self.storage_mut().remove_resource_at::<R>(key)
     }

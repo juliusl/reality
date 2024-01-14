@@ -56,7 +56,7 @@ impl VirtualBus {
             if let Ok(Some(context)) = tc.enable_virtual().await {
                 let port = self
                     .node
-                    .maybe_write_cache::<BusOwnerPort<P, (), ()>>(BusOwnerPort {
+                    .maybe_write_cache::<BusOwnerPort<P, (), ()>>(|| BusOwnerPort {
                         tx: OnceLock::new(),
                         vrx: OnceLock::new(),
                         sel: |_| panic!("Incomplete bus definition"),
@@ -127,7 +127,7 @@ impl VirtualBus {
                 debug!("Port is active, returning port for transmission");
                 let port = self
                     .node
-                    .maybe_write_cache::<BusVirtualPort<P>>(BusVirtualPort {
+                    .maybe_write_cache::<BusVirtualPort<P>>(|| BusVirtualPort {
                         tx: OnceLock::new(),
                     });
 
