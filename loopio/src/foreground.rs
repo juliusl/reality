@@ -127,9 +127,7 @@ impl ForegroundEngine {
             eh.background_work = tc.transient().await.root_ref().current();
             let isinit = tc.transient.initialized();
             trace!("post, is transient init {}", isinit);
-            info!(
-                "Finished default startup"
-            );
+            info!("Finished default startup");
             eh
         });
 

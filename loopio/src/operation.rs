@@ -62,13 +62,8 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
                 context.set_attribute(attr);
 
                 // If set, listens for an event before continuing to call the next ext
-                if let Some(event) = attr.prop("listen") {
-                    info!(op = init.name, "Operation is listening for {event}");
-                    if let Some(eh) = tc.engine_handle().await {
-                        if let Some(message) = eh.listen(event).await? {
-                            context.store_kv("inbound_event_message", message);
-                        }
-                    }
+                if let Some(message) = context.listen().await? {
+                    context.store_kv("inbound_event_message", message);
                 }
 
                 context = context.call().await?.unwrap_or(context);
@@ -77,18 +72,20 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
                 // TODO: If context contains a LocalAction/RemoteAction, auto publish the transient
 
+                // **Note** -- 
+                // If the plugin being called is long-running, 
+                // this will need to be called from within the plugin's call fn.
+                // 
                 // If set, notifies an event before continuing to the call the next ext
-                if let Some(event) = attr.prop("notify") {
-                    info!(op = init.name, "Operation is notifying {event}");
-                    if let Some(eh) = tc.engine_handle().await {
-                        let message = context
+                // 
+                context
+                    .notify(
+                        context
                             .fetch_kv::<Bytes>("outbound_event_message")
-                            .map(|b| b.1.clone());
-                        eh.notify(event, message).await?;
-                    }
-                }
+                            .map(|b| b.1.clone()),
+                    )
+                    .await?;
             }
-
             tc.transient = context.transient.clone();
             debug!(
                 "Before returning transient is -- {}",

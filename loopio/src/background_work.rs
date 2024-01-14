@@ -85,25 +85,25 @@ pub enum CallStatus {
 
 impl CallStatus {
     /// Returns true if enabled,
-    /// 
+    ///
     pub fn is_enabled(self) -> bool {
         matches!(self, CallStatus::Enabled)
     }
 
     /// Returns true if disabled,
-    /// 
+    ///
     pub fn is_disabled(self) -> bool {
         matches!(self, CallStatus::Disabled)
     }
 
     /// Returns true if running,
-    /// 
+    ///
     pub fn is_running(self) -> bool {
         matches!(self, CallStatus::Running)
     }
 
     /// Returns true if pending completion,
-    /// 
+    ///
     pub fn is_pending(self) -> bool {
         matches!(self, CallStatus::Pending)
     }

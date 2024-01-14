@@ -2,6 +2,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
+use anyhow::anyhow;
+use bytes::Bytes;
 use futures_util::Stream;
 use reality::prelude::*;
 use tokio::sync::watch::Receiver;
@@ -54,15 +56,15 @@ impl VirtualBus {
     {
         if let Some(tc) = self.node.find_node_context::<P>().await {
             if let Ok(Some(context)) = tc.enable_virtual().await {
-                let port = self
-                    .node
-                    .maybe_write_cache::<BusOwnerPort<P, (), ()>>(|| BusOwnerPort {
-                        tx: OnceLock::new(),
-                        vrx: OnceLock::new(),
-                        sel: |_| panic!("Incomplete bus definition"),
-                        port_active: OnceLock::new(),
-                        task: OnceLock::new(),
-                    });
+                let port =
+                    self.node
+                        .maybe_write_cache::<BusOwnerPort<P, (), ()>>(|| BusOwnerPort {
+                            tx: OnceLock::new(),
+                            vrx: OnceLock::new(),
+                            sel: |_| panic!("Incomplete bus definition"),
+                            port_active: OnceLock::new(),
+                            task: OnceLock::new(),
+                        });
 
                 if port.tx.get().is_none() {
                     let server = context.wire_server::<P>().await.unwrap();
@@ -382,6 +384,46 @@ pub trait VirtualBusExt: AsRef<ThunkContext> + AsMut<ThunkContext> {
                 port_active: BusPortActive::default(),
             }
         }
+    }
+
+    /// If the `notify` property is set, notifies an event w/ an optional message,
+    ///
+    /// **Note** Will not complete until the message is sent
+    ///
+    async fn notify(&self, message: Option<Bytes>) -> anyhow::Result<()> {
+        // TODO: Handle double notifies?
+        if let Some(notify) = self.as_ref().property("notify") {
+            info!(
+                message_size = message.clone().map(|b| b.len()).unwrap_or_default(),
+                "Notifying `{notify}`"
+            );
+            if let Some(eh) = self.as_ref().engine_handle().await {
+                eh.notify(notify, message).await?;
+            } else {
+                Err(anyhow!("Not bound to an engine handle"))?;
+            }
+        } else {
+            warn!("notify property is not set");
+        }
+
+        Ok(())
+    }
+
+    /// If the `listen` property is set, listens for an event and returns a message if one was set,
+    ///
+    async fn listen(&self) -> anyhow::Result<Option<Bytes>> {
+        if let Some(listen) = self.as_ref().property("listen") {
+            info!("Listening for `{listen}`");
+            if let Some(eh) = self.as_ref().engine_handle().await {
+                return Ok(eh.listen(listen).await?);
+            } else {
+                Err(anyhow!("Not bound to an engine handle"))?;
+            }
+        } else {
+            warn!("listen property is not set");
+        }
+
+        Ok(None)
     }
 }
 

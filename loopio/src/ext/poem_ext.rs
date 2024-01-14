@@ -341,13 +341,11 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
 
         eprintln!("Adding alias: {:?} -> {:?}", alias, replace_with);
 
-        if let Some(notify) = context.property("notify") {
-            info!("Notifying {notify}");
-            if let Some(eh) = context.engine_handle().await {
-                let message = Bytes::copy_from_slice(replace_with.to_string().as_bytes());
-                eh.notify(notify, Some(message)).await?;
-            }
-        }
+        context
+            .notify(Some(Bytes::copy_from_slice(
+                replace_with.to_string().as_bytes(),
+            )))
+            .await?;
     }
 
     eprintln!(

@@ -1,11 +1,7 @@
 use bytes::{BufMut, Bytes, BytesMut};
-use flexbuffers::{Buffer, Builder, MapBuilder, Reader};
+use flexbuffers::{Buffer, Reader};
 use reality::prelude::*;
-use std::{
-    cell::{OnceCell, RefCell},
-    ops::Deref,
-    sync::OnceLock,
-};
+use std::ops::Deref;
 use tokio::sync::RwLockReadGuard;
 
 /// Enables working with a flexbuffers root to store data in a ThunkContext cache,
@@ -42,6 +38,22 @@ pub trait FlexbufferCacheExt: AsMut<ThunkContext> + AsRef<ThunkContext> {
             .cached_ref::<CachedFlexbufferRoot>()
             .map(|b| CachedFlexbufferRootRef::Root(RwLockReadGuard::map(b, |b| b)))
             .and_then(|b| Reader::get_root(b).ok())
+    }
+
+    /// Returns the current cached flexbuffer root as bytes,
+    ///
+    #[inline]
+    fn flexbuffer_bytes(&self) -> Option<Bytes> {
+        self.as_ref()
+            .cached_ref::<CachedFlexbufferRoot>()
+            .map(|c| c.0.clone())
+    }
+
+    /// Sets the current cached flexbuffer root,
+    ///
+    #[inline]
+    fn set_flexbuffer_root(&mut self, root: Bytes) {
+        self.as_mut().write_cache(CachedFlexbufferRoot(root));
     }
 
     /// Update the current flexbuffer view,

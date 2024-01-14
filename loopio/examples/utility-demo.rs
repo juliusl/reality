@@ -60,7 +60,7 @@ impl CallAsync for Test {
             .reset()
             .start_map()
             .push("name", "jello");
-        
+
         // Test that the update was persisted on drop
         {
             let reader = context.flexbuffer_view().expect("should be enabled");
