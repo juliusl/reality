@@ -63,6 +63,13 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
                 // If set, listens for an event before continuing to call the next ext
                 if let Some(message) = context.listen().await? {
+                    #[cfg(feature = "flexbuffers-ext")]
+                    use crate::prelude::flexbuffers_ext::FlexbufferCacheExt;
+
+                    #[cfg(feature = "flexbuffers-ext")]
+                    context.set_flexbuffer_root(message.clone());
+
+                    #[cfg(not(feature = "flexbuffers-ext"))]
                     context.store_kv("inbound_event_message", message);
                 }
 
@@ -72,12 +79,12 @@ async fn run_operation(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
                 // TODO: If context contains a LocalAction/RemoteAction, auto publish the transient
 
-                // **Note** -- 
-                // If the plugin being called is long-running, 
+                // **Note** --
+                // If the plugin being called is long-running,
                 // this will need to be called from within the plugin's call fn.
-                // 
+                //
                 // If set, notifies an event before continuing to the call the next ext
-                // 
+                //
                 context
                     .notify(
                         context

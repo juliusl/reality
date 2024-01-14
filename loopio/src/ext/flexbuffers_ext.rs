@@ -88,10 +88,20 @@ pub struct FlexbufferBuilderScope<'a> {
 impl<'a> FlexbufferBuilderScope<'a> {
     /// Returns a reference to the current builder,
     ///
-    pub fn builder(
+    pub(crate) fn builder(
         &mut self,
     ) -> <Shared as StorageTarget>::BorrowMutResource<'_, flexbuffers::Builder> {
         self.context.flexbuffer()
+    }
+
+    /// Builds a flexbuffer root,
+    ///
+    pub fn build(
+        mut self,
+        build: impl FnOnce(<Shared as StorageTarget>::BorrowMutResource<'_, flexbuffers::Builder>),
+    ) {
+        let builder = self.builder();
+        build(builder)
     }
 
     /// Resets the current builder,

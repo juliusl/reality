@@ -43,7 +43,7 @@
     |# path = /test-handler/:name
 
     + .operation start_reverse_proxy
-    <builtin.reverse-proxy-config>  testhost://start_engine_proxy
+    <builtin.reverse-proxy-config>
     |# listen = test-engine-proxy
     
     <builtin.reverse-proxy>         localhost:3576
@@ -53,7 +53,7 @@
     : .step test_std_io
     |# kind = once
     
-    : .step testhost://start_engine_proxy, testhost://start_reverse_proxy
+    : .step start_engine_proxy, start_reverse_proxy
     : .loop false
 
     + .sequence run_println                                             # Sequence that can be called by the engine proxy

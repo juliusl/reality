@@ -13,7 +13,7 @@ default = ["std-ext"]
 full = ["std-ext", "hyper-ext", "poem-ext", "wire-ext", "flexbuffers-ext"]
 std-ext = []
 hyper-ext = [ "hyper", "hyper-tls", "hyper_serde" ]
-poem-ext = [ "poem" ]
+poem-ext = [ "poem", "flexbuffers-ext" ]
 wire-ext = []
 flexbuffers-ext = [ "flexbuffers" ]
 

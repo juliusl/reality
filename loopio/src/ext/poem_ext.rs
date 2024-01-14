@@ -1,10 +1,4 @@
-use std::collections::BTreeMap;
-use std::fmt::Debug;
-use std::sync::Arc;
-
-use anyhow::anyhow;
 use async_trait::async_trait;
-use bytes::Bytes;
 use poem::get;
 use poem::http::HeaderMap;
 use poem::http::*;
@@ -24,9 +18,11 @@ use poem::Route;
 use poem::RouteMethod;
 use reality::prelude::*;
 use reality::CommaSeperatedStrings;
+use std::collections::BTreeMap;
+use std::fmt::Debug;
+use std::sync::Arc;
 use tracing::debug;
 use tracing::error;
-use tracing::info;
 use tracing::warn;
 
 use crate::action::ActionExt;
@@ -35,6 +31,8 @@ use crate::prelude::Action;
 use crate::prelude::Address;
 use crate::prelude::HyperExt;
 use crate::prelude::UriParam;
+
+use self::flexbuffers_ext::FlexbufferCacheExt;
 
 pub struct PoemRequest {
     pub path: Path<BTreeMap<String, String>>,
@@ -340,12 +338,13 @@ async fn start_engine_proxy(context: &mut ThunkContext) -> anyhow::Result<()> {
             .build()?;
 
         eprintln!("Adding alias: {:?} -> {:?}", alias, replace_with);
+        context.flexbuffer_scope().build(|mut b| {
+            let mut map = b.start_map();
+            map.push("alias", alias.to_string().as_str());
+            map.push("internal_host", replace_with.to_string().as_str());
+        });
 
-        context
-            .notify(Some(Bytes::copy_from_slice(
-                replace_with.to_string().as_bytes(),
-            )))
-            .await?;
+        context.notify(context.flexbuffer_bytes()).await?;
     }
 
     eprintln!(
@@ -459,7 +458,7 @@ pub struct ReverseProxyConfig {
     /// Alias this config is for,
     ///
     #[reality(derive_fromstr)]
-    alias: UriParam,
+    label: String,
     /// Allow headers,
     ///
     #[reality(rename = "allow-headers", option_of=CommaSeperatedStrings)]
@@ -649,13 +648,20 @@ async fn on_forward_request(
 async fn configure_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
     let init = tc.initialized::<ReverseProxyConfig>().await;
 
-    if let Some((_, event_message)) = tc.fetch_kv::<Bytes>("inbound_event_message") {
-        debug!("Got event_message {:?}", event_message);
-        if let Ok(internal_host) = std::str::from_utf8(&event_message)
-            .map_err(|e| anyhow!(e))
-            .and_then(|s| Uri::from_str(s).map_err(|e| anyhow!(e)))
-        {
-            debug!("Parsed event_message {:?}", internal_host);
+    if let Some(view) = tc.flexbuffer_view() {
+        let map = view.as_map();
+
+        let internal_host = map
+            .index("internal_host")
+            .ok()
+            .and_then(|v| v.as_str().parse::<Uri>().ok());
+        let alias = map
+            .index("alias")
+            .ok()
+            .and_then(|v| v.as_str().parse::<Uri>().ok());
+
+        if let (Some(alias), Some(internal_host)) = (alias, internal_host) {
+            debug!("Parsed event_message {:?} {:?}", alias, internal_host);
 
             let address = internal_host
                 .query()
@@ -679,18 +685,17 @@ async fn configure_reverse_proxy(tc: &mut ThunkContext) -> anyhow::Result<()> {
                 let engine_proxy = engine_proxy.context().initialized::<EngineProxy>().await;
                 debug!(
                     "Getting route config from engine proxy for {}\n{:#?}",
-                    init.alias.as_ref(),
-                    engine_proxy
+                    alias, engine_proxy
                 );
                 let mut transient = tc.transient_mut().await;
-                let mut entry = transient.entry(ResourceKey::with_hash(init.alias.to_string()));
+                let mut entry = transient.entry(ResourceKey::with_hash(alias.to_string()));
                 entry.put(engine_proxy.routes.clone());
                 entry.put(init.clone());
                 entry.put(internal_host.clone());
             }
             debug!(
                 "Configured reverse proxy for {:?} -> {internal_host}",
-                init.alias
+                alias
             );
         }
     }

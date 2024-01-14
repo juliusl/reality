@@ -13,6 +13,7 @@ use tokio::task::JoinHandle;
 use tracing::debug;
 use tracing::error;
 use tracing::info;
+use tracing::trace;
 use tracing::warn;
 
 use crate::prelude::Action;
@@ -403,7 +404,7 @@ pub trait VirtualBusExt: AsRef<ThunkContext> + AsMut<ThunkContext> {
                 Err(anyhow!("Not bound to an engine handle"))?;
             }
         } else {
-            warn!("notify property is not set");
+            trace!("notify property is not set, skipping");
         }
 
         Ok(())
@@ -420,7 +421,7 @@ pub trait VirtualBusExt: AsRef<ThunkContext> + AsMut<ThunkContext> {
                 Err(anyhow!("Not bound to an engine handle"))?;
             }
         } else {
-            warn!("listen property is not set");
+            trace!("listen property is not set, skipping");
         }
 
         Ok(None)

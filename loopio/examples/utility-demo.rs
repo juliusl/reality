@@ -57,19 +57,12 @@ impl CallAsync for Test {
         // Test flexbuffer api
         context
             .flexbuffer_scope()
-            .reset()
-            .start_map()
-            .push("name", "jello");
+            .build(|mut b| b.start_map().push("name", "jello"));
 
         // Test that the update was persisted on drop
         {
             let reader = context.flexbuffer_view().expect("should be enabled");
-            let value = reader
-                .as_map()
-                .index("name")
-                .ok()
-                .and_then(|r| r.as_map().index("value").ok())
-                .map(|v| v.as_str());
+            let value = reader.as_map().index("name").ok().map(|v| v.as_str());
             eprintln!("{:?}", value);
             assert_eq!(Some("jello"), value);
         }
