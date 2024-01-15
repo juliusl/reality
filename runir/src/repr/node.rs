@@ -134,31 +134,31 @@ impl NodeLevel {
         let mut node = Self::new();
 
         if let Some(symbol) = symbol {
-            node = node.with_symbol(symbol);
+            node.set_symbol(symbol);
         }
         if let Some(input) = input {
-            node = node.with_input(input);
+            node.set_input(input);
         }
         if let Some(tag) = tag {
-            node = node.with_tag(tag)
+            node.set_tag(tag)
         }
         if let Some(path) = path {
-            node = node.with_path(path);
+            node.set_path(path);
         }
         if let Some(idx) = idx {
-            node = node.with_idx(idx);
+            node.set_idx(idx);
         }
         if let Some(idx) = block {
-            node = node.with_block(idx);
+            node.set_block(idx);
         }
         if let Some(source) = source {
-            node = node.with_source(source);
+            node.set_source(source);
         }
         if let Some(doc_headers) = doc_headers {
-            node = node.with_doc_headers(doc_headers);
+            node.set_doc_headers(doc_headers);
         }
         if let Some(annotations) = annotations {
-            node = node.with_annotations(annotations);
+            node.set_annotations(annotations);
         }
 
         node
