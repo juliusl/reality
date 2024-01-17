@@ -1,6 +1,6 @@
+mod enum_data;
 mod struct_data;
 mod struct_field;
-mod enum_data;
 
 use enum_data::EnumData;
 use quote::quote_spanned;
@@ -18,7 +18,7 @@ pub fn derive_attribute_type(_item: proc_macro::TokenStream) -> proc_macro::Toke
 
 /// Derives Reality object includes several implementations,
 ///
-#[proc_macro_derive(Reality, attributes(reality))]
+#[proc_macro_derive(Reality, attributes(reality, plugin_def, parse_def))]
 pub fn derive_object_type(_item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let struct_data = parse_macro_input!(_item as StructData);
 
@@ -38,5 +38,6 @@ pub fn derive_reality_test(_item: proc_macro::TokenStream) -> proc_macro::TokenS
     let struct_data = parse_macro_input!(_item as DeriveInput);
 
     quote_spanned!(struct_data.ident.span()=>
-    ).into()
+    )
+    .into()
 }

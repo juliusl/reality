@@ -1,16 +1,17 @@
+use loopio::engine::EngineHandle;
 use loopio::prelude::*;
 use nebudeck::desktop::*;
 use nebudeck::ControlBus;
-use winit::event_loop::ControlFlow;
 use winit::window::Window;
 use winit::window::WindowId;
 
 /// Minimal example for opening a blank window,
 ///
 fn main() -> anyhow::Result<()> {
-    let desktop = Desktop::<()>::new()?;
+    let desktop = Desktop::new()?;
 
-    BlankWindow::delegate(desktop, Engine::new());
+    let engine = Engine::builder();
+    BlankWindow.delegate(desktop, ForegroundEngine::new(engine))?;
 
     Ok(())
 }
@@ -18,12 +19,12 @@ fn main() -> anyhow::Result<()> {
 struct BlankWindow;
 
 impl ControlBus for BlankWindow {
-    fn create(_: Engine) -> Self {
-        BlankWindow
+    fn bind(&mut self, _: EngineHandle) {
+        // WgpuSystem
     }
 }
 
-impl DesktopApp<()> for BlankWindow {
+impl DesktopApp for BlankWindow {
     fn configure_window(&self, window: winit::window::Window) -> winit::window::Window {
         // window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
         window.set_title("Blank Window");
@@ -34,7 +35,7 @@ impl DesktopApp<()> for BlankWindow {
         window
     }
 
-    fn on_window_redraw(&mut self, _: WindowId, desktop: &DesktopContext<()>) {
+    fn on_window_redraw(&mut self, _: WindowId, desktop: &DesktopContext) {
         let window = desktop.window;
         /// Copied from winit examples
         ///
@@ -111,7 +112,7 @@ impl DesktopApp<()> for BlankWindow {
         fill_window(window);
     }
 
-    fn after_event(&mut self, desktop: &DesktopContext<()>) {
-        desktop.event_loop_target.set_control_flow(ControlFlow::Poll);
+    fn after_event(&mut self, _: &DesktopContext) {
+        // desktop.event_loop_target.set_control_flow(ControlFlow::Poll);
     }
 }

@@ -7,7 +7,9 @@ use quote::quote_spanned;
 use quote::ToTokens;
 use syn::parse::Parse;
 use syn::parse2;
+use syn::parse_quote;
 use syn::Attribute;
+use syn::Expr;
 use syn::LitStr;
 use syn::Path;
 use syn::Token;
@@ -45,6 +47,9 @@ pub(crate) struct StructField {
     /// FromStr for this type,
     ///
     pub derive_fromstr: bool,
+    /// FFI Type,
+    ///
+    pub ffi: Option<Type>,
     /// Attribute Type,
     ///
     pub attribute_type: Option<Path>,
@@ -64,8 +69,11 @@ pub(crate) struct StructField {
     ///
     pub option_of: Option<Type>,
     /// Parse as an set_of Type,
-    /// 
+    ///
     pub set_of: Option<Type>,
+    /// Parse as an decorated Type,
+    ///
+    pub decorated: Option<Type>,
     /// True if this field should be enabled as an ext,
     ///
     pub ext: bool,
@@ -75,11 +83,18 @@ pub(crate) struct StructField {
     /// Location of this field,
     ///
     pub span: Span,
-    /// Allow field to be handled as wire-data,
+    /// Disable a field's wire representation,
     ///
-    pub wire: bool,
+    pub not_wire: bool,
+    pub is_decorated: bool,
     pub offset: usize,
+    pub is_virtual: bool,
+    pub is_parse: bool,
+    pub wire: Option<Expr>,
     pub variant: Option<(Ident, Ident)>,
+    /// TODO: Enable aliased struct fields,
+    ///
+    __aliased: Vec<StructField>,
 }
 
 impl StructField {
@@ -113,7 +128,7 @@ impl StructField {
                 }
             }
         } else {
-            quote_spanned!{self.span=>
+            quote_spanned! {self.span=>
                 &self.#name
             }
         }
@@ -130,7 +145,7 @@ impl StructField {
                 }
             }
         } else {
-            quote_spanned!{self.span=>
+            quote_spanned! {self.span=>
                 &mut self.#name
             }
         }
@@ -140,7 +155,7 @@ impl StructField {
     ///
     pub fn render_field_parse_callback(&self) -> TokenStream {
         let name = &self.name;
-        let ty = &self.ty;
+        let ty = &self.field_ty();
 
         fn handle_tagged(
             ty: &Type,
@@ -154,7 +169,7 @@ impl StructField {
                     acc
                 });
 
-                if vec!["crate:Tagged:", "reality:Tagged:", "Tagged:"]
+                if vec!["crate:Decorated:", "reality:Decorated:", "Decorated:"]
                     .into_iter()
                     .any(|s| idents == *s)
                 {
@@ -179,6 +194,9 @@ impl StructField {
                                 #name.set_tag(tag);
                             }
                         }
+                        let key = hasher.finish();
+                        #name.set_property(key);
+                        key
                     )
                 },
                 || {
@@ -186,6 +204,7 @@ impl StructField {
                         if let #enum_ty::#variant { #name, .. } = self {
                             *#name = value;
                         }
+                        hasher.finish()
                     )
                 },
             );
@@ -193,34 +212,65 @@ impl StructField {
             if let Some(cb) = self.parse_callback.as_ref() {
                 callback = quote_spanned! {self.span=>
                     #cb(self.#name, value, _tag);
+                    hasher.finish()
                 };
             } else if self.map_of.as_ref().is_some() {
-                callback = quote_spanned! {self.span=>
-                        if let #enum_ty::#variant { #name, .. } = self {
-                            if let Some(tag) = _tag {
-                                #name.insert(tag.to_string(), value);
-                            }
+                callback = handle_tagged(
+                    ty,
+                    || {
+                        quote_spanned! {self.span=>
+                                let key = hasher.finish();
+                                if let #enum_ty::#variant { #name, .. } = self {
+                                    if let Some(tag) = _tag {
+                                        value.set_tag(tag);
+                                        value.set_property(key);
+                                        #name.insert(tag.to_string(), value);
+                                    }
+                                }
+                                key
                         }
-                };
+                    },
+                    || {
+                        quote_spanned! {self.span=>
+                            let key = hasher.finish();
+                            if let #enum_ty::#variant { #name, .. } = self {
+                                if let Some(tag) = _tag {
+                                    #name.insert(tag.to_string(), value);
+                                }
+                            }
+                            key
+                        }
+                    },
+                )
             } else if let Some(ty) = self.vec_of.as_ref() {
                 callback = handle_tagged(
                     ty,
                     || {
                         quote_spanned!(self.span=>
                             if let #enum_ty::#variant { #name, .. } = self {
+                                hasher.hash(#name.len());
+                                let key = hasher.finish();
                                 #name.push(value);
 
-                                if let (Some(tag), Some(last)) = (_tag, #name.last_mut()) {
-                                    last.set_tag(tag);
+                                if let Some(last) = #name.last_mut() {
+                                    if let Some(tag) = _tag {
+                                        last.set_tag(tag);
+                                    }
+                                    last.set_property(key);
                                 }
+                                key
+                            } else {
+                                hasher.finish()
                             }
                         )
                     },
                     || {
                         quote_spanned! {self.span=>
                             if let #enum_ty::#variant { #name, .. } = self {
+                                hasher.hash(#name.len());
                                 #name.push(value);
                             }
+                            hasher.finish()
                         }
                     },
                 );
@@ -229,13 +279,18 @@ impl StructField {
                     ty,
                     || {
                         quote_spanned!(self.span=>
+                            let key = hasher.finish();
                             if let #enum_ty::#variant { #name, .. } = self {
                                 *#name = Some(value);
 
-                                if let (Some(tag), Some(last)) = (_tag, #name.as_mut()) {
-                                    last.set_tag(tag);
+                                if let Some(last) = #name.as_mut() {
+                                    if let Some(tag) = _tag {
+                                        last.set_tag(tag);
+                                    }
+                                    last.set_property(key);
                                 }
                             }
+                            key
                         )
                     },
                     || {
@@ -243,6 +298,7 @@ impl StructField {
                             if let #enum_ty::#variant { #name, .. } = self {
                                 *#name = Some(value);
                             }
+                            hasher.finish()
                         }
                     },
                 );
@@ -252,19 +308,29 @@ impl StructField {
                     || {
                         quote_spanned!(self.span=>
                             if let #enum_ty::#variant { #name, .. } = self {
+                                hasher.hash(#name.len());
+                                let key = hasher.finish();
                                 #name.push_back(value);
-    
-                                if let (Some(tag), Some(last)) = (_tag, #name.back_mut()) {
-                                    last.set_tag(tag);
+
+                                if let Some(last) = #name.back_mut() {
+                                    if let Some(tag) = _tag {
+                                        last.set_tag(tag);
+                                    }
+                                    last.set_property(key);
                                 }
+                                key
+                            } else {
+                                hasher.finish()
                             }
                         )
                     },
                     || {
                         quote_spanned! {self.span=>
                             if let #enum_ty::#variant { #name, .. } = self {
+                                hasher.hash(#name.len());
                                 #name.push_back(value);
                             }
+                            hasher.finish()
                         }
                     },
                 );
@@ -274,18 +340,26 @@ impl StructField {
                     || {
                         quote_spanned!(self.span=>
                             if let #enum_ty::#variant { #name, .. } = self {
+                                hasher.hash(#name.len());
+                                let key = hasher.finish();
                                 if let Some(tag) = _tag {
                                     value.set_tag(tag);
                                 }
+                                value.set_property(key);
                                 #name.insert(value);
+                                key
+                            } else {
+                                hasher.finish()
                             }
                         )
                     },
                     || {
                         quote_spanned! {self.span=>
                             if let #enum_ty::#variant { #name, .. } = self {
+                                hasher.hash(#name.len());
                                 #name.insert(value);
                             }
+                            hasher.finish()
                         }
                     },
                 );
@@ -300,14 +374,18 @@ impl StructField {
                 quote_spanned!(self.span=>
                     self.#name = value;
 
+                    let key = hasher.finish();
                     if let Some(tag) = _tag {
                         self.#name.set_tag(tag);
                     }
+                    self.#name.set_property(key);
+                    key
                 )
             },
             || {
                 quote_spanned!(self.span=>
                     self.#name = value;
+                    hasher.finish()
                 )
             },
         );
@@ -315,28 +393,55 @@ impl StructField {
         if let Some(cb) = self.parse_callback.as_ref() {
             callback = quote_spanned! {self.span=>
                 #cb(self, value, _tag);
+                hasher.finish()
             };
         } else if self.map_of.as_ref().is_some() {
-            callback = quote_spanned! {self.span=>
-                if let Some(tag) = _tag {
-                    self.#name.insert(tag.to_string(), value);
-                }
-            };
+            callback = handle_tagged(
+                ty,
+                || {
+                    quote_spanned! {self.span=>
+                        let key = hasher.finish();
+                        value.set_property(key);
+                        if let Some(tag) = _tag {
+                            value.set_tag(tag);
+                            self.#name.insert(tag.to_string(), value);
+                        }
+                        key
+                    }
+                },
+                || {
+                    quote_spanned! (self.span=>
+                        let key = hasher.finish();
+                        if let Some(tag) = _tag {
+                            self.#name.insert(tag.to_string(), value);
+                        }
+                        key
+                    )
+                },
+            );
         } else if let Some(ty) = self.vec_of.as_ref() {
             callback = handle_tagged(
                 ty,
                 || {
                     quote_spanned!(self.span=>
+                        hasher.hash(self.#name.len());
                         self.#name.push(value);
 
-                        if let (Some(tag), Some(last)) = (_tag, self.#name.last_mut()) {
-                            last.set_tag(tag);
+                        let key = hasher.finish();
+                        if let Some(last) = self.#name.last_mut() {
+                            if let Some(tag) = _tag {
+                                last.set_tag(tag);
+                            }
+                            last.set_property(key);
                         }
+                        key
                     )
                 },
                 || {
                     quote_spanned! {self.span=>
+                        hasher.hash(self.#name.len());
                         self.#name.push(value);
+                        hasher.finish()
                     }
                 },
             );
@@ -346,15 +451,21 @@ impl StructField {
                 || {
                     quote_spanned!(self.span=>
                         self.#name = Some(value);
+                        let key = hasher.finish();
 
-                        if let (Some(tag), Some(last)) = (_tag, self.#name.as_mut()) {
-                            last.set_tag(tag);
+                        if let Some(last) = self.#name.as_mut() {
+                            if let Some(tag) = _tag {
+                                last.set_tag(tag);
+                            }
+                            last.set_property(key);
                         }
+                        key
                     )
                 },
                 || {
                     quote_spanned! {self.span=>
                         self.#name = Some(value);
+                        hasher.finish()
                     }
                 },
             );
@@ -363,16 +474,25 @@ impl StructField {
                 ty,
                 || {
                     quote_spanned!(self.span=>
+                        hasher.hash(self.#name.len());
                         self.#name.push_back(value);
+                        let key = hasher.finish();
 
-                        if let (Some(tag), Some(last)) = (_tag, self.#name.back_mut()) {
-                            last.set_tag(tag);
+                        if let Some(last) = self.#name.back_mut() {
+                            if let Some(tag) = _tag {
+                                last.set_tag(tag);
+                            }
+                            last.set_property(key);
                         }
+
+                        key
                     )
                 },
                 || {
                     quote_spanned! {self.span=>
+                        hasher.hash(self.#name.len());
                         self.#name.push_back(value);
+                        hasher.finish()
                     }
                 },
             );
@@ -384,12 +504,18 @@ impl StructField {
                         if let Some(tag) = _tag {
                             value.set_tag(tag);
                         }
+                        hasher.hash(self.#name.len());
+                        let key = hasher.finish();
+                        value.set_property(key);
                         self.#name.insert(value);
+                        key
                     )
                 },
                 || {
                     quote_spanned! {self.span=>
+                        hasher.hash(self.#name.len());
                         self.#name.insert(value);
+                        hasher.finish()
                     }
                 },
             );
@@ -412,10 +538,15 @@ impl Parse for StructField {
         let mut vecdeq_of = None;
         let mut option_of = None;
         let mut set_of = None;
+        let mut decorated = None;
+        let mut ffi = None;
+        let mut wire = None;
         let mut derive_fromstr = false;
         let mut ext = false;
         let mut plugin = false;
-        let mut wire = false;
+        let mut not_wire = false;
+        let mut is_virtual = true;
+        let mut is_parse = true;
         let span = input.span();
 
         let visibility = input.parse::<Visibility>().ok();
@@ -427,14 +558,23 @@ impl Parse for StructField {
         let ty = input.parse::<Type>()?;
 
         for attribute in attributes {
-            if attribute.path().is_ident("skip") {
-                ignore = true;
-            }
             // #[reality(ignore, rename = "SOME_NAME")]
             if attribute.path().is_ident("reality") {
                 attribute.parse_nested_meta(|meta| {
                     if meta.path.is_ident("ignore") {
+                        is_parse = false;
+                        is_virtual = false;
                         ignore = true;
+                    }
+
+                    if meta.path.is_ident("virtual_only") {
+                        is_parse = false;
+                        is_virtual = true;
+                    }
+
+                    if meta.path.is_ident("not_wire") {
+                        is_parse = true;
+                        is_virtual = false;
                     }
 
                     if meta.path.is_ident("rename") {
@@ -446,6 +586,21 @@ impl Parse for StructField {
                     if meta.path.is_ident("parse") {
                         meta.input.parse::<Token![=]>()?;
                         callback = meta.input.parse::<Path>().ok();
+                    }
+
+                    if meta.path.is_ident("ffi") {
+                        if meta.input.lookahead1().peek(Token![=]) {
+                            meta.input.parse::<Token![=]>().expect("should parse");
+                            ffi = meta.input.parse::<Type>().ok();
+                            wire = Some(parse_quote!(into_box_from_wire));
+                        } else {
+                            ffi = Some(ty.clone());
+                            wire = Some(parse_quote!(into_box_from_wire));
+                        }
+                    }
+
+                    if meta.path.is_ident("wire") && meta.input.parse::<Token![=]>().is_ok() {
+                        wire = meta.input.parse::<Expr>().ok();
                     }
 
                     if meta.path.is_ident("attribute_type") {
@@ -533,9 +688,32 @@ impl Parse for StructField {
                         }
                     }
 
-                    ext = meta.path.is_ident("ext"); 
-                    plugin = meta.path.is_ident("plugin");
-                    wire = meta.path.is_ident("wire");
+                    if meta.path.is_ident("decorated") {
+                        if callback.is_some() || map_of.is_some() || vec_of.is_some() || vecdeq_of.is_some() {
+                            return Err(syn::Error::new(meta.input.span(), "Can only have one of either, `parse`, `option_of`, `map_of`, of `vec_of`"))
+                        }
+
+                        if meta.input.parse::<Token![=]>().is_ok() {
+                            decorated = meta.input.parse::<syn::Type>().ok();
+                        } else {
+                            return Err(syn::Error::new(
+                                meta.input.span(),
+                                "Expecting a type for the value of the Vec",
+                            ));
+                        }
+                    }
+
+                    if meta.path.is_ident("ext") {
+                        ext = true;
+                    }
+
+                    if meta.path.is_ident("plugin") {
+                        plugin = true;
+                    }
+
+                    if meta.path.is_ident("not_wire") {
+                        not_wire = true;
+                    }
 
                     if meta.path.is_ident("derive_fromstr") {
                         derive_fromstr = true;
@@ -546,27 +724,51 @@ impl Parse for StructField {
             }
         }
 
-        Ok(Self {
+        let mut field = Self {
             rename,
+            wire,
             derive_fromstr,
+            ffi,
             vec_of,
             vecdeq_of,
             map_of,
             option_of,
             set_of,
+            decorated,
             parse_callback: callback,
             attribute_type,
             ext,
             plugin,
-            wire,
+            not_wire,
             span,
             ignore,
             visibility,
             name,
             ty,
+            is_decorated: false,
+            is_virtual,
+            is_parse,
             variant: None,
             offset: 0,
-        })
+            __aliased: vec![],
+        };
+
+        let ty = field.field_ty();
+        field.is_decorated = if let Ok(path) = parse2::<Path>(ty.to_token_stream()) {
+            let idents = path.segments.iter().fold(String::new(), |mut acc, v| {
+                acc.push_str(&v.ident.to_string());
+                acc.push(':');
+                acc
+            });
+
+            vec!["crate:Decorated:", "reality:Decorated:", "Decorated:"]
+                .into_iter()
+                .any(|s| idents == *s)
+        } else {
+            false
+        };
+
+        Ok(field)
     }
 }
 

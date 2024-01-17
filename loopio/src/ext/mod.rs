@@ -1,15 +1,20 @@
 use async_trait::async_trait;
 use reality::prelude::*;
+use serde::{Deserialize, Serialize};
+use tracing::trace;
 
-use crate::host::HostCondition;
+use self::wire_ext::VirtualBusExt;
 use crate::engine::EngineHandle;
 
+#[cfg(feature = "flexbuffers-ext")]
+pub mod flexbuffers_ext;
 #[cfg(feature = "hyper-ext")]
 pub mod hyper_ext;
 #[cfg(feature = "poem-ext")]
 pub mod poem_ext;
 #[cfg(feature = "std-ext")]
 pub mod std_ext;
+#[cfg(feature = "wire-ext")]
 pub mod wire_ext;
 
 /// General extensions for ThunkContext,
@@ -19,55 +24,15 @@ pub trait Ext {
     /// Returns an engine handle from storage,
     ///
     async fn engine_handle(&self) -> Option<EngineHandle>;
-
-    /// Returns any comments added for this attribute,
-    ///
-    async fn get_comments(&self) -> Option<Comments>;
-
-    /// Notify host w/ a condition,
-    ///
-    async fn notify_host(&self, host: &str, condition: &str) -> anyhow::Result<()>;
-    
-    /// Listen for a condition from the host,
-    /// 
-    async fn listen_host(&self, host: &str, condition: &str) -> Option<HostCondition>;
 }
 
 #[async_trait]
 impl Ext for ThunkContext {
+    /// Returns the current engine handle,
+    ///
+    #[inline]
     async fn engine_handle(&self) -> Option<EngineHandle> {
-        self.node().await.current_resource(None)
-    }
-
-    async fn get_comments(&self) -> Option<Comments> {
-        self.node()
-            .await
-            .current_resource(self.attribute.map(|a| a.transmute()))
-    }
-
-    async fn notify_host(&self, host: &str, condition: &str) -> anyhow::Result<()> {
-        if let Some(host) = self.host(host).await {
-            if let Some(host_condition) =
-                host.current_resource::<HostCondition>(Some(ResourceKey::with_hash(condition)))
-            {
-                host_condition.notify();
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn listen_host(&self, host: &str, condition: &str) -> Option<HostCondition> {
-        if let Some(host) = self.host(host).await {
-            if let Some(host_condition) =
-                host.current_resource::<HostCondition>(Some(ResourceKey::with_hash(condition)))
-            {
-                println!("Found condition");
-                return Some(host_condition);
-            }
-        }
-
-        None
+        self.node().await.root_ref().current()
     }
 }
 
@@ -77,7 +42,7 @@ pub mod utility {
     /// Set of utilities built into the engine,
     ///
     #[derive(Reality, Clone, Default)]
-    #[reality(ext, rename = "utility/loopio")]
+    #[reality(ext, rename = "utility/loopio", call = noop, plugin)]
     pub struct Utility {
         /// Unused
         #[reality(derive_fromstr)]
@@ -87,12 +52,8 @@ pub mod utility {
         #[cfg(feature = "std-ext")]
         #[reality(plugin)]
         stdio: super::std_ext::Stdio,
-        /// Adds a plugin to receive a signal from a host,
-        /// 
-        #[reality(ext)]
-        receive_signal: super::ReceiveSignal,
         /// Adds a process plugin,
-        /// 
+        ///
         #[cfg(feature = "std-ext")]
         #[reality(ext)]
         process: super::std_ext::Process,
@@ -117,34 +78,8 @@ pub mod utility {
         #[reality(ext)]
         request: super::hyper_ext::Request,
     }
-}
 
-#[derive(Reality, Default, Clone)]
-#[reality(plugin, call = send_signal, rename = "utility/loopio.send-signal")]
-pub struct SendSignal {
-    #[reality(derive_fromstr)]
-    name: String,
-    host: String,
-}
-
-async fn send_signal(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let signal = tc.initialized::<SendSignal>().await;
-    tc.notify_host(&signal.host, &signal.name).await
-}
-
-#[derive(Reality, Debug, Default, Clone)]
-#[reality(plugin, call = receive_signal, rename = "utility/loopio.receive-signal")]
-pub struct ReceiveSignal {
-    #[reality(derive_fromstr)]
-    name: String,
-    host: String,
-}
-
-async fn receive_signal(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let signal = tc.initialized::<ReceiveSignal>().await;
-    println!("Listening for signal {:?}", signal);
-    if let Some(listener) = tc.listen_host(&signal.host, &signal.name).await {
-        listener.listen().await;
+    async fn noop(_: &mut ThunkContext) -> anyhow::Result<()> {
+        Ok(())
     }
-    Ok(())
 }

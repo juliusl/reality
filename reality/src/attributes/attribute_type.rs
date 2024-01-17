@@ -4,159 +4,236 @@ use std::ops::DerefMut;
 use std::str::FromStr;
 
 use anyhow::anyhow;
-use serde::Serialize;
+use runir::prelude::*;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
+use tracing::trace;
 
 use crate::BlockObject;
-use crate::Visit;
-use crate::VisitMut;
+use crate::FieldRef;
+use crate::OnReadField;
+use crate::OnWriteField;
+use crate::Plugin;
+use crate::ResourceKey;
+use crate::Shared;
 
+use super::attribute::Property;
 use super::visit::Field;
 use super::visit::FieldMut;
 use super::AttributeParser;
 use super::StorageTarget;
-use super::visit::FieldPacket;
-use super::visit::FieldPacketType;
+use crate::prelude::*;
+
+/// Type-alias for a Recv::link_recv fn,
+///
+pub type LinkRecvFn = fn(NodeLevel, Vec<Repr>) -> anyhow::Result<Repr>;
+
+/// Type-alias for a Recv::link_field fn,
+///
+pub type LinkFieldFn = fn(ResourceLevel, FieldLevel, NodeLevel) -> anyhow::Result<Repr>;
 
 /// Trait to implement a type as an AttributeType,
 ///
-pub trait AttributeType<S: StorageTarget> {
-    /// Identifier of the attribute type,
-    ///
-    /// This identifier will be used by runmd to load this type
-    ///
-    fn ident() -> &'static str;
-
+pub trait AttributeType<S: StorageTarget>: runir::prelude::Recv {
     /// Parse content received by the runmd node into state w/ an attribute parser,
     ///
     /// The attribute parser will be given access to the storage target for the block this
     /// attribute declaration belongs to.
     ///
     fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>);
-
-    /// Returns a visitor w/ read access to fields of T,
-    /// 
-    fn visitor<T>(&self) -> Vec<Field<T>>
-    where
-        Self: Visit<T>
-    {
-        <Self as Visit<T>>::visit(self)
-    }
-
-    /// Returns a visitor w/ mutable access to fields of T,
-    /// 
-    fn visitor_mut<'a: 'b, 'b, T>(&'a mut self) -> Vec<FieldMut<'b, T>> 
-    where
-        Self: VisitMut<T>
-    {
-        <Self as VisitMut<T>>::visit_mut(self)
-    }
 }
 
 /// Struct for a concrete conversion of a type that implements AttributeType,
 ///
 /// Allows the parse function to be stored and recalled
 ///
-pub struct AttributeTypeParser<S: StorageTarget + 'static>(
+pub struct AttributeTypeParser<S: StorageTarget + 'static> {
     /// Identifier
-    String,
+    ///
+    ident: String,
     /// Parse function
-    fn(&mut AttributeParser<S>, String),
-);
+    ///
+    parse: fn(&mut AttributeParser<S>, String),
+    /// Link receiver function,
+    ///
+    pub(crate) link_recv: LinkRecvFn,
+    /// Link field function,
+    ///
+    link_field: LinkFieldFn,
+    /// Resource level
+    ///
+    pub resource: ResourceLevel,
+    /// Field level
+    ///
+    pub field: Option<FieldLevel>,
+}
 
-impl<S: StorageTarget> AttributeTypeParser<S> {
+use runir::prelude::Recv;
+
+impl AttributeTypeParser<Shared> {
     /// Creates a new parser
     ///
-    pub fn new<A>() -> Self
+    pub fn new<A>(resource: runir::prelude::ResourceLevel) -> Self
     where
-        A: AttributeType<S>,
+        A: AttributeType<Shared> + Send + Sync + 'static,
     {
-        Self(A::ident().to_string(), A::parse)
+        Self {
+            ident: A::symbol().to_string(),
+            parse: A::parse,
+            link_recv: A::link_recv,
+            link_field: A::link_field,
+            resource,
+            field: None,
+        }
     }
 
-    pub fn new_with(ident: impl AsRef<str>, parse: fn(&mut AttributeParser<S>, String)) -> Self {
-        Self(ident.as_ref().to_string(), parse)
+    pub fn new_with(
+        ident: impl AsRef<str>,
+        parse: fn(&mut AttributeParser<Shared>, String),
+        link_recv: LinkRecvFn,
+        link_field: LinkFieldFn,
+        resource: ResourceLevel,
+        field: Option<FieldLevel>,
+    ) -> Self {
+        Self {
+            ident: ident.as_ref().to_string(),
+            parse,
+            link_recv,
+            link_field,
+            resource,
+            field,
+        }
     }
 
     /// Returns a reference to this ident,
     ///
     pub fn ident(&self) -> &str {
-        self.0.as_str()
+        self.ident.as_str()
     }
 }
 
-impl<S: StorageTarget + 'static> AttributeTypeParser<S> {
+impl AttributeTypeParser<Shared> {
     /// Executes the stored parse function,
     ///
-    pub fn parse(&self, parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
-        (self.1)(parser, content.as_ref().trim().to_string())
+    pub fn parse(&self, parser: &mut AttributeParser<Shared>, content: impl AsRef<str>) {
+        (self.parse)(parser, content.as_ref().trim().to_string())
+    }
+
+    /// Links a receiver to node and fields,
+    ///
+    pub fn link_recv(&self, node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr> {
+        trace!("linking recv - {:?}", node.mount());
+        (self.link_recv)(node, fields)
+    }
+
+    /// Links a field to a node,
+    ///
+    pub fn link_field(&self, node: NodeLevel) -> anyhow::Result<Repr> {
+        trace!("linking - {:?}", node.mount());
+        if let Some(field) = self.field {
+            (self.link_field)(self.resource.clone(), field, node)
+        } else {
+            Err(anyhow!("Cannot link field"))
+        }
     }
 
     /// Returns an attribute parser for a parseable type field,
     ///
-    pub fn parseable_field<const IDX: usize, Owner, T>() -> Self
+    pub fn parseable_field<const IDX: usize, Owner>() -> Self
     where
-        S: Send + Sync + 'static,
-        <T as FromStr>::Err: Send + Sync + 'static,
-        Owner: OnParseField<IDX, T> + Send + Sync + 'static,
-        T: FromStr + Send + Sync + 'static,
+        Owner: Recv + OnParseField<IDX> + Send + Sync + 'static,
+        <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
     {
-        Self::new::<ParsableField<IDX, Owner, T>>()
+        let mut resource = ResourceLevel::new::<Owner::ProjectedType>();
+        if std::any::TypeId::of::<Owner::ParseType>()
+            != std::any::TypeId::of::<Owner::ProjectedType>()
+        {
+            resource.set_parse_type::<Owner::ParseType>();
+        }
+        resource.set_ffi::<Owner::FFIType>();
+
+        let mut parser = Self::new::<ParsableField<IDX, Owner>>(resource);
+        parser.field = Some(FieldLevel::new::<IDX, Owner>());
+        parser
     }
 
     /// Returns an attribute parser for a parseable attribute type field,
     ///
-    pub fn parseable_attribute_type_field<const IDX: usize, Owner, T>() -> Self
+    pub fn parseable_attribute_type_field<const IDX: usize, Owner>() -> Self
     where
-        S: Send + Sync + 'static,
-        Owner: OnParseField<IDX, T> + Send + Sync + 'static,
-        T: AttributeType<S> + Send + Sync + 'static,
+        Owner: Recv + OnParseField<IDX> + Send + Sync + 'static,
+        Owner::ParseType: AttributeType<Shared>,
     {
-        Self::new::<ParsableAttributeTypeField<IDX, S, Owner, T>>()
+        let mut resource = ResourceLevel::new::<Owner::ProjectedType>();
+        if std::any::TypeId::of::<Owner::ParseType>()
+            != std::any::TypeId::of::<Owner::ProjectedType>()
+        {
+            resource.set_parse_type::<Owner::ParseType>();
+        }
+        resource.set_ffi::<Owner::FFIType>();
+
+        let mut parser = Self::new::<ParsableAttributeTypeField<IDX, Owner>>(resource);
+        parser.field = Some(FieldLevel::new::<IDX, Owner>());
+        parser
     }
 
     /// Returns an attribute parser for a parseable attribute type field,
     ///
-    pub fn parseable_object_type_field<const IDX: usize, Owner, T>() -> Self
+    pub fn parseable_object_type_field<const IDX: usize, Owner>() -> Self
     where
-        S: Send + Sync + 'static,
-        Owner: OnParseField<IDX, T> + Send + Sync + 'static,
-        T: BlockObject<S> + Send + Sync + 'static,
+        Owner: Recv + OnParseField<IDX> + Send + Sync + 'static,
+        Owner::ParseType: BlockObject,
     {
-        Self::new::<ParsableObjectTypeField<IDX, S, Owner, T>>()
+        let mut resource = ResourceLevel::new::<Owner::ProjectedType>();
+        if std::any::TypeId::of::<Owner::ParseType>()
+            != std::any::TypeId::of::<Owner::ProjectedType>()
+        {
+            resource.set_parse_type::<Owner::ParseType>();
+        }
+        resource.set_ffi::<Owner::FFIType>();
+
+        let mut parser = Self::new::<ParsableObjectTypeField<IDX, Owner>>(resource);
+        parser.field = Some(FieldLevel::new::<IDX, Owner>());
+        parser
     }
 }
 
 impl<S: StorageTarget> Clone for AttributeTypeParser<S> {
     fn clone(&self) -> Self {
-        Self(self.0.clone(), self.1)
+        Self {
+            ident: self.ident.clone(),
+            parse: self.parse,
+            link_recv: self.link_recv,
+            link_field: self.link_field,
+            resource: self.resource.clone(),
+            field: self.field,
+        }
     }
 }
 
 impl<S: StorageTarget> Debug for AttributeTypeParser<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("AttributeTypeParser").field(&self.0).finish()
+        f.debug_struct("AttributeTypeParser")
+            .field("ident", &self.ident)
+            .finish()
     }
 }
 
 /// Adapter for types that implement FromStr into an AttributeType,
 ///
-pub struct ParsableField<const FIELD_OFFSET: usize, Owner, T>
+pub struct ParsableField<const FIELD_OFFSET: usize, Owner>
 where
-    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-    T: FromStr + Send + Sync + 'static,
+    Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
 {
     /// Optional, label for use w/ resource keys
     ///
     label: Option<&'static str>,
     /// Parsed value,
     ///
-    value: Option<T>,
+    value: Option<Owner::ParseType>,
     /// Parsing error,
     ///
-    error: Option<<T as FromStr>::Err>,
-    /// Called when this field is parsed successfully and the owner exists,
-    ///
+    error: Option<<Owner::ParseType as FromStr>::Err>,
     _owner: PhantomData<Owner>,
 }
 
@@ -165,79 +242,101 @@ where
 /// Applies the attribute type's parse fn, and then queues removal and transfer to the owning type,
 ///
 #[derive(Default)]
-pub struct ParsableAttributeTypeField<const FIELD_OFFSET: usize, S, Owner, T>
+pub struct ParsableAttributeTypeField<const FIELD_OFFSET: usize, Owner>
 where
-    S: StorageTarget,
-    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-    T: AttributeType<S> + Send + Sync + 'static,
+    Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+    Owner::ParseType: AttributeType<Shared> + Send + Sync + 'static,
 {
-    _inner: PhantomData<T>,
     _owner: PhantomData<Owner>,
-    _storage: PhantomData<S>,
 }
 
-/// Parseable AttributeType,
+/// Parseable BlockObject,
 ///
 /// Applies the attribute type's parse fn, and then queues removal and transfer to the owning type,
 ///
 #[derive(Default)]
-pub struct ParsableObjectTypeField<const FIELD_OFFSET: usize, S, Owner, T>
+pub struct ParsableObjectTypeField<const FIELD_OFFSET: usize, Owner>
 where
-    S: StorageTarget + 'static,
-    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-    T: BlockObject<S> + Send + Sync + 'static,
+    Owner: OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+    Owner::ParseType: BlockObject + Send + Sync + 'static,
 {
-    _inner: PhantomData<T>,
     _owner: PhantomData<Owner>,
-    _storage: PhantomData<S>,
 }
 
-impl<const FIELD_OFFSET: usize, Owner, S, T> AttributeType<S>
-    for ParsableField<FIELD_OFFSET, Owner, T>
+impl<const FIELD_OFFSET: usize, Owner> Recv for ParsableField<FIELD_OFFSET, Owner>
 where
-    <T as FromStr>::Err: Send + Sync + 'static,
-    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-    S: StorageTarget + Send + Sync + 'static,
-    T: FromStr + Send + Sync + 'static,
+    Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+    <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
 {
-    fn ident() -> &'static str {
+    fn symbol() -> &'static str {
         Owner::field_name()
     }
 
-    fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
-        let label = Some(<Self as AttributeType<S>>::ident());
+    /// Links a node level to a receiver and returns a new Repr,
+    ///
+    fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
+    where
+        Self: Sized + Send + Sync + 'static,
+    {
+        Owner::link_recv(node, fields)
+    }
 
-        let parsed = match content.as_ref().parse::<T>() {
+    /// Links a node level to a field level and returns a new Repr,
+    ///
+    fn link_field(
+        resource: ResourceLevel,
+        field: FieldLevel,
+        node: NodeLevel,
+    ) -> anyhow::Result<Repr> {
+        Owner::link_field(resource, field, node)
+    }
+}
+
+impl<const FIELD_OFFSET: usize, Owner> AttributeType<Shared> for ParsableField<FIELD_OFFSET, Owner>
+where
+    Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+    <Owner::ParseType as FromStr>::Err: Send + Sync + 'static,
+{
+    fn parse(parser: &mut AttributeParser<Shared>, content: impl AsRef<str>) {
+        let input = content.as_ref();
+
+        let label = Some(Self::symbol());
+
+        let parsed = match content.as_ref().parse::<Owner::ParseType>() {
             Ok(value) => ParsableField {
                 label,
                 value: Some(value),
-                error: None::<<T as FromStr>::Err>,
+                error: None::<<Owner::ParseType as FromStr>::Err>,
                 _owner: PhantomData::<Owner>,
             },
             Err(err) => ParsableField {
                 label,
-                value: None::<T>,
+                value: None::<Owner::ParseType>,
                 error: Some(err),
                 _owner: PhantomData,
             },
         };
 
         let tag = parser.tag().cloned();
-        let key = parser.attributes.last().map(|a| a.transmute::<Owner>());
+        let key = parser
+            .parsed_node
+            .last()
+            .map(|a| a.transmute::<Owner>())
+            .unwrap_or(ResourceKey::root());
 
-        match (parser.storage(), parsed) {
+        let mut properties = None;
+        match (parser.storage_mut(), parsed) {
             (
-                Some(storage),
+                Some(mut storage),
                 ParsableField {
                     value: Some(value),
                     error: None,
                     ..
                 },
             ) => {
-                storage.lazy_dispatch_mut(move |s| {
-                    borrow_mut!(s, Owner, key, |owner| => {
-                        owner.on_parse(value, tag.as_ref());
-                    });
+                borrow_mut!(storage, Owner, key, |owner| => {
+                    let property = owner.on_parse(value, input, tag.as_ref());
+                    properties = Some((property, Owner::empty_packet()));
                 });
             }
             (
@@ -251,88 +350,166 @@ where
             ) => {
                 type ParserError<T> = <T as FromStr>::Err;
 
-                if let Some(cb) = storage.callback_mut::<ParserError<T>>(label.try_into().ok()) {
+                if let Some(cb) = storage.callback_mut::<ParserError<Owner::ParseType>>(
+                    label.try_into().unwrap_or(ResourceKey::root()),
+                ) {
                     storage.lazy_callback_mut(cb, error)
-                } else if let Some(cb) = storage.callback::<ParserError<T>>(label.try_into().ok()) {
+                } else if let Some(cb) = storage.callback::<ParserError<Owner::ParseType>>(
+                    label.try_into().unwrap_or(ResourceKey::root()),
+                ) {
                     storage.lazy_callback(cb, error)
                 }
             }
             _ => {}
         }
-    }
-}
 
-impl<const FIELD_OFFSET: usize, Owner, S, T> AttributeType<S>
-    for ParsableAttributeTypeField<FIELD_OFFSET, S, Owner, T>
-where
-    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-    S: StorageTarget + Send + Sync + 'static,
-    T: AttributeType<S> + Send + Sync + 'static,
-{
-    fn ident() -> &'static str {
-        Owner::field_name()
-    }
-
-    fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
-        // If the parse method did not initialize T, then it won't be able to found by the subsequent dispatch,
-        T::parse(parser, content);
-
-        // Get the current tag setting,
-        let tag = parser.tag().cloned();
-        let key = parser.attributes.last().map(|a| a.transmute::<Owner>());
-
-        if let Some(storage) = parser.storage() {
-            storage.lazy_dispatch_mut(move |s| {
-                // If set by parse, it must be set w/ a resource key set to None
-                let resource = { s.take_resource::<T>(None) };
-
-                if let Some(resource) = resource {
-                    borrow_mut!(s, Owner, key, |owner| => {
-                        owner.on_parse(*resource, tag.as_ref());
-                    });
-                }
-            })
+        if let Some((prop, _)) = properties.take() {
+            parser.parsed_node.define_property(prop);
         }
     }
 }
 
-impl<const FIELD_OFFSET: usize, Owner, S, T> AttributeType<S>
-    for ParsableObjectTypeField<FIELD_OFFSET, S, Owner, T>
+impl<const FIELD_OFFSET: usize, Owner> runir::prelude::Recv
+    for ParsableAttributeTypeField<FIELD_OFFSET, Owner>
 where
-    Owner: OnParseField<FIELD_OFFSET, T> + Send + Sync + 'static,
-    S: StorageTarget + Send + Sync + 'static,
-    T: BlockObject<S> + Send + Sync + 'static,
+    Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+    Owner::ParseType: AttributeType<Shared> + Send + Sync + 'static,
 {
-    fn ident() -> &'static str {
+    fn symbol() -> &'static str {
         Owner::field_name()
     }
 
-    fn parse(parser: &mut AttributeParser<S>, content: impl AsRef<str>) {
+    /// Links a node level to a receiver and returns a new Repr,
+    ///
+    fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
+    where
+        Self: Sized + Send + Sync + 'static,
+    {
+        Owner::link_recv(node, fields)
+    }
+
+    /// Links a node level to a field level and returns a new Repr,
+    ///
+    fn link_field(
+        resource: ResourceLevel,
+        field: FieldLevel,
+        node: NodeLevel,
+    ) -> anyhow::Result<Repr> {
+        Owner::link_field(resource, field, node)
+    }
+}
+
+impl<const FIELD_OFFSET: usize, Owner> AttributeType<Shared>
+    for ParsableAttributeTypeField<FIELD_OFFSET, Owner>
+where
+    Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+    Owner::ParseType: AttributeType<Shared> + Send + Sync + 'static,
+{
+    fn parse(parser: &mut AttributeParser<Shared>, content: impl AsRef<str>) {
+        let input = content.as_ref();
+
         // If the parse method did not initialize T, then it won't be able to found by the subsequent dispatch,
-        T::parse(parser, content);
+        Owner::ParseType::parse(parser, input);
 
         // Get the current tag setting,
         let tag = parser.tag().cloned();
-        let key = parser.attributes.last().map(|a| a.transmute::<Owner>());
+        let key = parser
+            .parsed_node
+            .last()
+            .map(|a| a.transmute::<Owner>())
+            .unwrap_or(ResourceKey::root());
 
-        if let Some(storage) = parser.storage() {
-            storage.lazy_dispatch_mut(move |s| {
-                // If set by parse, it must be set w/ a resource key set to None
-                let resource = { s.take_resource::<T>(None) };
+        let mut properties = None;
+        if let Some(mut storage) = parser.storage_mut() {
+            // If set by parse, it must be set w/ a resource key set to None
+            let resource = { storage.root().take::<Owner::ParseType>() };
 
-                if let Some(resource) = resource {
-                    borrow_mut!(s, Owner, key, |owner| => {
-                        owner.on_parse(*resource, tag.as_ref());
-                    });
-                }
-            })
+            if let Some(resource) = resource {
+                borrow_mut!(storage, Owner, key, |owner| => {
+                    let prop = owner.on_parse(*resource, input, tag.as_ref());
+                    properties = Some((prop, Owner::empty_packet()));
+                });
+            }
+        }
+
+        if let Some((prop, _)) = properties.take() {
+            parser.parsed_node.define_property(prop);
+        }
+    }
+}
+
+impl<const FIELD_OFFSET: usize, Owner> runir::prelude::Recv
+    for ParsableObjectTypeField<FIELD_OFFSET, Owner>
+where
+    Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+    Owner::ParseType: BlockObject,
+{
+    fn symbol() -> &'static str {
+        Owner::field_name()
+    }
+
+    /// Links a node level to a receiver and returns a new Repr,
+    ///
+    fn link_recv(node: NodeLevel, fields: Vec<Repr>) -> anyhow::Result<Repr>
+    where
+        Self: Sized + Send + Sync + 'static,
+    {
+        Owner::link_recv(node, fields)
+    }
+
+    /// Links a node level to a field level and returns a new Repr,
+    ///
+    fn link_field(
+        resource: ResourceLevel,
+        field: FieldLevel,
+        node: NodeLevel,
+    ) -> anyhow::Result<Repr> {
+        Owner::link_field(resource, field, node)
+    }
+}
+
+impl<const FIELD_OFFSET: usize, Owner> AttributeType<Shared>
+    for ParsableObjectTypeField<FIELD_OFFSET, Owner>
+where
+    Owner: Recv + OnParseField<FIELD_OFFSET> + Send + Sync + 'static,
+    Owner::ParseType: BlockObject,
+{
+    fn parse(parser: &mut AttributeParser<Shared>, content: impl AsRef<str>) {
+        let input = content.as_ref();
+
+        // If the parse method did not initialize T, then it won't be able to found by the subsequent dispatch,
+        Owner::ParseType::parse(parser, input);
+
+        // Get the current tag setting,
+        let tag = parser.tag().cloned();
+        let key = parser
+            .parsed_node
+            .last()
+            .map(|a| a.transmute::<Owner>())
+            .unwrap_or(ResourceKey::root());
+
+        let mut properties = None;
+        if let Some(mut storage) = parser.storage_mut() {
+            // If set by parse, it must be set w/ a resource key set to None
+            let resource = { storage.root().take::<Owner::ParseType>() };
+
+            if let Some(resource) = resource {
+                borrow_mut!(storage, Owner, key, |owner| => {
+                    let prop = owner.on_parse(*resource, input, tag.as_ref());
+                    properties = Some((prop, Owner::empty_packet()));
+                });
+            }
+        }
+
+        if let Some((prop, _)) = properties.take() {
+            parser.parsed_node.define_property(prop);
         }
     }
 }
 
 /// Helper trait for constructing concrete callback types,
 ///
-pub trait Handler<S: StorageTarget + 'static, Arg: Send + Sync + 'static> {
+pub trait Handler<S: StorageTarget, Arg: Send + Sync + 'static> {
     /// Handler function w/ a mutable reference to storage,
     ///
     fn handle_mut(storage: &mut S, arg: Arg);
@@ -344,21 +521,18 @@ pub trait Handler<S: StorageTarget + 'static, Arg: Send + Sync + 'static> {
 
 /// Trait to allow for deriving an AttributeType implementation w/ each callback as a seperate resource,
 ///
-pub trait OnParseField<const FIELD_OFFSET: usize, T: Send + Sync + 'static>
+pub trait OnParseField<const FIELD_OFFSET: usize>
 where
-    Self: Send + Sync + Sized + 'static,
+    Self: runir::prelude::Field<FIELD_OFFSET> + Send + Sync + Sized + 'static,
 {
-    /// Projected type to use w/ `get`/`get_mut`
-    ///
-    type ProjectedType: Send + Sync + 'static;
-
-    /// Name of the field,
-    ///
-    fn field_name() -> &'static str;
-
     /// Function called when a value is parsed correctly,
     ///
-    fn on_parse(&mut self, value: T, tag: Option<&String>);
+    fn on_parse(
+        &mut self,
+        value: Self::ParseType,
+        input: &str,
+        tag: Option<&String>,
+    ) -> ResourceKey<Property>;
 
     /// Returns a reference to the field as the projected type,
     ///
@@ -369,7 +543,7 @@ where
     fn get_mut(&mut self) -> &mut Self::ProjectedType;
 
     /// Returns a field for the projected type,
-    /// 
+    ///
     fn get_field(&self) -> Field<Self::ProjectedType> {
         Field {
             owner: std::any::type_name::<Self>(),
@@ -380,7 +554,7 @@ where
     }
 
     /// Returns the a mutable field for the projected type,
-    /// 
+    ///
     fn get_field_mut<'a: 'b, 'b>(&'a mut self) -> FieldMut<'b, Self::ProjectedType> {
         FieldMut {
             owner: std::any::type_name::<Self>(),
@@ -391,58 +565,64 @@ where
     }
 
     /// Returns an empty packet for this field,
-    /// 
-    fn empty_packet() -> FieldPacket 
-    where
-        T: FieldPacketType
-    {
-       let mut packet = FieldPacket::new::<T>();
-       packet.field_offset = FIELD_OFFSET;
-       packet
+    ///
+    fn empty_packet() -> FieldPacket {
+        let mut packet = FieldPacket::new::<Self::ParseType>();
+        packet.field_offset = FIELD_OFFSET;
+        packet.field_name = Self::field_name().to_string();
+        packet.owner_name = std::any::type_name::<Self>().to_string();
+        packet
     }
 
     /// Returns a new packet w/ data,
-    /// 
-    fn into_packet(data: Self::ProjectedType) -> FieldPacket 
+    ///
+    fn into_packet(data: Self::ProjectedType) -> FieldPacket
     where
-        Self::ProjectedType: FieldPacketType
+        Self::ProjectedType: FieldPacketType,
     {
         let mut data = FieldPacket::new_data(data);
         data.field_offset = FIELD_OFFSET;
+        data.field_name = Self::field_name().to_string();
+        data.owner_name = std::any::type_name::<Self>().to_string();
         data
     }
 
-    /// Returns a new packet from wire_data,
-    /// 
-    fn from_wire(data: Vec<u8>) -> anyhow::Result<FieldPacket>
-    where
-        T: FieldPacketType + Serialize + DeserializeOwned
-    {
-        let mut _data = None::<T>;
-        {
-            T::from_binary(data, &mut _data)?;
-        }
-
-        if let Some(data) = _data {
-            let mut data = FieldPacket::new_data(data);
-            data.field_offset = FIELD_OFFSET;
-            Ok(data)
-        } else {
-            Err(anyhow!("Did not deserialize bincode for {}", std::any::type_name::<T>()))
-        }
-    }
-
     /// Returns a field_packet for wire transport,
-    /// 
-    fn to_wire(data: &T) -> anyhow::Result<FieldPacket>
+    ///
+    fn to_wire(data: &Self::ParseType) -> anyhow::Result<FieldPacket>
     where
-        T: FieldPacketType + Serialize + DeserializeOwned
+        Self::ParseType: FieldPacketType + Serialize + DeserializeOwned,
     {
         let bincode = bincode::serialize(data)?;
-        let mut data = FieldPacket::new::<T>();
+        let mut data = FieldPacket::new::<Self::ParseType>();
         data.field_offset = FIELD_OFFSET;
+        data.field_name = Self::field_name().to_string();
+        data.owner_name = std::any::type_name::<Self>().to_string();
         data.wire_data = Some(bincode);
         Ok(data)
+    }
+
+    /// Returns a field ref for the current field offset,
+    ///
+    fn field_ref(v: &Self::Virtual) -> &FieldRef<Self, Self::ParseType, Self::ProjectedType>
+    where
+        Self: Plugin,
+        Self: OnReadField<FIELD_OFFSET>,
+    {
+        Self::read(v)
+    }
+
+    /// Returns a mutable field ref for the current field offset,
+    ///
+    fn field_ref_mut(
+        v: &mut Self::Virtual,
+    ) -> &mut FieldRef<Self, Self::ParseType, Self::ProjectedType>
+    where
+        Self: Plugin,
+        Self: OnReadField<FIELD_OFFSET>,
+        Self: OnWriteField<FIELD_OFFSET>,
+    {
+        Self::write(v)
     }
 }
 

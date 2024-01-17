@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use futures_util::Stream;
 
-use crate::ParsedAttributes;
 use crate::prelude::*;
+use crate::ParsedNode;
 use async_stream::stream;
 
 /// wrapper struct to unpack parsed resources constructed by a project,
@@ -16,16 +16,17 @@ impl<S: StorageTarget + Send + Sync + 'static> From<Arc<tokio::sync::RwLock<S>>>
     }
 }
 
-
 impl<S: StorageTarget + ToOwned<Owned = S> + Send + Sync + 'static> Node<S> {
     /// Returns a stream of attributes,
     ///
     pub fn stream_attributes(&self) -> impl Stream<Item = ResourceKey<Attribute>> + '_ {
         stream! {
-            let parsed = self.0.latest().await.current_resource::<ParsedAttributes>(None);
+            let parsed = self.0.latest().await.current_resource::<ParsedNode>(ResourceKey::root());
             if let Some(parsed) =  parsed {
-                for p in parsed.iter() {
-                    yield *p;
+                yield parsed.node;
+
+                for p in parsed.parsed() {
+                    yield p;
                 }
             }
         }
@@ -37,10 +38,12 @@ impl<S: StorageTarget + ToOwned<Owned = S> + Send + Sync + 'static> AsyncStorage
     ///
     pub fn stream_attributes(&self) -> impl Stream<Item = ResourceKey<Attribute>> + '_ {
         stream! {
-            let parsed = self.storage.latest().await.current_resource::<ParsedAttributes>(None);
+            let parsed = self.storage.latest().await.current_resource::<ParsedNode>(ResourceKey::root());
             if let Some(parsed) =  parsed {
-                for p in parsed.iter() {
-                    yield *p;
+                yield parsed.node;
+
+                for p in parsed.parsed() {
+                    yield p;
                 }
             }
         }
@@ -52,13 +55,14 @@ impl Shared {
     ///
     pub fn stream_attributes(&self) -> impl Stream<Item = ResourceKey<Attribute>> + '_ {
         stream! {
-            let parsed = self.current_resource::<ParsedAttributes>(None);
+            let parsed = self.current_resource::<ParsedNode>(ResourceKey::root());
             if let Some(parsed) =  parsed {
-                for p in parsed.iter() {
-                    yield *p;
+                // yield parsed.node;
+
+                for p in parsed.parsed() {
+                    yield p;
                 }
             }
         }
     }
 }
-

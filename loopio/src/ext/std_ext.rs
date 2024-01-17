@@ -3,6 +3,9 @@ use std::{collections::BTreeMap, path::PathBuf, process::ExitStatus};
 use async_trait::async_trait;
 use bytes::Bytes;
 use reality::prelude::*;
+use serde::{Deserialize, Serialize};
+
+use crate::action::ActionExt;
 
 #[async_trait::async_trait]
 pub trait StdExt {
@@ -28,28 +31,34 @@ pub trait StdExt {
 #[async_trait]
 impl StdExt for ThunkContext {
     async fn find_file_text(&mut self, path: impl Into<PathBuf> + Send + Sync) -> Option<String> {
-        self.transient()
-            .await
-            .current_resource::<String>(path.into().to_str().map(ResourceKey::with_hash))
+        self.transient().await.current_resource::<String>(
+            path.into()
+                .to_str()
+                .map(ResourceKey::with_hash)
+                .unwrap_or(ResourceKey::root()),
+        )
     }
 
     async fn find_file(&mut self, path: impl Into<PathBuf> + Send + Sync) -> Option<Bytes> {
-        self.transient()
-            .await
-            .current_resource::<Bytes>(path.into().to_str().map(ResourceKey::with_hash))
+        self.transient().await.current_resource::<Bytes>(
+            path.into()
+                .to_str()
+                .map(ResourceKey::with_hash)
+                .unwrap_or(ResourceKey::root()),
+        )
     }
 
     async fn find_command_result(&self, program: &str) -> Option<CommandResult> {
         self.transient()
             .await
-            .current_resource(Some(ResourceKey::with_hash(program)))
+            .current_resource(ResourceKey::with_hash(program))
     }
 }
 
 /// Set of plugins for std.io,
 ///
-#[derive(Reality, Clone, Default)]
-#[reality(plugin, rename = "utility/loopio.ext.std.io")]
+#[derive(Reality, Deserialize, Serialize, PartialEq, Clone, Default)]
+#[reality(plugin, group = "loopio", rename = "std.io")]
 pub struct Stdio {
     /// Version to use for this ext,
     /// (unused)
@@ -78,8 +87,8 @@ impl CallAsync for Stdio {
 
 /// Plugin for reading a file path into transient storage,
 ///
-#[derive(Reality, Clone, Default)]
-#[reality(plugin, rename = "utility/loopio.ext.std.io.read_text_file")]
+#[derive(Reality, Serialize, Deserialize, PartialEq, PartialOrd, Clone, Default)]
+#[reality(plugin, rename = "read-text-file", group = "builtin")]
 pub struct ReadTextFile {
     /// Path to read string from,
     ///
@@ -98,10 +107,12 @@ impl CallAsync for ReadTextFile {
         // println!("{:?}", result);
         let result = result?;
 
-        context
-            .transient_mut()
-            .await
-            .put_resource(result, path.to_str().map(ResourceKey::with_hash));
+        context.transient_mut().await.put_resource(
+            result,
+            path.to_str()
+                .map(ResourceKey::with_hash)
+                .unwrap_or(ResourceKey::root()),
+        );
 
         Ok(())
     }
@@ -109,8 +120,8 @@ impl CallAsync for ReadTextFile {
 
 /// Plugin for reading a file path into transient storage,
 ///
-#[derive(Reality, Clone, Default)]
-#[reality(plugin, rename = "utility/loopio.ext.std.io.read_file")]
+#[derive(Reality, Serialize, Deserialize, PartialEq, Clone, Default)]
+#[reality(plugin, rename = "read-file", group = "builtin")]
 pub struct ReadFile {
     /// Path to read string from,
     ///
@@ -129,7 +140,9 @@ impl CallAsync for ReadFile {
 
         context.transient_mut().await.put_resource(
             Bytes::copy_from_slice(&result),
-            path.to_str().map(ResourceKey::with_hash),
+            path.to_str()
+                .map(ResourceKey::with_hash)
+                .unwrap_or(ResourceKey::root()),
         );
 
         Ok(())
@@ -138,19 +151,24 @@ impl CallAsync for ReadFile {
 
 /// Plugin for reading a file path into transient storage,
 ///
-#[derive(Reality, Clone, Default)]
-#[reality(plugin, rename = "utility/loopio.ext.std.io.println")]
+#[derive(Reality, Serialize, Deserialize, PartialEq, Clone, Default)]
+#[reality(plugin, group = "builtin")]
 pub struct Println {
     /// Path to read string from,
     ///
     #[reality(derive_fromstr)]
-    line: String,
+    pub(crate) line: String,
+    #[reality(ffi)]
+    pub label: String,
 }
 
 #[async_trait::async_trait]
 impl CallAsync for Println {
     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
-        let initialized = context.initialized::<Println>().await;
+        let initialized = context.as_remote_plugin::<Println>().await;
+        if !initialized.label.is_empty() {
+            print!("[{}] ", initialized.label);
+        }
         println!("{}", initialized.line);
         Ok(())
     }
@@ -158,20 +176,28 @@ impl CallAsync for Println {
 
 /// Process plugin,
 ///
-#[derive(Reality, Clone, Default)]
-#[reality(plugin, call = start_process, rename = "utility/loopio.ext.std.process")]
+#[derive(Reality, Serialize, Debug, PartialEq, PartialOrd, Deserialize, Clone, Default)]
+#[reality(plugin, call = start_process, group = "builtin")]
 pub struct Process {
+    /// Name of the program,
+    ///
     #[reality(derive_fromstr)]
-    program: String,
+    pub program: String,
+    /// Environment variables the process will have access to
+    ///
     #[reality(map_of=String)]
-    env: BTreeMap<String, String>,
+    pub env: BTreeMap<String, String>,
+    /// List of arguments to add to the process,
+    ///
     #[reality(vec_of=String)]
-    arg: Vec<String>,
-    piped: bool,
+    pub arg: Vec<String>,
+    /// If true, the process output will be stored
+    ///
+    pub piped: bool,
 }
 
 async fn start_process(tc: &mut ThunkContext) -> anyhow::Result<()> {
-    let init = tc.initialized::<Process>().await;
+    let init = tc.as_remote_plugin::<Process>().await;
 
     let command = init.env.iter().fold(
         std::process::Command::new(&init.program),
@@ -182,7 +208,7 @@ async fn start_process(tc: &mut ThunkContext) -> anyhow::Result<()> {
     );
 
     let mut command = init.arg.iter().fold(command, |mut acc, a| {
-        for arg in shlex::split(&a).unwrap_or_default() {
+        for arg in shlex::split(a).unwrap_or_default() {
             acc.arg(arg);
         }
         acc
@@ -207,7 +233,7 @@ async fn start_process(tc: &mut ThunkContext) -> anyhow::Result<()> {
 
     tc.transient_mut()
         .await
-        .put_resource(c, Some(ResourceKey::with_hash(init.program.as_str())));
+        .put_resource(c, ResourceKey::with_hash(init.program.as_str()));
 
     Ok(())
 }

@@ -4,16 +4,16 @@ use std::sync::Arc;
 use anyhow::anyhow;
 use futures_util::Future;
 
-use crate::AsyncStorageTarget;
 use crate::BlockObject;
 use crate::ResourceKey;
-use crate::Shared;
 use crate::StorageTarget;
+use crate::StorageTargetKey;
+use crate::ThunkContext;
 
 /// Type-alias for a middleware fn,
 ///
 type Middleware<C, T> = Arc<
-    dyn Fn(Arc<C>, AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
+    dyn Fn(ThunkContext, C, anyhow::Result<T>) -> anyhow::Result<(C, anyhow::Result<T>)>
         + Sync
         + Send
         + 'static,
@@ -23,28 +23,71 @@ type Middleware<C, T> = Arc<
 ///
 type MiddlewareAsync<C, T> = Arc<
     dyn Fn(
-            Arc<C>,
-            AsyncStorageTarget<Shared>,
+            ThunkContext,
+            C,
             anyhow::Result<T>,
-        ) -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
-        + Send
+        ) -> Pin<
+            Box<
+                dyn Future<Output = anyhow::Result<(C, anyhow::Result<T>)>> + Sync + Send + 'static,
+            >,
+        > + Send
         + Sync
         + 'static,
 >;
 
+/// Impl variable constraint for middleware,
+///
+/// **For non-async**
+/// ```rs no_run
+/// impl Fn(Arc<C>, ThunkContext, anyhow::Result<T>) -> anyhow::Result<T>
+///     + Sync
+///     + Send
+///     + 'static
+/// ```
+///
+/// **Async version
+/// ```rs no_run
+/// impl Fn(Arc<C>, ThunkContext, anyhow::Result<T>) -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
+///     + Send
+///     + Sync
+///     + 'static
+/// ```
+macro_rules! impl_middleware_ty {
+    () => {
+        impl Fn(
+            ThunkContext, C, anyhow::Result<T>) -> anyhow::Result<(C, anyhow::Result<T>)>
+            + Sync
+            + Send
+            + 'static
+    };
+    (async) => {
+        impl Fn(
+            ThunkContext,
+            C,
+            anyhow::Result<T>,
+        )
+            -> Pin<Box<dyn Future<Output = anyhow::Result<(C, anyhow::Result<T>)>> + Sync + Send + 'static>>
+        + Send
+        + Sync
+        + 'static
+    }
+}
+
+pub type IntermediateTransform<C, T> = anyhow::Result<(C, anyhow::Result<T>)>;
+
 /// Extension is an external facing callback that can be stored/retrieved programatically,
 ///
-pub struct Extension<C, T>
+pub struct Transform<C, T>
 where
     C: Send + Sync + 'static,
-    T: BlockObject<Shared>,
+    T: BlockObject,
 {
     /// Middleware controller,
     ///
-    controller: Arc<C>,
+    controller: Option<C>,
     /// Resource-key for retrieving the underlying type,
     ///
-    resource_key: Option<ResourceKey<anyhow::Result<T>>>,
+    resource_key: ResourceKey<IntermediateTransform<C, T>>,
     /// List of middleware to run before user middleware,
     ///
     before: Vec<Middleware<C, T>>,
@@ -65,7 +108,7 @@ where
     user_task: Option<MiddlewareAsync<C, T>>,
 }
 
-impl<C: Send + Sync + 'static, T: BlockObject<Shared>> Clone for Extension<C, T> {
+impl<C: Clone + Send + Sync + 'static, T: BlockObject> Clone for Transform<C, T> {
     fn clone(&self) -> Self {
         Self {
             controller: self.controller.clone(),
@@ -80,70 +123,98 @@ impl<C: Send + Sync + 'static, T: BlockObject<Shared>> Clone for Extension<C, T>
     }
 }
 
-impl<C, T> Extension<C, T>
+impl<C, T> Transform<C, T>
 where
     C: Send + Sync + 'static,
-    T: BlockObject<Shared>,
+    T: BlockObject,
 {
     /// Runs the extension processing the pipeline,
     ///
-    pub async fn run(&self, target: AsyncStorageTarget<Shared>, init: T) -> anyhow::Result<T> {
-        target.storage.write().await.put_resource(anyhow::Ok::<T>(init), self.resource_key);
+    pub async fn run(&mut self, target: &mut ThunkContext, init: T) -> anyhow::Result<T> {
+        if let Some(controller) = self.controller.take() {
+            let key = self.resource_key;
+            target
+                .transient_mut()
+                .await
+                .put_resource(Ok((controller, anyhow::Ok::<T>(init))), key);
 
-        let mut dispatcher = target
-            .dispatcher::<anyhow::Result<T>>(self.resource_key)
-            .await;
-        dispatcher.enable().await;
+            let mut dispatcher = target
+                .transient_target()
+                .await
+                .dispatcher::<anyhow::Result<(C, anyhow::Result<T>)>>(self.resource_key)
+                .await;
+            dispatcher.enable().await;
 
-        for before in self.before.iter() {
-            let controller = self.controller.clone();
-            let target = target.clone();
-            let before = before.clone();
+            for before in self.before.iter() {
+                let target = target.clone();
+                let before = before.clone();
 
-            dispatcher.queue_dispatch_owned(move |value| (before)(controller, target, value));
-        }
-        for before_task in self.before_tasks.iter() {
-            let controller = self.controller.clone();
-            let target = target.clone();
-            let before_task = before_task.clone();
+                dispatcher.queue_dispatch_owned(move |result| {
+                    let (controller, value) = result?;
+                    (before)(target, controller, value)
+                });
+            }
+            for before_task in self.before_tasks.iter() {
+                let target = target.clone();
+                let before_task = before_task.clone();
 
-            dispatcher
-                .queue_dispatch_owned_task(move |value| (before_task)(controller, target, value));
-        }
-        dispatcher.dispatch_all().await;
+                dispatcher.queue_dispatch_owned_task(move |result| {
+                    Box::pin(async move {
+                        let (controller, value) = result?;
+                        (before_task)(target, controller, value).await
+                    })
+                });
+            }
+            dispatcher.dispatch_all().await;
 
-        if let Some(user) = self.user.clone() {
-            let controller = self.controller.clone();
-            let target = target.clone();
-            dispatcher.queue_dispatch_owned(move |value| (user)(controller, target, value));
-        }
-        if let Some(user_task) = self.user_task.clone() {
-            let controller = self.controller.clone();
-            let target = target.clone();
-            dispatcher.queue_dispatch_owned_task(move |value| user_task(controller, target, value));
-        }
-        dispatcher.dispatch_all().await;
+            if let Some(user) = self.user.clone() {
+                let target = target.clone();
+                dispatcher.queue_dispatch_owned(move |result| {
+                    let (controller, value) = result?;
+                    (user)(target, controller, value)
+                });
+            }
+            if let Some(user_task) = self.user_task.clone() {
+                let target = target.clone();
+                dispatcher.queue_dispatch_owned_task(move |result| {
+                    Box::pin(async move {
+                        let (controller, value) = result?;
+                        (user_task)(target, controller, value).await
+                    })
+                });
+            }
+            dispatcher.dispatch_all().await;
 
-        for after in self.after.iter() {
-            let controller = self.controller.clone();
-            let target = target.clone();
-            let after = after.clone();
+            for after in self.after.iter() {
+                let target = target.clone();
+                let after = after.clone();
 
-            dispatcher.queue_dispatch_owned(move |value| (after)(controller, target, value));
-        }
-        for after_task in self.after_tasks.iter() {
-            let controller = self.controller.clone();
-            let target = target.clone();
-            let after_task = after_task.clone();
+                dispatcher.queue_dispatch_owned(move |result| {
+                    let (controller, value) = result?;
+                    (after)(target, controller, value)
+                });
+            }
+            for after_task in self.after_tasks.iter() {
+                let target = target.clone();
+                let after_task = after_task.clone();
 
-            dispatcher
-                .queue_dispatch_owned_task(move |value| (after_task)(controller, target, value));
-        }
-        dispatcher.dispatch_all().await;
+                dispatcher.queue_dispatch_owned_task(move |result| {
+                    Box::pin(async move {
+                        let (controller, value) = result?;
+                        (after_task)(target, controller, value).await
+                    })
+                });
+            }
+            dispatcher.dispatch_all().await;
 
-        let mut storage = target.storage.write().await;
-        if let Some(value) = storage.take_resource(self.resource_key) {
-            *value
+            let mut storage = target.transient_mut().await;
+            if let Some(value) = storage.take_resource(self.resource_key) {
+                let (controller, value) = (*value)?;
+                self.controller = Some(controller);
+                value
+            } else {
+                Err(anyhow!("Could not process pipeline"))
+            }
         } else {
             Err(anyhow!("Could not process pipeline"))
         }
@@ -151,10 +222,10 @@ where
 
     /// Returns a new extension,
     ///
-    pub fn new(controller: C, resource_key: Option<ResourceKey<T>>) -> Self {
-        Extension {
-            controller: Arc::new(controller),
-            resource_key: resource_key.map(|r| r.transmute()),
+    pub fn new(controller: C, resource_key: StorageTargetKey<T>) -> Self {
+        Transform {
+            controller: Some(controller),
+            resource_key: resource_key.transmute(),
             before: vec![],
             after: vec![],
             before_tasks: vec![],
@@ -167,44 +238,21 @@ where
     /// Sets the user middleware,
     ///
     #[inline]
-    pub fn set_user(
-        &mut self,
-        middleware: impl Fn(Arc<C>, AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
-            + Sync
-            + Send
-            + 'static,
-    ) {
+    pub fn set_user(&mut self, middleware: impl_middleware_ty!()) {
         self.user = Some(Arc::new(Box::new(middleware)));
     }
 
     /// Sets the user_task middleware,
     ///
     #[inline]
-    pub fn set_user_task(
-        &mut self,
-        middleware: impl Fn(
-                Arc<C>,
-                AsyncStorageTarget<Shared>,
-                anyhow::Result<T>,
-            )
-                -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
-            + Send
-            + Sync
-            + 'static,
-    ) {
+    pub fn set_user_task(&mut self, middleware: impl_middleware_ty!(async)) {
         self.user_task = Some(Arc::new(middleware));
     }
 
     /// (Chainable) Sets the user middleware,
     ///
     #[inline]
-    pub fn user(
-        mut self,
-        middleware: impl Fn(Arc<C>, AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
-            + Sync
-            + Send
-            + 'static,
-    ) -> Self {
+    pub fn user(mut self, middleware: impl_middleware_ty!()) -> Self {
         self.set_user(middleware);
         self
     }
@@ -212,18 +260,7 @@ where
     /// (Chainable) Sets the user task middleware,
     ///
     #[inline]
-    pub fn user_task(
-        mut self,
-        middleware: impl Fn(
-                Arc<C>,
-                AsyncStorageTarget<Shared>,
-                anyhow::Result<T>,
-            )
-                -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
-            + Send
-            + Sync
-            + 'static,
-    ) -> Self {
+    pub fn user_task(mut self, middleware: impl_middleware_ty!(async)) -> Self {
         self.set_user_task(middleware);
         self
     }
@@ -231,39 +268,21 @@ where
     /// Adds middleware to run before returning the inner type,
     ///
     #[inline]
-    pub fn add_before(
-        &mut self,
-        middleware: impl Fn(Arc<C>, AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
-            + Sync
-            + Send
-            + 'static,
-    ) {
+    pub fn add_before(&mut self, middleware: impl_middleware_ty!()) {
         self.before.push(Arc::new(middleware));
     }
 
     /// Adds middleware to run after returning the inner type,
     ///
     #[inline]
-    pub fn add_after(
-        &mut self,
-        middleware: impl Fn(Arc<C>, AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
-            + Sync
-            + Send
-            + 'static,
-    ) {
+    pub fn add_after(&mut self, middleware: impl_middleware_ty!()) {
         self.after.push(Arc::new(middleware));
     }
 
     /// (Chainable) Adds middleware to run before returning the inner type,
     ///
     #[inline]
-    pub fn before(
-        mut self,
-        middleware: impl Fn(Arc<C>, AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
-            + Sync
-            + Send
-            + 'static,
-    ) -> Self {
+    pub fn before(mut self, middleware: impl_middleware_ty!()) -> Self {
         self.add_before(middleware);
         self
     }
@@ -271,13 +290,7 @@ where
     /// (Chainable) Adds middleware to run after returning the inner type,
     ///
     #[inline]
-    pub fn after(
-        mut self,
-        middleware: impl Fn(Arc<C>, AsyncStorageTarget<Shared>, anyhow::Result<T>) -> anyhow::Result<T>
-            + Sync
-            + Send
-            + 'static,
-    ) -> Self {
+    pub fn after(mut self, middleware: impl_middleware_ty!()) -> Self {
         self.add_after(middleware);
         self
     }
@@ -285,72 +298,39 @@ where
     /// Adds middleware to run before returning the inner type,
     ///
     /// **Usage Example**
-    /// ```rs norun
+    /// ```rs no_run
     /// extension.add_before_task(|storage, s| Box::pin(async {
     ///     s
     /// }));
     /// ```
     #[inline]
-    pub fn add_before_task(
-        &mut self,
-        middleware: impl Fn(
-                Arc<C>,
-                AsyncStorageTarget<Shared>,
-                anyhow::Result<T>,
-            )
-                -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
-            + Send
-            + Sync
-            + 'static,
-    ) {
+    pub fn add_before_task(&mut self, middleware: impl_middleware_ty!(async)) {
         self.before_tasks.push(Arc::new(middleware));
     }
 
     /// Adds middleware to run after returning the inner type,
     ///
     /// **Usage Example**
-    /// ```rs norun
+    /// ```rs no_run
     /// extension.add_after_task(|storage, s| Box::pin(async {
     ///     s
     /// }));
     /// ```
     #[inline]
-    pub fn add_after_task(
-        &mut self,
-        middleware: impl Fn(
-                Arc<C>,
-                AsyncStorageTarget<Shared>,
-                anyhow::Result<T>,
-            )
-                -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
-            + Send
-            + Sync
-            + 'static,
-    ) {
+    pub fn add_after_task(&mut self, middleware: impl_middleware_ty!(async)) {
         self.after_tasks.push(Arc::new(middleware));
     }
 
     /// (Chainable) Adds middleware to run before returning the inner type,
     ///
     /// **Usage Example**
-    /// ```rs norun
+    /// ```rs no_run
     /// extension.before_task(|storage, s| Box::pin(async {
     ///     s
     /// }));
     /// ```
     #[inline]
-    pub fn before_task(
-        mut self,
-        middleware: impl Fn(
-                Arc<C>,
-                AsyncStorageTarget<Shared>,
-                anyhow::Result<T>,
-            )
-                -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
-            + Send
-            + Sync
-            + 'static,
-    ) -> Self {
+    pub fn before_task(mut self, middleware: impl_middleware_ty!(async)) -> Self {
         self.add_before_task(middleware);
         self
     }
@@ -358,24 +338,13 @@ where
     /// (Chainable) Adds middleware to run after returning the inner type,
     ///
     /// **Usage Example**
-    /// ```rs norun
+    /// ```rs no_run
     /// extension.after_task(|storage, s| Box::pin(async {
     ///     s
     /// }));
     /// ```
     #[inline]
-    pub fn after_task(
-        mut self,
-        middleware: impl Fn(
-                Arc<C>,
-                AsyncStorageTarget<Shared>,
-                anyhow::Result<T>,
-            )
-                -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Sync + Send + 'static>>
-            + Send
-            + Sync
-            + 'static,
-    ) -> Self {
+    pub fn after_task(mut self, middleware: impl_middleware_ty!(async)) -> Self {
         self.add_after_task(middleware);
         self
     }
@@ -383,34 +352,37 @@ where
 
 #[allow(unused_imports)]
 mod tests {
+    use std::{cell::RefCell, collections::BTreeMap};
+
     use tokio::io::AsyncReadExt;
     use tracing::trace;
 
-    use crate::{Extension, ResourceKey, Shared, StorageTarget};
+    use crate::{ResourceKey, Shared, StorageTarget, Transform};
 
     #[tokio::test]
     #[tracing_test::traced_test]
     async fn test_extension() {
-        let target = Shared::default().into_thread_safe();
+        let mut target = crate::ThunkContext::from(Shared::default().into_thread_safe());
         let time = tokio::time::Instant::now();
 
         let mut extension =
-            Extension::<(), crate::project::Test>::new((), Some(ResourceKey::with_hash("test")));
-        extension.add_before(move |_, _, t| {
+            Transform::<(), crate::project::tests::Test>::new((), ResourceKey::with_hash("test"));
+        extension.add_before(move |_, c, t| {
             trace!("before called {:?}", time);
-            t
+            Ok((c, t))
         });
-        extension.set_user(move |_, _, t| {
+        extension.set_user(move |_, c, t| {
             trace!("ok called {:?}", time);
-            t
+            Ok((c, t))
         });
 
         let _ = extension
             .run(
-                target,
-                crate::project::Test {
+                &mut target,
+                crate::project::tests::Test {
                     name: "hello-world".to_string(),
                     file: "test".into(),
+                    // fields: BTreeMap::new(),
                 },
             )
             .await;

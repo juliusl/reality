@@ -1,46 +1,54 @@
-use std::str::FromStr;
-
-use reality_derive::AttributeType;
+use runir::prelude::Level;
+use runir::prelude::ResourceLevel;
+use tracing::trace;
 
 use crate::AsyncStorageTarget;
+use crate::Attribute;
 use crate::AttributeParser;
 use crate::AttributeType;
 use crate::AttributeTypeParser;
-use crate::StorageTarget;
+use crate::FieldPacket;
+use crate::LinkRecvFn;
+use crate::ResourceKey;
+use crate::SetField;
+use crate::Shared;
+use crate::ToFrame;
 
 /// Struct containing block object functions,
 ///
-pub struct BlockObjectType<Storage>
-where
-    Storage: StorageTarget + 'static,
-{
+pub struct BlockObjectType {
     /// Attribute type ident,
-    /// 
+    ///
     pub ident: &'static str,
     /// Attribute type parser,
-    /// 
-    pub attribute_type: AttributeTypeParser<Storage>,
+    ///
+    pub attribute_type: AttributeTypeParser<Shared>,
     /// Object event handlers,
-    /// 
-    pub handler: BlockObjectHandler<Storage::Namespace>,
+    ///
+    pub handler: BlockObjectHandler,
 }
 
-impl<Storage> BlockObjectType<Storage>
-where
-    Storage: StorageTarget + 'static,
-{
+impl BlockObjectType {
     /// Creates a new block object type,
-    /// 
-    pub fn new<B: BlockObject<Storage>>() -> Self {
+    ///
+    pub fn new<B: BlockObject>() -> Self {
         Self {
-            ident: <B as AttributeType<Storage>>::ident(),
+            ident: B::symbol(),
             attribute_type: B::attribute_type(),
+            handler: B::handler(),
+        }
+    }
+
+    pub fn new_as<B: BlockObject, As: BlockObject>() -> Self {
+        Self {
+            ident: B::symbol(),
+            attribute_type: B::attribute_type_as::<As>(),
             handler: B::handler(),
         }
     }
 }
 
-impl<Storage: StorageTarget + 'static> Clone for BlockObjectType<Storage> {
+impl Clone for BlockObjectType {
     fn clone(&self) -> Self {
         Self {
             ident: self.ident,
@@ -50,104 +58,132 @@ impl<Storage: StorageTarget + 'static> Clone for BlockObjectType<Storage> {
     }
 }
 
+pub trait SetIdentifiers {
+    fn set_identifiers(&mut self, name: &str, tag: Option<&String>);
+}
+
 /// Object type that lives inside of a runmd block,
-/// 
-#[crate::runmd::async_trait]
-pub trait BlockObject<Storage>: AttributeType<Storage>
+///
+#[crate::runmd::async_trait(?Send)]
+pub trait BlockObject
 where
-    Self: Sized + Send + Sync + 'static,
-    Storage: StorageTarget + 'static,
+    Self: AttributeType<Shared> + SetField<FieldPacket> + ToFrame + Sized + Send + Sync + 'static,
 {
     /// Returns the attribute-type parser for the block-object type,
     ///
-    fn attribute_type() -> AttributeTypeParser<Storage> {
-        AttributeTypeParser::new::<Self>()
+    fn attribute_type() -> AttributeTypeParser<Shared> {
+        AttributeTypeParser::new::<Self>(ResourceLevel::new::<Self>())
+    }
+
+    /// Returns the attribute-type parser for the block-object type replacing the inner type,
+    ///
+    fn attribute_type_as<Inner>() -> AttributeTypeParser<Shared>
+    where
+        Inner:
+            AttributeType<Shared> + SetField<FieldPacket> + ToFrame + Sized + Send + Sync + 'static,
+    {
+        AttributeTypeParser::new::<Self>(ResourceLevel::new::<Inner>())
+    }
+
+    /// Returns an empty handler for this block object,
+    ///
+    fn handler() -> BlockObjectHandler {
+        BlockObjectHandler::new::<Self>()
     }
 
     /// Called when the block object is being loaded into it's namespace,
     ///
-    async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>);
+    async fn on_load(
+        parser: AttributeParser<Shared>,
+        storage: AsyncStorageTarget<Shared>,
+        rk: Option<ResourceKey<Attribute>>,
+    ) -> AttributeParser<Shared>;
 
     /// Called when the block object is being unloaded from it's namespace,
     ///
-    async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>);
+    async fn on_unload(
+        parser: AttributeParser<Shared>,
+        storage: AsyncStorageTarget<Shared>,
+        rk: Option<ResourceKey<Attribute>>,
+    ) -> AttributeParser<Shared>;
 
     /// Called when the block object's parent attribute has completed processing,
     ///
-    fn on_completed(storage: AsyncStorageTarget<Storage::Namespace>) -> Option<AsyncStorageTarget<Storage::Namespace>>;
-
-    /// Returns an empty handler for this block object,
-    ///
-    fn handler() -> BlockObjectHandler<Storage::Namespace> {
-        BlockObjectHandler::<Storage::Namespace>::new::<Storage, Self>()
-    }
+    fn on_completed(storage: AsyncStorageTarget<Shared>) -> Option<AsyncStorageTarget<Shared>>;
 }
 
 /// Type-alias for a block object event fn,
 ///
-type BlockObjectFn<Storage> =
+type BlockObjectFn =
     fn(
-        AsyncStorageTarget<Storage>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>;
+        AttributeParser<Shared>,
+        AsyncStorageTarget<Shared>,
+        Option<ResourceKey<Attribute>>,
+    ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = AttributeParser<Shared>>>>;
 
 /// Type-alias for a block object event completion fn,
 ///
-type BlockObjectCompletionFn<Storage> =
-    fn(parser: AsyncStorageTarget<Storage>) -> Option<AsyncStorageTarget<Storage>>;
+type BlockObjectCompletionFn =
+    fn(parser: AsyncStorageTarget<Shared>) -> Option<AsyncStorageTarget<Shared>>;
 
 /// Concrete trait type for a type that implements BlockObject,
 ///
-pub struct BlockObjectHandler<Storage>
-where
-    Storage: StorageTarget + 'static,
-{
-    on_load: BlockObjectFn<Storage>,
-    on_unload: BlockObjectFn<Storage>,
-    on_completed: BlockObjectCompletionFn<Storage>,
-    namespace: Option<AsyncStorageTarget<Storage>>,
+pub struct BlockObjectHandler {
+    on_load: BlockObjectFn,
+    on_unload: BlockObjectFn,
+    on_completed: BlockObjectCompletionFn,
+    link_recv: LinkRecvFn,
+    namespace: Option<AsyncStorageTarget<Shared>>,
+    resource_key: Option<ResourceKey<Attribute>>,
 }
 
-impl<Storage> Clone for BlockObjectHandler<Storage>
-where
-    Storage: StorageTarget + 'static,
-{
+impl Clone for BlockObjectHandler {
     fn clone(&self) -> Self {
         Self {
             on_load: self.on_load,
             on_unload: self.on_unload,
             on_completed: self.on_completed,
+            link_recv: self.link_recv,
             namespace: self.namespace.clone(),
+            resource_key: self.resource_key,
         }
     }
 }
 
-impl<Storage> BlockObjectHandler<Storage>
-where
-    Storage: StorageTarget + 'static,
-{
+impl BlockObjectHandler {
     /// Creates a new function resource from a block object,
     ///
-    pub fn new<BlockStorage: StorageTarget<Namespace = Storage> + 'static, B: BlockObject<BlockStorage>>() -> BlockObjectHandler<BlockStorage::Namespace> 
-    where 
+    pub fn new<B>() -> BlockObjectHandler
+    where
+        B: BlockObject,
     {
         Self {
             on_load: B::on_load,
             on_unload: B::on_unload,
             on_completed: B::on_completed,
+            link_recv: B::link_recv,
             namespace: None,
+            resource_key: None,
         }
     }
 
     /// Calls the on_load handler,
     ///
-    pub async fn on_load(&mut self, namespace: AsyncStorageTarget<Storage>) {
-        (self.on_load)(namespace.clone()).await;
+    pub async fn on_load(
+        &mut self,
+        parser: AttributeParser<Shared>,
+        namespace: AsyncStorageTarget<Shared>,
+        key: Option<ResourceKey<Attribute>>,
+    ) -> AttributeParser<Shared> {
+        let parser = (self.on_load)(parser, namespace.clone(), key).await;
         self.namespace = Some(namespace);
+        self.resource_key = key;
+        parser
     }
 
     /// Calls the on_completed handler,
     ///
-    pub fn on_completed(&self) -> Option<AsyncStorageTarget<Storage>> {
+    pub fn on_completed(&self) -> Option<AsyncStorageTarget<Shared>> {
         if let Some(namespace) = self.namespace.clone() {
             (self.on_completed)(namespace)
         } else {
@@ -157,38 +193,33 @@ where
 
     /// Calls the on_unload handler,
     ///
-    pub async fn on_unload(&self) {
+    pub async fn on_unload(&self, parser: AttributeParser<Shared>) -> AttributeParser<Shared> {
         if let Some(namespace) = self.namespace.clone() {
-            (self.on_unload)(namespace).await
+            let mut parser = (self.on_unload)(parser, namespace, self.resource_key).await;
+
+            for n in parser.nodes.iter() {
+                trace!("* {:?}", n.mount());
+            }
+
+            let f = parser.fields.len();
+            trace!("fields -- {f}");
+            if let Some(recv) = parser.nodes.iter().rev().nth(f) {
+                trace!("trying unloading -- {:?}", recv.mount());
+                match (self.link_recv)(recv.clone(), parser.fields.clone()) {
+                    Ok(recv) => {
+                        if let Some(rk) = parser.parsed_node.attributes.last_mut() {
+                            rk.set_repr(recv);
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("{err}");
+                    }
+                }
+            }
+            parser.fields.clear();
+            parser
+        } else {
+            panic!("could not unload parser")
         }
-    }
-}
-
-#[derive(AttributeType)]
-struct Test {}
-
-impl FromStr for Test {
-    type Err = ();
-
-    fn from_str(_: &str) -> Result<Self, Self::Err> {
-        todo!()
-    }
-}
-
-#[runmd::prelude::async_trait]
-impl<Storage: StorageTarget + Send + Sync + 'static> BlockObject<Storage> for Test {
-    async fn on_load(storage: AsyncStorageTarget<Storage::Namespace>) {
-        let dispatcher = storage.intialize_dispatcher::<()>(None).await;
-        let mut storage = storage.storage.write().await;
-        storage.put_resource(dispatcher, None);
-    }
-
-    async fn on_unload(storage: AsyncStorageTarget<Storage::Namespace>) {
-        let mut disp = storage.dispatcher::<u64>(None).await;
-        disp.dispatch_all().await;
-    }
-
-    fn on_completed(storage: AsyncStorageTarget<Storage::Namespace>) -> Option<AsyncStorageTarget<Storage::Namespace>> {
-        Some(storage)
     }
 }

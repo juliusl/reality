@@ -10,9 +10,15 @@ use hyper::Uri;
 use poem::http::uri::PathAndQuery;
 use poem::http::uri::Scheme;
 use reality::prelude::*;
+use serde::Deserialize;
+use serde::Serialize;
+use tracing::debug;
 use tracing::warn;
 
+use crate::prelude::Action;
 use crate::prelude::EngineProxy;
+
+use super::Ext;
 
 /// Type-alias for a secure client,
 ///
@@ -63,7 +69,7 @@ pub trait HyperExt {
 ///
 macro_rules! do_request {
     ($source:ident, $request:ident, $client:ty) => {
-        if let Some(client) = $source.resource::<$client>(None) {
+        if let Some(client) = $source.resource::<$client>(ResourceKey::root()) {
             let response = client.request($request).await?;
             Ok(response)
         } else {
@@ -88,11 +94,22 @@ impl HyperExt for ThunkContext {
         }
     }
 
+    /// Take a response from the current thunk context,
+    ///
     async fn take_response(&mut self) -> Option<hyper::Response<hyper::Body>> {
-        self.transient_mut()
-            .await
-            .take_resource::<Response<Body>>(None)
-            .map(|r| *r)
+        if let Some(transient_target) = self.context_mut().reset() {
+            debug!("Response found");
+            transient_target
+                .storage
+                .write()
+                .await
+                .root()
+                .take::<Response<Body>>()
+                .map(|r| *r)
+        } else {
+            warn!("No response found");
+            None
+        }
     }
 
     /// Registers an internal host alias,
@@ -108,14 +125,27 @@ impl HyperExt for ThunkContext {
             replace.port_u16(),
         );
 
-        if let Some(mut transport) =
-            unsafe { self.host_mut(alias.scheme_str().unwrap_or_default()).await }
-        {
-            let init = self.initialized::<EngineProxy>().await;
-            transport.put_resource(init, None);
+        let init = self.initialized::<EngineProxy>().await;
 
-            let key = ResourceKey::<(Option<Scheme>, Option<String>, Option<u16>)>::with_hash(key);
-            transport.put_resource(value, Some(key));
+        if let Some(eh) = self.engine_handle().await {
+            if let Ok(mut host) = eh
+                .hosted_resource(alias.scheme_str().unwrap_or_default())
+                .await
+            {
+                {
+                    let node = host.context().node().await;
+                    let root = node.root_ref();
+                    root.lazy_put(init);
+
+                    let key =
+                        ResourceKey::<(Option<Scheme>, Option<String>, Option<u16>)>::with_hash(
+                            key,
+                        );
+                    node.lazy_put_resource(value, key);
+                }
+
+                host.context_mut().process_node_updates().await;
+            }
         }
     }
 
@@ -125,55 +155,121 @@ impl HyperExt for ThunkContext {
     ///
     async fn internal_host_lookup(&mut self, resolve: &Uri) -> Option<Uri> {
         let key = (resolve.scheme(), resolve.host());
-        let key = ResourceKey::with_hash(key);
 
-        let transport = self.host(resolve.scheme_str().unwrap_or_default()).await;
-        let alias = transport.and_then(|t| {
-            t.resource::<(Option<Scheme>, Option<String>, Option<u16>)>(Some(key))
-                .as_deref()
-                .cloned()
-        });
-        match alias {
-            Some(parts) => match parts {
-                (Some(scheme), Some(host), Some(port)) => Uri::builder()
-                    .scheme(scheme.clone())
-                    .authority(format!("{}:{}", host, port))
-                    .path_and_query(
-                        resolve
-                            .path_and_query()
-                            .cloned()
-                            .unwrap_or(PathAndQuery::from_static("/")),
-                    )
-                    .build()
-                    .ok(),
-                (Some(scheme), Some(host), None) => Uri::builder()
-                    .scheme(scheme.clone())
-                    .authority(host.as_str())
-                    .path_and_query(
-                        resolve
-                            .path_and_query()
-                            .cloned()
-                            .unwrap_or(PathAndQuery::from_static("/")),
-                    )
-                    .build()
-                    .ok(),
-                _ => None,
-            },
-            None => {
-                warn!("Did not find internal host for {:?}", resolve);
+        if let Some(eh) = self.engine_handle().await {
+            let host = if let Ok(host) = eh
+                .hosted_resource(resolve.scheme_str().unwrap_or_default())
+                .await
+            {
+                let host = host.context().node().await;
+
+                let key =
+                    ResourceKey::<(Option<Scheme>, Option<String>, Option<u16>)>::with_hash(key);
+                let alias = host
+                    .resource::<(Option<Scheme>, Option<String>, Option<u16>)>(key)
+                    .as_deref()
+                    .cloned();
+
+                match alias {
+                    Some(parts) => match parts {
+                        (Some(scheme), Some(host), Some(port)) => Uri::builder()
+                            .scheme(scheme.clone())
+                            .authority(format!("{}:{}", host, port))
+                            .path_and_query(
+                                resolve
+                                    .path_and_query()
+                                    .cloned()
+                                    .unwrap_or(PathAndQuery::from_static("/")),
+                            )
+                            .build()
+                            .ok(),
+                        (Some(scheme), Some(host), None) => Uri::builder()
+                            .scheme(scheme.clone())
+                            .authority(host.as_str())
+                            .path_and_query(
+                                resolve
+                                    .path_and_query()
+                                    .cloned()
+                                    .unwrap_or(PathAndQuery::from_static("/")),
+                            )
+                            .build()
+                            .ok(),
+                        _ => None,
+                    },
+                    None => {
+                        warn!("Did not find internal host for {:?}", resolve);
+                        None
+                    }
+                }
+            } else {
                 None
-            }
+            };
+
+            return host;
         }
+
+        None
     }
 }
 
-#[derive(Reality, Default, Debug, Clone)]
-#[reality(plugin, rename = "utility/loopio.hyper.request")]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct UriParam(hyper_serde::Serde<Uri>);
+
+impl PartialEq for UriParam {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl std::ops::Deref for UriParam {
+    type Target = Uri;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
+    }
+}
+
+impl std::ops::DerefMut for UriParam {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.as_mut()
+    }
+}
+
+impl AsRef<Uri> for UriParam {
+    fn as_ref(&self) -> &Uri {
+        &self.0 .0
+    }
+}
+
+impl AsMut<Uri> for UriParam {
+    fn as_mut(&mut self) -> &mut Uri {
+        &mut self.0 .0
+    }
+}
+
+impl FromStr for UriParam {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let uri: Uri = s.parse()?;
+
+        Ok(UriParam(hyper_serde::Serde(uri)))
+    }
+}
+
+impl Default for UriParam {
+    fn default() -> Self {
+        UriParam(hyper_serde::Serde(Uri::from_static("/dev/null")))
+    }
+}
+
+#[derive(Reality, Deserialize, Serialize, Default, PartialEq, Debug, Clone)]
+#[reality(plugin, group = "builtin")]
 pub struct Request {
     /// Uri to make request to,
     ///
     #[reality(derive_fromstr)]
-    uri: Uri,
+    uri: UriParam,
     /// Headers to attach to the request,
     ///
     #[reality(map_of=String)]
@@ -194,18 +290,18 @@ impl CallAsync for Request {
     async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
         let initialized = context.initialized::<Request>().await;
 
-        // println!("Starting request {:?}", initialized);
+        debug!("Starting request {:?}", initialized);
 
         let uri = context
-            .internal_host_lookup(&initialized.uri)
+            .internal_host_lookup(initialized.uri.as_ref())
             .await
-            .unwrap_or(initialized.uri.clone());
+            .unwrap_or(initialized.uri.as_ref().clone());
 
-        // println!("Resolved uri {:?}", uri);
+        debug!("Resolved uri {:?}", uri);
         let mut request = hyper::Request::builder().uri(&uri);
 
         // Handle setting method on request
-        if let Some(method) = Method::from_str(&initialized.method).ok() {
+        if let Ok(method) = Method::from_str(&initialized.method) {
             request = request.method(method);
         }
 
@@ -242,7 +338,7 @@ impl CallAsync for Request {
             .request(request, uri.scheme_str() == Some("https"))
             .await?;
 
-        context.transient_mut().await.put_resource(response, None);
+        context.transient_mut().await.root().put(response);
 
         Ok(())
     }

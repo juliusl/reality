@@ -1,11 +1,7 @@
-use std::str::FromStr;
-
-use serde::de::DeserializeOwned;
-use serde::Deserialize;
-use serde::Serialize;
-
-use crate::Attribute;
-use crate::ResourceKey;
+use crate::FieldRef;
+use crate::OnParseField;
+use crate::PacketRoutes;
+use crate::Plugin;
 
 /// Field access,
 ///
@@ -49,10 +45,10 @@ pub struct FieldMut<'a, T> {
 pub struct FieldOwned<T> {
     /// Field owner type name,
     ///
-    pub owner: &'static str,
+    pub owner: String,
     /// Name of the field,
     ///
-    pub name: &'static str,
+    pub name: String,
     /// Offset of the field,
     ///  
     pub offset: usize,
@@ -61,234 +57,33 @@ pub struct FieldOwned<T> {
     pub value: T,
 }
 
-/// Type-alias for a the frame version of an attribute type,
+/// Trait for visiting fields references on the virtual reference,
 ///
-pub type Frame = Vec<FieldPacket>;
-
-/// Converts a type to a list of packets,
-///
-pub trait ToFrame {
-    /// Returns the current type as a Frame,
+pub trait VisitVirtual<T, Projected>
+where
+    Self: Plugin + 'static,
+    T: 'static,
+    Projected: 'static,
+{
+    /// Returns a vector of field references from the virtual plugin,
     ///
-    fn to_frame(self, key: Option<ResourceKey<Attribute>>) -> Frame;
+    fn visit_fields(virt: &PacketRoutes<Self>) -> Vec<&FieldRef<Self, T, Projected>>;
 }
 
-/// Converts from a Frame into some type,
+/// Trait for visiting fields references on the virtual reference,
 ///
-pub trait ApplyFrame: Sized {
-    /// Configures self from a frame,
+pub trait VisitVirtualMut<T, Projected>
+where
+    Self: Plugin + 'static,
+    T: 'static,
+    Projected: 'static,
+{
+    /// Returns a vector of mutable field references from the virtual plugin,
     ///
-    fn apply_frame(&mut self, frame: Frame) -> anyhow::Result<()>;
-}
-
-/// Struct for containing an object safe Field representation,
-///
-#[derive(Serialize, Deserialize)]
-pub struct FieldPacket {
-    /// Pointer to data this packet has access to,
-    ///
-    #[serde(skip)]
-    pub data: Option<Box<dyn FieldPacketType>>,
-    /// Optional, wire data that can be used to create the field packet type,
-    ///
-    pub wire_data: Option<Vec<u8>>,
-    /// Name of the type of data included
-    ///
-    pub data_type_name: String,
-    /// Size of the type of data,
-    ///
-    pub data_type_size: usize,
-    /// Field offset in the owning type,
-    ///
-    pub field_offset: usize,
-    /// Type name of the owner of this field,
-    ///
-    pub owner_name: String,
-    /// Attribute hash value,
-    ///
-    pub attribute_hash: Option<u64>,
-}
-
-impl std::fmt::Debug for FieldPacket {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FieldPacket")
-            .field("wire_data", &self.wire_data)
-            .field("data_type_name", &self.data_type_name)
-            .field("data_type_size", &self.data_type_size)
-            .field("field_offset", &self.field_offset)
-            .field("owner_name", &self.owner_name)
-            .field("attribute_hash", &self.attribute_hash)
-            .finish()
-    }
-}
-
-impl FieldPacket {
-    /// Creates a new packet w/o data,
-    ///
-    pub fn new<T>() -> Self
-    where
-        T: FieldPacketType,
-    {
-        Self {
-            wire_data: None,
-            data: None,
-            data_type_name: std::any::type_name::<T>().to_string(),
-            data_type_size: std::mem::size_of::<T>(),
-            owner_name: String::new(),
-            field_offset: 0,
-            attribute_hash: None,
-        }
-    }
-
-    /// Creates a new packet w/ data to write a field with,
-    ///
-    pub fn new_data<T>(data: T) -> Self
-    where
-        T: FieldPacketType,
-    {
-        let mut packet = Self::new::<T>();
-        if packet.data_type_name == std::any::type_name::<T>()
-            && packet.data_type_size == std::mem::size_of::<T>()
-        {
-            packet.data = Some(Box::new(data));
-            packet
-        } else {
-            packet
-        }
-    }
-
-    /// Converts a field packet ptr into data,
-    ///
-    pub fn into_box<T>(self) -> Option<Box<T>>
-    where
-        T: Send + Sync + 'static,
-    {
-        if self.data_type_name != std::any::type_name::<T>()
-            || self.data_type_size != std::mem::size_of::<T>()
-        {
-            return None;
-        }
-        /// Convert a mut borrow to a raw mut pointer
-        ///
-        fn from_ref_mut<T: ?Sized>(r: &mut T) -> *mut T {
-            r
-        }
-        self.data.and_then(|t| {
-            let t = Box::leak(t);
-
-            let t = from_ref_mut(t);
-            let t = t.cast::<T>();
-            if !t.is_null() {
-                Some(unsafe { Box::from_raw(t) })
-            } else {
-                None
-            }
-        })
-    }
-
-    /// Converts packet into wire mode,
-    ///
-    pub fn into_wire<T>(self) -> FieldPacket
-    where
-        T: FieldPacketType + Sized + Serialize + DeserializeOwned,
-    {
-        let mut packet = FieldPacket {
-            data: None,
-            data_type_name: std::any::type_name::<T>().to_string(),
-            data_type_size: std::mem::size_of::<T>(),
-            field_offset: self.field_offset,
-            attribute_hash: self.attribute_hash,
-            wire_data: None,
-            owner_name: self.owner_name.to_string(),
-        };
-
-        packet.wire_data = self.into_box::<T>().and_then(|d| d.to_binary().ok());
-        packet
-    }
-
-    /// Sets the routing information for this packet,
-    ///
-    pub fn route(mut self, field_offset: usize, attribute: Option<u64>) -> Self {
-        self.field_offset = field_offset;
-        self.attribute_hash = attribute;
-        self
-    }
-
-    /// Convert the packet into it's owned field,
-    /// 
-    pub fn into_field_owned<O, T>(mut self) -> anyhow::Result<FieldOwned<T>>
-    where
-        T: Serialize + DeserializeOwned + FieldPacketType,
-    {
-        if let Some(data) = self.wire_data.clone() {
-            let mut output = None;
-            T::from_binary(data, &mut output)?;
-
-            if let Some(data) = output {
-                self.data = Some(Box::new(data));
-            }
-        }
-
-        
-        let offset = self.field_offset;
-        if let Some(value) = self.into_box::<T>() {
-            Ok(FieldOwned {
-                value: *value,
-                owner: std::any::type_name::<O>(),
-                name: std::any::type_name::<T>(),
-                offset,
-            })
-        } else {
-            Err(anyhow::anyhow!("Could not convert frame into type"))
-        }
-    }
-}
-
-/// Implemented by a type that can be stored into a packet,
-///
-pub trait FieldPacketType: Send + Sync + 'static {
-    /// Type that can be serialized to/from a string,
-    ///
-    fn from_str(str: &str, dest: &mut Option<Self>) -> anyhow::Result<()>
-    where
-        Self: FromStr + Sized;
-
-    /// Type that can be deserialized to/from binary,
-    ///
-    fn from_binary(vec: Vec<u8>, dest: &mut Option<Self>) -> anyhow::Result<()>
-    where
-        Self: Serialize + DeserializeOwned,
-    {
-        let data = bincode::deserialize(&vec)?;
-        let _ = dest.insert(data);
-        Ok(())
-    }
-
-    /// Converts type to bincode bytes,
-    ///
-    fn to_binary(&self) -> anyhow::Result<Vec<u8>>
-    where
-        Self: Serialize + DeserializeOwned,
-    {
-        let ser = bincode::serialize(&self)?;
-        Ok(ser)
-    }
-}
-
-/// Trait for visiting fields w/ read-only access,
-///
-pub trait Visit<T> {
-    /// Returns a vector of fields,
-    ///
-    fn visit(&self) -> Vec<Field<'_, T>>;
-}
-
-/// Trait for visiting fields w/ mutable access,
-///
-pub trait VisitMut<T> {
-    /// Returns a vector of fields w/ mutable access,
-    ///
-    fn visit_mut<'a: 'b, 'b>(&'a mut self) -> Vec<FieldMut<'b, T>>;
+    fn visit_fields_mut(
+        routes: &mut Self::Virtual,
+        visit: impl FnMut(&mut FieldRef<Self, T, Projected>),
+    );
 }
 
 /// Trait for setting a field,
@@ -300,77 +95,25 @@ pub trait SetField<T> {
     ///
     fn set_field(&mut self, field: FieldOwned<T>) -> bool;
 }
-
-impl<T> FieldPacketType for T
+/// Trait for returning field references by offset,
+///
+pub trait OnReadField<const OFFSET: usize>
 where
-    T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
+    Self: Plugin + OnParseField<OFFSET>,
 {
-    fn from_str(str: &str, dest: &mut Option<Self>) -> anyhow::Result<()>
-    where
-        Self: FromStr + Sized,
-    {
-        if let Ok(value) = <T as FromStr>::from_str(str) {
-            let _ = dest.insert(value);
-        }
-        Ok(())
-    }
+    /// Reads a field reference from this type,
+    ///
+    fn read(virt: &Self::Virtual) -> &FieldRef<Self, Self::ParseType, Self::ProjectedType>;
 }
 
-mod tests {
-    use super::FieldMut;
-    use crate::prelude::*;
-
-    pub mod reality {
-        pub use crate::*;
-        pub mod prelude {
-            pub use crate::prelude::*;
-        }
-    }
-
-    #[derive(Reality, Default)]
-    struct Test {
-        #[reality(derive_fromstr)]
-        name: String,
-        other: String,
-    }
-
-    #[test]
-    fn test_visit() {
-        let mut test = Test {
-            name: String::from(""),
-            other: String::new(),
-        };
-        {
-            let mut fields = test.visit_mut();
-            let mut fields = fields.drain(..);
-            if let Some(FieldMut { name, value, .. }) = fields.next() {
-                assert_eq!("name", name);
-                *value = String::from("hello-world");
-            }
-
-            if let Some(FieldMut { name, value, .. }) = fields.next() {
-                assert_eq!("other", name);
-                *value = String::from("hello-world-2");
-            }
-        }
-        assert_eq!("hello-world", test.name.as_str());
-        assert_eq!("hello-world-2", test.other.as_str());
-    }
-
-    #[test]
-    fn test_packet() {
-        let packet = crate::attributes::visit::FieldPacket::new_data(String::from("Hello World"));
-        let packet = packet.into_box::<String>();
-        let packet_data = packet.expect("should be able to convert");
-        let packet_data = packet_data.as_str();
-        assert_eq!("Hello World", packet_data);
-
-        let packet = crate::attributes::visit::FieldPacket::new_data(String::from("Hello World"));
-        let packet = packet.into_box::<Vec<u8>>();
-        assert!(packet.is_none());
-
-        let packet = crate::attributes::visit::FieldPacket::new_data(String::from("Hello World"));
-        let packet = packet.route(0, None).into_wire::<String>();
-        println!("{:?}", packet.wire_data);
-    }
+/// Trait for returning mutable field references by offset,
+///
+pub trait OnWriteField<const OFFSET: usize>
+where
+    Self: Plugin + OnReadField<OFFSET> + OnParseField<OFFSET>,
+{
+    /// Writes to a field reference from this type,
+    ///
+    fn write(virt: &mut Self::Virtual)
+        -> &mut FieldRef<Self, Self::ParseType, Self::ProjectedType>;
 }

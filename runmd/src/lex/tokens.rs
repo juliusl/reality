@@ -8,7 +8,10 @@ use super::prelude::*;
 pub enum Tokens<'source> {
     /// Extension container,
     ///
-    #[regex("[a-zA-Z]*[/]?[a-zA-Z0-9._-]+([(][a-zA-Z]*[/]?[a-zA-Z0-9._-]+[)])?>", on_extension)]
+    #[regex(
+        "([a-zA-Z]*[/]?[a-zA-Z0-9._-]+|([(][a-zA-Z0-9._-]+[ ]*[a-zA-Z0-9._-]+[)]))>",
+        on_extension
+    )]
     Extension(Extension<'source>),
     /// Attribute container,
     ///
@@ -16,10 +19,11 @@ pub enum Tokens<'source> {
     Attribute(Attribute<'source>),
     /// Tag value,
     ///
-    #[regex("[a-zA-Z][a-zA-Z0-9._-]+", on_tag)]
+    #[regex("[a-zA-Z][a-zA-Z0-9_-]+", on_tag)]
     Tag(Tag<'source>),
     /// Comment value,
     ///
+    #[regex("[/][/][^\r\n]+")]
     #[regex("[#][^\r\n]+")]
     Comment(&'source str),
 }
@@ -58,9 +62,9 @@ impl<'a> Tokens<'a> {
     /// Consumes self and returns as Attribute or None
     ///
     #[inline]
-    pub fn parse_comment(self) -> Option<&'a str> {
+    pub fn parse_comment(self) -> Option<Vec<&'a str>> {
         match self {
-            Tokens::Comment(c) => Some(c),
+            Tokens::Comment(c) => Some(vec![c]),
             _ => None,
         }
     }
@@ -103,8 +107,33 @@ fn on_extension<'s>(lex: &mut Lexer<'s, Tokens<'s>>) -> Filter<Extension<'s>> {
                 e
             })
             .expect("should have an extension currently set if loading by suffix")
+    } else if lex.slice().contains('/') {
+        if let Some(tag) = lex.slice().split('/').next() {
+            Extension {
+                tag: Some(tag),
+                name: lex
+                    .slice()
+                    .trim_start_matches(tag)
+                    .trim_start_matches('/')
+                    .trim_end_matches('>'),
+                suffix: None,
+                input: get_input!(lex),
+            }
+        } else {
+            Extension {
+                tag: None,
+                name: lex.slice().trim_end_matches('>'),
+                suffix: None,
+                input: get_input!(lex),
+            }
+        }
     } else {
         Extension {
+            tag: if lex.slice().contains('/') {
+                lex.slice().split('/').next()
+            } else {
+                None
+            },
             name: lex.slice().trim_end_matches('>'),
             suffix: None,
             input: get_input!(lex),

@@ -1,9 +1,15 @@
-pub mod host;
+pub mod action;
+pub mod address;
+pub mod background_work;
 pub mod engine;
-pub mod sequence;
+pub mod errors;
+mod ext;
+pub mod foreground;
+pub mod host;
 pub mod operation;
 pub mod prelude;
-mod ext;
+pub mod sequence;
+pub mod work;
 
 #[allow(unused_imports)]
 mod tests {
@@ -20,91 +26,96 @@ mod tests {
     use reality::prelude::*;
     use tokio::io::AsyncReadExt;
     use tokio::join;
+    use tokio::pin;
+    use tokio::sync::Notify;
     use tracing::trace;
     use uuid::Bytes;
 
     use crate::engine::Engine;
     use crate::engine::EngineBuilder;
     use crate::operation::Operation;
+    use crate::prelude::Action;
+    use crate::prelude::Address;
+    use crate::prelude::VirtualBusExt;
 
     #[derive(Reality, Default, Debug, Clone)]
-    #[reality(plugin, rename = "test_plugin")]
+    #[reality(plugin, group = "demo", rename = "test_plugin2")]
+    struct TestPlugin2 {
+        #[reality(derive_fromstr)]
+        _process: String,
+        name: String,
+        #[reality(map_of=String)]
+        env: BTreeMap<String, String>,
+        #[reality(vec_of=String)]
+        args: Vec<String>,
+    }
+
+    #[derive(Reality, Default, Debug, Clone)]
+    #[reality(plugin, group = "demo", rename = "test_plugin")]
     struct TestPlugin {
         #[reality(derive_fromstr)]
         _process: String,
         name: String,
-        #[reality(map_of=String, wire)]
+        #[reality(map_of=String)]
         env: BTreeMap<String, String>,
-        #[reality(vec_of=String, wire)]
+        #[reality(vec_of=String)]
         args: Vec<String>,
-    }
-
-    #[derive(Default)]
-    struct TestExtension {}
-
-    impl ExtensionController<TestPlugin> for TestExtension {
-        fn ident() -> &'static str {
-            "test/extension"
-        }
-
-        fn setup(
-            resource_key: Option<&reality::ResourceKey<reality::Attribute>>,
-        ) -> Extension<Self, TestPlugin> {
-            println!("Extending -- {:?}", resource_key.map(|a| a.key()));
-            Self::default_setup(resource_key).before(|_, _, t| {
-                if let Ok(mut t) = t {
-                    use std::io::Write;
-                    println!("Enter Name (current_value = {}):", t.name);
-                    print!("> ");
-                    std::io::stdout().flush()?;
-                    let mut name = String::new();
-                    std::io::stdin().read_line(&mut name)?;
-                    let name = name.trim();
-                    if !name.is_empty() {
-                        t.name = name.to_string();
-                    }
-                    Ok(t)
-                } else {
-                    t
-                }
-            })
-        }
     }
 
     #[async_trait::async_trait]
     impl CallAsync for TestPlugin {
         async fn call(tc: &mut ThunkContext) -> anyhow::Result<()> {
             let _initialized = tc.initialized::<TestPlugin>().await;
-            println!("Initialized as -- {:?} {:?}", _initialized, tc.attribute.map(|a| a.key()));
+            println!(
+                "Initialized as -- {:?} {:?}",
+                _initialized,
+                tc.attribute.key()
+            );
 
             if tc.variant_id.is_some() {
                 let frame = _initialized.to_frame(tc.attribute);
                 println!("{:?}", frame);
             }
-            
+
+            println!("Tag: {:?}", tc.tag());
+
+            Ok(())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CallAsync for TestPlugin2 {
+        async fn call(tc: &mut ThunkContext) -> anyhow::Result<()> {
+            let _initialized = tc.initialized::<TestPlugin>().await;
+            println!(
+                "Initialized as -- {:?} {:?}",
+                _initialized,
+                tc.attribute.key()
+            );
+
+            if tc.variant_id.is_some() {
+                let frame = _initialized.to_frame(tc.attribute);
+                println!("{:?}", frame);
+            }
+
+            println!("Tag: {:?}", tc.tag());
+
             Ok(())
         }
     }
 
     #[tokio::test]
-    // #[tracing_test::traced_test]
+    #[tracing_test::traced_test]
     async fn test_plugin_model() {
-        // TODO: Test Isoloation -- 7bda126d-466c-4408-b5b7-9683eea90b65
         let mut builder = Engine::builder();
-        builder.register::<TestPlugin>();
-        builder.register_extension::<TestExtension, TestPlugin>();
+        builder.enable::<TestPlugin>();
+        builder.enable::<TestPlugin2>();
 
         let engine = builder.build();
         let runmd = r#"
         ```runmd
         + .operation test/operation
-        <test/extension(test_plugin)> cargo
-        : .name hello-world-2
-        : RUST_LOG .env lifec=debug
-        : HOME .env /home/test
-        : .args --name
-        : .args test
-        <test_plugin> cargo
+        <test/demo.test_plugin> cargo
         : .name hello-world-3
         : RUST_LOG .env lifec=trace
         : HOME .env /home/test2
@@ -112,13 +123,13 @@ mod tests {
         : .args test3
 
         + test_tag .operation test/operation
-        <test_plugin> cargo
+        <a/demo.test_plugin> cargo
         : .name hello-world-2-tagged
         : RUST_LOG .env lifec=debug
         : HOME .env /home/test
         : .args --name
         : .args test
-        <test_plugin> cargo
+        <b/demo.test_plugin2> cargo
         : .name hello-world-3-tagged
         : RUST_LOG .env lifec=trace
         : HOME .env /home/test2
@@ -132,33 +143,44 @@ mod tests {
         ```
         "#;
 
-        tokio::fs::create_dir_all(".test").await.unwrap();
-
-        tokio::fs::write(".test/test_plugin.md", runmd)
-            .await
-            .unwrap();
-
         let mut workspace = Workspace::new();
-        workspace.add_local(".test/test_plugin.md");
+        workspace.add_buffer(".test/test_plugin.md", runmd);
 
-        let engine = engine.compile(workspace).await;
+        let _engine = engine.compile(workspace).await.unwrap();
+        // let eh = engine.engine_handle();
 
-        for (address, _) in engine.iter_operations() {
-            println!("{address}");
-        }
+        // engine.spawn(|_, p| Some(p));
 
-        let mut sequences = engine.iter_sequences().collect::<Vec<_>>().clone();
-        let mut _seq = None;
-        if let Some((address, seq)) = sequences.pop() {
-            println!("{address} -- {:#?}", seq);
+        // if let Ok(_resource) = eh.hosted_resource("engine://start#test").await {
+        //     // Create a new virtual bus
+        //     let mut bus = _resource
+        //         .context()
+        //         .virtual_bus(Address::from_str("test/operation#test_tag").unwrap())
+        //         .await;
 
-            _seq = Some(seq.clone());
-            tokio::spawn(async move { engine.handle_packets().await });
-        }
+        //     // Create a clone for the test task
+        //     let mut txbus = bus.clone();
 
-        _seq.clone().unwrap().await.unwrap();
-        _seq.unwrap().await.unwrap();
+        //     let _ = tokio::spawn(async move {
+        //         let tx = txbus.transmit::<TestPlugin2>().await;
+        //         tx.write_to_virtual(|virt| {
+        //             eprintln!("writing to virtual");
+        //             virt.virtual_mut().name.commit()
+        //         });
+        //     });
 
+        //     // Create a new port listening for changes to the name field
+        //     let mut bus_port = bus
+        //         .wait_for::<TestPlugin2>()
+        //         .await
+        //         .select(|s| &s.virtual_ref().name)
+        //         .filter(|f| f.is_committed())
+        //         .pinned();
+
+        //     if let Some(_) = bus_port.deref_mut().next().await {
+        //         eprintln!("got update");
+        //     }
+        // }
         ()
     }
 }

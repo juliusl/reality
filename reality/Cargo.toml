@@ -30,9 +30,13 @@ once_cell = "1.18.0"
 async-trait = "0.1.74"
 tokio-util = "0.7.10"
 bincode = "1.3.3"
+clap = { version = "4.4.13", features = ["string"] }
 
 [dependencies.runmd]
 path = "../runmd"
+
+[dependencies.runir]
+path = "../runir"
 
 [dependencies.reality_derive]
 path = "../reality_derive"

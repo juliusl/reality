@@ -1,153 +1,101 @@
-use std::collections::BTreeSet;
+use anyhow::anyhow;
+use bytes::Bytes;
+use serde::Deserialize;
+use serde::Serialize;
 use std::fmt::Debug;
-use std::sync::Arc;
-use tokio::sync::Notify;
 
 use reality::prelude::*;
 
-use crate::engine::EngineHandle;
-
-pub struct HostCondition(String, Arc<Notify>);
-
-impl HostCondition {
-    pub fn notify(&self) {
-        let HostCondition(_, notify) = self.clone(); 
-        
-        notify.notify_waiters();
-    }
-
-    pub async fn listen(&self) {
-        let HostCondition(_, notify) = self.clone(); 
-        
-        notify.notified().await;
-    }
-}
-
-impl Ord for HostCondition {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.cmp(&other.0)
-    }
-}
-
-impl PartialOrd for HostCondition {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for HostCondition {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl Clone for HostCondition {
-    fn clone(&self) -> Self {
-        Self(self.0.clone(), self.1.clone())
-    }
-}
-
-impl Eq for HostCondition {}
-
-impl FromStr for HostCondition {
-    type Err = std::convert::Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(HostCondition(s.to_string(), Arc::new(Notify::new())))
-    }
-}
+use crate::prelude::Action;
+use crate::prelude::ActionExt;
+use crate::prelude::Address;
+use crate::prelude::Ext;
 
 /// A Host contains a broadly shared storage context,
 ///
 #[derive(Reality, Default, Clone)]
+#[plugin_def(call = debug)]
 pub struct Host {
     /// Name for this host,
     ///
     #[reality(derive_fromstr)]
-    pub name: String,
-    /// (unused) Tag for this host,
+    pub name: Decorated<String>,
+    /// List of actions to register w/ this host,
     ///
-    #[reality(ignore)]
-    pub _tag: Option<String>,
-    /// Host storage provided by this host,
-    ///
-    #[reality(ignore)]
-    pub host_storage: Option<AsyncStorageTarget<Shared>>,
-    /// Engine handle,
-    ///
-    #[reality(ignore)]
-    pub handle: Option<EngineHandle>,
+    #[reality(vec_of=Decorated<Address>)]
+    pub action: Vec<Decorated<Address>>,
     /// Name of the action that "starts" this host,
     ///
-    #[reality(option_of=Tagged<String>)]
-    start: Option<Tagged<String>>,
-    /// Background actions,
+    #[reality(option_of=Decorated<Address>)]
+    pub start: Option<Decorated<Address>>,
+    /// List of events managed by this host,
     ///
-    #[reality(vec_of=Tagged<String>)]
-    bg: Vec<Tagged<String>>,
-    /// Map of conditions,
+    #[reality(vec_of=Event)]
+    pub event: Vec<Event>,
+    /// Binding to an engine,
     ///
-    #[reality(set_of=HostCondition)]
-    condition: BTreeSet<HostCondition>,
+    #[reality(ignore)]
+    binding: Option<ThunkContext>,
+    /// Node resource key,
+    ///
+    #[reality(ignore)]
+    node: ResourceKey<reality::attributes::Node>,
+    /// Plugin resource key,
+    ///
+    #[reality(ignore)]
+    plugin: ResourceKey<reality::attributes::Attribute>,
+}
+
+async fn debug(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    let mut init = Remote.create::<Host>(tc).await;
+    init.bind(tc.clone());
+
+    for a in init.action.iter() {
+        eprintln!("# Action -- {}", a.value().unwrap());
+
+        if let Some(repr) = a.property.and_then(|p| p.repr()) {
+            eprintln!("{:#}", repr);
+        }
+    }
+
+    if init.start.is_some() {
+        eprintln!("Start found.");
+        init.start().await?;
+    } else {
+        eprintln!("No start found.");
+    }
+
+    Ok(())
 }
 
 impl Host {
-    /// Bind this host to a storage target,
-    ///
-    pub fn bind(mut self, storage: AsyncStorageTarget<Shared>) -> Self {
-        self.host_storage = Some(storage);
-        self
-    }
-
     /// Returns true if a condition has been signaled,
     ///
-    pub fn set_condition(&self, condition: impl AsRef<str>) -> bool {
-        if let Some(condition) = self
-            .condition
-            .iter()
-            .find(|c| c.0 == condition.as_ref())
-            .map(|c| c.1.clone())
-        {
-            condition.clone().notify_waiters();
-            true
-        } else {
-            false
-        }
-    }
-
-    async fn initialized_conditions(&self) {
-        if let Some(storage) = self.host_storage.as_ref().map(|h| h.storage.clone()) {
-            let mut storage = storage.write().await;
-
-            for condition in self.condition.iter() {
-                storage.put_resource(
-                    condition.clone(),
-                    Some(ResourceKey::with_hash(&condition.0)),
-                );
-            }
-        }
+    /// Returns false if this condition is not registered w/ this host.
+    ///
+    pub fn set_condition(&self, _condition: impl AsRef<str>) -> bool {
+        false
     }
 
     /// Starts this host,
     ///
     pub async fn start(&self) -> anyhow::Result<ThunkContext> {
-        self.initialized_conditions().await;
-        
-        if let Some(engine) = self.handle.clone() {
-            if let Some(start) = self.start.as_ref() {
-                let address = match (start.tag(), start.value()) {
-                    (None, Some(name)) => name.to_string(),
-                    (Some(tag), Some(name)) => {
-                        format!("{name}#{tag}")
-                    }
-                    _ => {
-                        unreachable!()
-                    }
-                };
+        if let Some(engine) = self.binding.as_ref() {
+            let engine = engine
+                .engine_handle()
+                .await
+                .expect("should be bound to an engine handle");
 
-                let _engine = engine.clone();
-                let host_start = tokio::spawn(async move { _engine.action(address).await });
-                host_start.await?
+            if let Some(start) = self.start.as_ref().and_then(|s| s.value()) {
+                let mut resource = engine.hosted_resource(start.to_string()).await?;
+
+                resource.context_mut().write_cache(self.event.clone());
+
+                if let Some(result) = resource.spawn().await? {
+                    Ok(result)
+                } else {
+                    Err(anyhow!("Start action did not spawn a task"))
+                }
             } else {
                 Err(anyhow::anyhow!("Start action is not set"))
             }
@@ -161,9 +109,192 @@ impl Debug for Host {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Host")
             .field("name", &self.name)
-            .field("_tag", &self._tag)
-            .field("handle", &self.handle)
             .field("start", &self.start)
+            .field("action", &self.action)
+            .field("event", &self.event)
             .finish()
     }
+}
+
+impl SetIdentifiers for Host {
+    fn set_identifiers(&mut self, name: &str, tag: Option<&String>) {
+        self.name.value = Some(name.to_string());
+        self.name.tag = tag.cloned();
+    }
+}
+
+impl Action for Host {
+    #[inline]
+    fn address(&self) -> String {
+        format!(
+            "{}://",
+            self.name.value().unwrap_or(&String::from("engine"))
+        )
+    }
+
+    #[inline]
+    fn context(&self) -> &ThunkContext {
+        self.binding.as_ref().expect("should be bound to an engine")
+    }
+
+    #[inline]
+    fn context_mut(&mut self) -> &mut ThunkContext {
+        self.binding.as_mut().expect("should be bound to an engine")
+    }
+
+    #[inline]
+    fn bind(&mut self, context: ThunkContext) {
+        self.binding = Some(context);
+    }
+
+    #[inline]
+    fn bind_node(&mut self, node: ResourceKey<reality::attributes::Node>) {
+        self.node = node;
+    }
+
+    #[inline]
+    fn bind_plugin(&mut self, plugin: ResourceKey<reality::attributes::Attribute>) {
+        self.plugin = plugin;
+    }
+
+    #[inline]
+    fn node_rk(&self) -> ResourceKey<reality::attributes::Node> {
+        self.node
+    }
+
+    #[inline]
+    fn plugin_rk(&self) -> ResourceKey<reality::attributes::Attribute> {
+        self.plugin
+    }
+}
+
+/// Plugin for managing state for a shared event defined on a Host,
+///
+#[derive(
+    Reality, Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord,
+)]
+#[plugin_def(call=on_event)]
+#[parse_def(group = "builtin")]
+pub struct Event {
+    /// Name of this event,
+    ///
+    /// Decorations are passed from the host definition.
+    ///
+    #[reality(derive_fromstr)]
+    pub name: String,
+    /// Current state of this event,
+    ///
+    #[serde(skip)]
+    #[reality(ignore)]
+    pub data: Bytes,
+}
+
+async fn on_event(tc: &mut ThunkContext) -> anyhow::Result<()> {
+    use tracing::debug;
+
+    let init = tc.as_remote_plugin::<Event>().await;
+
+    debug!(name = init.name);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[tracing_test::traced_test]
+async fn test_host() {
+    let mut workspace = Workspace::new();
+    workspace.add_buffer(
+        "demo.md",
+        r#"
+```runmd
+# -- Example operation that listens for the completion of another
+# -- 
++ .operation a
+|# test = test
+    
+<start/builtin.println>                   Hello World a
+|# notify =     op_b_complete
+
++ .operation b
+<builtin.println>                         Hello World b
+|# listen =     op_b_complete
+
++ .operation c
+<start/builtin.println>                   Hello World c
+|# notify = test_cond
+
++ .operation d
+<builtin.println>                         Hello World d
+
+# -- Test sequence decorations
++ .sequence test
+|# name = Test sequence
+    
+# -- Operations on a step execute all at once
+: .step    demo://b, demo://a
+
+# -- If this were set to true, then the sequence would automatically loop
+: .loop false
+
+# -- Demo host
+# -- Placeholder text 
++ .host demo
+: .start        test
+
+# -- Example of setting up a notifier
+: .action               c/start/builtin.println
+|# help     =           Example of adding help documentation
+|# notify   =           ob_b_complete
+
+: .action   a
+: .action   b
+
+# -- Example of an event
+: .event                op_b_complete
+|# description  =       Example of an event that can be listened to
+```
+    "#,
+    );
+
+    let engine = crate::engine::Engine::builder().build();
+    let engine = engine.compile(workspace).await.unwrap();
+    // eprintln!("{:#?}", engine);
+
+    let (eh, _) = engine.default_startup().await.unwrap();
+
+    let _ = eh.run("engine://test").await.unwrap();
+
+    // // Example - getting a virtual bus for an event created by host
+    // match eh.event_vbus("demo", "op_b_complete").await {
+    //     Ok(mut vbus) => {
+    //         // Example - writing to an "event" created by host
+    //         let mut txbus = vbus.clone();
+    //         tokio::spawn(async move {
+    //             // Example - transmit a change from another thread
+    //             let transmit = txbus.transmit::<Event>().await;
+    //             transmit.write_to_virtual(|r| {
+    //                 r.virtual_mut().owner.send_if_modified(|o| {
+    //                     o.data = Bytes::from_static(b"hello world");
+    //                     false
+    //                 });
+    //                 r.virtual_mut().name.commit()
+    //             });
+    //         });
+
+    //         // Example - waiting for an "event" created by host
+    //         let _event = vbus.wait_for::<Event>().await;
+    //         let mut port = _event.select(|e| &e.virtual_ref().name);
+    //         let mut port = futures_util::StreamExt::boxed(&mut port);
+    //         if let Some((next, event)) = futures_util::StreamExt::next(&mut port).await {
+    //             eprintln!("got next - {:#x?}", event);
+    //             assert!(next.is_committed());
+    //             assert_eq!(b"hello world", &event.data[..]);
+    //         }
+    //     }
+    //     Err(err) => {
+    //         panic!("{err}");
+    //     }
+    // }
+
+    ()
 }

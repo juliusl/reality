@@ -1,14 +1,15 @@
 use futures_util::stream::FuturesOrdered;
 use futures_util::Future;
-use tokio::runtime::Handle;
-use tracing::trace;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
+use tracing::trace;
 
 use super::prelude::*;
+use super::target::StorageTargetKey;
 
 /// Wrapper for a thread_safe wrapper over a storage target type,
 ///
@@ -30,9 +31,34 @@ impl<S: StorageTarget> Clone for AsyncStorageTarget<S> {
 
 impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
     /// Creates an async storage target from its parts,
-    /// 
+    ///
     pub fn from_parts(storage: Arc<RwLock<S>>, runtime: tokio::runtime::Handle) -> Self {
-        Self { storage, runtime: Some(runtime) }
+        Self {
+            storage,
+            runtime: Some(runtime),
+        }
+    }
+
+    /// Intializes the default value for T and enables dispatch queues,
+    ///
+    pub async fn maybe_dispatcher<T: Send + Sync + 'static>(
+        &self,
+        resource_key: StorageTargetKey<T>,
+        inner: T,
+    ) -> Dispatcher<S, T> {
+        use std::ops::Deref;
+
+        let dispatcher = self.dispatcher(resource_key).await;
+
+        dispatcher
+            .storage
+            .storage
+            .deref()
+            .write()
+            .await
+            .put_resource(inner, resource_key);
+
+        dispatcher
     }
 
     /// Returns a dispatcher for a specific resource type,
@@ -41,7 +67,7 @@ impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
     ///
     pub async fn dispatcher<T: Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey<T>>,
+        resource_key: StorageTargetKey<T>,
     ) -> Dispatcher<S, T> {
         let mut disp = Dispatcher {
             storage: self.clone(),
@@ -54,11 +80,11 @@ impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
         disp
     }
 
-    /// Intializes the default value for T and enables dispatch queues,
+    /// Intializes the default value for T if it doesn't exist and enables dispatch queues,
     ///
-    pub async fn intialize_dispatcher<T: Default + Send + Sync + 'static>(
+    pub async fn maybe_intialize_dispatcher<T: Default + Send + Sync + 'static>(
         &self,
-        resource_key: Option<ResourceKey<T>>,
+        resource_key: StorageTargetKey<T>,
     ) -> Dispatcher<S, T> {
         use std::ops::Deref;
 
@@ -70,7 +96,7 @@ impl<S: StorageTarget + Send + Sync + 'static> AsyncStorageTarget<S> {
             .deref()
             .write()
             .await
-            .put_resource(T::default(), resource_key);
+            .maybe_put_resource(T::default, resource_key);
 
         dispatcher
     }
@@ -84,7 +110,7 @@ pub struct Dispatcher<Storage: StorageTarget + Send + Sync + 'static, T: Send + 
     storage: AsyncStorageTarget<Storage>,
     /// Optional, resource_key of the resource as well as queues,
     ///
-    resource_key: Option<ResourceKey<T>>,
+    resource_key: StorageTargetKey<T>,
     /// Handles lock acquisition,
     ///
     tasks: FuturesOrdered<JoinHandle<()>>,
@@ -130,7 +156,7 @@ macro_rules! queue {
                     .deref()
                     .read()
                     .await
-                    .resource::<$queue>(resource_id.map(|r| r.transmute()))
+                    .resource::<$queue>(resource_id.transmute())
                 {
                     if let Ok(mut queue) = queue.lock() {
                         queue.push_back(Box::new($exec));
@@ -153,18 +179,19 @@ macro_rules! enable_queue {
                 resource_key,
                 ..
             } = $rcv;
+            
+            let mut storage = storage.deref().write().await;
 
             $(
-                let checking = storage.read().await;
-                if checking
-                    .resource::<$queue_ty>(resource_key.map(|r| r.transmute()))
+                if storage
+                    .resource::<$queue_ty>(resource_key.transmute())
                     .is_none()
                 {
-                    drop(checking);
-                    let mut storage = storage.deref().write().await;
-                    storage.put_resource(<$queue_ty as Default>::default(), resource_key.map(|r| r.transmute()));
+                    storage.put_resource(<$queue_ty as Default>::default(), resource_key.transmute());
                 }
             )*
+
+            drop(storage);
         }
     };
 }
@@ -185,7 +212,7 @@ macro_rules! dispatch {
         {
             let mut storage = storage.deref().write().await;
             let queue = storage
-                .resource_mut::<$queue_ty<$resource_ty>>(resource_key.map(|r| r.transmute()));
+                .resource_mut::<$queue_ty<$resource_ty>>(resource_key.transmute());
             if let Some(queue) = queue {
                 if let Ok(mut queue) = queue.lock() {
                     while let Some(func) = queue.pop_front() {
@@ -199,7 +226,7 @@ macro_rules! dispatch {
                 .deref()
                 .write()
                 .await
-                .resource_mut::<$resource_ty>(resource_key.map(|r| r.transmute()))
+                .resource_mut::<$resource_ty>(resource_key.transmute())
             {
                 for call in tocall.drain(..) {
                     call(&mut resource);
@@ -225,7 +252,7 @@ macro_rules! dispatch_async {
         {
             let mut storage = storage.deref().write().await;
             let queue = storage
-                .resource_mut::<$queue_ty<$resource_ty>>(resource_key.map(|r| r.transmute()));
+                .resource_mut::<$queue_ty<$resource_ty>>(resource_key.transmute());
             if let Some(queue) = queue {
                 if let Ok(mut queue) = queue.lock() {
                     while let Some(func) = queue.pop_front() {
@@ -239,7 +266,7 @@ macro_rules! dispatch_async {
                 .deref()
                 .write()
                 .await
-                .resource_mut::<$resource_ty>(resource_key.map(|r| r.transmute()))
+                .resource_mut::<$resource_ty>(resource_key.transmute())
             {
                 for call in tocall.drain(..) {
                     call(&mut resource).await;
@@ -265,7 +292,7 @@ macro_rules! dispatch_owned_async {
         {
             let mut storage = storage.deref().write().await;
             let queue = storage
-                .resource_mut::<$queue_ty<$resource_ty>>(resource_key.map(|r| r.transmute()));
+                .resource_mut::<$queue_ty<$resource_ty>>(resource_key.transmute());
             if let Some(queue) = queue {
                 if let Ok(mut queue) = queue.lock() {
                     while let Some(func) = queue.pop_front() {
@@ -280,7 +307,7 @@ macro_rules! dispatch_owned_async {
                 .deref()
                 .write()
                 .await
-                .take_resource::<$resource_ty>(resource_key.map(|r| r.transmute()))
+                .take_resource::<$resource_ty>(resource_key.transmute())
             {
                 let mut resource = *resource;
                 for call in tocall.drain(..) {
@@ -289,9 +316,13 @@ macro_rules! dispatch_owned_async {
 
                 _outer = Some(resource);
             }
-                
+
             if let Some(outer) = _outer {
-                storage.deref().write().await.put_resource(outer, resource_key.map(|r| r.transmute()));
+                storage
+                    .deref()
+                    .write()
+                    .await
+                    .put_resource(outer, resource_key.transmute());
             }
         }
     };
@@ -311,7 +342,7 @@ macro_rules! dispatch_owned {
         {
             let mut storage = storage.deref().write().await;
             let queue = storage
-                .resource_mut::<$queue_ty<$resource_ty>>(resource_key.map(|r| r.transmute()));
+                .resource_mut::<$queue_ty<$resource_ty>>(resource_key.transmute());
             if let Some(queue) = queue {
                 if let Ok(mut queue) = queue.lock() {
                     while let Some(func) = queue.pop_front() {
@@ -326,23 +357,56 @@ macro_rules! dispatch_owned {
                 .deref()
                 .write()
                 .await
-                .take_resource::<$resource_ty>(resource_key.map(|r| r.transmute()))
+                .take_resource::<$resource_ty>(resource_key.transmute())
             {
-                _outer = Some(tocall.drain(..).fold(*resource, |resource, call| {
-                    call(resource)
-                }));
+                _outer = Some(
+                    tocall
+                        .drain(..)
+                        .fold(*resource, |resource, call| call(resource)),
+                );
             }
 
             if let Some(outer) = _outer {
-                storage.deref().write().await.put_resource(outer, resource_key.map(|r| r.transmute()));
+                storage
+                    .deref()
+                    .write()
+                    .await
+                    .put_resource(outer, resource_key.transmute());
             }
         }
     };
 }
 
-impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'static>
+impl<Storage: StorageTarget + Send + Sync, T: Send + Sync>
     Dispatcher<Storage, T>
 {
+    /// Returns true if no tasks are pending,
+    /// 
+    pub fn is_empty(&self) -> bool {
+        // TODO -- Need to get count from queues
+
+        self.tasks.is_empty()
+    }
+
+    /// Returns true if the underlying resource exists,
+    /// 
+    pub async fn exists(&self) -> bool{
+        let node = self.storage.storage.read().await;
+
+        Storage::contains::<T>(&node, self.resource_key.transmute())
+    }
+
+    /// Transmutes a dispatcher,
+    /// 
+    pub fn transmute<G: Send + Sync + 'static>(self) -> Dispatcher<Storage, G> {
+        Dispatcher::<Storage, G> {
+            storage: self.storage,
+            resource_key: self.resource_key.transmute(),
+            tasks: self.tasks,
+            _u: PhantomData,
+        }
+    }
+
     /// Dispatches all queued dispatches,
     ///
     /// ## Notes on Default implementation
@@ -405,7 +469,7 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
 
     /// Queues a dispatch fn w/ a mutable reference to the target resource,
     ///
-    pub fn queue_dispatch_owned(&mut self, exec: impl FnOnce(T) -> T+ 'static + Send + Sync)
+    pub fn queue_dispatch_owned(&mut self, exec: impl FnOnce(T) -> T + 'static + Send + Sync)
     where
         Self: 'static,
     {
@@ -427,11 +491,11 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
     }
 
     /// Queues a dispatch task fn w/ a mutable reference to the target resource,
-    /// 
+    ///
     /// **Note**: There is no performance benefit over using this, since queues are synchronous when drained.
-    /// 
+    ///
     /// The only benefit is being able to use async code in the closure.
-    /// 
+    ///
     pub fn queue_dispatch_mut_task(
         &mut self,
         exec: impl FnOnce(&mut T) -> Pin<Box<dyn Future<Output = ()> + Sync + Send + 'static>>
@@ -447,9 +511,9 @@ impl<'a, Storage: StorageTarget + Send + Sync + 'static, T: Send + Sync + 'stati
     /// Queues a dispatch task fn w/ a reference to the storage target resource,
     ///
     /// **Note**: There is no performance benefit over using this, since queues are synchronous when drained.
-    /// 
+    ///
     /// The only benefit is being able to use async code in the closure.
-    /// 
+    ///
     pub fn queue_dispatch_task(
         &mut self,
         exec: impl FnOnce(&T) -> Pin<Box<dyn Future<Output = ()> + Sync + Send + 'static>>

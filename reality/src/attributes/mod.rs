@@ -1,54 +1,34 @@
 mod attribute;
 mod attribute_type;
+mod decorated;
+mod fields;
 mod parser;
 mod storage_target;
-mod tag;
 mod visit;
 
 pub mod prelude {
-    pub(super) use std::convert::Infallible;
     pub(super) use std::str::FromStr;
 
     pub use super::attribute::Attribute;
-    pub use super::attribute_type::AttributeType;
-    pub use super::attribute_type::AttributeTypeParser;
-    pub use super::attribute_type::Callback;
-    pub use super::attribute_type::CallbackMut;
-    pub use super::attribute_type::Handler;
-    pub use super::attribute_type::OnParseField;
+    pub use super::attribute::Node;
+    pub use super::attribute::Property;
+    pub use super::attribute_type::*;
+    pub use super::decorated::CommaSeperatedStrings;
+    pub use super::decorated::Decorated;
+    pub use super::decorated::Delimitted;
+    pub use super::fields::*;
     pub use super::parser::AttributeParser;
-    pub use super::parser::ParsedAttributes;
-    pub use super::parser::Comments;
+    pub use super::parser::HostedResource;
+    pub use super::parser::ParsedNode;
     pub use super::storage_target::prelude::*;
-    pub use super::tag::Tagged;
-    pub use super::tag::Delimitted;
     pub use super::visit::Field;
     pub use super::visit::FieldMut;
     pub use super::visit::FieldOwned;
+    pub use super::visit::OnReadField;
+    pub use super::visit::OnWriteField;
     pub use super::visit::SetField;
-    pub use super::visit::Visit;
-    pub use super::visit::VisitMut;
-    pub use super::visit::ToFrame;
-    pub use super::visit::ApplyFrame;
-    pub use super::visit::FieldPacket;
-    pub use super::visit::FieldPacketType;
-    pub use super::visit::Frame;
-
-    /// Returns fields for an attribute type,
-    ///
-    pub fn visitor<S: StorageTarget, T>(
-        attr_ty: &(impl AttributeType<S> + Visit<T>),
-    ) -> Vec<Field<'_, T>> {
-        attr_ty.visitor::<T>()
-    }
-
-    /// Returns mutable fields for an attribute type,
-    ///
-    pub fn visitor_mut<'a: 'b, 'b, S: StorageTarget, T>(
-        attr_ty: &'a mut (impl AttributeType<S> + VisitMut<T>),
-    ) -> Vec<FieldMut<'b, T>> {
-        attr_ty.visitor_mut::<T>()
-    }
+    pub use super::visit::VisitVirtual;
+    pub use super::visit::VisitVirtualMut;
 
     pub trait FindField<T> {
         type Output;
@@ -62,7 +42,7 @@ pub mod prelude {
         fn find_field<Owner>(&self, name: impl AsRef<str>) -> Option<&Self::Output> {
             self.iter().find(|f| {
                 f.name == name.as_ref()
-                    && if f.owner != std::any::type_name::<()>() {
+                    && if std::any::type_name::<Owner>() != std::any::type_name::<()>() {
                         std::any::type_name::<Owner>() == f.owner
                     } else {
                         true
@@ -86,32 +66,33 @@ pub mod prelude {
         }
     }
 }
+
 pub use prelude::*;
 
 mod tests {
     use std::collections::BTreeMap;
+    use std::convert::Infallible;
 
     use super::*;
+    use crate::prelude::*;
     use crate::BlockObject;
+    use async_trait::async_trait;
     use reality_derive::Reality;
-    use serde::{Serialize, Deserialize};
-
-    pub mod reality {
-        pub use crate::prelude;
-        pub use crate::runmd;
-    }
+    use serde::{Deserialize, Serialize};
 
     /// Tests derive macro expansion
     ///
-    #[derive(Reality, Debug, Default)]
+    #[derive(Reality, Clone, Serialize, Deserialize, Debug, Default)]
     #[reality(
-        rename = "application/test",
-        load=on_load
+        rename = "test",
+        load=on_load,
+        call = test_noop,
+        plugin
     )]
-    pub struct Test<T: Send + Sync + 'static> {
+    pub struct Test {
         /// Name for test,
         ///
-        #[reality(wire, parse=on_name)]
+        #[reality(parse=on_name)]
         name: String,
         /// Author of the test,
         ///
@@ -119,63 +100,80 @@ mod tests {
         pub author: String,
         /// Description of the test,
         ///
-        _description: Tagged<String>,
+        _description: Decorated<String>,
         /// Testing vec_of parse macro,
         ///
         #[reality(vec_of=String)]
         _test_vec_of: Vec<String>,
         /// Testing map_of parse macro,
         ///
-        #[reality(wire, map_of=String)]
+        #[reality(map_of=String)]
         _test_map_of: BTreeMap<String, String>,
         /// Testing option_of parse macro,
         ///
-        #[reality(wire, option_of=String)]
+        #[reality(option_of=String)]
         _test_option_of: Option<String>,
         /// Test2
         ///
-        #[reality(wire, attribute_type)]
+        #[reality(attribute_type)]
         _test2: Test2,
-        /// Ignored,
-        ///
-        #[reality(ignore)]
-        _value: T,
+    }
+
+    async fn test_noop(_tc: &mut ThunkContext) -> anyhow::Result<()> {
+        Ok(())
     }
 
     /// Called when loading this object,
     ///
     #[allow(dead_code)]
-    async fn on_load<S>(storage: AsyncStorageTarget<S>)
-    where
-        S: StorageTarget + Send + Sync + 'static,
-    {
-        storage.intialize_dispatcher::<u64>(None).await;
+    async fn on_load(
+        parser: AttributeParser<Shared>,
+        storage: AsyncStorageTarget<Shared>,
+        _: Option<ResourceKey<Attribute>>,
+    ) -> AttributeParser<Shared> {
+        storage
+            .maybe_intialize_dispatcher::<u64>(ResourceKey::root())
+            .await;
+
+        parser
     }
 
     #[allow(dead_code)]
-    fn on_name<T: Send + Sync>(test: &mut Test<T>, value: String, _tag: Option<&String>) {
+    fn on_name(test: &mut Test, value: String, _tag: Option<&String>) {
         test.name = value;
-        test._description = Tagged::default();
+        test._description = Decorated::default();
         test._test2 = Test2 {};
     }
 
-    impl<T: Send + Sync + 'static> FromStr for Test<T> {
-        type Err = Infallible;
+    impl FromStr for Test {
+        type Err = anyhow::Error;
 
         fn from_str(_s: &str) -> Result<Self, Self::Err> {
             todo!()
         }
     }
 
-    #[derive(Serialize, Deserialize, Clone, Default, Debug)]
+    #[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Default, Debug)]
     pub struct Test2 {}
 
-    impl<S: StorageTarget + Send + Sync + 'static> AttributeType<S> for Test2 {
-        fn ident() -> &'static str {
+    impl FromStr for Test2 {
+        type Err = Infallible;
+
+        fn from_str(_s: &str) -> Result<Self, Self::Err> {
+            Ok(Test2 {})
+        }
+    }
+
+    impl runir::prelude::Recv for Test2 {
+        #[doc = r" Symbol for this receiver,"]
+        #[doc = r""]
+        fn symbol() -> &'static str {
             "test2"
         }
+    }
 
-        fn parse(parser: &mut AttributeParser<S>, _content: impl AsRef<str>) {
+    impl AttributeType<Shared> for Test2 {
+        fn parse(parser: &mut AttributeParser<Shared>, _content: impl AsRef<str>) {
             if let Some(_storage) = parser.storage_mut() {}
         }
     }
@@ -185,11 +183,13 @@ mod tests {
     async fn test_v2_parser() {
         let mut parser = AttributeParser::<crate::Shared>::default();
 
+        parser.set_storage(std::sync::Arc::new(RwLock::new(Shared::default())));
+
         let ns = parser
             .namespace("test_namespace")
             .expect("should be able to create");
 
-        let mut disp = ns.dispatcher::<Test<String>>(None).await;
+        let mut disp = ns.dispatcher::<Test>(ResourceKey::root()).await;
 
         disp.queue_dispatch_mut(|t| {
             t.author = format!("test_v2_parser");
@@ -198,24 +198,41 @@ mod tests {
 
     #[test]
     fn test_visit() {
-        let mut test = Test::<String>::default();
-        let fields = <Test<String> as VisitMut<BTreeMap<String, String>>>::visit_mut(&mut test);
-        println!("{:#?}", fields);
+        let mut test = Test::default();
+
         test.set_field(FieldOwned {
-            owner: std::any::type_name::<Test<String>>(),
-            name: "name",
+            owner: std::any::type_name::<Test>().to_string(),
+            name: "name".to_string(),
             offset: 0,
             value: String::from("hello-set-field"),
         });
-        
+
         assert_eq!("hello-set-field", test.name.as_str());
-        let frames = test.to_frame(None); 
-        // .drain(..).fold(vec![], |mut acc, v| {
-        //     acc.push(v.into_wire());
-        //     acc
-        // });
-        for frame in frames {
+        let frames = test.to_frame(ResourceKey::root());
+
+        for frame in frames.fields {
             println!("{:?}", frame);
         }
+
+        let vtest = VirtualTest::new(test);
+
+        let _listener = vtest.listen_raw();
+
+        let tx = vtest.name.start_tx();
+
+        let tx_result = tx
+            .next(|mut f| {
+                f.commit();
+                Ok(f)
+            })
+            .finish();
+
+        match tx_result {
+            Ok(_next) => {}
+            Err(_) => todo!(),
+        }
+
+        // eprintln!("{:?}", _listener.has_changed().unwrap());
+        // let _vtest = listener.borrow_and_update();
     }
 }

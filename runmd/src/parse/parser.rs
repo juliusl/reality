@@ -1,14 +1,13 @@
-use std::pin::Pin;
-use std::ops::DerefMut;
-use std::fmt::Debug;
 use logos::Logos;
+use std::fmt::Debug;
+use std::ops::DerefMut;
+use std::pin::Pin;
 use tracing::error;
 use tracing::trace;
 
-use crate::{
-    lex::prelude::{Context, Instruction, Line},
-    prelude::*,
-};
+use crate::lex::prelude::Context;
+use crate::lex::prelude::Instruction;
+use crate::prelude::*;
 
 /// Type-alias for a boxed block provider,
 ///
@@ -30,7 +29,7 @@ pub struct Parser {
     ///
     node_provider: BoxedNodeProvider,
     /// Graph of nodes stored as a flat vector,
-    /// 
+    ///
     graph: Vec<BoxedNode>,
     /// Current node index,
     ///
@@ -53,9 +52,9 @@ impl Parser {
     }
 
     /// Parses source runmd input,
-    /// 
+    ///
     /// **Note** Will panic if node provider is unable to provide a node, if an extension is unable to load, or if any other unexpected situation occurs.
-    /// 
+    ///
     pub async fn parse(&mut self, source: impl AsRef<str> + Debug) {
         // Apply Lexer analysis
         let mut lexer = Instruction::lexer_with_extras(source.as_ref(), Context::default());
@@ -66,37 +65,84 @@ impl Parser {
             trace!(line = format!("{:?}", line), "{:<50}", lexer.slice().trim());
             if line.is_err() {
                 // This might not always mean there is an issue with parsing
-                error!("Lexer error encounterd at -- {:?}: '{}'", lexer.span(), lexer.slice());
+                error!(
+                    "Lexer error encounterd at -- {:?}: '{}'",
+                    lexer.span(),
+                    lexer.slice()
+                );
             }
 
-            if let Ok(Instruction::AddNode | Instruction::DefineProperty | Instruction::LoadExtension | Instruction::LoadExtensionSuffix) = line {
+            if let Ok(
+                Instruction::AddNode
+                | Instruction::DefineProperty
+                | Instruction::LoadExtension
+                | Instruction::LoadExtensionSuffix,
+            ) = line
+            {
                 locations.push(lexer.span());
+            } else if let Ok(Instruction::AppendComment) = line {
+                lexer.extras.append_property();
             }
         }
 
         // Process instructions from lexer analysis
         for (idx, mut block) in lexer.extras.blocks.drain(..).enumerate() {
-            let block_info = BlockInfo { idx, ty: block.ty, moniker: block.moniker };
+            let block_info = BlockInfo {
+                idx,
+                ty: block.ty,
+                moniker: block.moniker,
+            };
 
             self.on_block(block_info.clone());
+
+            // let mut last = None;
 
             for (idx, line) in block.lines.drain(..).enumerate() {
                 let span = locations.pop();
                 match line.instruction {
                     Instruction::AddNode => {
-                        let node_info = NodeInfo { idx, parent_idx: None, line, span };
-                        self.on_add_node(node_info, block_info.clone())
+                        // if let Some((node_info, block_info)) = last.take() {
+                        //     if let Some(node) = self.graph.get_mut(self.current_node_idx.unwrap_or_default()) {
+                        //         node.assign_path(String::new());
+                        //         node.parsed_line(node_info, block_info);
+                        //     }
+                        // }
+
+                        let node_info = NodeInfo {
+                            idx,
+                            parent_idx: None,
+                            line,
+                            span,
+                        };
+                        // last = Some((node_info.clone(), block_info.clone()));
+                        self.on_add_node(node_info, block_info.clone()).await
                     }
-                    Instruction::DefineProperty => self.on_define_property(line),
+                    Instruction::DefineProperty => {
+                        let node_info = NodeInfo {
+                            idx,
+                            parent_idx: self.current_node_idx,
+                            line,
+                            span,
+                        };
+                        self.on_define_property(node_info, block_info.clone()).await;
+                    }
                     Instruction::LoadExtension | Instruction::LoadExtensionSuffix => {
-                        let node_info = NodeInfo { idx, parent_idx: self.current_node_idx, line, span };
-                        self.on_load_extension(node_info, block_info.clone())
-                            .await
+                        let node_info = NodeInfo {
+                            idx,
+                            parent_idx: self.current_node_idx,
+                            line,
+                            span,
+                        };
+                        self.on_load_extension(node_info, block_info.clone()).await
                     }
                     _ => {
                         unimplemented!("Unimplemented instruction was used")
                     }
                 }
+            }
+
+            if let Some(last) = self.graph.last_mut() {
+                last.unload().await;
             }
 
             for node in self.graph.drain(..) {
@@ -116,27 +162,32 @@ impl Parser {
 
     /// Callback when processing an AddNode instruction,
     ///
-    fn on_add_node(
-        &mut self,
-        node_info: NodeInfo,
-        block_info: BlockInfo,
-    ) {
+    async fn on_add_node(&mut self, node_info: NodeInfo<'_>, block_info: BlockInfo<'_>) {
+        if let Some(last) = self.graph.last_mut() {
+            last.unload().await;
+        }
+
         // Reset the current node index
         self.current_node_idx.take();
 
         // Parse attr on line
         if let Some(ref attr) = node_info.line.attr {
-            let node = self.node_provider.provide(
-                attr.name,
-                node_info.line.tag.as_ref().map(|t| t.0),
-                attr.input.clone().map(|i| i.input_str()),
-                &node_info,
-                &block_info
-            );
+            let node = self
+                .node_provider
+                .provide(
+                    attr.name,
+                    node_info.line.tag.as_ref().map(|t| t.0),
+                    attr.input.clone().map(|i| i.input_str()).as_deref(),
+                    &node_info,
+                    &block_info,
+                )
+                .await;
             if let Some(mut node) = node {
                 {
                     let node = node.deref_mut();
-                    node.set_info(node_info.clone(), block_info);
+                    node.set_info(node_info.clone(), block_info.clone());
+                    node.parsed_line(node_info.clone(), block_info.clone());
+                    node.assign_path(String::new());
                 }
                 self.current_node_idx = Some(node_info.idx);
                 self.graph.push(node);
@@ -150,22 +201,32 @@ impl Parser {
 
     /// Callback when processing a LoadExtension instruction,
     ///
-    async fn on_load_extension<'a>(
-        &mut self,
-        node_info: NodeInfo<'_>,
-        block_info: BlockInfo<'_>,
-    ) {
+    async fn on_load_extension<'a>(&mut self, node_info: NodeInfo<'_>, block_info: BlockInfo<'_>) {
         if let Some(last) = self.graph.last_mut() {
-            last.set_info(
-                node_info.clone(), 
-                block_info
-            );
+            last.unload().await;
+
+            last.set_info(node_info.clone(), block_info.clone());
             if let Some(ext) = node_info.line.extension.as_ref() {
-                if let Some(ext) = last
-                    .load_extension(ext.type_name().as_str(), ext.input.clone().map(|i| i.input_str()))
+                if let Some(mut _ext) = last
+                    .load_extension(
+                        ext.type_name().as_str(),
+                        ext.tag(),
+                        ext.input.clone().map(|i| i.input_str()).as_deref(),
+                    )
                     .await
                 {
-                    self.graph.push(ext);
+                    if let Some(path) = ext.path() {
+                        _ext.assign_path(path);
+                    } else {
+                        _ext.assign_path(format!(
+                            "{}?b={}&n={}",
+                            ext.type_name(),
+                            block_info.idx,
+                            node_info.idx
+                        ));
+                    }
+                    _ext.parsed_line(node_info, block_info);
+                    self.graph.push(_ext);
                 } else {
                     panic!("Could not load extension");
                 }
@@ -177,14 +238,26 @@ impl Parser {
 
     /// Callback when processing a DefineProperty instruction,
     ///
-    fn on_define_property(&mut self, line: Line<'_>) {
+    async fn on_define_property(&mut self, node_info: NodeInfo<'_>, block_info: BlockInfo<'_>) {
         if let Some(last) = self.graph.last_mut() {
-            if let Some(mut attr) = line.attr {
+            let line = node_info.clone();
+            last.set_info(node_info.clone(), block_info.clone());
+
+            if let Some(mut attr) = node_info.line.attr {
+                let path = if let Some(tag) = node_info.line.tag.as_ref() {
+                    format!("?prop={}#{}", attr.name, tag.0)
+                } else {
+                    format!("?prop={}", attr.name)
+                };
+
+                last.assign_path(path);
+                last.parsed_line(line, block_info);
                 last.define_property(
                     attr.name,
-                    line.tag.map(|t| t.0),
-                    attr.input.take().map(|i| i.input_str()),
+                    node_info.line.tag.map(|t| t.0),
+                    attr.input.take().map(|i| i.input_str()).as_deref(),
                 )
+                .await;
             } else {
                 panic!("Line is missing attribute parameters to define property")
             }

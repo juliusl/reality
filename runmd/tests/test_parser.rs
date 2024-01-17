@@ -8,6 +8,7 @@ const SOURCE: &'static str = r"
 ```runmd application/test.block root
 : test .block-prop hello prop   # Test defining a property on the block
 
+# -- Example 3
 + .test test/test.node          # Test adding a new node
 <application/test.extension>    # Test loading in an extension
 : .name-1 hello-world           # Test defining a property
@@ -15,6 +16,8 @@ const SOURCE: &'static str = r"
 : .name-1 hello-world-2         # Test defining a property
 : .name-2 'hello-world-3'       # Test defining a property
 
+# -- # Example documentation
+# -- This is example documentation
 + example .test test/test.node  # Test adding an additional node
 <application/test.extension>    # Test loading an extension
 <..example>     Hello World     # Test loading an extension by suffix
@@ -25,7 +28,12 @@ const SOURCE: &'static str = r"
 : shouldn't be used
 
 ```runmd .. alt
+# -- # Example new block and node
+# -- Includes comment properties example as well. 
 + .test test/test.node-2        # Test adding a different block
+|# name = Test node 2
+|# description = This is just a test node that doesn't do anything
+
 ```
 ";
 
@@ -39,51 +47,69 @@ impl BlockProvider for Test {
     }
 }
 
+#[async_trait(?Send)]
 impl NodeProvider for Test {
-    fn provide(&self, 
-        name: &str, 
-        tag: Option<&str>, 
-        input: Option<&str>, 
-        _node_info: &NodeInfo, 
-        _block_info: &BlockInfo
+    async fn provide(
+        &self,
+        name: &str,
+        tag: Option<&str>,
+        input: Option<&str>,
+        _node_info: &NodeInfo,
+        _block_info: &BlockInfo,
     ) -> Option<BoxedNode> {
         trace!(name, tag, input, "provide_node");
         Some(Box::pin(Test))
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl ExtensionLoader for Test {
-    async fn load_extension(&self, extension: &str, input: Option<&str>) -> Option<BoxedNode> {
-        trace!(extension, input, "load_extension");
+    async fn load_extension(
+        &self,
+        extension: &str,
+        tag: Option<&str>,
+        input: Option<&str>,
+    ) -> Option<BoxedNode> {
+        trace!(extension, input, tag, "load_extension");
         Some(Box::pin(Test))
     }
+
+    async fn unload(&mut self) {}
 }
 
+#[async_trait(?Send)]
 impl Node for Test {
     /// Sets the block info for this node,
     ///
     /// Block info details the location within the block this node belongs,
     ///
-    fn set_info(
-        &mut self,
-        node_info: NodeInfo,
-        block_info: BlockInfo,
-    ) {
-        trace!(block_info=format!("{:?}", block_info), "set_block_info\n{:#?}", node_info);
+    fn set_info(&mut self, node_info: NodeInfo, block_info: BlockInfo) {
+        trace!(
+            block_info = format!("{:?}", block_info),
+            "set_block_info\n{:#?}",
+            node_info
+        );
         if let Some(span) = node_info.span {
-            trace!("\n\nSOURCE[{:?}] => \n---\n{}---", span.clone(), &SOURCE[span]);
+            trace!(
+                "\n\nSOURCE[{:?}] => \n---\n{}---",
+                span.clone(),
+                &SOURCE[span]
+            );
         }
     }
 
     /// Define a property for this node,
     ///
-    fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>) {
+    async fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>) {
         trace!(name, tag, input, "define_property");
     }
 
     fn completed(self: Box<Self>) {
         trace!("completed");
+    }
+
+    fn assign_path(&mut self, path: String) {
+        trace!("assigning path {}", path)
     }
 }
 
