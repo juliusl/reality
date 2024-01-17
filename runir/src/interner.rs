@@ -1,6 +1,7 @@
 use std::any::TypeId;
 use std::collections::BTreeMap;
 use std::hash::Hash;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -9,6 +10,7 @@ use std::sync::Weak;
 use anyhow::anyhow;
 use serde::Deserialize;
 use serde::Serialize;
+use tracing::trace;
 use tracing::warn;
 
 use crate::entity::ENTITY;
@@ -369,18 +371,61 @@ impl InternHandle {
     }
 }
 
+/// Inner intern table map,
+/// 
+pub struct InternMap<T> {
+    pub(crate) map: BTreeMap<InternHandle, Arc<T>>
+}
+
+impl<T> InternMap<T> {
+    /// Returns an iterator for exporting this map,
+    /// 
+    pub fn iter_for_export(&self) -> impl Iterator<Item = (uuid::Uuid, bytes::Bytes)> + '_ 
+    where
+        T: Serialize
+    {
+        self.iter_entries().filter_map(|(k, i)| {
+            i.upgrade().and_then(|i| {
+                bincode::serialize(i.deref()).ok().map(|s| {
+                    (k.as_uuid(), bytes::Bytes::copy_from_slice(s.as_ref()))
+                })
+            })
+        })
+    }
+
+    /// Returns an iterator over inner entries,
+    /// 
+    /// **Note**: Does not create a strong reference to entry, instead creates a weak reference.
+    /// 
+    pub fn iter_entries(&self) -> impl Iterator<Item = (InternHandle, Weak<T>)> + '_ {
+        self.map.iter().map(|(h, e)| {
+            (*h, Arc::downgrade(e))
+        })
+    }
+
+    /// Prune any entries that do not have strong references,
+    /// 
+    fn _prune(&mut self) {
+
+    }
+}
+
+impl<T> Default for InternMap<T> {
+    fn default() -> Self {
+        Self { map: Default::default() }
+    }
+}
+
+/// Type-alias for inner table container,
+/// 
+type InnerTable<T> = tokio::sync::watch::Sender<InternMap<T>>;
+
 /// Struct maintaining an inner shared intern table,
 ///
 pub struct InternTable<T: Send + Sync + 'static> {
     /// Inner table,
     ///
-    inner: std::sync::OnceLock<tokio::sync::watch::Sender<BTreeMap<InternHandle, Arc<T>>>>,
-}
-
-impl<T: Send + Sync + 'static> Default for InternTable<T> {
-    fn default() -> Self {
-        Self::new()
-    }
+    inner: OnceLock<InnerTable<T>>,
 }
 
 impl<T: Send + Sync + 'static> InternTable<T> {
@@ -393,12 +438,29 @@ impl<T: Send + Sync + 'static> InternTable<T> {
         }
     }
 
-    pub fn inner(&self) -> &tokio::sync::watch::Sender<BTreeMap<InternHandle, Arc<T>>> {
-        self.inner.get_or_init(|| {
-            let (tx, _) = tokio::sync::watch::channel(BTreeMap::new());
+    /// Assigns an intern handle for an immutable value,
+    ///
+    /// **Note** If the intern handle already has been assigned a value this will result in a no-op.
+    ///
+    pub fn assign_intern(&self, handle: InternHandle, value: T) -> anyhow::Result<()> {
+        // Skip if the value has already been created
+        {
+            if self.inner().borrow().map.contains_key(&handle) {
+                trace!("Skipping interning {:?}", handle);
+                return Ok(());
+            }
+        }
+        self.inner().send_modify(|t| {
+            if t.map.insert(handle, Arc::new(value)).is_some() {
+                warn!(
+                    "Replacing intern handle {:?} {:x?}",
+                    handle.level_flags(),
+                    handle
+                );
+            }
+        });
 
-            tx
-        })
+        Ok(())
     }
 
     /// Returns a handle to the interned value,
@@ -407,7 +469,7 @@ impl<T: Send + Sync + 'static> InternTable<T> {
     /// inner table lock is poisoned.
     ///
     pub fn get(&self, handle: &InternHandle) -> anyhow::Result<Weak<T>> {
-        if let Some(value) = self.inner().borrow().get(handle) {
+        if let Some(value) = self.inner().borrow().map.get(handle) {
             Ok(Arc::downgrade(value))
         } else {
             Err(anyhow!("Not interned {:?}", handle))
@@ -452,29 +514,26 @@ impl<T: Send + Sync + 'static> InternTable<T> {
             .clone()
     }
 
-    /// Assigns an intern handle for an immutable value,
-    ///
-    /// **Note** If the intern handle already has been assigned a value this will result in a no-op.
-    ///
-    pub fn assign_intern(&self, handle: InternHandle, value: T) -> anyhow::Result<()> {
-        // Skip if the value has already been created
-        {
-            if self.inner().borrow().contains_key(&handle) {
-                // eprintln!("Skipping interning {:?}", handle);
-                return Ok(());
-            }
-        }
-        self.inner().send_modify(|t| {
-            if t.insert(handle, Arc::new(value)).is_some() {
-                warn!(
-                    "Replacing intern handle {:?} {:x?}",
-                    handle.level_flags(),
-                    handle
-                );
-            }
-        });
+    /// Returns a reference to the inner table,
+    /// 
+    fn inner(&self) -> &InnerTable<T> {
+        self.inner.get_or_init(|| {
+            let (tx, _) = tokio::sync::watch::channel(InternMap::<T>::default());
 
-        Ok(())
+            tx
+        })
+    }
+
+    /// Returns a file name to use for the table,
+    /// 
+    fn table_file_name(&self) {
+
+    }
+}
+
+impl<T: Send + Sync + 'static> Default for InternTable<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
