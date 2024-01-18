@@ -1,0 +1,8 @@
+[registries]
+ms-crates-io = { index = "sparse+https://msazure.pkgs.visualstudio.com/_packaging/AzureContainerRegistry/Cargo/index/" }
+
+# For publishing to
+acr-crates = { index = "sparse+https://msazure.pkgs.visualstudio.com/AzureContainerRegistry/_packaging/acr-crates/Cargo/index/" }
+
+[source.crates-io]
+replace-with = "ms-crates-io"

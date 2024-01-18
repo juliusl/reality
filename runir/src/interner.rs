@@ -372,52 +372,50 @@ impl InternHandle {
 }
 
 /// Inner intern table map,
-/// 
+///
 pub struct InternMap<T> {
-    pub(crate) map: BTreeMap<InternHandle, Arc<T>>
+    pub(crate) map: BTreeMap<InternHandle, Arc<T>>,
 }
 
 impl<T> InternMap<T> {
     /// Returns an iterator for exporting this map,
-    /// 
-    pub fn iter_for_export(&self) -> impl Iterator<Item = (uuid::Uuid, bytes::Bytes)> + '_ 
+    ///
+    pub fn iter_for_export(&self) -> impl Iterator<Item = (uuid::Uuid, bytes::Bytes)> + '_
     where
-        T: Serialize
+        T: Serialize,
     {
         self.iter_entries().filter_map(|(k, i)| {
             i.upgrade().and_then(|i| {
-                bincode::serialize(i.deref()).ok().map(|s| {
-                    (k.as_uuid(), bytes::Bytes::copy_from_slice(s.as_ref()))
-                })
+                bincode::serialize(i.deref())
+                    .ok()
+                    .map(|s| (k.as_uuid(), bytes::Bytes::copy_from_slice(s.as_ref())))
             })
         })
     }
 
     /// Returns an iterator over inner entries,
-    /// 
+    ///
     /// **Note**: Does not create a strong reference to entry, instead creates a weak reference.
-    /// 
+    ///
     pub fn iter_entries(&self) -> impl Iterator<Item = (InternHandle, Weak<T>)> + '_ {
-        self.map.iter().map(|(h, e)| {
-            (*h, Arc::downgrade(e))
-        })
+        self.map.iter().map(|(h, e)| (*h, Arc::downgrade(e)))
     }
 
     /// Prune any entries that do not have strong references,
-    /// 
-    fn _prune(&mut self) {
-
-    }
+    ///
+    fn _prune(&mut self) {}
 }
 
 impl<T> Default for InternMap<T> {
     fn default() -> Self {
-        Self { map: Default::default() }
+        Self {
+            map: Default::default(),
+        }
     }
 }
 
 /// Type-alias for inner table container,
-/// 
+///
 type InnerTable<T> = tokio::sync::watch::Sender<InternMap<T>>;
 
 /// Struct maintaining an inner shared intern table,
@@ -515,7 +513,7 @@ impl<T: Send + Sync + 'static> InternTable<T> {
     }
 
     /// Returns a reference to the inner table,
-    /// 
+    ///
     fn inner(&self) -> &InnerTable<T> {
         self.inner.get_or_init(|| {
             let (tx, _) = tokio::sync::watch::channel(InternMap::<T>::default());
@@ -525,10 +523,8 @@ impl<T: Send + Sync + 'static> InternTable<T> {
     }
 
     /// Returns a file name to use for the table,
-    /// 
-    fn table_file_name(&self) {
-
-    }
+    ///
+    fn table_file_name(&self) {}
 }
 
 impl<T: Send + Sync + 'static> Default for InternTable<T> {

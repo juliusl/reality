@@ -7,6 +7,7 @@ Welcome to our Workspace, an integrated suite comprising `runmd`, `reality`, `lo
 ## Components
 
 - **runmd**: A Markdown-based executor that brings your documentation to life by allowing code within Markdown files to be run directly.
+    - **runir**: Library for maintaining an intermediate representation from parsed runmd.
 - **reality**: A platform designed to connect your applications with real-world data, providing a robust API for data retrieval and manipulation.
 - **loopio**: An event-driven framework that acts as the backbone for creating scalable and responsive applications, focusing on non-blocking I/O operations.
 - **nebudeck**: A set of `loopio` extensions that enriches the process of building user interfaces, offering tools for both terminal and desktop environments with a focus on plug-in-based architecture.

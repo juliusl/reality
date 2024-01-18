@@ -1,0 +1,61 @@
+# Package base crates
+jobs:
+# These crates must be packaged first
+- job: cargo-package
+  pool:
+    type: linux
+  strategy:
+    matrix:
+      runmd:
+        Crate: "runmd"
+      runir:
+        Crate: "runir"
+      reality_derive:
+        Crate: "reality_derive"
+      reality:
+        Crate: "reality"
+
+  variables: # More settings at https://aka.ms/obpipelines/yaml/jobs
+    LinuxContainerImage: "mcr.microsoft.com/onebranch/cbl-mariner/build:2.0"
+    ob_artifactSuffix: $(Suffix)
+    ob_outputDirectory: "$(Build.SourcesDirectory)/out" # this directory is uploaded to pipeline artifacts, reddog and cloudvault. More info at https://aka.ms/obpipelines/artifacts
+
+  steps: # These steps will be run in unrestricted container's network
+  - task: onebranch.pipeline.version@1
+    displayName: "Setup BuildNumber"
+    inputs:
+      system: "RevisionCounter"
+      out_folder: "$(Build.SourcesDirectory)/.version"
+  - task: Bash@3
+    # Install Deps
+    # Required because the non-onebranch managed images won't have updated root ca's
+    inputs:
+      targetType: "inline"
+      script: |
+        yum install -y openssl-devel
+        
+  - task: RustInstaller@1
+    # Install Rust
+    inputs:
+      rustVersion: "ms-stable"
+      toolchainFeed: https://msazure.pkgs.visualstudio.com/_packaging/RustTools/nuget/v3/index.json
+      cratesIoFeedOverride: sparse+https://msazure.pkgs.visualstudio.com/_packaging/AzureContainerRegistry/Cargo/index/
+
+  # Authn .cargo/config.toml
+  - task: CargoAuthenticate@0
+    inputs:
+      configFile: .cargo/config.toml
+  # Test/Build package
+  - task: Bash@3
+    inputs:
+      targetType: "inline"
+      script: |
+        $(Build.SourcesDirectory)/tools/run-pr-checks.sh
+        $(Build.SourcesDirectory)/tools/package.sh $(Crate)
+  # Copy .crate files
+  - task: Bash@3
+    inputs:
+      targetType: "inline"
+      script: |
+        mkdir -p $(Build.SourcesDirectory)/out
+        cp -r target/package/*.crate $(Build.SourcesDirectory)/out/

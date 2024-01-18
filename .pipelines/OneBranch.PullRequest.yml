@@ -34,11 +34,11 @@ extends:
       # suppression:
       #   suppressionFile: $(Build.SourcesDirectory)\.gdn\global.gdnsuppress
 
-    # stages:
-    # - stage: linux_stage
-    #   jobs:
-    #   # Build/Test/Package .rpm (Mariner)
-    #   - template: .pipelines/templates/rpm-build.yml@self
+    stages:
+    - stage: package_base_crates
+      jobs:
+      # Build Base Crates (runmd, runir, reality_derive) -- These crates do not have any interdependencies
+      - template: .pipelines/templates/build-crates.yml@self
 
     #   # Build/Test/Package .deb package (Ubuntu 1804, 2204 and Debian 10)
     #   - template: .pipelines/templates/dpkg-build.yml@self

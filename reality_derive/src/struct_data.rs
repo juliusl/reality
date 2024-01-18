@@ -5,9 +5,10 @@ use quote::format_ident;
 use quote::quote;
 use quote::quote_spanned;
 use quote::ToTokens;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use syn::parse::Parse;
 use syn::parse2;
+use syn::parse_str;
 use syn::spanned::Spanned;
 use syn::Data;
 use syn::DeriveInput;
@@ -639,10 +640,11 @@ impl StructData {
         ty_generics: &TypeGenerics<'_>,
         where_clause: &Option<&WhereClause>,
     ) -> TokenStream {
-        let fields = self.fields.iter().fold(HashMap::new(), |mut acc, f| {
-            if !acc.contains_key(&f.ty) {
-                acc.insert(f.ty.clone(), vec![f.clone()]);
-            } else if let Some(list) = acc.get_mut(&f.ty) {
+        let fields = self.fields.iter().fold(BTreeMap::new(), |mut acc, f| {
+            let key = f.ty.to_token_stream().to_string();
+            if !acc.contains_key(&key) {
+                acc.insert(key, vec![f.clone()]);
+            } else if let Some(list) = acc.get_mut(&key) {
                 list.push(f.clone());
             }
 
@@ -651,6 +653,7 @@ impl StructData {
 
         let visit_impls = fields.iter().map(|(ty, fields)| {
             let owner = &self.name;
+            let ty: Type = parse_str(ty).expect("should parse");
 
             let _fields = fields.iter().map(|f| {
                 // let ty = f.field_ty();
@@ -721,19 +724,21 @@ impl StructData {
             )
         });
 
-        let fields = self.fields.iter().fold(HashMap::new(), |mut acc, f| {
-            let key = (&f.ty, f.field_ty());
+        let fields = self.fields.iter().fold(BTreeMap::new(), |mut acc, f| {
+            let key = (
+                f.ty.to_token_stream().to_string(),
+                f.field_ty().to_token_stream().to_string(),
+            );
 
-            if let std::collections::hash_map::Entry::Vacant(e) = acc.entry(key) {
-                e.insert(vec![f.clone()]);
-            } else if let Some(list) = acc.get_mut(&key) {
-                list.push(f.clone());
-            }
-
+            acc.entry(key)
+                .and_modify(|l: &mut Vec<_>| l.push(f.clone()))
+                .or_insert(vec![f.clone()]);
             acc
         });
 
         let virtual_visit_impls = fields.iter().map(|((absolute_ty, ty), fields)| {
+            let ty: Type = parse_str(ty).expect("should parse");
+            let absolute_ty: Type = parse_str(absolute_ty).expect("should parse");
             let owner = &self.name;
 
             let packet_routes = fields.iter().filter(|f| f.is_virtual).map(|f| {

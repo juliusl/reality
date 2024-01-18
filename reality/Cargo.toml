@@ -33,13 +33,19 @@ bincode = "1.3.3"
 clap = { version = "4.4.13", features = ["string"] }
 
 [dependencies.runmd]
+version = "0.1.0-pre"
 path = "../runmd"
+registry = "acr-crates"
 
 [dependencies.runir]
+version = "0.1.0-pre"
 path = "../runir"
+registry = "acr-crates"
 
 [dependencies.reality_derive]
+version = "0.1.0-pre"
 path = "../reality_derive"
+registry = "acr-crates"
 optional = true
 
 # Feature: async_dispatcher

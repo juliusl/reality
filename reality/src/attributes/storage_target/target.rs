@@ -10,7 +10,7 @@ pub type StorageTargetKey<T> = ResourceKey<T>;
 ///
 pub trait StorageTarget {
     /// Resource storage cell,
-    /// 
+    ///
     type ResourceCell;
 
     /// Container for borrowing a resource from the storage target,
@@ -72,12 +72,15 @@ pub trait StorageTarget {
     }
 
     /// Returns the existing entry if a resource was removed,
-    /// 
+    ///
     /// **Note**: Unlike take(), this will remove the entire resource cell from the storage target.
-    /// 
+    ///
     /// take() can only remove a resource if no strong references exist.
     ///
-    fn remove_resource_at<R: Send + Sync + 'static>(&mut self, _key: ResourceKey<R>) -> Option<(ResourceKey<R>, Self::ResourceCell)> {
+    fn remove_resource_at<R: Send + Sync + 'static>(
+        &mut self,
+        _key: ResourceKey<R>,
+    ) -> Option<(ResourceKey<R>, Self::ResourceCell)> {
         None
     }
 
@@ -574,7 +577,9 @@ where
     /// Removes the storage entry's resource cell from the storage target,
     ///
     #[inline]
-    fn remove<R: Send + Sync + 'static>(&mut self) -> Option<(ResourceKey<R>, <S as StorageTarget>::ResourceCell)> {
+    fn remove<R: Send + Sync + 'static>(
+        &mut self,
+    ) -> Option<(ResourceKey<R>, <S as StorageTarget>::ResourceCell)> {
         let key = self.resource_key().transmute();
         self.storage_mut().remove_resource_at::<R>(key)
     }

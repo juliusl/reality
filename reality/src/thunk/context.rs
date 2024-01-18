@@ -154,8 +154,7 @@ impl Context {
         debug!("Local value is {:?}", local);
         local.or_else(|| {
             debug!("Looking for runir annotations");
-            let repr = self.attribute
-                .repr();
+            let repr = self.attribute.repr();
             debug!("{:?}", repr);
             repr.and_then(|d| d.as_node())
                 .and_then(|d| {

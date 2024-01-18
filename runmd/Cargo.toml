@@ -2,7 +2,7 @@
 name = "runmd"
 description = "Framework and parser for runmd format."
 authors = ["juliusl@microsoft.com"]
-version = "0.1.0"
+version = "0.1.0-pre"
 edition = "2021"
 resolver = "2"
 license-file = "LICENSE"

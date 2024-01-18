@@ -93,12 +93,13 @@ impl StorageTarget for Shared {
         Shared::default()
     }
 
-    fn remove_resource_at<R: Send + Sync + 'static>(&mut self, rk: ResourceKey<R>) -> Option<(ResourceKey<R>, Self::ResourceCell)> {
+    fn remove_resource_at<R: Send + Sync + 'static>(
+        &mut self,
+        rk: ResourceKey<R>,
+    ) -> Option<(ResourceKey<R>, Self::ResourceCell)> {
         let key = Self::key::<R>(rk);
 
-        self.resources.remove(&key).map(|r| {
-            (rk, r)
-        })
+        self.resources.remove(&key).map(|r| (rk, r))
     }
 
     fn maybe_put_resource<T: Send + Sync + 'static>(

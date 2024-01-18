@@ -2,9 +2,10 @@
 name = "reality_derive"
 description = "Macros for deriving Reality traits and helper code."
 authors = ["juliusl@microsoft.com"]
-version = "0.1.0"
+version = "0.1.0-pre"
 edition = "2021"
 license-file = "LICENSE"
+resolver = "2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
