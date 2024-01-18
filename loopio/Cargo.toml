@@ -9,8 +9,7 @@ license-file = "LICENSE"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["std-ext"]
-full = ["std-ext", "hyper-ext", "poem-ext", "wire-ext", "flexbuffers-ext"]
+default = ["std-ext", "hyper-ext", "poem-ext", "wire-ext", "flexbuffers-ext"]
 std-ext = []
 hyper-ext = [ "hyper", "hyper-tls", "hyper_serde" ]
 poem-ext = [ "poem", "flexbuffers-ext" ]
@@ -45,4 +44,3 @@ tracing-subscriber = "0.3.18"
 
 [[example]]
 name = "utility-demo"
-required-features = ["full"]

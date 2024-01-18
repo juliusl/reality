@@ -17,7 +17,7 @@ desktop-softbuffer = [ "softbuffer" ]
 desktop-imgui = [ "wgpu_17", "winit_27", "desktop", "imgui", "imgui-wgpu", "imgui-winit-support" ]
 
 [dependencies]
-loopio = { version = "0.1.0-dev", path = "../loopio", features = ["full"] }
+loopio = { version = "0.1.0-dev", registry = "acr-crates", path = "../loopio" }
 anyhow = "1.0.75"
 tokio = "1.33.0"
 tracing = "0.1.40"
