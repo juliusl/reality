@@ -130,7 +130,7 @@ impl BackgroundWorkEngineHandle {
         Ok(bg)
     }
 
-    /// Creates a new background worker which implements tower::Service,
+    /// Creates a new background worker which implements Plugin,
     ///  
     pub fn worker<P>(
         &mut self,
@@ -154,9 +154,8 @@ impl BackgroundWorkEngineHandle {
     }
 }
 
-/// API for managing background tasks,
+/// Background future is non-blocking process that w/ a thunk context and address
 ///
-// #[derive(Clone)] This can be tricky if the context is cloned since the cache will also be cloned, therefore the call-output wouldn't be able to returned
 pub struct BackgroundFuture {
     /// Address of the background future,
     ///

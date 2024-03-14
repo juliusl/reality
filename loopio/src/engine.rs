@@ -50,6 +50,8 @@ pub struct EngineBuilder {
 }
 
 impl EngineBuilder {
+    /// Define an engine build w/ middleware functions
+    /// 
     pub fn define(self, middleware: &[EngineBuildMiddleware]) -> EngineBuilder {
         let engine_builder = Engine::builder();
 
@@ -68,12 +70,15 @@ impl EngineBuilder {
         }
     }
 
+    /// Enables isolation at the runir level by building a new tokio runtime
+    /// that is runir entropy aware
+    /// 
     pub fn enable_isolation(mut self) -> Self {
         self.runtime_builder = runir::prelude::new_runtime();
         self
     }
 
-    /// Enables as a thunk for plugin P,
+    /// Enables a new thunk type that implements the Plugin trait,
     ///
     pub fn enable<P>(&mut self)
     where
@@ -155,6 +160,11 @@ impl EngineBuilder {
         &mut self.workspace
     }
 
+    /// Builds the inner tokio runtime, applies builtin plugin utilities and features, and 
+    /// compiles the current workspace.
+    /// 
+    /// Returns a new engine
+    /// 
     pub async fn compile(self) -> anyhow::Result<Engine> {
         let workspace = self.workspace.clone();
         let engine = self.build();
@@ -203,6 +213,9 @@ impl reality::prelude::RegisterWith for EngineBuilder {
 /// ```
 ///
 pub struct Engine {
+    /// Package
+    ///
+    pub package: Option<Package>,
     /// Cancelled when the engine is dropped,
     ///
     cancellation: CancellationToken,
@@ -218,9 +231,6 @@ pub struct Engine {
     /// Wrapped w/ a runtime so that it can be dropped properly
     ///
     runtime: Option<tokio::runtime::Runtime>,
-    /// Package
-    ///
-    pub package: Option<Package>,
     /// Remote actions,
     ///
     __remote_actions: Vec<ActionFactory>,
