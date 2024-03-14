@@ -11,6 +11,63 @@ pub mod prelude;
 pub mod sequence;
 pub mod work;
 
+/// Enumeration of log level options for setting up logging w/ tracing
+/// 
+#[derive(Default)]
+pub enum LoggingLevel {
+    /// Enables reality=info and loopio=info
+    #[default]
+    Default,
+    /// Enables reality=debug and loopio=debug
+    Debug,
+}
+
+/// Configures tracing for logging corresponding to LoggingLevel,
+/// 
+/// **Note** If the cfg for tokio_unstable/tracing is detected, this will automatically configure a console_layer for tracing
+/// that enables rich diagnostics in tokio-console
+/// 
+pub fn setup_logging(level: LoggingLevel) {
+    use tracing_subscriber::fmt;
+    use tracing_subscriber::prelude::*;
+    use tracing_subscriber::EnvFilter;
+
+    let log_config = match level {
+        LoggingLevel::Default => {
+            "reality=info,loopio=info"
+        },
+        LoggingLevel::Debug => {
+            "reality=debug,loopio=debug"
+        },
+    };
+
+    // This enables the console_layer which allows thunks to be named in tokio-console
+    #[cfg(all(tokio_unstable, feature = "tracing"))]
+    {
+        let console_layer = console_subscriber::spawn();
+        std::env::set_var(
+            "RUST_LOG",
+            format!("{log_config},tokio=trace,runtime=trace"),
+        );
+        tracing_subscriber::registry()
+            .with(console_layer)
+            .with(fmt::layer())
+            .with(EnvFilter::from_default_env())
+            .init();
+    }
+    #[cfg(not(all(tokio_unstable, feature = "tracing")))]
+    {
+        std::env::set_var(
+            "RUST_LOG",
+            log_config,
+        );
+        tracing_subscriber::registry()
+            .with(fmt::layer())
+            .with(EnvFilter::from_default_env())
+            .init();
+    }
+}
+
 #[allow(unused_imports)]
 mod tests {
     use std::clone;

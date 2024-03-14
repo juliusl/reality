@@ -347,12 +347,29 @@ impl Context {
     where
         F: Future<Output = anyhow::Result<Context>> + Send + 'static,
     {
+        let prepare_task = |runtime_handle: Option<tokio::runtime::Handle>| runtime_handle
+            .as_ref()
+            .map(|h| {
+                // This is for the console_subscriber feature
+                // When console_subscriber is enabled, it allows tasks to be named. 
+                // This allows tokio-console to associate which running task belongs to a running thunk.
+                #[cfg(all(tokio_unstable, feature = "tracing"))]
+                {
+                    let name = self.attribute.address().map(|a| a.to_string()).unwrap_or(String::from("__unknown_task"));
+
+                    tokio::task::Builder::new()
+                        .name(&name)
+                        .spawn_on(task(self.clone()), h)
+                        .expect("should be able to spawn a task w/ handle")
+                }
+                #[cfg(not(all(tokio_unstable, feature = "tracing")))]
+                {
+                    h.spawn(task(self.clone()))
+                }
+            });
+
         CallOutput::Spawn(
-            self.node
-                .runtime
-                .clone()
-                .as_ref()
-                .map(|h| h.clone().spawn(task(self.clone()))),
+            prepare_task(self.node.runtime.clone())
         )
     }
 

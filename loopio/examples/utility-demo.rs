@@ -9,18 +9,10 @@ use loopio::prelude::StdExt;
 use loopio::prelude::flexbuffers_ext::FlexbufferCacheExt;
 use reality::prelude::*;
 
-use tracing_subscriber::fmt;
-use tracing_subscriber::prelude::*;
-use tracing_subscriber::EnvFilter;
-
 /// Demo and test bed for utility plugins and extensions,
 ///
 fn main() {
-    std::env::set_var("RUST_LOG", "reality=info,loopio=debug");
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(EnvFilter::from_default_env())
-        .init();
+    loopio::setup_logging(loopio::LoggingLevel::Default);
 
     let utility_runmd = include_str!("utility-demo.md");
 

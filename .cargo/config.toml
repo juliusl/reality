@@ -6,3 +6,7 @@ acr-crates = { index = "sparse+https://msazure.pkgs.visualstudio.com/AzureContai
 
 [source.crates-io]
 replace-with = "ms-crates-io"
+
+# Note: This enables deeper runtime diagnostics
+# [build]
+# rustflags = ["--cfg", "tokio_unstable"]

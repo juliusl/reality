@@ -13,6 +13,7 @@ default = [ "async_dispatcher", "derive" ]
 derive = ["reality_derive"]
 async_dispatcher = [ "tokio" ]
 specs_storage_target = [ "specs" ]
+tracing = ["tokio/tracing"]
 
 [dependencies]
 base64 = "0.13.0"
@@ -51,7 +52,7 @@ optional = true
 # Feature: async_dispatcher
 [dependencies.tokio]
 version = "1.36.0"
-features = ["default", "rt-multi-thread", "sync", "fs", "time", "process", "io-util", "io-std", "macros"]
+features = ["default", "rt-multi-thread", "sync", "fs", "time", "process", "io-util", "io-std", "macros", "tracing"]
 optional = true
 
 # Feature: specs_storage_target

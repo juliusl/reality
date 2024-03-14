@@ -15,6 +15,7 @@ hyper-ext = [ "hyper", "hyper-tls", "hyper_serde" ]
 poem-ext = [ "poem", "flexbuffers-ext" ]
 wire-ext = []
 flexbuffers-ext = [ "flexbuffers" ]
+tracing = ["reality/tracing"]
 
 [dependencies]
 anyhow = "1.0.75"
@@ -41,6 +42,8 @@ hyper_serde = { version = "0.13.2", optional = true }
 tower = "0.4.13"
 thiserror = "1.0.56"
 tracing-subscriber = "0.3.18"
+console-subscriber = "0.2.0"
 
 [[example]]
 name = "utility-demo"
+required-features = ["tracing"]
