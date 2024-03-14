@@ -194,7 +194,6 @@ impl Future for Operation {
                 std::task::Poll::Ready(Ok(result)) => std::task::Poll::Ready(result),
                 std::task::Poll::Pending => {
                     self.spawned = Some((cancelled, spawned));
-                    cx.waker().wake_by_ref();
                     std::task::Poll::Pending
                 }
                 std::task::Poll::Ready(Err(err)) => std::task::Poll::Ready(Err(err.into())),

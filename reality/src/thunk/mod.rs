@@ -221,7 +221,6 @@ pub mod prelude {
                             std::task::Poll::Ready(Ok(context))
                         }
                         std::task::Poll::Pending => {
-                            cx.waker().wake_by_ref();
                             std::task::Poll::Pending
                         }
                     },

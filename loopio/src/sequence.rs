@@ -217,6 +217,7 @@ impl std::future::Future for Sequence {
 
                         last
                     }));
+                    cx.waker().wake_by_ref();
                 }
                 None => {
                     trace!("Done");
@@ -271,7 +272,6 @@ impl std::future::Future for Sequence {
             }
         }
 
-        cx.waker().wake_by_ref();
         std::task::Poll::Pending
     }
 }
