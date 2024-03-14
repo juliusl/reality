@@ -50,7 +50,7 @@ optional = true
 
 # Feature: async_dispatcher
 [dependencies.tokio]
-version = "1.19.2"
+version = "1.36.0"
 features = ["default", "rt-multi-thread", "sync", "fs", "time", "process", "io-util", "io-std", "macros"]
 optional = true
 
