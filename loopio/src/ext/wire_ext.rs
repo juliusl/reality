@@ -277,7 +277,6 @@ impl<'a, V, Owner, Value, ProjectedValue> Stream
     for &'a mut BusFieldPort<Owner, Value, ProjectedValue>
 where
     V: CallAsync
-        + ToOwned<Owned = Owner>
         + NewFn<Inner = Owner>
         + FieldRefController<Owner = Owner>
         + 'a,

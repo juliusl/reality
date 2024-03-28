@@ -4,7 +4,9 @@ use std::time::Duration;
 use reality_derive::Reality;
 use tokio::select;
 use tokio::sync::broadcast::error::SendError;
+use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Ref;
+use tokio::sync::watch::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use tracing::error;
@@ -25,11 +27,11 @@ pub trait FieldRefController {
     /// **Note** This channel is noisy and will not receive any information on which fields changed. In addition it may be notified
     /// even if no changes actually occured.
     ///
-    fn listen_raw(&self) -> tokio::sync::watch::Receiver<Self::Owner>;
+    fn listen_raw(&self) -> Receiver<Self::Owner>;
 
     /// Returns a reference to the tx side of the watch channel over Owner,
     ///
-    fn send_raw(&self) -> Arc<tokio::sync::watch::Sender<Self::Owner>>;
+    fn send_raw(&self) -> Arc<Sender<Self::Owner>>;
 
     /// Returns the current state of owner,
     ///

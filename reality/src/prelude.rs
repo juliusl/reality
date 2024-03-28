@@ -57,6 +57,9 @@ pub use crate::VisitVirtual;
 pub use crate::VisitVirtualMut;
 pub use crate::WireServer;
 pub use crate::Workspace;
+pub use crate::Eval;
+pub use crate::EvalSource;
+pub use crate::runmd_src;
 
 // pub use crate::SharedFile;
 
@@ -82,6 +85,7 @@ pub use std::str::FromStr;
 pub use async_trait::async_trait;
 
 pub use runir;
+pub use runmd;
 
 /// Returns the latest value of a reference,
 ///

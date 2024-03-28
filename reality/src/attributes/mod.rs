@@ -5,10 +5,14 @@ mod fields;
 mod parser;
 mod storage_target;
 mod visit;
+mod eval;
 
 pub mod prelude {
     pub(super) use std::str::FromStr;
 
+    pub use super::eval::Eval;
+    pub use super::eval::EvalSource;
+    pub use super::eval::runmd as runmd_src;
     pub use super::attribute::Attribute;
     pub use super::attribute::Node;
     pub use super::attribute::Property;

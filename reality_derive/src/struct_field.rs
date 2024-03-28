@@ -3,6 +3,7 @@ use std::vec;
 use proc_macro2::Ident;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
+use quote::quote;
 use quote::quote_spanned;
 use quote::ToTokens;
 use syn::parse::Parse;
@@ -80,6 +81,9 @@ pub(crate) struct StructField {
     /// True if this field should be enabled as a plugin collection,
     ///
     pub plugin: bool,
+    /// True if this field is allowed to be evaled by the type,
+    ///
+    pub eval: bool,
     /// Location of this field,
     ///
     pub span: Span,
@@ -98,6 +102,36 @@ pub(crate) struct StructField {
 }
 
 impl StructField {
+    /// Renders the implementation for the Node trait's define_property fn
+    /// 
+    pub fn render_node_define_property(&self) -> TokenStream {
+        let name = &self.name;
+        let name_lit = &self.field_name_lit_str();
+
+        let additional = if self.is_decorated {
+            quote!(
+                if let Some(tag) = tag.as_ref() {
+                    self.#name.edit_value(|_, v| {
+                        v.set_tag(tag.to_string());
+                        true
+                    });
+                }
+            )
+        } else {
+            quote!()
+        };
+
+        quote_spanned!(self.span=>
+            #name_lit => {
+                self.#name.define_property(name, tag, input).await;
+
+                #additional
+            }
+        )
+    }
+
+    /// Returns the name of the field as a string literal
+    /// 
     pub fn field_name_lit_str(&self) -> LitStr {
         self.rename.clone().unwrap_or(LitStr::new(
             self.name.to_string().as_str(),
@@ -117,6 +151,8 @@ impl StructField {
             .unwrap_or(&self.ty)
     }
 
+    /// Renders the get() fn for this field
+    /// 
     pub fn render_get_fn(&self) -> TokenStream {
         let name = &self.name;
         if let Some((variant, enum_ty)) = self.variant.as_ref() {
@@ -134,6 +170,8 @@ impl StructField {
         }
     }
 
+    /// Renders the get mut fn for this field
+    /// 
     pub fn render_get_mut_fn(&self) -> TokenStream {
         let name = &self.name;
         if let Some((variant, enum_ty)) = self.variant.as_ref() {
@@ -547,6 +585,7 @@ impl Parse for StructField {
         let mut not_wire = false;
         let mut is_virtual = true;
         let mut is_parse = true;
+        let mut eval = false;
         let span = input.span();
 
         let visibility = input.parse::<Visibility>().ok();
@@ -561,6 +600,10 @@ impl Parse for StructField {
             // #[reality(ignore, rename = "SOME_NAME")]
             if attribute.path().is_ident("reality") {
                 attribute.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("allow_eval") {
+                        eval = true;
+                    }
+
                     if meta.path.is_ident("ignore") {
                         is_parse = false;
                         is_virtual = false;
@@ -745,6 +788,7 @@ impl Parse for StructField {
             visibility,
             name,
             ty,
+            eval,
             is_decorated: false,
             is_virtual,
             is_parse,

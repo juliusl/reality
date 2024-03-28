@@ -66,7 +66,7 @@ impl Parser {
             if line.is_err() {
                 // This might not always mean there is an issue with parsing
                 error!(
-                    "Lexer error encounterd at -- {:?}: '{}'",
+                    "Lexer error encountered at -- {:?}: '{}'",
                     lexer.span(),
                     lexer.slice()
                 );
@@ -251,7 +251,7 @@ impl Parser {
                 };
 
                 last.assign_path(path);
-                last.parsed_line(line, block_info);
+                last.parsed_line(line.clone(), block_info.clone());
                 last.define_property(
                     attr.name,
                     node_info.line.tag.map(|t| t.0),
@@ -264,5 +264,19 @@ impl Parser {
         } else {
             panic!("No node exists to define a property on");
         }
+    }
+}
+
+#[async_trait(?Send)]
+impl NodeProvider for () {
+    async fn provide(
+        &self,
+        _: &str,
+        _: Option<&str>,
+        _: Option<&str>,
+        _: &NodeInfo,
+        _: &BlockInfo,
+    ) -> Option<BoxedNode> {
+        None
     }
 }

@@ -1,4 +1,6 @@
 use std::pin::Pin;
+use std::sync::Arc;
+use tokio::sync::watch::Sender;
 use tracing::debug;
 
 use super::prelude::CallAsync;
@@ -10,7 +12,7 @@ use crate::prelude::*;
 ///
 /// Generated when the derive macro is used.
 ///
-pub trait NewFn {
+pub trait NewFn : From<Arc<Sender<Self::Inner>>> {
     /// The inner plugin type to create this type from,
     ///
     type Inner;
@@ -100,6 +102,14 @@ pub trait Plugin: ToFrame + BlockObject + CallAsync + Clone + Default {
         router: std::sync::Arc<PacketRouter<Self>>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         Box::pin(async {})
+    }
+
+    #[inline]
+    fn to_virtual(self) -> Self::Virtual 
+    where
+        Self::Virtual: NewFn<Inner = Self>
+    {
+        Self::Virtual::new(self)
     }
 }
 

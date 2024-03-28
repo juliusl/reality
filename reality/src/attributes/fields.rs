@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 // use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
@@ -35,6 +36,17 @@ where
     /// Field condition,
     ///
     condition: FieldCondition,
+}
+
+impl<Owner, Value, ProjectedValue> Debug for FieldRef<Owner, Value, ProjectedValue> 
+where
+    Owner: Plugin + 'static,
+    Value: 'static,
+    ProjectedValue: 'static,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FieldRef").field("owner", &Owner::symbol()).field("condition", &self.condition).finish()
+    }
 }
 
 // pub struct MappedFieldRef {
@@ -342,8 +354,8 @@ where
     ///
     #[inline]
     pub fn encode(&self) -> FieldPacket {
-        (self.table.encode.root)(<Owner as Plugin>::Virtual::new(
-            self.owner.borrow().to_owned(),
+        (self.table.encode.root)(<Owner as Plugin>::Virtual::from(
+            self.owner.clone(),
         ))
     }
 
@@ -355,7 +367,7 @@ where
     #[inline]
     pub fn decode_and_apply(&self, fp: FieldPacket) -> anyhow::Result<Self> {
         (self.table.decode.root)(
-            <Owner as Plugin>::Virtual::new(self.owner.borrow().to_owned()),
+            <Owner as Plugin>::Virtual::from(self.owner.clone()),
             fp,
         )
     }
@@ -367,7 +379,7 @@ where
     ///
     #[inline]
     pub fn filter_packet(&self, fp: &FieldPacket) -> anyhow::Result<Self> {
-        (self.table.filter.root)(&<Owner as Plugin>::Virtual::new(self.owner()), fp)
+        (self.table.filter.root)(&<Owner as Plugin>::Virtual::from(self.owner.clone()), fp)
     }
 
     /// Put the field in the "pending" condition,

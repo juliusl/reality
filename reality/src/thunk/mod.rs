@@ -59,7 +59,7 @@ pub mod prelude {
     impl<P, In> Plugin for Thunk<P>
     where
         P: Plugin<Virtual = In> + runir::prelude::Recv + Send + Sync + 'static,
-        In: FieldRefController + CallAsync + ToOwned<Owned = P> + NewFn<Inner = P> + Send + Sync,
+        In: FieldRefController<Owner = P> + CallAsync + ToOwned<Owned = P> + NewFn<Inner = P> + Send + Sync,
     {
         type Virtual = P::Virtual;
     }

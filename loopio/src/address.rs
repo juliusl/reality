@@ -76,9 +76,9 @@ impl Address {
     ///
     pub fn node_address(&self) -> String {
         if let Some(host) = self.host.as_ref() {
-            format!("{}://{}", host, self.node)
+            format!("{}://{}", host, self.node())
         } else {
-            format!("engine://{}", self.node)
+            format!("engine://{}", self.node())
         }
     }
 

@@ -78,7 +78,7 @@ impl EngineBuilder {
     pub fn enable<P>(&mut self)
     where
         P: Plugin + Default + Clone + ToFrame + Send + Sync + 'static,
-        P::Virtual: NewFn<Inner = P> + ToOwned<Owned = P>,
+        P::Virtual: NewFn<Inner = P>,
     {
         info!("Enabling plugin {}", P::symbol());
         self.register_with(|parser| {
@@ -803,6 +803,8 @@ enum EngineAction {
         ///
         #[serde(skip)]
         context: ThunkContext,
+        /// Channel to transmit the result of the publish,
+        /// 
         #[serde(skip)]
         tx: Option<tokio::sync::oneshot::Sender<anyhow::Result<Address>>>,
     },
@@ -816,6 +818,8 @@ enum EngineAction {
         /// Bus address
         ///
         address: Address,
+        /// Channel to transmit the virtual bus,
+        /// 
         #[serde(skip)]
         tx: Option<tokio::sync::oneshot::Sender<VirtualBus>>,
     },

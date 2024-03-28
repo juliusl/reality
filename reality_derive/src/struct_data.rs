@@ -68,6 +68,9 @@ pub(crate) struct StructData {
     /// CallAsync fn,
     ///
     call: Option<Ident>,
+    /// If true, the CallAsync behavior is a noop
+    /// 
+    noop: bool,
     /// Replace thee
     ///
     replace: Option<Type>,
@@ -87,6 +90,7 @@ impl Parse for StructData {
         let mut plugin = false;
         let mut ext = false;
         let mut enum_flags = false;
+        let mut noop = false;
         let mut call = None;
         let mut replace = None;
 
@@ -98,6 +102,13 @@ impl Parse for StructData {
                         call = meta.input.parse::<Ident>().ok();
                         plugin = true;
                     }
+
+                    if meta.path.is_ident("noop") {
+                        call = None;
+                        noop = true;
+                        plugin = true;
+                    }
+
                     Ok(())
                 })?;
             }
@@ -243,6 +254,7 @@ impl Parse for StructData {
                 on_unload: reality_on_unload,
                 on_completed: reality_on_completed,
                 plugin,
+                noop,
                 ext,
                 call,
                 replace,
@@ -518,6 +530,23 @@ impl StructData {
             }
         });
 
+        let vtable_field_new_impl_2 = self.iter_virtual_fields().map(|f| {
+            let name = &f.name;
+            let offset = f.offset;
+            let vtable_helper_fn_ident = format_ident!("__field_offset_{}_vtable", offset);
+            quote_spanned! {f.span=>
+                #name: FieldRef::new(
+                    init.clone(),
+                    #ident::#vtable_helper_fn_ident(),
+                ),
+            }
+        });
+
+        // For fields that eval is enabled, allow define_property to be called
+        let on_parse_fields = self.iter_virtual_fields().filter(|f| f.eval).map(|f| {
+            f.render_node_define_property()
+        });
+
         let on_read_fields = self
             .iter_virtual_fields()
             .map(|f| {
@@ -554,64 +583,114 @@ impl StructData {
         let virt_vis = &self.vis;
 
         let virtual_ref = quote_spanned!(self.span=>
-            /// Virtual interface over plugin,
-            ///
-            #[derive(Reality)]
-            #[reality(replace = #ident)]
-            #virt_vis struct #virtual_ident {
-                owner: std::sync::Arc<tokio::sync::watch::Sender<#ident>>,
-                #(#vtable_field_impl)*
-            }
-
-            impl FieldRefController for #virtual_ident {
-                type Owner = #ident;
-
-                fn listen_raw(&self) -> tokio::sync::watch::Receiver<Self::Owner> {
-                    self.owner.subscribe()
+                /// Virtual interface over plugin,
+                ///
+                #[derive(Reality, Clone)]
+                #[reality(replace = #ident)]
+                #virt_vis struct #virtual_ident {
+                    owner: std::sync::Arc<tokio::sync::watch::Sender<#ident>>,
+                    #(#vtable_field_impl)*
                 }
 
-                fn send_raw(&self) -> std::sync::Arc<tokio::sync::watch::Sender<Self::Owner>> {
-                    self.owner.clone()
-                }
-
-                fn current(&self) -> Self::Owner {
-                    self.owner.subscribe().borrow().to_owned()
-                }
-            }
-
-            impl #impl_generics From<#ident #ty_generics> for #virtual_ident #where_clause  {
-                fn from(init: #ident) -> #virtual_ident {
-                    let (owner, rx) = tokio::sync::watch::channel(init);
-                    let owner = std::sync::Arc::new(owner);
-                    Self {
-                        owner: owner.clone(),
-                        #(#vtable_field_new_impl)*
+                impl std::fmt::Debug for #virtual_ident {
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        f.debug_struct(stringify!(#virtual_ident))
+                            .field("owner", &self.owner.borrow().to_frame(ResourceKey::<Attribute>::new().transmute()))
+                            .finish()
                     }
                 }
-            }
 
-            impl NewFn for #virtual_ident {
-                type Inner = #ident;
-
-                fn new(value: Self::Inner) -> Self {
-                    #virtual_ident::from(value)
+                impl runmd::prelude::BlockProvider for #virtual_ident {
+                    fn provide(&self, _: runmd::prelude::BlockInfo) -> Option<runmd::prelude::BoxedNode> {
+                        Some(Box::pin(self.clone()))
+                    }
                 }
-            }
 
-            impl ToOwned for #virtual_ident {
-                type Owned = #ident;
+                #[async_trait::async_trait(?Send)]
+                impl runmd::prelude::ExtensionLoader for #virtual_ident {
+                    async fn load_extension(
+                        &self,
+                        _: &str,
+                        _: Option<&str>,
+                        _: Option<&str>,
+                    ) -> Option<runmd::prelude::BoxedNode> {
+                        None
+                    }
 
-                fn to_owned(&self) -> Self::Owned {
-                    self.current()
+                    async fn unload(&mut self) {}
                 }
-            }
 
-            impl std::borrow::Borrow<#virtual_ident> for #ident {
-                fn borrow(&self) -> &#virtual_ident {
-                    unreachable!("This wouldn't make sense since the virtual type is less current than the actual type")
+                #[async_trait::async_trait(?Send)]
+                impl runmd::prelude::Node for #virtual_ident {
+                    /// Assigns a path to this node
+                    fn assign_path(&mut self, _: String) {}
+
+                    fn set_info(&mut self, _: runmd::prelude::NodeInfo, _: runmd::prelude::BlockInfo) {}
+
+                    fn parsed_line(&mut self, _: runmd::prelude::NodeInfo, _: runmd::prelude::BlockInfo) {}
+
+                    fn completed(self: Box<Self>) {}
+
+                    async fn define_property(&mut self, name: &str, tag: Option<&str>, input: Option<&str>) {
+                        tracing::trace!("define_property `{name}` w/ `{:?}`", input);
+                        match name {
+                            #(#on_parse_fields)*
+                            _ => {
+                            }
+                        }
+                    }
                 }
-            }
-        );
+
+                impl FieldRefController for #virtual_ident {
+                    type Owner = #ident;
+
+                    fn listen_raw(&self) -> tokio::sync::watch::Receiver<Self::Owner> {
+                        self.owner.subscribe()
+                    }
+
+                    fn send_raw(&self) -> std::sync::Arc<tokio::sync::watch::Sender<Self::Owner>> {
+                        self.owner.clone()
+                    }
+
+                    fn current(&self) -> Self::Owner {
+                        self.owner.subscribe().borrow().to_owned()
+                    }
+                }
+
+                impl #impl_generics From<#ident #ty_generics> for #virtual_ident #where_clause  {
+                    fn from(init: #ident) -> #virtual_ident {
+                        let (owner, rx) = tokio::sync::watch::channel(init);
+                        let owner = std::sync::Arc::new(owner);
+                        Self {
+                            owner: owner.clone(),
+                            #(#vtable_field_new_impl)*
+                        }
+                    }
+                }
+
+                impl #impl_generics From<std::sync::Arc<tokio::sync::watch::Sender<#ident #ty_generics>>> for #virtual_ident #where_clause  {
+                    fn from(init: std::sync::Arc<tokio::sync::watch::Sender<#ident #ty_generics>>) -> #virtual_ident {
+                        Self {
+                            owner: init.clone(),
+                            #(#vtable_field_new_impl_2)*
+                        }
+                    }
+                }
+
+                impl NewFn for #virtual_ident {
+                    type Inner = #ident;
+
+                    fn new(value: Self::Inner) -> Self {
+                        #virtual_ident::from(value)
+                    }
+                }
+
+                impl std::borrow::Borrow<#virtual_ident> for #ident {
+                    fn borrow(&self) -> &#virtual_ident {
+                        unreachable!("This wouldn't make sense since the virtual type is less current than the actual type")
+                    }
+                }
+            );
 
         //
         // ^ -- TODO -- Create a local action that gets the latest, creates a new hosted resource, publishes, starts, and then collects
@@ -1078,12 +1157,6 @@ impl StructData {
                         Ok(())
                     }
                 }
-
-                impl #impl_generics #name #ty_generics #where_clause {
-                    pub fn to_virtual(self) -> #virtual_ident {
-                        #virtual_ident::new(self)
-                    }
-                }
             ))
         } else {
             None
@@ -1162,6 +1235,15 @@ impl StructData {
                     }
                 }
             )
+        }).or_else(|| {
+            Some(quote!(
+                #[async_trait]
+                impl #impl_generics CallAsync for #name #ty_generics #where_clause {
+                    async fn call(context: &mut ThunkContext) -> anyhow::Result<()> {
+                        Ok(())
+                    }
+                }
+            )).filter(|_| self.noop)
         });
 
         let unit_from_str = if self.fields.is_empty() {
@@ -1182,6 +1264,8 @@ impl StructData {
         if !self.fields.iter().any(|f| f.variant.is_some()) {
             from_shared = Some(self.clone().pack_unpack_impl());
         }
+
+        let eval_trait = self.clone().eval_impl();
 
         let object_type_trait = quote_spanned!(self.span=>
             #[async_trait(?Send)]
@@ -1214,6 +1298,7 @@ impl StructData {
             #call
             #unit_from_str
             #from_shared
+            #eval_trait
         );
 
         let mut attribute_type = self.clone().attribute_type_trait();
@@ -1314,6 +1399,28 @@ impl StructData {
                         self
                     }
                 }
+            )
+        } else {
+            quote!()
+        }
+    }
+
+    /// Generates Eval trait implementation as well as enabling eval on fields w/ support
+    /// 
+    fn eval_impl(self) -> TokenStream {
+        if self.fields.iter().any(|f| f.eval) {
+            let ty = self.name;
+
+            let enable_eval = self.fields.iter().filter(|f| f.eval).map(|f| {
+                let offset = &f.offset;
+                quote_spanned!(f.span=>
+                    enable_eval_on_field!(#ty, #offset);
+                )
+            });
+
+            quote_spanned!(self.span=>
+                impl Eval for #ty {}
+                #(#enable_eval)*
             )
         } else {
             quote!()
